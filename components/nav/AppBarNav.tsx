@@ -1,0 +1,63 @@
+"use client";
+
+import AppBar from "@mui/material/AppBar";
+import Toolbar from "@mui/material/Toolbar";
+import Typography from "@mui/material/Typography";
+import Button from "@mui/material/Button";
+import Box from "@mui/material/Box";
+import Link from "next/link";
+import { signOut, useSession } from "next-auth/react";
+
+export function AppBarNav() {
+  const { data: session, status } = useSession();
+
+  return (
+    <AppBar
+      position="sticky"
+      color="transparent"
+      elevation={0}
+      sx={{
+        borderBottom: "1px solid",
+        borderColor: "divider",
+        backdropFilter: "blur(8px)",
+        bgcolor: "rgba(255, 251, 254, 0.9)",
+      }}
+    >
+      <Toolbar sx={{ maxWidth: 1100, width: "100%", mx: "auto", px: { xs: 2, sm: 3 } }}>
+        <Typography
+          variant="h6"
+          component={Link}
+          href="/"
+          sx={{
+            fontWeight: 700,
+            color: "primary.main",
+            textDecoration: "none",
+            flexGrow: 1,
+          }}
+        >
+          Yuyu
+        </Typography>
+        <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+          {status === "authenticated" ? (
+            <>
+              <Button component={Link} href="/dashboard" color="inherit">
+                Dashboard
+              </Button>
+              <Button
+                variant="outlined"
+                color="primary"
+                onClick={() => signOut({ callbackUrl: "/" })}
+              >
+                Sign out
+              </Button>
+            </>
+          ) : (
+            <Button component={Link} href="/login" variant="contained">
+              Sign in
+            </Button>
+          )}
+        </Box>
+      </Toolbar>
+    </AppBar>
+  );
+}

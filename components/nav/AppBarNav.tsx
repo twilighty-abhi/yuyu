@@ -9,7 +9,7 @@ import Link from "next/link";
 import { signOut, useSession } from "next-auth/react";
 
 export function AppBarNav() {
-  const { data: session, status } = useSession();
+  const { status } = useSession();
 
   return (
     <AppBar

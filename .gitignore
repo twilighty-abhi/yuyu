@@ -1,5 +1,16 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
+# editors / IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS / file manager
+.DS_Store
+Thumbs.db
+Desktop.ini
+
 # dependencies
 /node_modules
 /.pnp
@@ -12,6 +23,8 @@
 
 # testing
 /coverage
+/playwright-report/
+/test-results/
 
 # next.js
 /.next/
@@ -21,8 +34,13 @@
 /build
 
 # misc
-.DS_Store
 *.pem
+*.log
+*.pid
+*.pid.lock
+*.seed
+*.tgz
+logs/
 
 # debug
 npm-debug.log*
@@ -30,9 +48,30 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
+# local caches
+.eslintcache
+.stylelintcache
+.cache/
+.parcel-cache/
+.turbo/
+.swc/
+
+# temp
+tmp/
+temp/
+*.tmp
+
 # env files (can opt-in for committing if needed)
 .env*
 !.env.example
+
+# direnv
+.direnv/
+.envrc
+
+# AI assistants / agents (local state only)
+.claude/
+.cursor/
 
 # vercel
 .vercel
@@ -40,3 +79,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# prisma (local/dev artifacts)
+prisma/*.db
+prisma/*.db-journal
+prisma/.env

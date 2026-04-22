@@ -61,8 +61,8 @@ export default function LoginPage() {
                     variant="body2"
                     sx={{ color: "rgba(255,255,255,0.70)", mt: 0.75 }}
                   >
-                    Use Google or email — email sends a magic link (stub logs to
-                    the server console in development).
+                    Sign in with Google or your email and password. New here?
+                    Create an account in seconds.
                   </Typography>
                 </Box>
 

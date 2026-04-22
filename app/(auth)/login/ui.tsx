@@ -2,13 +2,17 @@
 
 import { useMemo, useState } from "react";
 import { signIn } from "next-auth/react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Stack from "@mui/material/Stack";
 import Button from "@mui/material/Button";
 import TextField from "@mui/material/TextField";
 import Alert from "@mui/material/Alert";
 import Divider from "@mui/material/Divider";
 import Box from "@mui/material/Box";
+import Tabs from "@mui/material/Tabs";
+import Tab from "@mui/material/Tab";
+import Link from "@mui/material/Link";
+import { signUpWithPassword } from "@/app/actions/auth";
 
 const showGoogle = process.env.NEXT_PUBLIC_AUTH_GOOGLE_CONFIGURED === "1";
 
@@ -44,22 +48,145 @@ function GoogleMark(props: { size?: number }) {
   );
 }
 
+const inputSx = {
+  "& .MuiInputLabel-root": { color: "rgba(255,255,255,0.65)" },
+  "& .MuiInputLabel-root.Mui-focused": {
+    color: "rgba(255,255,255,0.85)",
+  },
+  "& .MuiOutlinedInput-root": {
+    borderRadius: 2,
+    backgroundColor: "rgba(255,255,255,0.04)",
+    color: "rgba(255,255,255,0.92)",
+    "& fieldset": { borderColor: "rgba(255,255,255,0.16)" },
+    "&:hover fieldset": { borderColor: "rgba(255,255,255,0.26)" },
+    "&.Mui-focused fieldset": {
+      borderColor: "rgba(124, 245, 182, 0.65)",
+    },
+  },
+};
+
+const primaryButtonSx = {
+  textTransform: "none",
+  borderRadius: 999,
+  py: 1.1,
+  color: "rgba(6,18,14,0.92)",
+  fontWeight: 600,
+  background:
+    "linear-gradient(90deg, rgba(124, 245, 182, 0.92), rgba(67, 214, 170, 0.92))",
+  boxShadow: "0 10px 30px rgba(124, 245, 182, 0.18)",
+  "&:hover": {
+    background:
+      "linear-gradient(90deg, rgba(124, 245, 182, 1), rgba(67, 214, 170, 1))",
+  },
+};
+
+type Mode = "signin" | "signup";
+
 export function LoginForm() {
+  const router = useRouter();
   const sp = useSearchParams();
   const callbackUrl = useMemo(() => {
     const c = sp.get("callbackUrl")?.trim();
     return c && c.startsWith("/") ? c : "/dashboard";
   }, [sp]);
 
+  const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
   const [loading, setLoading] = useState<string | null>(null);
+
+  function resetStatus() {
+    setError(null);
+    setMessage(null);
+    setFieldErrors({});
+  }
+
+  async function handleSignIn(e: React.FormEvent) {
+    e.preventDefault();
+    resetStatus();
+    setLoading("credentials");
+    const r = await signIn("credentials", {
+      email,
+      password,
+      redirect: false,
+    });
+    setLoading(null);
+    if (!r) {
+      setError("Unexpected error. Please try again.");
+      return;
+    }
+    if (r.error) {
+      setError("Invalid email or password.");
+      return;
+    }
+    router.push(callbackUrl);
+    router.refresh();
+  }
+
+  async function handleSignUp(e: React.FormEvent) {
+    e.preventDefault();
+    resetStatus();
+    setLoading("signup");
+    const res = await signUpWithPassword({ name, email, password });
+    if (!res.ok) {
+      setError(res.error);
+      setFieldErrors(res.fieldErrors ?? {});
+      setLoading(null);
+      return;
+    }
+    const r = await signIn("credentials", {
+      email,
+      password,
+      redirect: false,
+    });
+    setLoading(null);
+    if (!r || r.error) {
+      setMessage("Account created. Please sign in.");
+      setMode("signin");
+      setPassword("");
+      return;
+    }
+    router.push(callbackUrl);
+    router.refresh();
+  }
+
+  const isSignUp = mode === "signup";
 
   return (
     <Stack spacing={2}>
+      <Tabs
+        value={mode}
+        onChange={(_, v: Mode) => {
+          setMode(v);
+          resetStatus();
+        }}
+        variant="fullWidth"
+        sx={{
+          minHeight: 40,
+          "& .MuiTabs-indicator": {
+            backgroundColor: "rgba(124, 245, 182, 0.8)",
+            height: 2,
+          },
+          "& .MuiTab-root": {
+            minHeight: 40,
+            textTransform: "none",
+            color: "rgba(255,255,255,0.6)",
+            fontWeight: 500,
+            "&.Mui-selected": { color: "rgba(255,255,255,0.95)" },
+          },
+        }}
+      >
+        <Tab label="Sign in" value="signin" />
+        <Tab label="Create account" value="signup" />
+      </Tabs>
+
       {error ? <Alert severity="error">{error}</Alert> : null}
       {message ? <Alert severity="success">{message}</Alert> : null}
+
       {showGoogle ? (
         <Button
           variant="contained"
@@ -81,7 +208,7 @@ export function LoginForm() {
             },
           }}
           onClick={() => {
-            setError(null);
+            resetStatus();
             setLoading("google");
             void signIn("google", { callbackUrl });
           }}
@@ -96,6 +223,7 @@ export function LoginForm() {
           to enable Google sign-in.
         </Alert>
       )}
+
       <Divider
         sx={{
           color: "rgba(255,255,255,0.55)",
@@ -105,28 +233,25 @@ export function LoginForm() {
       >
         or
       </Divider>
+
       <Stack
         component="form"
         spacing={2}
-        onSubmit={(e) => {
-          e.preventDefault();
-          setError(null);
-          setMessage(null);
-          setLoading("email");
-          void signIn("email", {
-            email,
-            callbackUrl,
-            redirect: false,
-          }).then((r) => {
-            setLoading(null);
-            if (r?.error) setError(r.error);
-            else
-              setMessage(
-                "Check the server console for your magic link (email stub).",
-              );
-          });
-        }}
+        onSubmit={isSignUp ? handleSignUp : handleSignIn}
       >
+        {isSignUp ? (
+          <TextField
+            label="Name"
+            required
+            fullWidth
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            autoComplete="name"
+            error={!!fieldErrors.name}
+            helperText={fieldErrors.name?.[0]}
+            sx={inputSx}
+          />
+        ) : null}
         <TextField
           label="Email"
           type="email"
@@ -135,22 +260,24 @@ export function LoginForm() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           autoComplete="email"
-          sx={{
-            "& .MuiInputLabel-root": { color: "rgba(255,255,255,0.65)" },
-            "& .MuiInputLabel-root.Mui-focused": {
-              color: "rgba(255,255,255,0.85)",
-            },
-            "& .MuiOutlinedInput-root": {
-              borderRadius: 2,
-              backgroundColor: "rgba(255,255,255,0.04)",
-              color: "rgba(255,255,255,0.92)",
-              "& fieldset": { borderColor: "rgba(255,255,255,0.16)" },
-              "&:hover fieldset": { borderColor: "rgba(255,255,255,0.26)" },
-              "&.Mui-focused fieldset": {
-                borderColor: "rgba(124, 245, 182, 0.65)",
-              },
-            },
-          }}
+          error={!!fieldErrors.email}
+          helperText={fieldErrors.email?.[0]}
+          sx={inputSx}
+        />
+        <TextField
+          label="Password"
+          type="password"
+          required
+          fullWidth
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          autoComplete={isSignUp ? "new-password" : "current-password"}
+          error={!!fieldErrors.password}
+          helperText={
+            fieldErrors.password?.[0] ??
+            (isSignUp ? "At least 8 characters." : undefined)
+          }
+          sx={inputSx}
         />
         <Button
           type="submit"
@@ -158,22 +285,38 @@ export function LoginForm() {
           size="large"
           disabled={!!loading}
           fullWidth
-          sx={{
-            textTransform: "none",
-            borderRadius: 999,
-            py: 1.1,
-            background:
-              "linear-gradient(90deg, rgba(124, 245, 182, 0.92), rgba(67, 214, 170, 0.92))",
-            boxShadow: "0 10px 30px rgba(124, 245, 182, 0.18)",
-            "&:hover": {
-              background:
-                "linear-gradient(90deg, rgba(124, 245, 182, 1), rgba(67, 214, 170, 1))",
-            },
-          }}
+          sx={primaryButtonSx}
         >
-          Email magic link
+          {isSignUp
+            ? loading === "signup"
+              ? "Creating account…"
+              : "Create account"
+            : loading === "credentials"
+              ? "Signing in…"
+              : "Sign in"}
         </Button>
       </Stack>
+
+      <Box sx={{ textAlign: "center" }}>
+        <Link
+          component="button"
+          type="button"
+          underline="hover"
+          onClick={() => {
+            setMode(isSignUp ? "signin" : "signup");
+            resetStatus();
+          }}
+          sx={{
+            color: "rgba(255,255,255,0.7)",
+            fontSize: "0.875rem",
+            "&:hover": { color: "rgba(255,255,255,0.95)" },
+          }}
+        >
+          {isSignUp
+            ? "Already have an account? Sign in"
+            : "Don't have an account? Create one"}
+        </Link>
+      </Box>
     </Stack>
   );
 }

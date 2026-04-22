@@ -52,6 +52,8 @@ model User {
   email         String?   @unique
   emailVerified DateTime?
   image         String?
+  /// Bcrypt hash for email + password credential logins. Null for OAuth-only users.
+  passwordHash  String?
   createdAt     DateTime  @default(now())
 
   accounts          Account[]

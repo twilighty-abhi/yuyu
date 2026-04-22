@@ -115,7 +115,7 @@ export default async function HomePage() {
                 >
                   <ShieldOutlinedIcon sx={{ fontSize: 18 }} />
                   <Typography variant="body2" color="inherit">
-                    Sign in with Google or email magic link
+                    Sign in with Google or email and password
                   </Typography>
                 </Box>
                 <Box

@@ -7,7 +7,7 @@ Yuyu is a Next.js + PostgreSQL event platform with a clean Material Design 3 UI 
 - Next.js (App Router, TypeScript)
 - PostgreSQL
 - Prisma ORM
-- Auth.js / NextAuth v5 (Email magic link + Google OAuth)
+- Auth.js / NextAuth v5 (email + password credentials and Google OAuth)
 - Material Design 3 (MUI v9 + custom theme tokens)
 - Zod validation
 
@@ -109,12 +109,15 @@ Open `http://localhost:3000`.
 
 ## Authentication
 
-### Email magic link (development stub)
+### Email and password
 
-Email login is enabled, but sending is a **stub** in `lib/auth.ts`:
+Users can create an account with name, email, and password, or sign in with an
+existing email/password pair. Passwords are hashed with `bcryptjs` (cost 12) and
+stored on `User.passwordHash`. Sessions use JWTs (required by Auth.js Credentials
+provider); OAuth accounts are still persisted via the Prisma adapter.
 
-- On login, the magic link is printed to the server console.
-- No SMTP provider is required to develop locally.
+Minimum password length: 8 characters. Update the schema in
+`app/actions/auth.ts` if you want stricter rules.
 
 ### Google OAuth
 

@@ -45,8 +45,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Authentication: replaced email magic-link provider with an **email + password** Credentials provider (bcryptjs-hashed `User.passwordHash`) alongside existing Google OAuth. Sessions now use JWT strategy (required by Credentials). Login UI offers Sign in / Create account tabs.
 - RSVP capacity handling: full events now place new RSVPs on `WAITLISTED` (instead of hard-blocking)
 - Database schema expanded to support invites, RSVP lifecycle/check-in, privacy, and recurring series/instances
+
+### Removed
+
+- `nodemailer` dependency and the magic-link email stub in `lib/auth.ts`
 
 ## [0.1.0] - 2026-04-20
 

@@ -3,12 +3,18 @@
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { createOrganisationSchema } from "@/lib/validators";
+import { createOrganisationSchema, updateOrganisationSchema } from "@/lib/validators";
 import { flattenZodErrors } from "./utils";
 
 export type ActionResult<T = void> =
   | { ok: true; data?: T }
-  | { ok: false; error: string; fieldErrors?: Record<string, string[]> };
+  | {
+      ok: false;
+      error: string;
+      fieldErrors?: Record<string, string[]>;
+      /** e.g. check-in requires staff override for this RSVP status */
+      needsForce?: boolean;
+    };
 
 export async function createOrganisation(
   input: unknown,
@@ -67,5 +73,57 @@ export async function createOrganisation(
     }
     console.error(e);
     return { ok: false, error: "Could not create organisation." };
+  }
+}
+
+export async function updateOrganisation(input: unknown): Promise<ActionResult> {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return { ok: false, error: "You must be signed in." };
+  }
+
+  const parsed = updateOrganisationSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: "Invalid input.",
+      fieldErrors: flattenZodErrors(parsed.error),
+    };
+  }
+
+  const { organisationSlug, name, description, logoUrl } = parsed.data;
+  const org = await prisma.organisation.findUnique({
+    where: { slug: organisationSlug },
+    select: { id: true, slug: true },
+  });
+  if (!org) return { ok: false, error: "Organisation not found." };
+
+  const membership = await prisma.membership.findUnique({
+    where: {
+      userId_organisationId: { userId: session.user.id, organisationId: org.id },
+    },
+    select: { role: true },
+  });
+
+  if (!membership || (membership.role !== "OWNER" && membership.role !== "ADMIN")) {
+    return { ok: false, error: "Only organisation admins can edit settings." };
+  }
+
+  try {
+    await prisma.organisation.update({
+      where: { id: org.id },
+      data: {
+        name,
+        description: description ?? "",
+        logoUrl: logoUrl || null,
+      },
+    });
+    revalidatePath(`/dashboard/${org.slug}`);
+    revalidatePath(`/dashboard/${org.slug}/members`);
+    revalidatePath(`/${org.slug}`);
+    return { ok: true };
+  } catch (e: unknown) {
+    console.error(e);
+    return { ok: false, error: "Could not update organisation." };
   }
 }

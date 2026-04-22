@@ -1,0 +1,632 @@
+"use client";
+
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import {
+  EventPrivacyType,
+  EventStatus,
+  type Event,
+} from "@prisma/client";
+import Button from "@mui/material/Button";
+import TextField from "@mui/material/TextField";
+import MenuItem from "@mui/material/MenuItem";
+import Switch from "@mui/material/Switch";
+import Alert from "@mui/material/Alert";
+import Stack from "@mui/material/Stack";
+import Paper from "@mui/material/Paper";
+import Box from "@mui/material/Box";
+import Divider from "@mui/material/Divider";
+import Grid from "@mui/material/Grid";
+import Chip from "@mui/material/Chip";
+import Dialog from "@mui/material/Dialog";
+import DialogTitle from "@mui/material/DialogTitle";
+import DialogContent from "@mui/material/DialogContent";
+import DialogActions from "@mui/material/DialogActions";
+import Typography from "@mui/material/Typography";
+import Link from "next/link";
+import OpenInNewIcon from "@mui/icons-material/OpenInNew";
+import ImageOutlinedIcon from "@mui/icons-material/ImageOutlined";
+import AccessTimeOutlinedIcon from "@mui/icons-material/AccessTimeOutlined";
+import PlaceOutlinedIcon from "@mui/icons-material/PlaceOutlined";
+import PublicOutlinedIcon from "@mui/icons-material/PublicOutlined";
+import { updateEvent, deleteEvent } from "@/app/actions/event";
+import { useToast } from "@/components/feedback/ToastProvider";
+import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
+import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
+import { DateTimePicker } from "@mui/x-date-pickers/DateTimePicker";
+
+const timezones = [
+  "UTC",
+  "America/New_York",
+  "America/Los_Angeles",
+  "Europe/London",
+  "Europe/Paris",
+  "Asia/Kolkata",
+  "Asia/Tokyo",
+  "Australia/Sydney",
+];
+
+function toDatetimeLocalValue(d: Date) {
+  const t = new Date(d);
+  const off = t.getTimezoneOffset() * 60000;
+  return new Date(t.getTime() - off).toISOString().slice(0, 16);
+}
+
+export function EditEventForm(props: {
+  organisationSlug: string;
+  event: Event;
+}) {
+  const { organisationSlug, event } = props;
+  const router = useRouter();
+  const { showToast } = useToast();
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [coverPreviewUrl, setCoverPreviewUrl] = useState(event.coverImageUrl ?? "");
+  const [isOnlinePreview, setIsOnlinePreview] = useState(event.isOnline);
+  const [mapLinkPreviewUrl, setMapLinkPreviewUrl] = useState(
+    (event as Event & { mapLinkUrl?: string | null }).mapLinkUrl ?? "",
+  );
+  const [tagsPreview, setTagsPreview] = useState(
+    Array.isArray((event as Event & { tags?: string[] }).tags)
+      ? ((event as Event & { tags?: string[] }).tags ?? [])
+      : [],
+  );
+  const [showRegistrationCountPreview, setShowRegistrationCountPreview] = useState(
+    (event as Event & { showRegistrationCount?: boolean }).showRegistrationCount ??
+      true,
+  );
+  const [start, setStart] = useState<Date | null>(
+    event.startDateTime instanceof Date ? event.startDateTime : new Date(event.startDateTime),
+  );
+  const [end, setEnd] = useState<Date | null>(
+    event.endDateTime instanceof Date ? event.endDateTime : new Date(event.endDateTime),
+  );
+
+  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError(null);
+    const form = e.currentTarget;
+    const fd = new FormData(form);
+    const capacityRaw = String(fd.get("capacity") ?? "").trim();
+    const status = String(fd.get("status") ?? EventStatus.DRAFT) as EventStatus;
+    const privacyType = String(
+      fd.get("privacyType") ?? EventPrivacyType.PUBLIC,
+    ) as EventPrivacyType;
+
+    startTransition(async () => {
+      const res = await updateEvent({
+        organisationSlug,
+        eventId: event.id,
+        title: String(fd.get("title") ?? ""),
+        description: String(fd.get("description") ?? ""),
+        tags: String(fd.get("tags") ?? ""),
+        coverImageUrl: String(fd.get("coverImageUrl") ?? ""),
+        showRegistrationCount: fd.get("showRegistrationCount") === "on",
+        startDateTime: String(fd.get("startDateTime") ?? ""),
+        endDateTime: String(fd.get("endDateTime") ?? ""),
+        timezone: String(fd.get("timezone") ?? "UTC"),
+        location: String(fd.get("location") ?? ""),
+        mapLinkUrl: String(fd.get("mapLinkUrl") ?? ""),
+        isOnline: fd.get("isOnline") === "on",
+        capacity: capacityRaw,
+        status,
+        privacyType,
+      });
+      if (!res.ok) {
+        setError(res.error);
+        showToast(res.error, "error");
+        return;
+      }
+      showToast("Event saved", "success");
+      router.refresh();
+    });
+  }
+
+  function onDelete() {
+    startTransition(async () => {
+      const res = await deleteEvent({
+        organisationSlug,
+        eventId: event.id,
+      });
+      if (!res.ok) {
+        showToast(res.error, "error");
+        return;
+      }
+      showToast("Event deleted", "success");
+      router.push(`/dashboard/${organisationSlug}`);
+    });
+  }
+
+  return (
+    <>
+      <Paper
+        variant="outlined"
+        sx={{
+          p: 2,
+          mb: 2,
+          display: "flex",
+          alignItems: { xs: "stretch", sm: "center" },
+          justifyContent: "space-between",
+          flexDirection: { xs: "column", sm: "row" },
+          gap: 1.5,
+        }}
+      >
+        <Box sx={{ minWidth: 0 }}>
+          <Typography variant="caption" color="text.secondary">
+            Public URL
+          </Typography>
+          <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
+            <Link href={`/${organisationSlug}/${event.slug}`}>
+              /{organisationSlug}/{event.slug}
+            </Link>
+          </Typography>
+        </Box>
+        <Button
+          component={Link}
+          href={`/${organisationSlug}/${event.slug}`}
+          variant="outlined"
+          size="small"
+          endIcon={<OpenInNewIcon />}
+          sx={{ flexShrink: 0, alignSelf: { xs: "flex-start", sm: "center" } }}
+        >
+          Open event page
+        </Button>
+      </Paper>
+      <form onSubmit={onSubmit}>
+        <Stack spacing={2.5}>
+          {error ? <Alert severity="error">{error}</Alert> : null}
+
+          <Paper variant="outlined" sx={{ p: 2.5 }}>
+            <Stack spacing={2}>
+              <Stack
+                direction="row"
+                spacing={1}
+                sx={{ alignItems: "center", justifyContent: "space-between" }}
+              >
+                <Box>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                    Basics
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                    Update the public-facing title and description.
+                  </Typography>
+                </Box>
+                <Chip
+                  size="small"
+                  variant="outlined"
+                  color={event.status === EventStatus.DRAFT ? "default" : "success"}
+                  label={event.status === EventStatus.DRAFT ? "Draft" : "Published"}
+                />
+              </Stack>
+              <Divider />
+              <Grid container spacing={2}>
+                <Grid size={{ xs: 12 }}>
+                  <TextField
+                    name="title"
+                    label="Title"
+                    required
+                    fullWidth
+                    defaultValue={event.title}
+                  />
+                </Grid>
+                <Grid size={{ xs: 12 }}>
+                  <TextField
+                    name="description"
+                    label="Description"
+                    fullWidth
+                    multiline
+                    minRows={4}
+                    defaultValue={event.description}
+                    helperText="A short summary shown on the event page."
+                  />
+                </Grid>
+                <Grid size={{ xs: 12 }}>
+                  <TextField
+                    name="tags"
+                    label="Tags"
+                    fullWidth
+                    defaultValue={tagsPreview.join(", ")}
+                    onChange={(e) => {
+                      const parts = e.currentTarget.value
+                        .split(/[,\n]/g)
+                        .map((s) => s.trim().toLowerCase())
+                        .map((s) => s.replace(/\s+/g, " "))
+                        .filter(Boolean)
+                        .slice(0, 12);
+                      setTagsPreview(Array.from(new Set(parts)));
+                    }}
+                    helperText="Comma-separated (eg: workshop, meetup, ai). Used in global search."
+                  />
+                  {tagsPreview.length > 0 ? (
+                    <Stack
+                      direction="row"
+                      useFlexGap
+                      sx={{
+                        flexWrap: "wrap",
+                        columnGap: 0.75,
+                        rowGap: 0.75,
+                        pt: 1,
+                      }}
+                    >
+                      {tagsPreview.slice(0, 12).map((t) => (
+                        <Chip key={t} size="small" label={t} variant="outlined" />
+                      ))}
+                    </Stack>
+                  ) : null}
+                </Grid>
+              </Grid>
+            </Stack>
+          </Paper>
+
+          <Paper variant="outlined" sx={{ p: 2.5 }}>
+            <Stack spacing={2}>
+              <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                <ImageOutlinedIcon sx={{ color: "text.secondary" }} />
+                <Box>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                    Cover image
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                    Add a visual to make your event page stand out.
+                  </Typography>
+                </Box>
+              </Stack>
+              <Divider />
+              <Grid container spacing={2} sx={{ alignItems: "stretch" }}>
+                <Grid size={{ xs: 12, md: 7 }}>
+                  <TextField
+                    name="coverImageUrl"
+                    label="Cover image URL"
+                    fullWidth
+                    type="url"
+                    defaultValue={event.coverImageUrl ?? ""}
+                    onChange={(e) => setCoverPreviewUrl(e.target.value)}
+                    helperText="Use a direct image URL (jpg/png/webp)."
+                  />
+                </Grid>
+                <Grid size={{ xs: 12, md: 5 }}>
+                  <Box
+                    sx={{
+                      border: 1,
+                      borderColor: "divider",
+                      borderRadius: 2,
+                      overflow: "hidden",
+                      height: { xs: 180, md: "100%" },
+                      minHeight: { md: 140 },
+                      background:
+                        "linear-gradient(145deg, rgba(124,245,182,0.08), rgba(185,174,255,0.08))",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    {coverPreviewUrl.trim() ? (
+                      <Box
+                        component="img"
+                        alt="Cover image preview"
+                        src={coverPreviewUrl}
+                        sx={{
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "cover",
+                        }}
+                      />
+                    ) : (
+                      <Typography variant="body2" color="text.secondary" sx={{ px: 2 }}>
+                        Preview will show here.
+                      </Typography>
+                    )}
+                  </Box>
+                </Grid>
+              </Grid>
+            </Stack>
+          </Paper>
+
+          <Paper variant="outlined" sx={{ p: 2.5 }}>
+            <Stack spacing={2}>
+              <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                <AccessTimeOutlinedIcon sx={{ color: "text.secondary" }} />
+                <Box>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                    Schedule
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                    Set the date, time, and timezone for guests.
+                  </Typography>
+                </Box>
+              </Stack>
+              <Divider />
+              <LocalizationProvider dateAdapter={AdapterDateFns}>
+                <Grid container spacing={2}>
+                  <Grid size={{ xs: 12, md: 4 }}>
+                    <DateTimePicker
+                      label="Start"
+                      value={start}
+                      onChange={(v) => setStart(v)}
+                      slotProps={{
+                        textField: {
+                          required: true,
+                          fullWidth: true,
+                        },
+                      }}
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 4 }}>
+                    <DateTimePicker
+                      label="End"
+                      value={end}
+                      onChange={(v) => setEnd(v)}
+                      minDateTime={start ?? undefined}
+                      slotProps={{
+                        textField: {
+                          required: true,
+                          fullWidth: true,
+                        },
+                      }}
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 4 }}>
+                    <TextField
+                      name="timezone"
+                      label="Timezone"
+                      select
+                      required
+                      fullWidth
+                      defaultValue={event.timezone}
+                    >
+                      {timezones.map((tz) => (
+                        <MenuItem key={tz} value={tz}>
+                          {tz}
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                  </Grid>
+                </Grid>
+              </LocalizationProvider>
+              <input
+                type="hidden"
+                name="startDateTime"
+                value={start ? toDatetimeLocalValue(start) : ""}
+              />
+              <input
+                type="hidden"
+                name="endDateTime"
+                value={end ? toDatetimeLocalValue(end) : ""}
+              />
+            </Stack>
+          </Paper>
+
+          <Paper variant="outlined" sx={{ p: 2.5 }}>
+            <Stack spacing={2}>
+              <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                <PlaceOutlinedIcon sx={{ color: "text.secondary" }} />
+                <Box>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                    Location
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                    Choose whether this is online and what guests should see.
+                  </Typography>
+                </Box>
+              </Stack>
+              <Divider />
+              <Grid container spacing={2} sx={{ alignItems: "center" }}>
+                <Grid size={{ xs: 12, md: 8 }}>
+                  <TextField
+                    name="location"
+                    label="Location"
+                    fullWidth
+                    defaultValue={event.location}
+                    disabled={isOnlinePreview}
+                    helperText={
+                      isOnlinePreview
+                        ? "Turn off Online event to set a physical location."
+                        : "Eg: Samagatha Foundation, Bengaluru"
+                    }
+                  />
+                </Grid>
+                <Grid size={{ xs: 12, md: 4 }}>
+                  <Paper
+                    variant="outlined"
+                    sx={{
+                      p: 1.5,
+                      height: "100%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 1,
+                    }}
+                  >
+                    <Box>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        Online event
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Guests will see “Online event”.
+                      </Typography>
+                    </Box>
+                    <Switch
+                      name="isOnline"
+                      checked={isOnlinePreview}
+                      onChange={(_, checked) => setIsOnlinePreview(checked)}
+                      slotProps={{ input: { name: "isOnline" } }}
+                    />
+                  </Paper>
+                </Grid>
+                <Grid size={{ xs: 12 }}>
+                  <TextField
+                    name="mapLinkUrl"
+                    label="Map link (optional)"
+                    fullWidth
+                    type="url"
+                    defaultValue={
+                      (event as Event & { mapLinkUrl?: string | null }).mapLinkUrl ?? ""
+                    }
+                    disabled={isOnlinePreview}
+                    onChange={(e) => setMapLinkPreviewUrl(e.target.value)}
+                    helperText={
+                      isOnlinePreview
+                        ? "Available only for physical events."
+                        : "Paste a Google Maps link so guests can open directions."
+                    }
+                  />
+                  {!isOnlinePreview && mapLinkPreviewUrl.trim() ? (
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ display: "block", mt: 0.75 }}
+                    >
+                      Tip: Use a share link so it opens cleanly on mobile.
+                    </Typography>
+                  ) : null}
+                </Grid>
+              </Grid>
+            </Stack>
+          </Paper>
+
+          <Paper variant="outlined" sx={{ p: 2.5 }}>
+            <Stack spacing={2}>
+              <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                <PublicOutlinedIcon sx={{ color: "text.secondary" }} />
+                <Box>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                    Publishing
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                    Control visibility, audience, and RSVP limits.
+                  </Typography>
+                </Box>
+              </Stack>
+              <Divider />
+              <Grid container spacing={2}>
+                <Grid size={{ xs: 12, md: 4 }}>
+                  <TextField
+                    name="status"
+                    label="Status"
+                    select
+                    fullWidth
+                    defaultValue={
+                      event.status === EventStatus.HIDDEN
+                        ? EventStatus.PUBLISHED
+                        : event.status
+                    }
+                    helperText="Drafts are not visible to guests."
+                  >
+                    <MenuItem value={EventStatus.DRAFT}>Draft</MenuItem>
+                    <MenuItem value={EventStatus.PUBLISHED}>Published</MenuItem>
+                  </TextField>
+                </Grid>
+                <Grid size={{ xs: 12, md: 4 }}>
+                  <TextField
+                    name="privacyType"
+                    label="Audience"
+                    select
+                    fullWidth
+                    defaultValue={event.privacyType}
+                    helperText="Applies when the event is published."
+                  >
+                    <MenuItem value={EventPrivacyType.PUBLIC}>
+                      Public (discoverable)
+                    </MenuItem>
+                    <MenuItem value={EventPrivacyType.HIDDEN_LINK}>
+                      Hidden link (not listed)
+                    </MenuItem>
+                    <MenuItem value={EventPrivacyType.APPROVAL_REQUIRED}>
+                      Approval required
+                    </MenuItem>
+                    <MenuItem value={EventPrivacyType.INVITE_ONLY}>Invite only</MenuItem>
+                  </TextField>
+                </Grid>
+                <Grid size={{ xs: 12, md: 4 }}>
+                  <TextField
+                    name="capacity"
+                    label="Capacity (optional)"
+                    type="number"
+                    fullWidth
+                    slotProps={{ htmlInput: { min: 1 } }}
+                    defaultValue={event.capacity ?? ""}
+                    helperText="Leave empty for unlimited RSVPs."
+                  />
+                </Grid>
+                <Grid size={{ xs: 12 }}>
+                  <Paper
+                    variant="outlined"
+                    sx={{
+                      p: 1.5,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 1,
+                    }}
+                  >
+                    <Box>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        Show registration count on public page
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Displays confirmed and total responses to guests.
+                      </Typography>
+                    </Box>
+                    <Switch
+                      name="showRegistrationCount"
+                      checked={showRegistrationCountPreview}
+                      onChange={(_, checked) =>
+                        setShowRegistrationCountPreview(checked)
+                      }
+                      slotProps={{ input: { name: "showRegistrationCount" } }}
+                    />
+                  </Paper>
+                </Grid>
+              </Grid>
+              <Stack
+                direction={{ xs: "column", sm: "row" }}
+                spacing={1.5}
+                useFlexGap
+                sx={{ justifyContent: "space-between", pt: 0.5 }}
+              >
+                <Button type="submit" variant="contained" disabled={pending}>
+                  Save changes
+                </Button>
+                <Button
+                  type="button"
+                  color="error"
+                  variant="outlined"
+                  disabled={pending}
+                  onClick={() => setDeleteOpen(true)}
+                >
+                  Delete event
+                </Button>
+              </Stack>
+            </Stack>
+          </Paper>
+        </Stack>
+      </form>
+
+      <Dialog open={deleteOpen} onClose={() => !pending && setDeleteOpen(false)}>
+        <DialogTitle>Delete this event?</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary">
+            This removes the event and all RSVPs. This cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setDeleteOpen(false)} disabled={pending}>
+            Cancel
+          </Button>
+          <Button
+            color="error"
+            variant="contained"
+            disabled={pending}
+            onClick={() => {
+              setDeleteOpen(false);
+              onDelete();
+            }}
+          >
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </>
+  );
+}

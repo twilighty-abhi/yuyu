@@ -16,6 +16,34 @@ enum MembershipRole {
 enum EventStatus {
   DRAFT
   PUBLISHED
+  HIDDEN
+}
+
+enum EventPrivacyType {
+  PUBLIC
+  HIDDEN_LINK
+  APPROVAL_REQUIRED
+  INVITE_ONLY
+}
+
+enum RsvpStatus {
+  CONFIRMED
+  WAITLISTED
+  PENDING_APPROVAL
+  REJECTED
+}
+
+enum RegistrationFieldType {
+  TEXT
+  TEXTAREA
+  EMAIL
+  PHONE
+  SELECT
+  MULTI_SELECT
+  RADIO
+  CHECKBOX
+  NUMBER
+  DATE
 }
 
 model User {
@@ -26,10 +54,12 @@ model User {
   image         String?
   createdAt     DateTime  @default(now())
 
-  accounts    Account[]
-  sessions    Session[]
-  memberships Membership[]
-  rsvps       RSVP[]
+  accounts          Account[]
+  sessions          Session[]
+  memberships       Membership[]
+  rsvps             RSVP[]
+  orgInvitesCreated OrganisationInvite[] @relation("OrgInviteCreatedBy")
+  orgInvitesUsed    OrganisationInvite[] @relation("OrgInviteUsedBy")
 }
 
 model Account {
@@ -76,7 +106,30 @@ model Organisation {
   createdAt   DateTime @default(now())
 
   memberships Membership[]
+  invites     OrganisationInvite[]
   events      Event[]
+  eventSeries EventSeries[]
+  assets      Asset[]
+}
+
+model OrganisationInvite {
+  id              String         @id @default(cuid())
+  organisationId  String
+  token           String         @unique
+  role            MembershipRole @default(MEMBER)
+  createdByUserId String
+  createdAt       DateTime       @default(now())
+  expiresAt       DateTime?
+  usedAt          DateTime?
+  usedByUserId    String?
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation("OrgInviteCreatedBy", fields: [createdByUserId], references: [id], onDelete: Cascade)
+  usedBy       User?        @relation("OrgInviteUsedBy", fields: [usedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organisationId])
+  @@index([organisationId, createdAt])
+  @@index([usedAt])
 }
 
 model Membership {
@@ -94,40 +147,194 @@ model Membership {
 }
 
 model Event {
-  id             String      @id @default(cuid())
-  organisationId String
-  title          String
-  slug           String
-  description    String      @default("")
-  coverImageUrl  String?
-  startDateTime  DateTime
-  endDateTime    DateTime
-  timezone       String
-  location       String      @default("")
-  isOnline       Boolean     @default(false)
-  capacity       Int?
-  status         EventStatus @default(DRAFT)
-  createdAt      DateTime    @default(now())
+  id                    String           @id @default(cuid())
+  organisationId        String
+  title                 String
+  slug                  String
+  description           String           @default("")
+  /// Freeform labels used for discovery/search (stored lowercase).
+  tags                  String[]         @default([])
+  /// Whether public page shows registration counts (confirmed/total).
+  showRegistrationCount Boolean          @default(true)
+  coverImageUrl         String?
+  startDateTime         DateTime
+  endDateTime           DateTime
+  timezone              String
+  location              String           @default("")
+  mapLinkUrl            String?
+  isOnline              Boolean          @default(false)
+  capacity              Int?
+  status                EventStatus      @default(DRAFT)
+  privacyType           EventPrivacyType @default(PUBLIC)
+  createdAt             DateTime         @default(now())
 
-  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  rsvps        RSVP[]
+  organisation     Organisation           @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  rsvps            RSVP[]
+  invites          EventInvite[]
+  registrationForm EventRegistrationForm?
 
   @@unique([organisationId, slug])
+  @@index([organisationId])
   @@index([organisationId, status])
+  @@index([organisationId, status, privacyType])
+}
+
+model EventInvite {
+  id        String   @id @default(cuid())
+  eventId   String
+  email     String
+  createdAt DateTime @default(now())
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, email])
+  @@index([eventId])
+}
+
+model EventSeries {
+  id                 String           @id @default(cuid())
+  organisationId     String
+  title              String
+  slug               String
+  description        String           @default("")
+  recurrenceRule     String
+  /// Duration applied to each materialized instance (ms)
+  instanceDurationMs Int              @default(3600000)
+  timezone           String
+  privacyType        EventPrivacyType @default(PUBLIC)
+  capacity           Int?
+  status             EventStatus      @default(DRAFT)
+  createdAt          DateTime         @default(now())
+
+  organisation Organisation    @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  instances    EventInstance[]
+  invites      SeriesInvite[]
+
+  @@unique([organisationId, slug])
+  @@index([organisationId])
+}
+
+model SeriesInvite {
+  id            String   @id @default(cuid())
+  eventSeriesId String
+  email         String
+  createdAt     DateTime @default(now())
+
+  series EventSeries @relation(fields: [eventSeriesId], references: [id], onDelete: Cascade)
+
+  @@unique([eventSeriesId, email])
+  @@index([eventSeriesId])
+}
+
+model EventInstance {
+  id            String   @id @default(cuid())
+  eventSeriesId String
+  startDateTime DateTime
+  endDateTime   DateTime
+  createdAt     DateTime @default(now())
+
+  series EventSeries @relation(fields: [eventSeriesId], references: [id], onDelete: Cascade)
+  rsvps  RSVP[]
+
+  @@index([eventSeriesId, startDateTime])
 }
 
 model RSVP {
-  id          String   @id @default(cuid())
-  eventId     String
-  userId      String?
-  guestEmail  String?
-  /// Stable dedupe key: `user:${userId}` or `guest:${normalizedEmail}` (schema supports partial uniques via app-enforced key)
-  attendeeKey String
-  createdAt   DateTime @default(now())
+  id              String     @id @default(cuid())
+  eventId         String?
+  eventInstanceId String?
+  userId          String?
+  guestEmail      String?
+  guestName       String?
+  /// Stable dedupe key: `user:${userId}` or `guest:${normalizedEmail}`
+  attendeeKey     String
+  status          RsvpStatus @default(CONFIRMED)
+  /// Opaque per-RSVP token for QR / manual check-in (never include PII).
+  checkInToken    String     @unique @default(cuid())
+  checkedInAt     DateTime?
+  createdAt       DateTime   @default(now())
 
-  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  user  User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  event         Event?         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventInstance EventInstance? @relation(fields: [eventInstanceId], references: [id], onDelete: Cascade)
+  user          User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  answers       RsvpAnswer[]
 
-  @@unique([eventId, attendeeKey])
   @@index([eventId])
+  @@index([eventInstanceId])
+  @@index([eventId, attendeeKey])
+  @@index([eventInstanceId, attendeeKey])
+  @@index([checkInToken])
+}
+
+model EventRegistrationForm {
+  id        String   @id @default(cuid())
+  eventId   String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  event  Event                    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  fields EventRegistrationField[]
+
+  @@index([eventId])
+}
+
+model EventRegistrationField {
+  id        String                @id @default(cuid())
+  formId    String
+  key       String
+  label     String
+  type      RegistrationFieldType
+  required  Boolean               @default(false)
+  sortOrder Int                   @default(0)
+  /// For SELECT / MULTI_SELECT / RADIO (array of strings)
+  options   Json?
+  createdAt DateTime              @default(now())
+  updatedAt DateTime              @updatedAt
+
+  form    EventRegistrationForm @relation(fields: [formId], references: [id], onDelete: Cascade)
+  answers RsvpAnswer[]
+
+  @@unique([formId, key])
+  @@index([formId, sortOrder])
+  @@index([formId, type])
+}
+
+model RsvpAnswer {
+  id          String    @id @default(cuid())
+  rsvpId      String
+  fieldId     String
+  valueText   String?
+  valueBool   Boolean?
+  valueNumber Float?
+  valueDate   DateTime?
+  createdAt   DateTime  @default(now())
+
+  rsvp  RSVP                   @relation(fields: [rsvpId], references: [id], onDelete: Cascade)
+  field EventRegistrationField @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+
+  @@index([rsvpId])
+  @@index([fieldId])
+  @@index([rsvpId, fieldId])
+}
+
+/// Tracks stored files (S3/R2/MinIO/etc.) for per-org storage accounting.
+/// This is optional for runtime today but enables accurate “bytes stored” metrics.
+model Asset {
+  id             String   @id @default(cuid())
+  organisationId String?
+  /// Provider-specific object key (or path).
+  key            String
+  /// Public URL if you store it (optional).
+  publicUrl      String?
+  contentType    String?
+  byteSize       BigInt?
+  provider       String   @default("unknown")
+  createdAt      DateTime @default(now())
+
+  organisation Organisation? @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, key])
+  @@index([organisationId])
+  @@index([createdAt])
+  @@index([provider])
 }

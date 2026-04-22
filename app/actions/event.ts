@@ -1,6 +1,6 @@
 "use server";
 
-import { EventStatus } from "@prisma/client";
+import { EventPrivacyType, EventStatus } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
@@ -10,9 +10,22 @@ import {
   getMembership,
 } from "@/lib/permissions";
 import { slugifyTitle, withSlugSuffix } from "@/lib/slug";
-import { createEventSchema } from "@/lib/validators";
+import {
+  createEventSchema,
+  cloneEventSchema,
+  deleteEventSchema,
+  updateEventSchema,
+  updateEventSlugSchema,
+} from "@/lib/validators";
 import type { ActionResult } from "./org";
 import { flattenZodErrors } from "./utils";
+
+function revalidateEventPaths(orgSlug: string, eventSlug: string, eventId: string) {
+  revalidatePath(`/${orgSlug}`);
+  revalidatePath(`/${orgSlug}/${eventSlug}`);
+  revalidatePath(`/dashboard/${orgSlug}`);
+  revalidatePath(`/dashboard/${orgSlug}/event/${eventId}`);
+}
 
 export async function createEvent(input: unknown): Promise<ActionResult> {
   const session = await auth();
@@ -39,16 +52,19 @@ export async function createEvent(input: unknown): Promise<ActionResult> {
 
   const membership = await getMembership(session.user.id, org.id);
   if (!canCreateEvent(membership)) {
-    return { ok: false, error: "You are not a member of this organisation." };
+    return {
+      ok: false,
+      error: "Only owners and admins can create events.",
+    };
   }
 
   if (
-    data.status === EventStatus.PUBLISHED &&
+    data.status !== EventStatus.DRAFT &&
     !canPublishEvents(membership)
   ) {
     return {
       ok: false,
-      error: "Only owners and admins can publish events.",
+      error: "Only owners and admins can publish or hide events.",
     };
   }
 
@@ -70,29 +86,289 @@ export async function createEvent(input: unknown): Promise<ActionResult> {
   }
 
   try {
-    await prisma.event.create({
+    const created = await prisma.event.create({
       data: {
         organisationId: org.id,
         title: data.title,
         slug,
         description: data.description ?? "",
+        tags: data.tags ?? [],
+        showRegistrationCount: data.showRegistrationCount ?? true,
         coverImageUrl: data.coverImageUrl || null,
         startDateTime: data.startDateTime,
         endDateTime: data.endDateTime,
         timezone: data.timezone,
         location: data.location ?? "",
+        mapLinkUrl: data.mapLinkUrl || null,
         isOnline: data.isOnline ?? false,
         capacity: data.capacity ?? null,
         status: data.status ?? EventStatus.DRAFT,
+        privacyType: data.privacyType ?? EventPrivacyType.PUBLIC,
       },
     });
 
-    revalidatePath(`/${org.slug}`);
-    revalidatePath(`/${org.slug}/${slug}`);
+    revalidateEventPaths(org.slug, slug, created.id);
     return { ok: true };
   } catch (e) {
     console.error(e);
     return { ok: false, error: "Could not create event." };
+  }
+}
+
+export async function updateEvent(input: unknown): Promise<ActionResult> {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return { ok: false, error: "You must be signed in." };
+  }
+
+  const parsed = updateEventSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: "Invalid input.",
+      fieldErrors: flattenZodErrors(parsed.error),
+    };
+  }
+
+  const data = parsed.data;
+  const org = await prisma.organisation.findUnique({
+    where: { slug: data.organisationSlug },
+  });
+  if (!org) return { ok: false, error: "Organisation not found." };
+
+  const membership = await getMembership(session.user.id, org.id);
+  if (!canCreateEvent(membership)) {
+    return { ok: false, error: "You do not have permission to edit events." };
+  }
+
+  if (
+    data.status !== EventStatus.DRAFT &&
+    !canPublishEvents(membership)
+  ) {
+    return {
+      ok: false,
+      error: "Only owners and admins can change visibility.",
+    };
+  }
+
+  const event = await prisma.event.findFirst({
+    where: { id: data.eventId, organisationId: org.id },
+  });
+  if (!event) return { ok: false, error: "Event not found." };
+
+  try {
+    await prisma.event.update({
+      where: { id: event.id },
+      data: {
+        title: data.title,
+        description: data.description ?? "",
+        tags: data.tags ?? [],
+        showRegistrationCount: data.showRegistrationCount ?? true,
+        coverImageUrl: data.coverImageUrl || null,
+        startDateTime: data.startDateTime,
+        endDateTime: data.endDateTime,
+        timezone: data.timezone,
+        location: data.location ?? "",
+        mapLinkUrl: data.mapLinkUrl || null,
+        isOnline: data.isOnline ?? false,
+        capacity: data.capacity ?? null,
+        status: data.status,
+        privacyType: data.privacyType,
+      },
+    });
+
+    revalidateEventPaths(org.slug, event.slug, event.id);
+    return { ok: true };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: "Could not update event." };
+  }
+}
+
+export async function deleteEvent(input: unknown): Promise<ActionResult> {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return { ok: false, error: "You must be signed in." };
+  }
+
+  const parsed = deleteEventSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: "Invalid input.",
+      fieldErrors: flattenZodErrors(parsed.error),
+    };
+  }
+
+  const { organisationSlug, eventId } = parsed.data;
+  const org = await prisma.organisation.findUnique({
+    where: { slug: organisationSlug },
+  });
+  if (!org) return { ok: false, error: "Organisation not found." };
+
+  const membership = await getMembership(session.user.id, org.id);
+  if (!canCreateEvent(membership)) {
+    return { ok: false, error: "You do not have permission to delete events." };
+  }
+
+  const event = await prisma.event.findFirst({
+    where: { id: eventId, organisationId: org.id },
+  });
+  if (!event) return { ok: false, error: "Event not found." };
+
+  const slug = event.slug;
+  try {
+    await prisma.event.delete({ where: { id: event.id } });
+    revalidatePath(`/${org.slug}`);
+    revalidatePath(`/${org.slug}/${slug}`);
+    revalidatePath(`/dashboard/${org.slug}`);
+    return { ok: true };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: "Could not delete event." };
+  }
+}
+
+export async function updateEventSlug(
+  input: unknown,
+): Promise<ActionResult<{ slug: string }>> {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return { ok: false, error: "You must be signed in." };
+  }
+
+  const parsed = updateEventSlugSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: "Invalid input.",
+      fieldErrors: flattenZodErrors(parsed.error),
+    };
+  }
+
+  const { organisationSlug, eventId, slug } = parsed.data;
+  const org = await prisma.organisation.findUnique({
+    where: { slug: organisationSlug },
+    select: { id: true, slug: true },
+  });
+  if (!org) return { ok: false, error: "Organisation not found." };
+
+  const membership = await getMembership(session.user.id, org.id);
+  if (!canCreateEvent(membership)) {
+    return { ok: false, error: "You do not have permission to edit events." };
+  }
+
+  const event = await prisma.event.findFirst({
+    where: { id: eventId, organisationId: org.id },
+    select: { id: true, slug: true },
+  });
+  if (!event) return { ok: false, error: "Event not found." };
+
+  if (event.slug === slug) {
+    return { ok: true, data: { slug } };
+  }
+
+  const exists = await prisma.event.findUnique({
+    where: { organisationId_slug: { organisationId: org.id, slug } },
+    select: { id: true },
+  });
+  if (exists) {
+    return {
+      ok: false,
+      error: "That URL is already taken for this organisation.",
+      fieldErrors: { slug: ["Already taken"] },
+    };
+  }
+
+  try {
+    await prisma.event.update({ where: { id: event.id }, data: { slug } });
+    // Revalidate both old and new public URLs + dashboard.
+    revalidateEventPaths(org.slug, event.slug, event.id);
+    revalidateEventPaths(org.slug, slug, event.id);
+    return { ok: true, data: { slug } };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: "Could not update event URL." };
+  }
+}
+
+export async function cloneEvent(
+  input: unknown,
+): Promise<ActionResult<{ eventId: string }>> {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return { ok: false, error: "You must be signed in." };
+  }
+
+  const parsed = cloneEventSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: "Invalid input.",
+      fieldErrors: flattenZodErrors(parsed.error),
+    };
+  }
+
+  const { organisationSlug, eventId } = parsed.data;
+  const org = await prisma.organisation.findUnique({
+    where: { slug: organisationSlug },
+    select: { id: true, slug: true },
+  });
+  if (!org) return { ok: false, error: "Organisation not found." };
+
+  const membership = await getMembership(session.user.id, org.id);
+  if (!canCreateEvent(membership)) {
+    return { ok: false, error: "Only owners and admins can create events." };
+  }
+
+  const source = await prisma.event.findFirst({
+    where: { id: eventId, organisationId: org.id },
+  });
+  if (!source) return { ok: false, error: "Event not found." };
+
+  const newTitle = `${source.title} (copy)`;
+  const baseSlug = slugifyTitle(newTitle);
+  let slug = baseSlug;
+  let attempt = 0;
+  while (
+    await prisma.event.findUnique({
+      where: { organisationId_slug: { organisationId: org.id, slug } },
+      select: { id: true },
+    })
+  ) {
+    attempt += 1;
+    if (attempt > 50) {
+      return { ok: false, error: "Could not generate a unique URL slug." };
+    }
+    slug = withSlugSuffix(baseSlug, attempt);
+  }
+
+  try {
+    const created = await prisma.event.create({
+      data: {
+        organisationId: org.id,
+        title: newTitle,
+        slug,
+        description: source.description ?? "",
+        coverImageUrl: source.coverImageUrl,
+        startDateTime: source.startDateTime,
+        endDateTime: source.endDateTime,
+        timezone: source.timezone,
+        location: source.location ?? "",
+        mapLinkUrl: source.mapLinkUrl,
+        isOnline: source.isOnline,
+        capacity: source.capacity,
+        // Clone as draft to prevent accidental double-publishing.
+        status: EventStatus.DRAFT,
+        privacyType: source.privacyType,
+      },
+    });
+
+    revalidateEventPaths(org.slug, created.slug, created.id);
+    return { ok: true, data: { eventId: created.id } };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: "Could not clone event." };
   }
 }
 
@@ -130,7 +406,6 @@ export async function publishEvent(input: {
     data: { status: EventStatus.PUBLISHED },
   });
 
-  revalidatePath(`/${org.slug}`);
-  revalidatePath(`/${org.slug}/${event.slug}`);
+  revalidateEventPaths(org.slug, event.slug, event.id);
   return { ok: true };
 }

@@ -250,7 +250,12 @@ export function CreateEventDialog(props: {
                   <DateTimePicker
                     label="Start"
                     value={start}
-                    onChange={(v) => setStart(v)}
+                    onChange={(v) => {
+                      setStart(v);
+                      if (v) {
+                        setEnd(new Date(v.getTime() + 60 * 60 * 1000));
+                      }
+                    }}
                     slotProps={{
                       textField: {
                         required: true,

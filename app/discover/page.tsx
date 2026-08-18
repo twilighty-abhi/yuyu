@@ -18,7 +18,6 @@ import { InstanceCard } from "@/components/event/InstanceCard";
 
 type SearchParams = Promise<{
   sort?: string;
-  org?: string;
   from?: string;
   to?: string;
   q?: string;
@@ -31,41 +30,16 @@ export default async function DiscoverPage({
 }) {
   const sp = await searchParams;
   const sort = sp.sort === "popular" ? "popular" : "upcoming";
-  const orgFilter = sp.org?.trim() || "";
   const q = sp.q?.trim() || "";
 
   const fromDate = sp.from ? new Date(sp.from) : null;
   const toDate = sp.to ? new Date(sp.to) : null;
 
-  const orgs = await prisma.organisation.findMany({
-    where: {
-      OR: [
-        {
-          events: {
-            some: {
-              status: EventStatus.PUBLISHED,
-              privacyType: EventPrivacyType.PUBLIC,
-            },
-          },
-        },
-        {
-          eventSeries: {
-            some: {
-              status: EventStatus.PUBLISHED,
-              privacyType: EventPrivacyType.PUBLIC,
-            },
-          },
-        },
-      ],
-    },
-    orderBy: { name: "asc" },
-    select: { id: true, name: true, slug: true },
-  });
+
 
   const eventWhere = {
     status: EventStatus.PUBLISHED,
     privacyType: EventPrivacyType.PUBLIC,
-    ...(orgFilter ? { organisationId: orgFilter } : {}),
     ...(q
       ? {
           OR: [
@@ -104,7 +78,6 @@ export default async function DiscoverPage({
     series: {
       status: EventStatus.PUBLISHED,
       privacyType: EventPrivacyType.PUBLIC,
-      ...(orgFilter ? { organisationId: orgFilter } : {}),
       ...(q
         ? {
             OR: [
@@ -188,7 +161,7 @@ export default async function DiscoverPage({
       : a.sortKey - b.sortKey,
   );
 
-  const hasActiveFilters = q || orgFilter || sp.from || sp.to || sort !== "upcoming";
+  const hasActiveFilters = q || sp.from || sp.to || sort !== "upcoming";
 
   return (
     <Stack spacing={4} sx={{ py: 3 }}>
@@ -284,21 +257,6 @@ export default async function DiscoverPage({
               <MenuItem value="popular">Popularity</MenuItem>
             </TextField>
 
-            <TextField
-              select
-              name="org"
-              label="Organisation"
-              size="small"
-              defaultValue={orgFilter}
-              sx={{ minWidth: { xs: "100%", md: 220 } }}
-            >
-              <MenuItem value="">All Organisations</MenuItem>
-              {orgs.map((o) => (
-                <MenuItem key={o.id} value={o.id}>
-                  {o.name}
-                </MenuItem>
-              ))}
-            </TextField>
           </Stack>
 
           {/* Date Picker Range & Buttons */}

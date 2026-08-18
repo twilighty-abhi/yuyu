@@ -27,7 +27,7 @@ function revalidateEventPaths(orgSlug: string, eventSlug: string, eventId: strin
   revalidatePath(`/dashboard/${orgSlug}/event/${eventId}`);
 }
 
-export async function createEvent(input: unknown): Promise<ActionResult> {
+export async function createEvent(input: unknown): Promise<ActionResult<{ id: string; slug: string }>> {
   const session = await auth();
   if (!session?.user?.id) {
     return { ok: false, error: "You must be signed in." };
@@ -108,7 +108,7 @@ export async function createEvent(input: unknown): Promise<ActionResult> {
     });
 
     revalidateEventPaths(org.slug, slug, created.id);
-    return { ok: true };
+    return { ok: true, data: { id: created.id, slug: created.slug } };
   } catch (e) {
     console.error(e);
     return { ok: false, error: "Could not create event." };

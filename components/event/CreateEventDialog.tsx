@@ -102,7 +102,11 @@ export function CreateEventDialog(props: {
       setTagsPreview([]);
       setTagInput("");
       setIsOnline(false);
-      router.refresh();
+      if (res.data?.id) {
+        router.push(`/dashboard/${organisationSlug}/event/${res.data.id}`);
+      } else {
+        router.refresh();
+      }
     });
   }
 

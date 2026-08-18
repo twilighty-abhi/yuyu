@@ -15,35 +15,35 @@ function tooManyText() {
   });
 }
 
-export function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (pathname.startsWith("/api")) {
-    if (!checkRateLimit(request, "global")) {
+    if (!(await checkRateLimit(request, "global"))) {
       return tooMany();
     }
   }
 
   if (pathname.startsWith("/api/auth")) {
-    if (!checkRateLimit(request, "auth")) {
+    if (!(await checkRateLimit(request, "auth"))) {
       return tooMany();
     }
   }
 
   if (pathname === "/api/rsvp" && request.method === "POST") {
-    if (!checkRateLimit(request, "rsvp")) {
+    if (!(await checkRateLimit(request, "rsvp"))) {
       return tooMany();
     }
   }
 
   if (pathname === "/api/search" && request.method === "GET") {
-    if (!checkRateLimit(request, "search")) {
+    if (!(await checkRateLimit(request, "search"))) {
       return tooMany();
     }
   }
 
   if (pathname === "/search") {
-    if (!checkRateLimit(request, "search")) {
+    if (!(await checkRateLimit(request, "search"))) {
       return tooManyText();
     }
   }

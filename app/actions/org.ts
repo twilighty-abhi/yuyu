@@ -127,3 +127,42 @@ export async function updateOrganisation(input: unknown): Promise<ActionResult> 
     return { ok: false, error: "Could not update organisation." };
   }
 }
+
+const RESERVED_SLUGS = new Set([
+  "dashboard",
+  "discover",
+  "login",
+  "search",
+  "super-admin",
+  "api",
+  "ticket",
+  "join",
+  "new",
+  "org",
+  "event",
+  "series",
+  "members",
+  "settings",
+  "static",
+  "public",
+  "assets"
+]);
+
+export async function checkSlugAvailability(slug: string): Promise<boolean> {
+  const sanitized = slug.toLowerCase().trim();
+  
+  if (!sanitized) {
+    return false;
+  }
+  
+  if (RESERVED_SLUGS.has(sanitized)) {
+    return false;
+  }
+
+  const count = await prisma.organisation.count({
+    where: { slug: sanitized },
+  });
+
+  return count === 0;
+}
+

@@ -83,6 +83,15 @@ export function EditEventForm(props: {
     event.endDateTime instanceof Date ? event.endDateTime : new Date(event.endDateTime),
   );
 
+  const [status, setStatus] = useState<EventStatus>(
+    event.status === EventStatus.HIDDEN
+      ? EventStatus.PUBLISHED
+      : event.status
+  );
+  const [privacyType, setPrivacyType] = useState<EventPrivacyType>(
+    event.privacyType
+  );
+
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
@@ -506,11 +515,8 @@ export function EditEventForm(props: {
                     label="Status"
                     select
                     fullWidth
-                    defaultValue={
-                      event.status === EventStatus.HIDDEN
-                        ? EventStatus.PUBLISHED
-                        : event.status
-                    }
+                    value={status}
+                    onChange={(e) => setStatus(e.target.value as EventStatus)}
                     helperText="Drafts are not visible to guests."
                   >
                     <MenuItem value={EventStatus.DRAFT}>Draft</MenuItem>
@@ -523,7 +529,8 @@ export function EditEventForm(props: {
                     label="Audience"
                     select
                     fullWidth
-                    defaultValue={event.privacyType}
+                    value={privacyType}
+                    onChange={(e) => setPrivacyType(e.target.value as EventPrivacyType)}
                     helperText="Applies when the event is published."
                   >
                     <MenuItem value={EventPrivacyType.PUBLIC}>

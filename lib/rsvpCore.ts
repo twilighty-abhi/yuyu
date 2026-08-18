@@ -363,15 +363,16 @@ export async function submitRsvpCore(
       });
 
       const count = await prisma.rSVP.count({ where: { eventId: event.id } });
-      await sendRSVPConfirmation({
-        to: emailRes.email,
-        eventTitle: event.title,
-        status,
-      });
       const latest = await prisma.rSVP.findFirst({
         where: { eventId: event.id, attendeeKey },
         select: { checkInToken: true },
         orderBy: { createdAt: "desc" },
+      });
+      await sendRSVPConfirmation({
+        to: emailRes.email,
+        eventTitle: event.title,
+        status,
+        checkInToken: latest?.checkInToken ?? undefined,
       });
       return {
         ok: true,
@@ -502,15 +503,16 @@ export async function submitRsvpCore(
     });
 
     const count = await prisma.rSVP.count({ where: { eventId: event.id } });
-    await sendRSVPConfirmation({
-      to: emailNorm,
-      eventTitle: event.title,
-      status,
-    });
     const latest = await prisma.rSVP.findFirst({
       where: { eventId: event.id, attendeeKey },
       select: { checkInToken: true },
       orderBy: { createdAt: "desc" },
+    });
+    await sendRSVPConfirmation({
+      to: emailNorm,
+      eventTitle: event.title,
+      status,
+      checkInToken: latest?.checkInToken ?? undefined,
     });
     return {
       ok: true,
@@ -639,15 +641,16 @@ async function submitInstanceRsvp(params: {
     const count = await prisma.rSVP.count({
       where: { eventInstanceId: instance.id },
     });
-    await sendRSVPConfirmation({
-      to: emailRes.email,
-      eventTitle: series.title,
-      status,
-    });
     const latest = await prisma.rSVP.findFirst({
       where: { eventInstanceId: instance.id, attendeeKey },
       select: { checkInToken: true },
       orderBy: { createdAt: "desc" },
+    });
+    await sendRSVPConfirmation({
+      to: emailRes.email,
+      eventTitle: series.title,
+      status,
+      checkInToken: latest?.checkInToken ?? undefined,
     });
     return {
       ok: true,

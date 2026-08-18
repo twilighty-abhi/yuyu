@@ -1,11 +1,124 @@
 import type { RsvpStatus } from "@prisma/client";
+import nodemailer from "nodemailer";
+
+function getTransporter() {
+  const service = process.env.SMTP_SERVICE;
+  const host = process.env.SMTP_HOST;
+  const port = parseInt(process.env.SMTP_PORT || "587", 10);
+  const secure = process.env.SMTP_SECURE === "true";
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASSWORD;
+
+  if (service) {
+    return nodemailer.createTransport({
+      service,
+      auth: user && pass ? { user, pass } : undefined,
+    });
+  }
+
+  if (!host) {
+    return null;
+  }
+
+  return nodemailer.createTransport({
+    host,
+    port,
+    secure,
+    auth: user && pass ? { user, pass } : undefined,
+  });
+}
+
+function getFromAddress(): string {
+  return process.env.EMAIL_FROM || "Yuyu Events <noreply@localhost>";
+}
+
+function getBaseUrl(): string {
+  return (process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000").replace(/\/$/, "");
+}
 
 export async function sendRSVPConfirmation(params: {
   to: string;
   eventTitle: string;
   status: RsvpStatus;
+  checkInToken?: string;
 }): Promise<void> {
-  void params;
+  const transporter = getTransporter();
+  const from = getFromAddress();
+  const baseUrl = getBaseUrl();
+
+  const ticketUrl = params.checkInToken ? `${baseUrl}/ticket/${params.checkInToken}` : null;
+
+  let statusText = "Confirmed";
+  let statusMessage = "Your RSVP has been confirmed. We look forward to seeing you!";
+  if (params.status === "WAITLISTED") {
+    statusText = "Waitlisted";
+    statusMessage = "The event is currently at capacity, so you've been placed on the waitlist. We will notify you if a spot opens up!";
+  } else if (params.status === "PENDING_APPROVAL") {
+    statusText = "Pending Approval";
+    statusMessage = "Your RSVP is pending organizer approval. We will let you know once it's reviewed.";
+  }
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <title>RSVP ${statusText}: ${params.eventTitle}</title>
+      </head>
+      <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8f9fa; margin: 0; padding: 20px; color: #1c1b1f;">
+        <div style="max-width: 600px; margin: 40px auto; background-color: #ffffff; border-radius: 16px; border: 1px solid #e0e0e0; box-shadow: 0 4px 12px rgba(0,0,0,0.05); overflow: hidden;">
+          <div style="background-color: #6750A4; padding: 24px; text-align: center; color: #ffffff;">
+            <h1 style="margin: 0; font-size: 24px; font-weight: 600; letter-spacing: 0.5px;">Yuyu Events</h1>
+          </div>
+          <div style="padding: 32px;">
+            <h2 style="margin-top: 0; color: #6750A4; font-size: 20px; font-weight: 600;">RSVP Status: ${statusText}</h2>
+            <p style="font-size: 16px; line-height: 1.5; color: #49454f; margin-bottom: 24px;">
+              Hello,<br><br>
+              Thank you for registering for <strong>${params.eventTitle}</strong>. ${statusMessage}
+            </p>
+            ${
+              ticketUrl && params.status === "CONFIRMED"
+                ? `
+              <div style="text-align: center; margin: 32px 0;">
+                <a href="${ticketUrl}" style="background-color: #6750A4; color: #ffffff; padding: 14px 28px; border-radius: 100px; text-decoration: none; font-weight: 600; font-size: 16px; display: inline-block; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                  View Your Ticket & QR Code
+                </a>
+              </div>
+              <p style="font-size: 14px; text-align: center; color: #79747e; margin-bottom: 24px;">
+                Or copy and paste this link: <br>
+                <a href="${ticketUrl}" style="color: #6750A4; text-decoration: underline;">${ticketUrl}</a>
+              </p>
+            `
+                : ""
+            }
+          </div>
+          <div style="background-color: #f3edf7; padding: 16px; text-align: center; font-size: 12px; color: #79747e; border-top: 1px solid #e0e0e0;">
+            This email was sent by Yuyu Events.<br>
+            © ${new Date().getFullYear()} Yuyu. All rights reserved.
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+
+  const text = `RSVP ${statusText}: ${params.eventTitle}\n\nHello,\n\nThank you for registering for "${params.eventTitle}". ${statusMessage}${ticketUrl && params.status === "CONFIRMED" ? `\n\nView your ticket here: ${ticketUrl}` : ""}\n\nBest regards,\nYuyu Events`;
+
+  if (!transporter) {
+    console.log("========================================");
+    console.log(`[EMAIL MOCK] To: ${params.to}`);
+    console.log(`[EMAIL MOCK] Subject: RSVP ${statusText}: ${params.eventTitle}`);
+    console.log(`[EMAIL MOCK] Text:\n${text}`);
+    console.log("========================================");
+    return;
+  }
+
+  await transporter.sendMail({
+    from,
+    to: params.to,
+    subject: `RSVP ${statusText}: ${params.eventTitle}`,
+    text,
+    html,
+  });
 }
 
 export async function sendApprovalNotification(params: {
@@ -13,7 +126,60 @@ export async function sendApprovalNotification(params: {
   eventTitle: string;
   approved: boolean;
 }): Promise<void> {
-  void params;
+  const transporter = getTransporter();
+  const from = getFromAddress();
+
+  const statusText = params.approved ? "Approved" : "Declined";
+  const statusMessage = params.approved
+    ? `Great news! Your RSVP request for <strong>${params.eventTitle}</strong> has been approved by the organizer.`
+    : `We regret to inform you that your RSVP request for <strong>${params.eventTitle}</strong> has been declined by the organizer.`;
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <title>RSVP Update: ${statusText}</title>
+      </head>
+      <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8f9fa; margin: 0; padding: 20px; color: #1c1b1f;">
+        <div style="max-width: 600px; margin: 40px auto; background-color: #ffffff; border-radius: 16px; border: 1px solid #e0e0e0; box-shadow: 0 4px 12px rgba(0,0,0,0.05); overflow: hidden;">
+          <div style="background-color: #6750A4; padding: 24px; text-align: center; color: #ffffff;">
+            <h1 style="margin: 0; font-size: 24px; font-weight: 600; letter-spacing: 0.5px;">Yuyu Events</h1>
+          </div>
+          <div style="padding: 32px;">
+            <h2 style="margin-top: 0; color: #6750A4; font-size: 20px; font-weight: 600;">RSVP Update: ${statusText}</h2>
+            <p style="font-size: 16px; line-height: 1.5; color: #49454f; margin-bottom: 24px;">
+              Hello,<br><br>
+              ${statusMessage}
+            </p>
+          </div>
+          <div style="background-color: #f3edf7; padding: 16px; text-align: center; font-size: 12px; color: #79747e; border-top: 1px solid #e0e0e0;">
+            This email was sent by Yuyu Events.<br>
+            © ${new Date().getFullYear()} Yuyu. All rights reserved.
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+
+  const text = `RSVP Update: ${statusText}\n\nHello,\n\n${params.approved ? `Your RSVP for "${params.eventTitle}" was approved!` : `Your RSVP for "${params.eventTitle}" was declined.`}\n\nBest regards,\nYuyu Events`;
+
+  if (!transporter) {
+    console.log("========================================");
+    console.log(`[EMAIL MOCK] To: ${params.to}`);
+    console.log(`[EMAIL MOCK] Subject: RSVP Update: ${statusText} - ${params.eventTitle}`);
+    console.log(`[EMAIL MOCK] Text:\n${text}`);
+    console.log("========================================");
+    return;
+  }
+
+  await transporter.sendMail({
+    from,
+    to: params.to,
+    subject: `RSVP Update: ${statusText} - ${params.eventTitle}`,
+    text,
+    html,
+  });
 }
 
 export async function sendReminder(params: {
@@ -21,5 +187,56 @@ export async function sendReminder(params: {
   eventTitle: string;
   startsAtIso: string;
 }): Promise<void> {
-  void params;
+  const transporter = getTransporter();
+  const from = getFromAddress();
+
+  const formattedDate = new Date(params.startsAtIso).toLocaleString();
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Upcoming Event Reminder: ${params.eventTitle}</title>
+      </head>
+      <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8f9fa; margin: 0; padding: 20px; color: #1c1b1f;">
+        <div style="max-width: 600px; margin: 40px auto; background-color: #ffffff; border-radius: 16px; border: 1px solid #e0e0e0; box-shadow: 0 4px 12px rgba(0,0,0,0.05); overflow: hidden;">
+          <div style="background-color: #6750A4; padding: 24px; text-align: center; color: #ffffff;">
+            <h1 style="margin: 0; font-size: 24px; font-weight: 600; letter-spacing: 0.5px;">Yuyu Events</h1>
+          </div>
+          <div style="padding: 32px;">
+            <h2 style="margin-top: 0; color: #6750A4; font-size: 20px; font-weight: 600;">Upcoming Event Reminder</h2>
+            <p style="font-size: 16px; line-height: 1.5; color: #49454f; margin-bottom: 24px;">
+              Hello,<br><br>
+              This is a reminder that the event <strong>${params.eventTitle}</strong> is starting soon!<br><br>
+              <strong>Start Time:</strong> ${formattedDate}
+            </p>
+          </div>
+          <div style="background-color: #f3edf7; padding: 16px; text-align: center; font-size: 12px; color: #79747e; border-top: 1px solid #e0e0e0;">
+            This email was sent by Yuyu Events.<br>
+            © ${new Date().getFullYear()} Yuyu. All rights reserved.
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+
+  const text = `Upcoming Event Reminder: ${params.eventTitle}\n\nHello,\n\nThis is a reminder that "${params.eventTitle}" is starting at ${formattedDate}.\n\nBest regards,\nYuyu Events`;
+
+  if (!transporter) {
+    console.log("========================================");
+    console.log(`[EMAIL MOCK] To: ${params.to}`);
+    console.log(`[EMAIL MOCK] Subject: Reminder: ${params.eventTitle} is starting soon`);
+    console.log(`[EMAIL MOCK] Text:\n${text}`);
+    console.log("========================================");
+    return;
+  }
+
+  await transporter.sendMail({
+    from,
+    to: params.to,
+    subject: `Reminder: ${params.eventTitle} is starting soon`,
+    text,
+    html,
+  });
 }

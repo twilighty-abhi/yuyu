@@ -1,7 +1,6 @@
 import { notFound } from "next/navigation";
 import Typography from "@mui/material/Typography";
 import Stack from "@mui/material/Stack";
-import Grid from "@mui/material/Grid";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Paper from "@mui/material/Paper";
@@ -12,11 +11,9 @@ import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getMembership } from "@/lib/permissions";
-import { EventCard } from "@/components/event/EventCard";
-import { InstanceCard } from "@/components/event/InstanceCard";
+import { OrgEventsContainer } from "@/components/org/OrgEventsContainer";
 import { EventStatus } from "@prisma/client";
 import EventIcon from "@mui/icons-material/Event";
-import RepeatIcon from "@mui/icons-material/Repeat";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 
 type Props = { params: Promise<{ orgSlug: string }> };
@@ -41,6 +38,7 @@ export default async function OrganisationPage({ params }: Props) {
     ? await getMembership(session.user.id, org.id)
     : null;
 
+  // Fetch all published events (both past and upcoming)
   const events = await prisma.event.findMany({
     where: {
       organisationId: org.id,
@@ -49,9 +47,9 @@ export default async function OrganisationPage({ params }: Props) {
     orderBy: { startDateTime: "asc" },
   });
 
+  // Fetch all instances of published series (both past and upcoming)
   const instances = await prisma.eventInstance.findMany({
     where: {
-      startDateTime: { gte: new Date() },
       series: {
         organisationId: org.id,
         status: EventStatus.PUBLISHED,
@@ -59,11 +57,39 @@ export default async function OrganisationPage({ params }: Props) {
     },
     include: { series: true },
     orderBy: { startDateTime: "asc" },
-    take: 48,
   });
+
+  // Merge events and instances into a unified timeline
+  const merged = [
+    ...events.map((event) => ({
+      kind: "event" as const,
+      id: `e-${event.id}`,
+      startDateTime: event.startDateTime,
+      endDateTime: event.endDateTime,
+      title: event.title,
+      description: event.description,
+      event,
+    })),
+    ...instances.map((instance) => ({
+      kind: "instance" as const,
+      id: `i-${instance.id}`,
+      startDateTime: instance.startDateTime,
+      endDateTime: instance.endDateTime,
+      title: instance.series.title,
+      description: instance.series.description,
+      instance,
+    })),
+  ];
+
+  merged.sort((a, b) => a.startDateTime.getTime() - b.startDateTime.getTime());
+
+  // Count upcoming occurrences
+  const now = new Date();
+  const upcomingCount = merged.filter((item) => new Date(item.startDateTime) >= now).length;
 
   return (
     <Stack spacing={3} sx={{ py: 2 }}>
+      {/* Organisation Profile Header Card */}
       <Paper
         variant="outlined"
         sx={{
@@ -72,7 +98,8 @@ export default async function OrganisationPage({ params }: Props) {
           overflow: "hidden",
           position: "relative",
           background:
-            "linear-gradient(135deg, rgba(25,118,210,0.10), rgba(156,39,176,0.08))",
+            "linear-gradient(135deg, rgba(124, 245, 182, 0.08) 0%, rgba(185, 174, 255, 0.06) 100%)",
+          border: "1px solid rgba(255,255,255,0.06)",
         }}
       >
         <Box
@@ -82,7 +109,7 @@ export default async function OrganisationPage({ params }: Props) {
             inset: 0,
             pointerEvents: "none",
             background:
-              "radial-gradient(700px circle at 0% 0%, rgba(25,118,210,0.22), transparent 55%), radial-gradient(700px circle at 100% 0%, rgba(156,39,176,0.18), transparent 55%)",
+              "radial-gradient(700px circle at 0% 0%, rgba(124, 245, 182, 0.12), transparent 55%), radial-gradient(700px circle at 100% 0%, rgba(185, 174, 255, 0.1), transparent 55%)",
           }}
         />
 
@@ -119,9 +146,9 @@ export default async function OrganisationPage({ params }: Props) {
                   sx={{ alignItems: "center", flexWrap: "wrap" }}
                 >
                   <Typography
-                    variant="h3"
+                    variant="h4"
                     component="h1"
-                    sx={{ fontWeight: 750, lineHeight: 1.1 }}
+                    sx={{ fontWeight: 800, lineHeight: 1.1 }}
                   >
                     {org.name}
                   </Typography>
@@ -133,23 +160,13 @@ export default async function OrganisationPage({ params }: Props) {
                   />
                 </Stack>
 
-                {org.description ? (
-                  <Typography
-                    variant="body1"
-                    color="text.secondary"
-                    sx={{ mt: 1, maxWidth: 72 }}
-                  >
-                    {org.description}
-                  </Typography>
-                ) : (
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    sx={{ mt: 1, maxWidth: 72 }}
-                  >
-                    Community, events, and updates—check back soon for what’s next.
-                  </Typography>
-                )}
+                <Typography
+                  variant="body1"
+                  color="text.secondary"
+                  sx={{ mt: 1, maxWidth: 600, lineHeight: 1.5 }}
+                >
+                  {org.description || "Community, events, and updates—check back soon for what’s next."}
+                </Typography>
               </Box>
             </Stack>
 
@@ -161,149 +178,100 @@ export default async function OrganisationPage({ params }: Props) {
                 justifyContent: "flex-start",
               }}
             >
-              <Button
-                variant="contained"
-                component="a"
-                href="#events"
-                endIcon={<ArrowForwardIcon />}
-              >
-                Browse events
-              </Button>
+              {merged.length > 0 && (
+                <Button
+                  variant="contained"
+                  component="a"
+                  href="#events-list"
+                  endIcon={<ArrowForwardIcon />}
+                  sx={{
+                    background: "linear-gradient(135deg, #7CF5B6 0%, #B9AEFF 100%)",
+                    color: "#061814",
+                    fontWeight: 700,
+                  }}
+                >
+                  Browse events
+                </Button>
+              )}
               {membership ? (
                 <Link
                   href={`/dashboard/${org.slug}`}
                   style={{ textDecoration: "none" }}
                 >
-                  <Button variant="outlined" component="span">
-                    Organiser dashboard
+                  <Button variant="outlined" component="span" sx={{ width: "100%" }}>
+                    Dashboard
                   </Button>
                 </Link>
               ) : null}
             </Stack>
           </Stack>
 
-          <Divider sx={{ borderColor: "divider" }} />
+          <Divider sx={{ borderColor: "rgba(255,255,255,0.06)" }} />
 
           <Stack
             direction="row"
             useFlexGap
             sx={{ flexWrap: "wrap", columnGap: 1, rowGap: 1 }}
           >
-            <Chip
-              icon={<EventIcon />}
-              label={`${events.length} published event${events.length === 1 ? "" : "s"}`}
-              variant="outlined"
-              sx={{ bgcolor: "background.paper" }}
-            />
-            <Chip
-              icon={<RepeatIcon />}
-              label={`${instances.length} upcoming series instance${instances.length === 1 ? "" : "s"}`}
-              variant="outlined"
-              sx={{ bgcolor: "background.paper" }}
-            />
+            {merged.length > 0 && (
+              <Chip
+                icon={<EventIcon />}
+                label={`${merged.length} total event${merged.length === 1 ? "" : "s"}`}
+                variant="outlined"
+                sx={{ bgcolor: "background.paper" }}
+              />
+            )}
+            {upcomingCount > 0 && (
+              <Chip
+                label={`${upcomingCount} upcoming`}
+                variant="outlined"
+                color="primary"
+                sx={{ bgcolor: "rgba(124, 245, 182, 0.08)", color: "#7CF5B6", borderColor: "rgba(124, 245, 182, 0.2)" }}
+              />
+            )}
           </Stack>
         </Stack>
       </Paper>
 
-      <Stack
-        direction={{ xs: "column", sm: "row" }}
-        spacing={1}
-        sx={{ alignItems: { sm: "baseline" }, justifyContent: "space-between" }}
-      >
-        <Typography variant="h5" component="h2" id="events" sx={{ fontWeight: 700 }}>
-          Events
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          Upcoming and recently published by {org.name}.
-        </Typography>
-      </Stack>
-      {events.length === 0 ? (
-        <Paper
-          variant="outlined"
-          sx={{
-            p: { xs: 2.5, sm: 3 },
-            borderRadius: 3,
-            bgcolor: "action.hover",
-          }}
-        >
-          <Stack spacing={1}>
-            <Typography variant="h6" sx={{ fontWeight: 700 }}>
-              No published events yet
-            </Typography>
-            <Typography color="text.secondary">
-              When {org.name} publishes an event, it’ll show up here.
-            </Typography>
-            {membership ? (
-              <Box sx={{ pt: 0.5 }}>
-                <Link
-                  href={`/dashboard/${org.slug}`}
-                  style={{ textDecoration: "none" }}
-                >
-                  <Button variant="contained" component="span">
-                    Create an event
-                  </Button>
-                </Link>
-              </Box>
-            ) : null}
-          </Stack>
-        </Paper>
-      ) : (
-        <Grid container spacing={2}>
-          {events.map((event) => (
-            <Grid size={{ xs: 12, sm: 6, md: 4 }} key={event.id}>
-              <EventCard orgSlug={org.slug} event={event} />
-            </Grid>
-          ))}
-        </Grid>
-      )}
-
-      <Stack
-        direction={{ xs: "column", sm: "row" }}
-        spacing={1}
-        sx={{ alignItems: { sm: "baseline" }, justifyContent: "space-between", pt: 1 }}
-      >
-        <Typography variant="h5" component="h2" sx={{ fontWeight: 700 }}>
-          Upcoming series
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          Recurring sessions and next occurrences.
-        </Typography>
-      </Stack>
-      {instances.length === 0 ? (
-        <Paper
-          variant="outlined"
-          sx={{
-            p: { xs: 2.5, sm: 3 },
-            borderRadius: 3,
-            bgcolor: "action.hover",
-          }}
-        >
-          <Stack spacing={1}>
-            <Typography variant="h6" sx={{ fontWeight: 700 }}>
-              No upcoming series instances
-            </Typography>
-            <Typography color="text.secondary">
-              Recurring events will appear here as soon as they’re scheduled.
-            </Typography>
-          </Stack>
-        </Paper>
-      ) : (
-        <Grid container spacing={2}>
-          {instances.map((instance) => (
-            <Grid size={{ xs: 12, sm: 6, md: 4 }} key={instance.id}>
-              <InstanceCard
-                orgSlug={org.slug}
-                instanceId={instance.id}
-                title={instance.series.title}
-                description={instance.series.description}
-                startDateTime={instance.startDateTime}
-                endDateTime={instance.endDateTime}
-                timezone={instance.series.timezone}
-              />
-            </Grid>
-          ))}
-        </Grid>
-      )}
+      {/* Main Events Area */}
+      <Box id="events-list">
+        {merged.length === 0 ? (
+          <Paper
+            variant="outlined"
+            sx={{
+              p: { xs: 4, sm: 6 },
+              borderRadius: 4,
+              textAlign: "center",
+              bgcolor: "rgba(255,255,255,0.01)",
+              borderColor: "rgba(255,255,255,0.06)",
+            }}
+          >
+            <Stack spacing={2} sx={{ alignItems: "center" }}>
+              <Typography variant="h6" sx={{ fontWeight: 700 }}>
+                No events scheduled yet
+              </Typography>
+              <Typography color="text.secondary" sx={{ maxWidth: 400 }}>
+                This community hasn&apos;t published any events or recurring series yet. Check back soon!
+              </Typography>
+              {membership ? (
+                <Box sx={{ pt: 1 }}>
+                  <Link
+                    href={`/dashboard/${org.slug}`}
+                    style={{ textDecoration: "none" }}
+                  >
+                    <Button variant="contained" component="span">
+                      Create your first event
+                    </Button>
+                  </Link>
+                </Box>
+              ) : null}
+            </Stack>
+          </Paper>
+        ) : (
+          <OrgEventsContainer orgSlug={org.slug} items={merged} />
+        )}
+      </Box>
     </Stack>
   );
 }
+

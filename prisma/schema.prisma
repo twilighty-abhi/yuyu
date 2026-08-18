@@ -325,17 +325,17 @@ model Asset {
   id             String   @id @default(cuid())
   organisationId String?
   /// Provider-specific object key (or path).
-  key            String
+  key            String   @unique
   /// Public URL if you store it (optional).
   publicUrl      String?
   contentType    String?
   byteSize       BigInt?
   provider       String   @default("unknown")
+  fileData       Bytes?
   createdAt      DateTime @default(now())
 
   organisation Organisation? @relation(fields: [organisationId], references: [id], onDelete: Cascade)
 
-  @@unique([provider, key])
   @@index([organisationId])
   @@index([createdAt])
   @@index([provider])

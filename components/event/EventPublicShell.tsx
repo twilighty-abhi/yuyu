@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Box from "@mui/material/Box";
 import Grid from "@mui/material/Grid";
 import Typography from "@mui/material/Typography";
@@ -95,6 +95,12 @@ export function EventPublicShell(props: Props) {
   const lsKey = `yuyu:rsvp:${orgSlug}:e:${event.slug}`;
   const feedbackKey = `yuyu:feedback:${orgSlug}:e:${event.slug}`;
 
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setMounted(true);
+  }, []);
+
   const [registerOpen, setRegisterOpen] = useState(false);
   const [localTicketToken] = useState<string>(() => {
     if (typeof window === "undefined") return "";
@@ -125,7 +131,7 @@ export function EventPublicShell(props: Props) {
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
 
   const goingLabel = isPast ? "went" : "going";
-  const hasLocalTicket = Boolean(localTicketToken);
+  const hasLocalTicket = mounted && Boolean(localTicketToken);
 
   return (
     <Box

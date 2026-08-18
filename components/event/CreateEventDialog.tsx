@@ -54,6 +54,7 @@ export function CreateEventDialog(props: {
   const [start, setStart] = useState<Date | null>(null);
   const [end, setEnd] = useState<Date | null>(null);
   const [tagsPreview, setTagsPreview] = useState<string[]>([]);
+  const [tagInput, setTagInput] = useState("");
 
   // Wizard States
   const [activeStep, setActiveStep] = useState(0);
@@ -99,6 +100,7 @@ export function CreateEventDialog(props: {
       form.reset();
       setActiveStep(0);
       setTagsPreview([]);
+      setTagInput("");
       setIsOnline(false);
       router.refresh();
     });
@@ -191,28 +193,52 @@ export function CreateEventDialog(props: {
                   minRows={3}
                 />
                 <TextField
-                  name="tags"
                   label="Tags"
                   fullWidth
+                  value={tagInput}
                   onChange={(e) => {
-                    const parts = e.currentTarget.value
-                      .split(/[,\n]/g)
-                      .map((s) => s.trim().toLowerCase())
-                      .map((s) => s.replace(/\s+/g, " "))
-                      .filter(Boolean)
-                      .slice(0, 12);
-                    setTagsPreview(Array.from(new Set(parts)));
+                    const val = e.target.value;
+                    if (val.endsWith(",")) {
+                      const tag = val.slice(0, -1).trim().toLowerCase().replace(/\s+/g, " ");
+                      if (tag && !tagsPreview.includes(tag) && tagsPreview.length < 12) {
+                        setTagsPreview([...tagsPreview, tag]);
+                      }
+                      setTagInput("");
+                    } else {
+                      setTagInput(val);
+                    }
                   }}
-                  helperText="Comma-separated (eg: workshop, meetup, ai). Used in global search."
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      const tag = tagInput.trim().toLowerCase().replace(/\s+/g, " ");
+                      if (tag && !tagsPreview.includes(tag) && tagsPreview.length < 12) {
+                        setTagsPreview([...tagsPreview, tag]);
+                      }
+                      setTagInput("");
+                    }
+                  }}
+                  placeholder="Type a tag and press Enter or Comma"
+                  helperText="Press Enter or Comma to add up to 12 tags (e.g. workshop, meetup, ai)."
                 />
+                <input type="hidden" name="tags" value={tagsPreview.join(",")} />
                 {tagsPreview.length > 0 ? (
                   <Stack
                     direction="row"
                     useFlexGap
-                    sx={{ flexWrap: "wrap", columnGap: 0.75, rowGap: 0.75 }}
+                    sx={{ flexWrap: "wrap", columnGap: 0.75, rowGap: 0.75, mt: 0.5 }}
                   >
-                    {tagsPreview.slice(0, 12).map((t) => (
-                      <Chip key={t} size="small" label={t} variant="outlined" />
+                    {tagsPreview.map((t) => (
+                      <Chip
+                        key={t}
+                        size="small"
+                        label={t}
+                        onDelete={() => {
+                          setTagsPreview(tagsPreview.filter((x) => x !== t));
+                        }}
+                        color="primary"
+                        variant="outlined"
+                      />
                     ))}
                   </Stack>
                 ) : null}

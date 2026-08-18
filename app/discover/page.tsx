@@ -5,6 +5,12 @@ import Button from "@mui/material/Button";
 import MenuItem from "@mui/material/MenuItem";
 import TextField from "@mui/material/TextField";
 import Paper from "@mui/material/Paper";
+import Box from "@mui/material/Box";
+import InputAdornment from "@mui/material/InputAdornment";
+import Link from "next/link";
+import SearchIcon from "@mui/icons-material/Search";
+import FilterListIcon from "@mui/icons-material/FilterList";
+import ClearIcon from "@mui/icons-material/Clear";
 import { EventPrivacyType, EventStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { EventCard } from "@/components/event/EventCard";
@@ -15,6 +21,7 @@ type SearchParams = Promise<{
   org?: string;
   from?: string;
   to?: string;
+  q?: string;
 }>;
 
 export default async function DiscoverPage({
@@ -25,6 +32,7 @@ export default async function DiscoverPage({
   const sp = await searchParams;
   const sort = sp.sort === "popular" ? "popular" : "upcoming";
   const orgFilter = sp.org?.trim() || "";
+  const q = sp.q?.trim() || "";
 
   const fromDate = sp.from ? new Date(sp.from) : null;
   const toDate = sp.to ? new Date(sp.to) : null;
@@ -58,6 +66,14 @@ export default async function DiscoverPage({
     status: EventStatus.PUBLISHED,
     privacyType: EventPrivacyType.PUBLIC,
     ...(orgFilter ? { organisationId: orgFilter } : {}),
+    ...(q
+      ? {
+          OR: [
+            { title: { contains: q, mode: "insensitive" as const } },
+            { description: { contains: q, mode: "insensitive" as const } },
+          ],
+        }
+      : {}),
     ...((fromDate || toDate) && {
       startDateTime: {
         ...(fromDate && !Number.isNaN(fromDate.getTime()) ? { gte: fromDate } : {}),
@@ -89,6 +105,14 @@ export default async function DiscoverPage({
       status: EventStatus.PUBLISHED,
       privacyType: EventPrivacyType.PUBLIC,
       ...(orgFilter ? { organisationId: orgFilter } : {}),
+      ...(q
+        ? {
+            OR: [
+              { title: { contains: q, mode: "insensitive" as const } },
+              { description: { contains: q, mode: "insensitive" as const } },
+            ],
+          }
+        : {}),
     },
     ...((fromDate || toDate) && {
       startDateTime: {
@@ -164,72 +188,202 @@ export default async function DiscoverPage({
       : a.sortKey - b.sortKey,
   );
 
-  return (
-    <Stack spacing={3} sx={{ py: 2 }}>
-      <Typography variant="h3" component="h1">
-        Discover events
-      </Typography>
-      <Typography variant="body2" color="text.secondary">
-        Public listings from all organisations on Yuyu.
-      </Typography>
+  const hasActiveFilters = q || orgFilter || sp.from || sp.to || sort !== "upcoming";
 
-      <Paper variant="outlined" sx={{ p: 2 }} component="form" action="/discover" method="get">
-        <Stack
-          direction={{ xs: "column", md: "row" }}
-          spacing={2}
-          useFlexGap
-          sx={{ flexWrap: "wrap", alignItems: { md: "center" } }}
+  return (
+    <Stack spacing={4} sx={{ py: 3 }}>
+      {/* Premium Gradient Header Hero */}
+      <Box
+        sx={{
+          py: 5,
+          px: 4,
+          borderRadius: 5,
+          background:
+            "linear-gradient(135deg, rgba(124, 245, 182, 0.08) 0%, rgba(185, 174, 255, 0.05) 100%)",
+          border: "1px solid rgba(255,255,255,0.06)",
+          position: "relative",
+          overflow: "hidden",
+        }}
+      >
+        <Box
+          sx={{
+            position: "absolute",
+            top: "-50%",
+            right: "-20%",
+            width: "400px",
+            height: "400px",
+            borderRadius: "50%",
+            background: "radial-gradient(circle, rgba(124, 245, 182, 0.12) 0%, transparent 70%)",
+            filter: "blur(50px)",
+            pointerEvents: "none",
+          }}
+        />
+        <Typography
+          variant="h3"
+          component="h1"
+          sx={{
+            fontWeight: 850,
+            background: "linear-gradient(135deg, #ffffff 40%, #7CF5B6 100%)",
+            WebkitBackgroundClip: "text",
+            WebkitTextFillColor: "transparent",
+            letterSpacing: "-0.5px",
+            mb: 1.5,
+          }}
         >
-          <TextField
-            select
-            name="sort"
-            label="Sort"
-            size="small"
-            defaultValue={sort}
-            sx={{ minWidth: 180 }}
+          Discover events
+        </Typography>
+        <Typography variant="body1" sx={{ color: "rgba(255,255,255,0.65)", maxWidth: "600px", lineHeight: 1.6 }}>
+          Explore open gatherings, dynamic workshops, and local meetups across all organisations on Yuyu.
+        </Typography>
+      </Box>
+
+      {/* Modern Filter panel */}
+      <Paper
+        variant="outlined"
+        component="form"
+        action="/discover"
+        method="get"
+        sx={{
+          p: 3,
+          borderRadius: 4,
+          backgroundColor: "rgba(255, 255, 255, 0.02)",
+          backdropFilter: "blur(12px)",
+          borderColor: "rgba(255, 255, 255, 0.08)",
+          boxShadow: "0 8px 32px 0 rgba(0, 0, 0, 0.2)",
+        }}
+      >
+        <Stack spacing={2.5}>
+          {/* Main Search & Dropdown filters */}
+          <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ alignItems: "center" }}>
+            <TextField
+              name="q"
+              placeholder="Search by event title or description..."
+              size="small"
+              defaultValue={q}
+              slotProps={{
+                input: {
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchIcon sx={{ color: "rgba(255, 255, 255, 0.44)" }} />
+                    </InputAdornment>
+                  ),
+                },
+              }}
+              sx={{ flexGrow: 1, minWidth: { xs: "100%", md: 320 } }}
+            />
+
+            <TextField
+              select
+              name="sort"
+              label="Sort By"
+              size="small"
+              defaultValue={sort}
+              sx={{ minWidth: { xs: "100%", md: 170 } }}
+            >
+              <MenuItem value="upcoming">Upcoming First</MenuItem>
+              <MenuItem value="popular">Popularity</MenuItem>
+            </TextField>
+
+            <TextField
+              select
+              name="org"
+              label="Organisation"
+              size="small"
+              defaultValue={orgFilter}
+              sx={{ minWidth: { xs: "100%", md: 220 } }}
+            >
+              <MenuItem value="">All Organisations</MenuItem>
+              {orgs.map((o) => (
+                <MenuItem key={o.id} value={o.id}>
+                  {o.name}
+                </MenuItem>
+              ))}
+            </TextField>
+          </Stack>
+
+          {/* Date Picker Range & Buttons */}
+          <Stack
+            direction={{ xs: "column", sm: "row" }}
+            spacing={2}
+            sx={{
+              alignItems: "center",
+              justifyContent: "space-between",
+              pt: 2,
+              borderTop: "1px dashed rgba(255,255,255,0.08)",
+            }}
           >
-            <MenuItem value="upcoming">Upcoming</MenuItem>
-            <MenuItem value="popular">Popular (confirmed)</MenuItem>
-          </TextField>
-          <TextField
-            select
-            name="org"
-            label="Organisation"
-            size="small"
-            defaultValue={orgFilter}
-            sx={{ minWidth: 220 }}
-          >
-            <MenuItem value="">All</MenuItem>
-            {orgs.map((o) => (
-              <MenuItem key={o.id} value={o.id}>
-                {o.name}
-              </MenuItem>
-            ))}
-          </TextField>
-          <TextField
-            name="from"
-            label="From"
-            type="date"
-            size="small"
-            slotProps={{ inputLabel: { shrink: true } }}
-            defaultValue={sp.from ?? ""}
-          />
-          <TextField
-            name="to"
-            label="To"
-            type="date"
-            size="small"
-            slotProps={{ inputLabel: { shrink: true } }}
-            defaultValue={sp.to ?? ""}
-          />
-          <Button type="submit" variant="contained">
-            Apply
-          </Button>
+            <Stack direction="row" spacing={2} sx={{ width: { xs: "100%", sm: "auto" } }}>
+              <TextField
+                name="from"
+                label="From Date"
+                type="date"
+                size="small"
+                slotProps={{ inputLabel: { shrink: true } }}
+                defaultValue={sp.from ?? ""}
+                sx={{ width: "100%" }}
+              />
+              <TextField
+                name="to"
+                label="To Date"
+                type="date"
+                size="small"
+                slotProps={{ inputLabel: { shrink: true } }}
+                defaultValue={sp.to ?? ""}
+                sx={{ width: "100%" }}
+              />
+            </Stack>
+
+            <Stack
+              direction="row"
+              spacing={1.5}
+              sx={{ width: { xs: "100%", sm: "auto" }, justifyContent: "flex-end" }}
+            >
+              {hasActiveFilters && (
+                <Button
+                  component={Link}
+                  href="/discover"
+                  variant="text"
+                  startIcon={<ClearIcon />}
+                  sx={{
+                    color: "rgba(255,255,255,0.55)",
+                    transition: "color 0.2s",
+                    "&:hover": { color: "#ffffff", backgroundColor: "rgba(255,255,255,0.05)" },
+                  }}
+                >
+                  Clear Filters
+                </Button>
+              )}
+              <Button
+                type="submit"
+                variant="contained"
+                startIcon={<FilterListIcon />}
+                sx={{
+                  background: "linear-gradient(135deg, #7CF5B6 0%, #B9AEFF 100%)",
+                  color: "#061814",
+                  fontWeight: 700,
+                  px: 3.5,
+                  py: 0.75,
+                  borderRadius: 2,
+                  boxShadow: "0 4px 14px rgba(124, 245, 182, 0.18)",
+                  transition: "all 0.2s ease-in-out",
+                  "&:hover": {
+                    transform: "translateY(-1px)",
+                    boxShadow: "0 6px 20px rgba(124, 245, 182, 0.35)",
+                    background: "linear-gradient(135deg, #90ffd0 0%, #cac0ff 100%)",
+                  },
+                }}
+              >
+                Apply Filters
+              </Button>
+            </Stack>
+          </Stack>
         </Stack>
       </Paper>
 
       {merged.length === 0 ? (
-        <Typography color="text.secondary">No public events match.</Typography>
+        <Typography color="text.secondary" sx={{ textAlign: "center", py: 4 }}>
+          No public events match the selected filters. Try clearing some criteria!
+        </Typography>
       ) : (
         <Grid container spacing={2}>
           {merged.map((row) =>
@@ -253,7 +407,7 @@ export default async function DiscoverPage({
           )}
         </Grid>
       )}
-
     </Stack>
   );
 }
+

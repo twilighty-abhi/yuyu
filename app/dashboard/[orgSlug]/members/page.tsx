@@ -7,6 +7,8 @@ import TableRow from "@mui/material/TableRow";
 import TableContainer from "@mui/material/TableContainer";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
+import Avatar from "@mui/material/Avatar";
+import Box from "@mui/material/Box";
 import { headers } from "next/headers";
 import { prisma } from "@/lib/db";
 import {
@@ -61,17 +63,30 @@ export default async function OrgMembersPage({ params }: Props) {
     })();
 
   return (
-    <Stack spacing={2}>
-      <Typography variant="h6" component="h2">
-        Members
-      </Typography>
-      <Typography variant="body2" color="text.secondary">
-        {ownerView
-          ? "As owner, you can change roles between admin and member, or remove people."
-          : adminView
-            ? "As admin, you can invite members and remove members."
-            : "Organisation members and their roles."}
-      </Typography>
+    <Stack spacing={3}>
+      <Paper
+        variant="outlined"
+        sx={{
+          p: { xs: 2.5, sm: 3 },
+          borderRadius: "20px",
+          borderColor: "rgba(255,255,255,0.09)",
+          background: "linear-gradient(120deg, rgba(10,132,255,0.12), rgba(28,28,30,0.96) 65%)",
+        }}
+      >
+        <Typography variant="overline" sx={{ color: "#0A84FF", fontWeight: 700, letterSpacing: "1.4px", lineHeight: 1.3 }}>
+          Organisation people
+        </Typography>
+        <Typography variant="h4" component="h1" sx={{ mt: 0.5, fontWeight: 700, letterSpacing: "-1px" }}>
+          Members
+        </Typography>
+        <Typography variant="body2" sx={{ mt: 1, color: "rgba(255,255,255,0.6)" }}>
+          {ownerView
+            ? "Manage roles, invite collaborators, and keep your workspace in good shape."
+            : adminView
+              ? "Invite collaborators and manage the members of this workspace."
+              : "Everyone who belongs to this organisation."}
+        </Typography>
+      </Paper>
 
       {adminView ? (
         <OrgInviteLinkPanel
@@ -86,25 +101,65 @@ export default async function OrgMembersPage({ params }: Props) {
       ) : null}
 
       {members.length === 0 ? (
-        <Paper variant="outlined" sx={{ p: 4, textAlign: "center" }}>
+        <Paper variant="outlined" sx={{ p: 5, textAlign: "center", borderRadius: "16px", borderColor: "rgba(255,255,255,0.08)", backgroundColor: "rgba(255,255,255,0.025)" }}>
           <Typography color="text.secondary">No members found.</Typography>
         </Paper>
       ) : (
-        <TableContainer component={Paper} variant="outlined">
-          <Table size="small">
+        <TableContainer
+          component={Paper}
+          variant="outlined"
+          sx={{
+            overflow: "hidden",
+            borderRadius: "18px",
+            borderColor: "rgba(255,255,255,0.09)",
+            backgroundColor: "rgba(28,28,30,0.88)",
+            boxShadow: "0 10px 28px rgba(0,0,0,0.1)",
+          }}
+        >
+          <Table size="small" sx={{ minWidth: 560 }}>
             <TableHead>
-              <TableRow>
-                <TableCell>Name</TableCell>
-                <TableCell>Email</TableCell>
-                <TableCell>Role</TableCell>
+              <TableRow sx={{ backgroundColor: "rgba(255,255,255,0.035)" }}>
+                <TableCell sx={{ py: 1.5, color: "rgba(255,255,255,0.52)", fontSize: "0.72rem", fontWeight: 700, letterSpacing: "0.75px", textTransform: "uppercase" }}>Member</TableCell>
+                <TableCell sx={{ display: { xs: "none", sm: "table-cell" }, py: 1.5, color: "rgba(255,255,255,0.52)", fontSize: "0.72rem", fontWeight: 700, letterSpacing: "0.75px", textTransform: "uppercase" }}>Email</TableCell>
+                <TableCell sx={{ py: 1.5, color: "rgba(255,255,255,0.52)", fontSize: "0.72rem", fontWeight: 700, letterSpacing: "0.75px", textTransform: "uppercase" }}>Role & actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {members.map((m) => (
-                <TableRow key={m.id}>
-                  <TableCell>{m.user.name ?? "—"}</TableCell>
-                  <TableCell>{m.user.email ?? "—"}</TableCell>
-                  <TableCell>
+                <TableRow
+                  key={m.id}
+                  hover
+                  sx={{
+                    "&:last-child td, &:last-child th": { borderBottom: 0 },
+                    "&:hover": { backgroundColor: "rgba(255,255,255,0.035)" },
+                  }}
+                >
+                  <TableCell sx={{ py: 1.5 }}>
+                    <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
+                      <Avatar
+                        sx={{
+                          width: 36,
+                          height: 36,
+                          fontSize: "0.85rem",
+                          fontWeight: 700,
+                          color: "#fff",
+                          background: "linear-gradient(135deg, rgba(10,132,255,0.9), rgba(185,174,255,0.75))",
+                        }}
+                      >
+                        {(m.user.name ?? m.user.email ?? "?").trim().slice(0, 1).toUpperCase()}
+                      </Avatar>
+                      <Box sx={{ minWidth: 0 }}>
+                        <Typography variant="body2" sx={{ fontWeight: 650 }} noWrap>
+                          {m.user.name ?? "Unnamed member"}
+                        </Typography>
+                        <Typography variant="caption" sx={{ display: { xs: "block", sm: "none" }, color: "text.secondary" }} noWrap>
+                          {m.user.email ?? "—"}
+                        </Typography>
+                      </Box>
+                    </Stack>
+                  </TableCell>
+                  <TableCell sx={{ display: { xs: "none", sm: "table-cell" }, color: "text.secondary" }}>{m.user.email ?? "—"}</TableCell>
+                  <TableCell sx={{ py: 1.25 }}>
                     <MemberRoleActions
                       organisationSlug={organisation.slug}
                       targetUserId={m.userId}

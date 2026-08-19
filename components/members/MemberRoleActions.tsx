@@ -8,6 +8,7 @@ import Typography from "@mui/material/Typography";
 import MenuItem from "@mui/material/MenuItem";
 import TextField from "@mui/material/TextField";
 import Button from "@mui/material/Button";
+import Chip from "@mui/material/Chip";
 import { updateMemberRole, removeMember } from "@/app/actions/membership";
 import { useToast } from "@/components/feedback/ToastProvider";
 
@@ -29,9 +30,12 @@ export function MemberRoleActions(props: {
 
   if (!canEditRoles && !canRemove) {
     return (
-      <Typography variant="body2" color="text.secondary">
-        {role}
-      </Typography>
+      <Chip
+        label={role === "OWNER" ? "Owner" : role === "ADMIN" ? "Admin" : "Member"}
+        size="small"
+        variant="outlined"
+        sx={{ borderColor: "rgba(10,132,255,0.4)", color: "#72B7FF", fontWeight: 650 }}
+      />
     );
   }
 
@@ -65,7 +69,7 @@ export function MemberRoleActions(props: {
               router.refresh();
             });
           }}
-          sx={{ minWidth: 120 }}
+          sx={{ minWidth: 120, "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
         >
           <MenuItem value="ADMIN">ADMIN</MenuItem>
           <MenuItem value="MEMBER">MEMBER</MenuItem>
@@ -80,7 +84,7 @@ export function MemberRoleActions(props: {
         color="error"
         variant="outlined"
         disabled={pending}
-        sx={{ display: canRemove ? "inline-flex" : "none" }}
+        sx={{ display: canRemove ? "inline-flex" : "none", textTransform: "none", borderRadius: 2 }}
         onClick={() => {
           startTransition(async () => {
             const res = await removeMember({

@@ -130,12 +130,14 @@ export function CoverImagePicker(props: {
   }
 
   return (
-    <Stack spacing={1.5}>
+    <Stack spacing={1.25} sx={{ maxWidth: 260 }}>
       {error ? <Alert severity="error">{error}</Alert> : null}
       <Box
         sx={{
           position: "relative",
           overflow: "hidden",
+          width: 220,
+          maxWidth: "100%",
           aspectRatio: "1 / 1",
           borderRadius: "14px",
           border: "1px dashed rgba(255,255,255,0.18)",

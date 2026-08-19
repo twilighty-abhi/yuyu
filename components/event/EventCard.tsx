@@ -34,7 +34,7 @@ export function EventCard(props: {
   orgSlug: string;
   /** Defaults to public event URL. */
   href?: string;
-  /** Denser presentation for collection pages such as Discover. */
+  /** Denser horizontal presentation for dashboard collections. */
   compact?: boolean;
   event: Pick<
     Event,
@@ -82,18 +82,21 @@ export function EventCard(props: {
         href={href}
         style={{ textDecoration: "none", color: "inherit", display: "block" }}
       >
-        <CardActionArea component="div" sx={{ height: "100%" }}>
+        <CardActionArea
+          component="div"
+          sx={compact ? { height: "100%", display: "flex", alignItems: "stretch", textAlign: "left" } : { height: "100%" }}
+        >
           {event.coverImageUrl ? (
             <CardMedia
               component="img"
               height={compact ? "96" : "140"}
               image={event.coverImageUrl}
               alt=""
-              sx={{ objectFit: "cover", display: "block" }}
+              sx={compact ? { width: 96, minWidth: 96, height: 96, objectFit: "cover", display: "block", alignSelf: "flex-start" } : { objectFit: "cover", display: "block" }}
             />
           ) : null}
-          <CardContent sx={{ p: compact ? 1.75 : 2.5, "&:last-child": { pb: compact ? 1.75 : 2.5 } }}>
-            <Stack direction="row" spacing={0.75} sx={{ mb: compact ? 1 : 1.5, flexWrap: "wrap" }}>
+          <CardContent sx={{ flex: compact ? 1 : undefined, minWidth: 0, p: compact ? 1.25 : 2.5, "&:last-child": { pb: compact ? 1.25 : 2.5 } }}>
+            <Stack direction="row" spacing={0.5} sx={{ mb: compact ? 0.65 : 1.5, flexWrap: "wrap" }}>
               {statusChip(event.status)}
               <Chip
                 label={event.isOnline ? "Online" : "In person"}
@@ -113,7 +116,7 @@ export function EventCard(props: {
                 <Chip key={t} label={t} size="small" variant="outlined" />
               ))}
             </Stack>
-            <Typography variant="h6" component="h3" sx={{ fontWeight: 700, letterSpacing: "-0.25px", mb: 0.5, lineHeight: 1.25 }}>
+            <Typography variant={compact ? "subtitle1" : "h6"} component="h3" sx={{ fontWeight: 700, letterSpacing: "-0.25px", mb: 0.35, lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: compact ? "nowrap" : "normal" }}>
               {event.title}
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: compact ? 0.75 : 1.25 }}>
@@ -123,7 +126,7 @@ export function EventCard(props: {
                 event.timezone,
               )}
             </Typography>
-            {desc ? (
+            {desc && !compact ? (
               <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.5, display: "-webkit-box", WebkitLineClamp: compact ? 2 : undefined, WebkitBoxOrient: "vertical", overflow: compact ? "hidden" : undefined }}>
                 {desc}
               </Typography>

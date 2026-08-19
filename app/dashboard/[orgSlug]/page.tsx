@@ -200,6 +200,7 @@ export default async function OrgDashboardPage({ params, searchParams }: Props) 
               <Grid size={{ xs: 12, sm: 6 }} key={event.id}>
                 <EventCard
                   orgSlug={organisation.slug}
+                  compact
                   href={
                     manage
                       ? `/dashboard/${organisation.slug}/event/${event.id}`

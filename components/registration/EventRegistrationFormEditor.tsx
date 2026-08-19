@@ -8,12 +8,6 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import Button from "@mui/material/Button";
 import Box from "@mui/material/Box";
-import Table from "@mui/material/Table";
-import TableHead from "@mui/material/TableHead";
-import TableRow from "@mui/material/TableRow";
-import TableCell from "@mui/material/TableCell";
-import TableBody from "@mui/material/TableBody";
-import Divider from "@mui/material/Divider";
 import IconButton from "@mui/material/IconButton";
 import Dialog from "@mui/material/Dialog";
 import DialogTitle from "@mui/material/DialogTitle";
@@ -23,10 +17,21 @@ import TextField from "@mui/material/TextField";
 import MenuItem from "@mui/material/MenuItem";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import Checkbox from "@mui/material/Checkbox";
+import Divider from "@mui/material/Divider";
+import Chip from "@mui/material/Chip";
+import Grid from "@mui/material/Grid";
+import Radio from "@mui/material/Radio";
+import RadioGroup from "@mui/material/RadioGroup";
+import FormLabel from "@mui/material/FormLabel";
+import FormControl from "@mui/material/FormControl";
+
 import DeleteOutlineOutlinedIcon from "@mui/icons-material/DeleteOutlineOutlined";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import ArrowUpwardOutlinedIcon from "@mui/icons-material/ArrowUpwardOutlined";
 import ArrowDownwardOutlinedIcon from "@mui/icons-material/ArrowDownwardOutlined";
+import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
+import PreviewIcon from "@mui/icons-material/Preview";
+
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/feedback/ToastProvider";
 import { ConfirmationDialog } from "@/components/feedback/ConfirmationDialog";
@@ -64,7 +69,6 @@ function uniqueKey(base: string, existing: Set<string>, current?: string) {
     if (next === current) return next;
     if (!existing.has(next)) return next;
   }
-  // Fallback (extremely unlikely)
   return `${normalized}_${Date.now()}`.slice(0, 64);
 }
 
@@ -187,119 +191,295 @@ export function EventRegistrationFormEditor(props: {
   }
 
   return (
-    <Stack spacing={2}>
+    <Stack spacing={4}>
+      {/* ── HEADER ── */}
       <Stack
         direction={{ xs: "column", sm: "row" }}
-        spacing={1.5}
-        sx={{ alignItems: { xs: "stretch", sm: "center" }, justifyContent: "space-between" }}
+        spacing={2}
+        sx={{
+          alignItems: { xs: "stretch", sm: "flex-end" },
+          justifyContent: "space-between",
+          pb: 1.5,
+          borderBottom: "1px solid rgba(255, 255, 255, 0.08)",
+        }}
       >
-        <BoxHeader />
-        <Button variant="contained" onClick={openCreate} disabled={pending}>
-          Add field
+        <Stack spacing={0.5}>
+          <Typography variant="h5" component="h1" sx={{ fontWeight: 750, letterSpacing: "-0.5px" }}>
+            Registration Form Editor
+          </Typography>
+          <Typography variant="body2" sx={{ color: "#8E8E93" }}>
+            Add custom input fields to collect guest information. Name and Email are always collected.
+          </Typography>
+        </Stack>
+        <Button
+          variant="contained"
+          onClick={openCreate}
+          disabled={pending}
+          sx={{
+            alignSelf: { xs: "flex-start", sm: "center" },
+            backgroundColor: "#0A84FF",
+            color: "#FFFFFF",
+            fontWeight: 600,
+            textTransform: "none",
+            borderRadius: "8px",
+            px: 3,
+          }}
+        >
+          Add Custom Field
         </Button>
       </Stack>
 
-      <Paper variant="outlined">
-        <Stack spacing={1} sx={{ p: 2.5 }}>
-          <Typography variant="subtitle2" color="text.secondary">
-            Always collected
-          </Typography>
-          <Stack spacing={1.25}>
-            <FieldPreviewRow label="Name" helper="Collected from the attendee" />
-            <FieldPreviewRow
-              label="Email"
-              helper="Used for confirmations, ticket, and check-in"
-            />
-          </Stack>
-        </Stack>
-        <Box sx={{ borderTop: 1, borderColor: "divider" }} />
-        {fields.length === 0 ? (
-          <Stack spacing={1} sx={{ p: 3 }}>
-            <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-              No custom fields yet
+      {/* ── TWO COLUMN BUILDER / PREVIEW LAYOUT ── */}
+      <Grid container spacing={4}>
+        {/* Left Column: Visual Builder Cards */}
+        <Grid size={{ xs: 12, md: 7 }}>
+          <Stack spacing={2.5}>
+            <Typography variant="h6" sx={{ fontWeight: 700, fontSize: "1.1rem", letterSpacing: "-0.2px" }}>
+              Form Structure
             </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Add fields below to collect additional information (like phone number).
-            </Typography>
-          </Stack>
-        ) : (
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>Label</TableCell>
-                <TableCell>Key</TableCell>
-                <TableCell>Type</TableCell>
-                <TableCell>Required</TableCell>
-                <TableCell>Options</TableCell>
-                <TableCell align="right">Order</TableCell>
-                <TableCell align="right">Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {fields.map((f, idx) => (
-                <TableRow key={f.id}>
-                  <TableCell>{f.label}</TableCell>
-                  <TableCell sx={{ fontFamily: "monospace" }}>{f.key}</TableCell>
-                  <TableCell>{f.type}</TableCell>
-                  <TableCell>{f.required ? "Yes" : "No"}</TableCell>
-                  <TableCell>
-                    {needsOptions(f.type) ? (f.options.join(", ") || "—") : "—"}
-                  </TableCell>
-                  <TableCell align="right">
-                    <IconButton
-                      aria-label="Move up"
-                      disabled={pending || idx === 0}
-                      onClick={() => move(f.id, -1)}
-                      size="small"
-                    >
-                      <ArrowUpwardOutlinedIcon fontSize="small" />
-                    </IconButton>
-                    <IconButton
-                      aria-label="Move down"
-                      disabled={pending || idx === fields.length - 1}
-                      onClick={() => move(f.id, 1)}
-                      size="small"
-                    >
-                      <ArrowDownwardOutlinedIcon fontSize="small" />
-                    </IconButton>
-                  </TableCell>
-                  <TableCell align="right">
-                    <IconButton
-                      aria-label="Edit"
-                      disabled={pending}
-                      onClick={() => openEdit(f)}
-                      size="small"
-                    >
-                      <EditOutlinedIcon fontSize="small" />
-                    </IconButton>
-                    <IconButton
-                      aria-label="Delete"
-                      disabled={pending}
-                      onClick={() => setDeleteConfirmField(f)}
-                      size="small"
-                    >
-                      <DeleteOutlineOutlinedIcon fontSize="small" />
-                    </IconButton>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </Paper>
 
+            <Stack spacing={2}>
+              {/* Default Fields Panel */}
+              <Paper variant="outlined" sx={{ p: 2.5, backgroundColor: "rgba(255,255,255,0.01)", borderColor: "rgba(255,255,255,0.06)" }}>
+                <Stack spacing={1.5}>
+                  <Typography variant="caption" sx={{ color: "#8E8E93", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                    Standard Fields (Always Collected)
+                  </Typography>
+                  <Stack direction="row" spacing={2} sx={{ alignItems: "center" }}>
+                    <DragIndicatorIcon sx={{ color: "rgba(255,255,255,0.15)" }} />
+                    <Box sx={{ flexGrow: 1 }}>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>Name</Typography>
+                      <Typography variant="caption" color="text.secondary">Collected from all registered attendees.</Typography>
+                    </Box>
+                    <Chip label="Required" size="small" variant="outlined" sx={{ color: "#0A84FF", borderColor: "rgba(10, 132, 255, 0.2)", bgcolor: "rgba(10, 132, 255, 0.04)" }} />
+                  </Stack>
+                  <Divider sx={{ borderColor: "rgba(255,255,255,0.04)" }} />
+                  <Stack direction="row" spacing={2} sx={{ alignItems: "center" }}>
+                    <DragIndicatorIcon sx={{ color: "rgba(255,255,255,0.15)" }} />
+                    <Box sx={{ flexGrow: 1 }}>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>Email</Typography>
+                      <Typography variant="caption" color="text.secondary">Used for sending ticket confirmation and QR codes.</Typography>
+                    </Box>
+                    <Chip label="Required" size="small" variant="outlined" sx={{ color: "#0A84FF", borderColor: "rgba(10, 132, 255, 0.2)", bgcolor: "rgba(10, 132, 255, 0.04)" }} />
+                  </Stack>
+                </Stack>
+              </Paper>
+
+              {/* Custom Fields List */}
+              {fields.length === 0 ? (
+                <Paper variant="outlined" sx={{ p: 4, textAlign: "center", backgroundColor: "rgba(255,255,255,0.01)", borderColor: "rgba(255,255,255,0.06)" }}>
+                  <Typography variant="body2" color="text.secondary">
+                    No custom fields configured. Click "Add Custom Field" to capture dietary needs, phone numbers, or sizes.
+                  </Typography>
+                </Paper>
+              ) : (
+                <Stack spacing={1.5}>
+                  {fields.map((f, idx) => (
+                    <Paper
+                      key={f.id}
+                      variant="outlined"
+                      sx={{
+                        p: 2.5,
+                        backgroundColor: "#1C1C1E",
+                        borderColor: "rgba(255,255,255,0.08)",
+                        transition: "border-color 0.15s ease",
+                        "&:hover": {
+                          borderColor: "rgba(10, 132, 255, 0.3)",
+                        },
+                      }}
+                    >
+                      <Stack direction="row" spacing={2} sx={{ alignItems: "center" }}>
+                        <DragIndicatorIcon sx={{ color: "rgba(255,255,255,0.3)" }} />
+                        <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+                          <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                            <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
+                              {f.label}
+                            </Typography>
+                            {f.required && (
+                              <Chip label="Required" size="small" variant="outlined" sx={{ height: 20, fontSize: "0.65rem", color: "#FF9F0A", borderColor: "rgba(255, 159, 10, 0.2)" }} />
+                            )}
+                          </Stack>
+                          <Typography variant="caption" sx={{ color: "#8E8E93", fontFamily: "monospace", display: "block", mt: 0.25 }}>
+                            key: {f.key} · type: {f.type.toLowerCase()}
+                          </Typography>
+                          {needsOptions(f.type) && (
+                            <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }} noWrap>
+                              Options: {f.options.join(", ")}
+                            </Typography>
+                          )}
+                        </Box>
+
+                        <Stack direction="row" spacing={0.5} sx={{ alignItems: "center" }}>
+                          <IconButton
+                            aria-label="Move up"
+                            disabled={pending || idx === 0}
+                            onClick={() => move(f.id, -1)}
+                            size="small"
+                          >
+                            <ArrowUpwardOutlinedIcon fontSize="small" />
+                          </IconButton>
+                          <IconButton
+                            aria-label="Move down"
+                            disabled={pending || idx === fields.length - 1}
+                            onClick={() => move(f.id, 1)}
+                            size="small"
+                          >
+                            <ArrowDownwardOutlinedIcon fontSize="small" />
+                          </IconButton>
+                          <IconButton
+                            aria-label="Edit"
+                            disabled={pending}
+                            onClick={() => openEdit(f)}
+                            size="small"
+                          >
+                            <EditOutlinedIcon fontSize="small" />
+                          </IconButton>
+                          <IconButton
+                            aria-label="Delete"
+                            disabled={pending}
+                            onClick={() => setDeleteConfirmField(f)}
+                            size="small"
+                          >
+                            <DeleteOutlineOutlinedIcon fontSize="small" />
+                          </IconButton>
+                        </Stack>
+                      </Stack>
+                    </Paper>
+                  ))}
+                </Stack>
+              )}
+            </Stack>
+          </Stack>
+        </Grid>
+
+        {/* Right Column: Live Interactive Preview */}
+        <Grid size={{ xs: 12, md: 5 }}>
+          <Stack spacing={2.5} sx={{ position: "sticky", top: 24 }}>
+            <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+              <PreviewIcon sx={{ color: "#0A84FF" }} />
+              <Typography variant="h6" sx={{ fontWeight: 700, fontSize: "1.1rem", letterSpacing: "-0.2px" }}>
+                Live Form Preview
+              </Typography>
+            </Stack>
+
+            <Paper
+              variant="outlined"
+              sx={{
+                p: 3.5,
+                borderRadius: "20px",
+                backgroundColor: "#1C1C1E",
+                borderColor: "rgba(255,255,255,0.08)",
+                boxShadow: "0 10px 40px rgba(0, 0, 0, 0.4)",
+              }}
+            >
+              <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1 }}>
+                Register for Event
+              </Typography>
+              <Typography variant="caption" sx={{ color: "#8E8E93", display: "block", mb: 3 }}>
+                Fill out the form below to secure your spot.
+              </Typography>
+
+              <Stack spacing={3}>
+                {/* Standard Name / Email fields */}
+                <TextField label="Full Name" size="small" fullWidth required placeholder="Enter full name" />
+                <TextField label="Email Address" size="small" type="email" fullWidth required placeholder="you@domain.com" />
+
+                {/* Render Custom Configured Fields */}
+                {fields.map((f) => {
+                  const requiredLabel = f.required ? " *" : "";
+                  const fullLabel = `${f.label}${requiredLabel}`;
+
+                  if (f.type === "TEXT") {
+                    return <TextField key={f.id} label={fullLabel} size="small" fullWidth placeholder="Enter answer..." />;
+                  }
+                  if (f.type === "TEXTAREA") {
+                    return <TextField key={f.id} label={fullLabel} size="small" multiline rows={3} fullWidth placeholder="Enter answer..." />;
+                  }
+                  if (f.type === "NUMBER") {
+                    return <TextField key={f.id} label={fullLabel} size="small" type="number" fullWidth placeholder="0" />;
+                  }
+                  if (f.type === "DATE") {
+                    return <TextField key={f.id} label={fullLabel} size="small" type="date" slotProps={{ inputLabel: { shrink: true } }} fullWidth />;
+                  }
+                  if (f.type === "CHECKBOX") {
+                    return <FormControlLabel key={f.id} control={<Checkbox />} label={fullLabel} />;
+                  }
+                  if (f.type === "SELECT") {
+                    return (
+                      <TextField key={f.id} select label={fullLabel} size="small" fullWidth value="">
+                        {f.options.map((opt) => (
+                          <MenuItem key={opt} value={opt}>
+                            {opt}
+                          </MenuItem>
+                        ))}
+                      </TextField>
+                    );
+                  }
+                  if (f.type === "RADIO") {
+                    return (
+                      <FormControl key={f.id} component="fieldset">
+                        <FormLabel component="legend" sx={{ fontSize: "0.85rem", fontWeight: 600, color: "#8E8E93" }}>
+                          {fullLabel}
+                        </FormLabel>
+                        <RadioGroup row sx={{ mt: 0.5 }}>
+                          {f.options.map((opt) => (
+                            <FormControlLabel key={opt} value={opt} control={<Radio size="small" />} label={opt} />
+                          ))}
+                        </RadioGroup>
+                      </FormControl>
+                    );
+                  }
+                  if (f.type === "MULTI_SELECT") {
+                    return (
+                      <FormControl key={f.id} component="fieldset">
+                        <FormLabel component="legend" sx={{ fontSize: "0.85rem", fontWeight: 600, color: "#8E8E93" }}>
+                          {fullLabel}
+                        </FormLabel>
+                        <Stack spacing={0.25} sx={{ mt: 0.75 }}>
+                          {f.options.map((opt) => (
+                            <FormControlLabel key={opt} control={<Checkbox size="small" />} label={opt} />
+                          ))}
+                        </Stack>
+                      </FormControl>
+                    );
+                  }
+                  return null;
+                })}
+
+                <Button
+                  variant="contained"
+                  fullWidth
+                  sx={{
+                    mt: 1,
+                    backgroundColor: "#0A84FF",
+                    color: "#FFFFFF",
+                    fontWeight: 700,
+                    textTransform: "none",
+                    borderRadius: "8px",
+                    py: 1,
+                  }}
+                >
+                  Submit RSVP
+                </Button>
+              </Stack>
+            </Paper>
+          </Stack>
+        </Grid>
+      </Grid>
+
+      {/* ── CREATE / EDIT DIALOG (presets at top) ── */}
       <Dialog open={open} onClose={() => setOpen(false)} fullWidth maxWidth="sm">
-        <DialogTitle>{editing ? "Edit field" : "Add field"}</DialogTitle>
+        <DialogTitle sx={{ fontWeight: 700 }}>{editing ? "Edit custom field" : "Add custom field"}</DialogTitle>
         <DialogContent sx={{ pt: 2 }}>
-          <Stack spacing={2} sx={{ mt: 1 }}>
+          <Stack spacing={2.5} sx={{ mt: 1 }}>
             {!editing && (
               <Box sx={{ mb: 1 }}>
                 <Typography
                   variant="caption"
                   color="text.secondary"
-                  sx={{ fontWeight: 600, display: "block", mb: 1, textTransform: "uppercase", letterSpacing: "0.5px" }}
+                  sx={{ fontWeight: 600, display: "block", mb: 1.5, textTransform: "uppercase", letterSpacing: "0.5px" }}
                 >
-                  Preset templates
+                  Quick preset templates
                 </Typography>
                 <Stack direction="row" useFlexGap sx={{ flexWrap: "wrap", gap: 1 }}>
                   {FIELD_PRESETS.map((preset) => (
@@ -326,12 +506,12 @@ export function EventRegistrationFormEditor(props: {
                     </Button>
                   ))}
                 </Stack>
-                <Divider sx={{ mt: 2, mb: 1 }} />
+                <Divider sx={{ mt: 2.5, mb: 1.5 }} />
               </Box>
             )}
 
             <TextField
-              label="Label"
+              label="Field Label"
               value={label}
               onChange={(e) => {
                 const next = e.target.value;
@@ -341,20 +521,21 @@ export function EventRegistrationFormEditor(props: {
                 }
               }}
               fullWidth
+              placeholder="e.g. Phone Number, Dietary Restrictions"
             />
             <TextField
-              label="Key"
+              label="Field Key (System Identifier)"
               helperText={
                 editing
-                  ? "System-generated identifier (locked)."
-                  : "Auto-generated from the label. If it already exists, we’ll add _1, _2, etc."
+                  ? "Unique key for CSV exports (locked)."
+                  : "Auto-generated database key. Used in custom field metrics."
               }
               value={key}
               disabled
               fullWidth
             />
             <TextField
-              label="Type"
+              label="Field Type"
               select
               value={type}
               onChange={(e) => setType(e.target.value as RegistrationFieldType)}
@@ -371,23 +552,25 @@ export function EventRegistrationFormEditor(props: {
                 <Checkbox
                   checked={required}
                   onChange={(_, checked) => setRequired(checked)}
+                  color="primary"
                 />
               }
-              label="Required"
+              label="Make this field required"
             />
             {needsOptions(type) ? (
               <TextField
-                label="Options"
-                helperText="Comma-separated (e.g. A, B, C)"
+                label="Options List"
+                helperText="Type options separated by commas (e.g. Small, Medium, Large)"
                 value={optionsCsv}
                 onChange={(e) => setOptionsCsv(e.target.value)}
                 fullWidth
+                placeholder="Option 1, Option 2, Option 3"
               />
             ) : null}
           </Stack>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setOpen(false)} disabled={pending}>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button onClick={() => setOpen(false)} disabled={pending} sx={{ textTransform: "none" }}>
             Cancel
           </Button>
           <Button
@@ -413,10 +596,18 @@ export function EventRegistrationFormEditor(props: {
                   showToast(res.error, "error");
                   return;
                 }
-                showToast("Saved", "success");
+                showToast("Saved field config", "success");
                 setOpen(false);
                 router.refresh();
               });
+            }}
+            sx={{
+              textTransform: "none",
+              backgroundColor: "#0A84FF",
+              color: "#FFFFFF",
+              fontWeight: 600,
+              borderRadius: "8px",
+              px: 3,
             }}
           >
             Save
@@ -424,10 +615,11 @@ export function EventRegistrationFormEditor(props: {
         </DialogActions>
       </Dialog>
 
+      {/* ── CONFIRM DELETE DIALOG ── */}
       <ConfirmationDialog
         open={!!deleteConfirmField}
-        title="Delete Field"
-        message={`Are you sure you want to delete the field "${deleteConfirmField?.label}"? This will also remove any answers collected for this field.`}
+        title="Delete Custom Field"
+        message={`Are you sure you want to delete the field "${deleteConfirmField?.label}"? This will permanently delete all guest answers collected for this field.`}
         confirmLabel="Delete"
         loading={pending}
         onCancel={() => setDeleteConfirmField(null)}
@@ -444,7 +636,6 @@ export function EventRegistrationFormEditor(props: {
             if (!res.ok) {
               showToast(res.error, "error");
             } else {
-              // 10 second undo popup toast!
               showToast(
                 `Field "${targetField.label}" deleted`,
                 "success",
@@ -470,7 +661,7 @@ export function EventRegistrationFormEditor(props: {
                     });
                   },
                 },
-                10000 // 10 seconds duration
+                10000
               );
               router.refresh();
             }
@@ -480,41 +671,3 @@ export function EventRegistrationFormEditor(props: {
     </Stack>
   );
 }
-
-function BoxHeader() {
-  return (
-    <Stack spacing={0.25}>
-      <Typography variant="h6" sx={{ fontWeight: 700 }}>
-        Registration form
-      </Typography>
-      <Typography variant="body2" color="text.secondary">
-        Add custom fields shown on the RSVP form. Name + email are always collected.
-      </Typography>
-    </Stack>
-  );
-}
-
-function FieldPreviewRow(props: { label: string; helper: string }) {
-  const { label, helper } = props;
-  return (
-    <Stack
-      direction={{ xs: "column", sm: "row" }}
-      spacing={1}
-      sx={{
-        alignItems: { sm: "center" },
-        justifyContent: "space-between",
-        p: 1.25,
-        border: 1,
-        borderColor: "divider",
-        borderRadius: 2,
-        opacity: 0.75,
-      }}
-    >
-      <Typography sx={{ fontWeight: 600 }}>{label}</Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ textAlign: { sm: "right" } }}>
-        {helper}
-      </Typography>
-    </Stack>
-  );
-}
-

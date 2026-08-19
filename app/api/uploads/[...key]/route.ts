@@ -20,6 +20,9 @@ export async function GET(request: NextRequest, { params }: Context) {
     return new Response(asset.fileData, {
       headers: {
         "Content-Type": asset.contentType || "application/octet-stream",
+        "Content-Disposition": "inline",
+        "Cross-Origin-Resource-Policy": "same-site",
+        "X-Content-Type-Options": "nosniff",
         "Cache-Control": "public, max-age=31536000, immutable",
       },
     });

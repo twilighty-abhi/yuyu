@@ -21,9 +21,9 @@ import type { ActionResult } from "./org";
 import { flattenZodErrors } from "./utils";
 import { getPublicUrl, uploadFile } from "@/lib/storage";
 import { isActionRateLimited } from "@/lib/actionRateLimit";
+import { validateEventCoverImage } from "@/lib/imageValidation";
 
 const MAX_COVER_IMAGE_BYTES = 5 * 1024 * 1024;
-const ACCEPTED_COVER_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 export async function uploadEventCoverImage(
   formData: FormData,
@@ -39,12 +39,11 @@ export async function uploadEventCoverImage(
   if (!organisationSlug || !(file instanceof File)) {
     return { ok: false, error: "Choose an image to upload." };
   }
-  if (!ACCEPTED_COVER_IMAGE_TYPES.has(file.type)) {
-    return { ok: false, error: "Cover images must be JPEG, PNG, or WebP files." };
-  }
   if (file.size === 0 || file.size > MAX_COVER_IMAGE_BYTES) {
     return { ok: false, error: "Cover images must be 5 MB or smaller." };
   }
+  const inspectedImage = await validateEventCoverImage(file);
+  if ("error" in inspectedImage) return { ok: false, error: inspectedImage.error };
 
   const org = await prisma.organisation.findUnique({ where: { slug: organisationSlug } });
   if (!org) return { ok: false, error: "Organisation not found." };
@@ -54,12 +53,11 @@ export async function uploadEventCoverImage(
   }
 
   try {
-    const extension = file.type === "image/png" ? "png" : file.type === "image/jpeg" ? "jpg" : "webp";
-    const key = `organisations/${org.id}/event-covers/${crypto.randomUUID()}.${extension}`;
+    const key = `organisations/${org.id}/event-covers/${crypto.randomUUID()}.${inspectedImage.extension}`;
     await uploadFile({
       key,
       body: file,
-      contentType: file.type,
+      contentType: inspectedImage.contentType,
       organisationId: org.id,
     });
     return { ok: true, data: { url: getPublicUrl(key) } };

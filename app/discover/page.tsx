@@ -211,36 +211,23 @@ export default async function DiscoverPage({
   };
 
   return (
-    <Stack spacing={3.5} sx={{ py: { xs: 3, sm: 5 } }}>
-      <Paper
-        variant="outlined"
-        sx={{
-          p: { xs: 2.5, sm: 3.5 },
-          borderRadius: "24px",
-          borderColor: "rgba(255,255,255,0.09)",
-          background: "linear-gradient(120deg, rgba(10,132,255,0.15), rgba(28,28,30,0.96) 58%, rgba(185,174,255,0.1))",
-          boxShadow: "0 18px 45px rgba(0,0,0,0.14)",
-        }}
-      >
-        <Typography variant="overline" sx={{ color: "#0A84FF", fontWeight: 700, letterSpacing: "1.5px", lineHeight: 1.3 }}>
-          Find your next moment
-        </Typography>
+    <Stack spacing={3} sx={{ py: { xs: 3, sm: 4 } }}>
+      <Stack spacing={0.5}>
         <Typography
-          variant="h2"
+          variant="h3"
           component="h1"
           sx={{
-            mt: 0.5,
             fontWeight: 700,
-            letterSpacing: "-1.5px",
+            letterSpacing: "-1px",
             color: "#FFFFFF",
           }}
         >
           Discover events
         </Typography>
-        <Typography variant="body1" sx={{ mt: 1, color: "rgba(255,255,255,0.62)", maxWidth: 620 }}>
-          Explore open gatherings, dynamic workshops, and local meetups across all organisations on Yuyu.
+        <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.58)" }}>
+          Browse public events from organisations on Yuyu.
         </Typography>
-      </Paper>
+      </Stack>
 
       {/* Modern Filter panel */}
       <Paper
@@ -249,21 +236,17 @@ export default async function DiscoverPage({
         action="/discover"
         method="get"
         sx={{
-          p: { xs: 2, sm: 2.5 },
-          borderRadius: "20px",
+          p: 1.25,
+          borderRadius: "16px",
           backgroundColor: "rgba(28,28,30,0.82)",
           borderColor: "rgba(255, 255, 255, 0.09)",
-          boxShadow: "0 10px 30px rgba(0,0,0,0.1)",
+          boxShadow: "0 6px 18px rgba(0,0,0,0.1)",
         }}
       >
-        <Stack spacing={2.5}>
-          <Typography variant="subtitle2" sx={{ fontWeight: 700, color: "rgba(255,255,255,0.85)" }}>
-            Refine your search
-          </Typography>
-          <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ alignItems: "center" }}>
+        <Stack direction={{ xs: "column", lg: "row" }} spacing={1} sx={{ alignItems: { xs: "stretch", lg: "center" } }}>
             <TextField
               name="q"
-              placeholder="Search by event title or description..."
+              placeholder="Search events"
               size="small"
               defaultValue={q}
               slotProps={{
@@ -275,7 +258,7 @@ export default async function DiscoverPage({
                   ),
                 },
               }}
-              sx={{ flexGrow: 1, minWidth: { xs: "100%", md: 320 } }}
+              sx={{ flexGrow: 1, minWidth: { xs: "100%", lg: 220 } }}
             />
 
             <TextField
@@ -284,26 +267,13 @@ export default async function DiscoverPage({
               label="Sort By"
               size="small"
               defaultValue={sort}
-              sx={{ minWidth: { xs: "100%", md: 170 } }}
+              sx={{ minWidth: { xs: "100%", sm: 155 }, flexShrink: 0 }}
             >
               <MenuItem value="upcoming">Upcoming First</MenuItem>
               <MenuItem value="popular">Popularity</MenuItem>
             </TextField>
 
-          </Stack>
-
-          {/* Date Picker Range & Buttons */}
-          <Stack
-            direction={{ xs: "column", sm: "row" }}
-            spacing={2}
-            sx={{
-              alignItems: "center",
-              justifyContent: "space-between",
-              pt: 2,
-              borderTop: "1px solid rgba(255, 255, 255, 0.08)",
-            }}
-          >
-            <Stack direction="row" spacing={2} sx={{ width: { xs: "100%", sm: "auto" } }}>
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ width: { xs: "100%", lg: "auto" } }}>
               <TextField
                 name="from"
                 label="From Date"
@@ -311,7 +281,7 @@ export default async function DiscoverPage({
                 size="small"
                 slotProps={{ inputLabel: { shrink: true } }}
                 defaultValue={sp.from ?? ""}
-                sx={{ width: "100%" }}
+                sx={{ width: { xs: "100%", sm: 142 } }}
               />
               <TextField
                 name="to"
@@ -320,14 +290,13 @@ export default async function DiscoverPage({
                 size="small"
                 slotProps={{ inputLabel: { shrink: true } }}
                 defaultValue={sp.to ?? ""}
-                sx={{ width: "100%" }}
+                sx={{ width: { xs: "100%", sm: 142 } }}
               />
             </Stack>
-
             <Stack
               direction="row"
-              spacing={1.5}
-              sx={{ width: { xs: "100%", sm: "auto" }, justifyContent: "flex-end" }}
+              spacing={1}
+              sx={{ width: { xs: "100%", lg: "auto" }, justifyContent: "flex-end", flexShrink: 0 }}
             >
               {hasActiveFilters && (
                 <Button
@@ -337,6 +306,9 @@ export default async function DiscoverPage({
                   startIcon={<ClearIcon />}
                   sx={{
                     color: "#8E8E93",
+                    minWidth: 0,
+                    px: 1,
+                    textTransform: "none",
                     transition: "color 0.2s",
                     "&:hover": { color: "#ffffff", backgroundColor: "rgba(255, 255, 255, 0.04)" },
                   }}
@@ -352,8 +324,9 @@ export default async function DiscoverPage({
                   backgroundColor: "#0A84FF",
                   color: "#FFFFFF",
                   fontWeight: 600,
-                  px: 3.5,
+                  px: 2,
                   borderRadius: "8px",
+                  textTransform: "none",
                   "&:hover": {
                     backgroundColor: "#0A84FF",
                     opacity: 0.9,
@@ -363,7 +336,6 @@ export default async function DiscoverPage({
                 Apply Filters
               </Button>
             </Stack>
-          </Stack>
         </Stack>
       </Paper>
 

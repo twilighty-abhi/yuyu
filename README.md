@@ -190,7 +190,7 @@ Rate limiting is enforced by `middleware.ts` using `lib/rateLimit.ts` for:
 - `POST /api/rsvp` (rsvp)
 - `/api/search` (search)
 
-Note: the current implementation uses an **in-memory** store, which is fine for local/dev but should be replaced with a shared store (Redis/Upstash/etc.) for multi-instance production deployments.
+Production requires `REDIS_URL`. Sensitive limits fail closed when Redis is unavailable; local development may use the in-memory fallback.
 
 ## Super admin panel
 
@@ -217,10 +217,10 @@ Recommended:
 
 ### Database
 
-Use a managed Postgres (or a dedicated Postgres VM). Run migrations:
+Use managed Postgres with TLS, backups, point-in-time recovery, and scheduled restore drills. Run production-safe migrations:
 
 ```bash
-npm run db:migrate
+npm run db:deploy
 ```
 
 ### Prisma + Next.js bundling

@@ -1,0 +1,36 @@
+name: Quality gate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: yuyu
+          POSTGRES_PASSWORD: yuyu_ci
+          POSTGRES_DB: yuyu_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U yuyu -d yuyu_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://yuyu:yuyu_ci@localhost:5432/yuyu_ci
+      AUTH_SECRET: ci-only-not-a-production-secret-0123456789
+      AUTH_URL: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run db:deploy
+      - run: npm run lint
+      - run: npx tsc --noEmit
+      - run: npm run build

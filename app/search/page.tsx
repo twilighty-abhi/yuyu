@@ -1,6 +1,12 @@
 import { EventPrivacyType, EventStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { SearchPageClient } from "@/components/search/SearchPageClient";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Search",
+  description: "Search events by keyword, tag, or organisation.",
+};
 
 type Props = {
   searchParams: Promise<{ q?: string }>;

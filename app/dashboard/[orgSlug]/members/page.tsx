@@ -17,7 +17,14 @@ import {
 import { MemberRoleActions } from "@/components/members/MemberRoleActions";
 import { OrgInviteLinkPanel } from "@/components/members/OrgInviteLinkPanel";
 
+import type { Metadata } from "next";
+
 type Props = { params: Promise<{ orgSlug: string }> };
+
+export const metadata: Metadata = {
+  title: "Members",
+  description: "Organisation members and roles.",
+};
 
 export default async function OrgMembersPage({ params }: Props) {
   const { orgSlug } = await params;

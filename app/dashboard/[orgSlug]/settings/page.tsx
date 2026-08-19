@@ -4,7 +4,14 @@ import { prisma } from "@/lib/db";
 import { requireOrgRole } from "@/lib/permissions";
 import { EditOrgForm } from "@/components/org/EditOrgForm";
 
+import type { Metadata } from "next";
+
 type Props = { params: Promise<{ orgSlug: string }> };
+
+export const metadata: Metadata = {
+  title: "Settings",
+  description: "Edit organisation details.",
+};
 
 export default async function OrgSettingsPage({ params }: Props) {
   const { orgSlug } = await params;

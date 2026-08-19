@@ -16,7 +16,25 @@ import { EventStatus } from "@prisma/client";
 import EventIcon from "@mui/icons-material/Event";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 
+import type { Metadata } from "next";
+
 type Props = { params: Promise<{ orgSlug: string }> };
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { orgSlug } = await params;
+  const org = await prisma.organisation.findUnique({
+    where: { slug: orgSlug },
+    select: { name: true, description: true },
+  });
+  if (!org) return { title: "Organisation" };
+  const description =
+    org.description?.slice(0, 160) || `Events by ${org.name}`;
+  return {
+    title: org.name,
+    description,
+    openGraph: { title: org.name, description },
+  };
+}
 
 export default async function OrganisationPage({ params }: Props) {
   const { orgSlug } = await params;

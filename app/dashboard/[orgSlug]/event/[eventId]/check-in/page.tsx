@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import Typography from "@mui/material/Typography";
 import Stack from "@mui/material/Stack";
 import { prisma } from "@/lib/db";
@@ -8,6 +9,15 @@ import { EventCheckInClient } from "@/components/checkin/EventCheckInClient";
 type Props = {
   params: Promise<{ orgSlug: string; eventId: string }>;
 };
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { eventId } = await params;
+  const event = await prisma.event.findUnique({
+    where: { id: eventId },
+    select: { title: true },
+  });
+  return { title: event ? `Check-in · ${event.title}` : "Check-in" };
+}
 
 function labelAttendee(r: {
   user: { name: string | null; email: string | null } | null;

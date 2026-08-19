@@ -79,7 +79,47 @@ async function requireOrgMemberForEvent(
     event,
     orgSlug: org.slug,
     membership,
+    actorUserId: session.user.id,
   };
+}
+
+async function commitCheckIn(params: {
+  rsvpId: string;
+  actorUserId: string;
+  source: "online" | "offline-sync";
+  checkedInAt: Date;
+}) {
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.rSVP.updateMany({
+      where: { id: params.rsvpId, checkedInAt: null },
+      data: { checkedInAt: params.checkedInAt },
+    });
+    if (updated.count === 0) return false;
+    await tx.checkInEvent.create({
+      data: {
+        rsvpId: params.rsvpId,
+        actorUserId: params.actorUserId,
+        action: "CHECKED_IN",
+        source: params.source,
+        occurredAt: params.checkedInAt,
+      },
+    });
+    return true;
+  });
+}
+
+async function commitUndoCheckIn(params: { rsvpId: string; actorUserId: string }) {
+  await prisma.$transaction(async (tx) => {
+    await tx.rSVP.update({ where: { id: params.rsvpId }, data: { checkedInAt: null } });
+    await tx.checkInEvent.create({
+      data: {
+        rsvpId: params.rsvpId,
+        actorUserId: params.actorUserId,
+        action: "CHECK_IN_UNDONE",
+        source: "online",
+      },
+    });
+  });
 }
 
 function attendeeLabel(r: {
@@ -219,10 +259,26 @@ export async function checkInByToken(
   }
 
   const now = new Date();
-  await prisma.rSVP.update({
-    where: { id: rsvp.id },
-    data: { checkedInAt: now },
+  const committed = await commitCheckIn({
+    rsvpId: rsvp.id,
+    actorUserId: ctx.actorUserId,
+    source: "online",
+    checkedInAt: now,
   });
+  if (!committed) {
+    const current = await prisma.rSVP.findUnique({ where: { id: rsvp.id }, select: { checkedInAt: true } });
+    return {
+      ok: true,
+      data: {
+        rsvpId: rsvp.id,
+        displayName: attendeeLabel(rsvp),
+        email: rsvp.user?.email ?? rsvp.guestEmail,
+        status: rsvp.status,
+        alreadyCheckedIn: true,
+        checkedInAt: current?.checkedInAt?.toISOString() ?? now.toISOString(),
+      },
+    };
+  }
 
   revalidateAfterCheckIn(ctx.orgSlug, {
     eventId: rsvp.eventId,
@@ -281,10 +337,7 @@ export async function undoCheckIn(input: unknown): Promise<ActionResult> {
     return { ok: false, error: "RSVP not found." };
   }
 
-  await prisma.rSVP.update({
-    where: { id: rsvp.id },
-    data: { checkedInAt: null },
-  });
+  await commitUndoCheckIn({ rsvpId: rsvp.id, actorUserId: ctx.actorUserId });
 
   revalidateAfterCheckIn(ctx.orgSlug, {
     eventId: rsvp.eventId,
@@ -376,11 +429,14 @@ export async function syncOfflineCheckIns(
       alreadyCheckedInIds.push(rsvp.id);
       continue;
     }
-    await prisma.rSVP.update({
-      where: { id: rsvp.id },
-      data: { checkedInAt: new Date(checkIn.checkedInAt) },
+    const committed = await commitCheckIn({
+      rsvpId: rsvp.id,
+      actorUserId: ctx.actorUserId,
+      source: "offline-sync",
+      checkedInAt: new Date(checkIn.checkedInAt),
     });
-    syncedIds.push(rsvp.id);
+    if (committed) syncedIds.push(rsvp.id);
+    else alreadyCheckedInIds.push(rsvp.id);
   }
 
   if (syncedIds.length > 0) {
@@ -492,10 +548,26 @@ export async function checkInByRsvpId(
   }
 
   const now = new Date();
-  await prisma.rSVP.update({
-    where: { id: rsvp.id },
-    data: { checkedInAt: now },
+  const committed = await commitCheckIn({
+    rsvpId: rsvp.id,
+    actorUserId: ctx.actorUserId,
+    source: "online",
+    checkedInAt: now,
   });
+  if (!committed) {
+    const current = await prisma.rSVP.findUnique({ where: { id: rsvp.id }, select: { checkedInAt: true } });
+    return {
+      ok: true,
+      data: {
+        rsvpId: rsvp.id,
+        displayName: attendeeLabel(rsvp),
+        email: rsvp.user?.email ?? rsvp.guestEmail,
+        status: rsvp.status,
+        alreadyCheckedIn: true,
+        checkedInAt: current?.checkedInAt?.toISOString() ?? now.toISOString(),
+      },
+    };
+  }
 
   revalidateAfterCheckIn(ctx.orgSlug, {
     eventId: rsvp.eventId,

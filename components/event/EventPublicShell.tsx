@@ -23,6 +23,7 @@ import CalendarTodayOutlinedIcon from "@mui/icons-material/CalendarTodayOutlined
 import PlaceOutlinedIcon from "@mui/icons-material/PlaceOutlined";
 import VideocamOutlinedIcon from "@mui/icons-material/VideocamOutlined";
 import { RsvpForm } from "@/components/rsvp/RsvpForm";
+import { CancelRsvpButton } from "@/components/ticket/CancelRsvpButton";
 import type { RegistrationFieldDefinition } from "@/components/rsvp/registrationTypes";
 
 export type EventPublicAvatar = {
@@ -321,18 +322,7 @@ export function EventPublicShell(props: Props) {
               <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", mt: 2 }}>
                 {event.isOnline ? (
                   <Chip
-                    avatar={
-                      <Avatar
-                        sx={{
-                          width: 22,
-                          height: 22,
-                          bgcolor: "transparent",
-                          color: "text.secondary",
-                        }}
-                      >
-                        <VideocamOutlinedIcon sx={{ fontSize: 16 }} />
-                      </Avatar>
-                    }
+                    icon={<VideocamOutlinedIcon sx={{ fontSize: 16 }} />}
                     label="Online"
                     size="small"
                   />
@@ -501,15 +491,21 @@ export function EventPublicShell(props: Props) {
                     </Typography>
                   ) : null}
                   {hasLocalTicket ? (
-                    <Button
-                      component={Link}
-                      href={`/ticket/${localTicketToken}`}
-                      variant="outlined"
-                      size="small"
-                      sx={{ borderRadius: 999, alignSelf: "flex-start" }}
-                    >
-                      View ticket
-                    </Button>
+                    <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap" }}>
+                      <Button
+                        component={Link}
+                        href={`/ticket/${localTicketToken}`}
+                        variant="outlined"
+                        size="small"
+                        sx={{ borderRadius: 999 }}
+                      >
+                        View ticket
+                      </Button>
+                      <CancelRsvpButton
+                        checkInToken={localTicketToken}
+                        eventPageHref={`/${orgSlug}/${event.slug}`}
+                      />
+                    </Stack>
                   ) : (
                     <Button
                       variant="contained"

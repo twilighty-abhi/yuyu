@@ -1,13 +1,29 @@
 import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import Typography from "@mui/material/Typography";
 import Stack from "@mui/material/Stack";
+import Chip from "@mui/material/Chip";
 import { prisma } from "@/lib/db";
 import { getRequestOrigin } from "@/lib/publicUrl";
 import { TicketQrPanel } from "@/components/ticket/TicketQrPanel";
+import { CancelRsvpButton } from "@/components/ticket/CancelRsvpButton";
 
 type Props = {
   params: Promise<{ token: string }>;
 };
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { token } = await params;
+  const rsvp = await prisma.rSVP.findUnique({
+    where: { checkInToken: token?.trim() || "" },
+    select: {
+      event: { select: { title: true } },
+      eventInstance: { select: { series: { select: { title: true } } } },
+    },
+  });
+  const title = rsvp?.event?.title ?? rsvp?.eventInstance?.series?.title;
+  return { title: title ? `Ticket · ${title}` : "Your Ticket" };
+}
 
 function displayName(r: {
   user: { name: string | null } | null;
@@ -20,6 +36,21 @@ function displayName(r: {
   if (gn) return gn;
   if (r.guestEmail) return r.guestEmail.split("@")[0] ?? "Guest";
   return "Guest";
+}
+
+function statusLabel(status: string) {
+  switch (status) {
+    case "CONFIRMED":
+      return { label: "Confirmed", color: "success" as const };
+    case "WAITLISTED":
+      return { label: "Waitlisted", color: "warning" as const };
+    case "PENDING_APPROVAL":
+      return { label: "Pending Approval", color: "info" as const };
+    case "REJECTED":
+      return { label: "Rejected", color: "error" as const };
+    default:
+      return { label: status, color: "default" as const };
+  }
 }
 
 export default async function TicketPage({ params }: Props) {
@@ -62,6 +93,8 @@ export default async function TicketPage({ params }: Props) {
   const origin = await getRequestOrigin();
 
   let orgName: string;
+  let orgSlug: string;
+  let eventSlug: string | null = null;
   let title: string;
   let when: string;
   let locationLine: string;
@@ -69,6 +102,8 @@ export default async function TicketPage({ params }: Props) {
   if (rsvp.eventId && rsvp.event) {
     const ev = rsvp.event;
     orgName = ev.organisation.name;
+    orgSlug = ev.organisation.slug;
+    eventSlug = ev.slug;
     title = ev.title;
     when = ev.startDateTime.toLocaleString(undefined, {
       weekday: "short",
@@ -84,6 +119,7 @@ export default async function TicketPage({ params }: Props) {
     const inst = rsvp.eventInstance;
     const tz = inst.series.timezone;
     orgName = inst.series.organisation.name;
+    orgSlug = inst.series.organisation.slug;
     title = inst.series.title;
     when = inst.startDateTime.toLocaleString(undefined, {
       weekday: "short",
@@ -98,6 +134,9 @@ export default async function TicketPage({ params }: Props) {
   } else {
     notFound();
   }
+
+  const status = statusLabel(rsvp.status);
+  const isCheckedIn = Boolean(rsvp.checkedInAt);
 
   return (
     <Stack
@@ -115,6 +154,12 @@ export default async function TicketPage({ params }: Props) {
       <Typography variant="h5" component="h1" sx={{ fontWeight: 700 }}>
         {title}
       </Typography>
+      <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+        <Chip label={status.label} color={status.color} size="small" variant="outlined" />
+        {isCheckedIn ? (
+          <Chip label="Checked In" color="success" size="small" />
+        ) : null}
+      </Stack>
       <Typography variant="body1" color="text.secondary">
         {when}
         {locationLine}
@@ -128,6 +173,13 @@ export default async function TicketPage({ params }: Props) {
       <Typography variant="caption" color="text.secondary" sx={{ wordBreak: "break-all" }}>
         Ticket link: {origin}/ticket/{rsvp.checkInToken}
       </Typography>
+
+      {!isCheckedIn && rsvp.status !== "REJECTED" ? (
+        <CancelRsvpButton
+          checkInToken={rsvp.checkInToken}
+          eventPageHref={eventSlug ? `/${orgSlug}/${eventSlug}` : `/${orgSlug}`}
+        />
+      ) : null}
     </Stack>
   );
 }

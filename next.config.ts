@@ -12,7 +12,7 @@ const developmentEvalSource =
   process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : "";
 const isProduction = process.env.NODE_ENV === "production";
 const contentSecurityPolicy =
-  "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data: blob: https:; font-src 'self' data: https:; connect-src 'self' https:; script-src 'self' 'unsafe-inline'" +
+  "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; frame-src https://maps.google.com https://www.google.com; form-action 'self'; img-src 'self' data: blob: https:; font-src 'self' data: https:; connect-src 'self' https:; script-src 'self' 'unsafe-inline'" +
   developmentEvalSource +
   "; style-src 'self' 'unsafe-inline'" +
   (isProduction ? "; upgrade-insecure-requests" : "");

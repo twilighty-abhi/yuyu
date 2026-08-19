@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -15,8 +15,7 @@ import ImageOutlinedIcon from "@mui/icons-material/ImageOutlined";
 import RotateRightOutlinedIcon from "@mui/icons-material/RotateRightOutlined";
 
 const MAX_COVER_IMAGE_BYTES = 5 * 1024 * 1024;
-const OUTPUT_WIDTH = 1600;
-const OUTPUT_HEIGHT = 900;
+const OUTPUT_SIZE = 1200;
 
 export function CoverImagePicker(props: {
   initialUrl?: string | null;
@@ -33,24 +32,26 @@ export function CoverImagePicker(props: {
   const [imageLoaded, setImageLoaded] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [error, setError] = useState<string | null>(null);
+  const dragRef = useRef<{ x: number; y: number; offsetX: number; offsetY: number } | null>(null);
 
   useEffect(() => {
     const image = imageRef.current;
     const canvas = canvasRef.current;
     if (!image || !canvas || !imageLoaded) return;
 
-    canvas.width = OUTPUT_WIDTH;
-    canvas.height = OUTPUT_HEIGHT;
+    canvas.width = OUTPUT_SIZE;
+    canvas.height = OUTPUT_SIZE;
     const context = canvas.getContext("2d");
     if (!context) return;
     context.fillStyle = "#111";
-    context.fillRect(0, 0, OUTPUT_WIDTH, OUTPUT_HEIGHT);
+    context.fillRect(0, 0, OUTPUT_SIZE, OUTPUT_SIZE);
     const radians = (rotation * Math.PI) / 180;
-    const baseScale = Math.max(OUTPUT_WIDTH / image.naturalWidth, OUTPUT_HEIGHT / image.naturalHeight);
+    const baseScale = Math.max(OUTPUT_SIZE / image.naturalWidth, OUTPUT_SIZE / image.naturalHeight);
     const scale = baseScale * zoom;
     context.save();
-    context.translate(OUTPUT_WIDTH / 2, OUTPUT_HEIGHT / 2);
+    context.translate(OUTPUT_SIZE / 2 + offset.x, OUTPUT_SIZE / 2 + offset.y);
     context.rotate(radians);
     context.drawImage(
       image,
@@ -60,7 +61,7 @@ export function CoverImagePicker(props: {
       image.naturalHeight * scale,
     );
     context.restore();
-  }, [imageLoaded, rotation, zoom]);
+  }, [imageLoaded, offset, rotation, zoom]);
 
   function selectImage(file: File | undefined) {
     if (!file) return;
@@ -77,7 +78,31 @@ export function CoverImagePicker(props: {
     setImageLoaded(false);
     setZoom(1);
     setRotation(0);
+    setOffset({ x: 0, y: 0 });
     setEditorOpen(true);
+  }
+
+  function startDrag(event: ReactPointerEvent<HTMLCanvasElement>) {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    canvas.setPointerCapture(event.pointerId);
+    dragRef.current = { x: event.clientX, y: event.clientY, offsetX: offset.x, offsetY: offset.y };
+  }
+
+  function moveDrag(event: ReactPointerEvent<HTMLCanvasElement>) {
+    const drag = dragRef.current;
+    const canvas = canvasRef.current;
+    if (!drag || !canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    setOffset({
+      x: drag.offsetX + ((event.clientX - drag.x) * OUTPUT_SIZE) / rect.width,
+      y: drag.offsetY + ((event.clientY - drag.y) * OUTPUT_SIZE) / rect.height,
+    });
+  }
+
+  function endDrag(event: ReactPointerEvent<HTMLCanvasElement>) {
+    dragRef.current = null;
+    event.currentTarget.releasePointerCapture(event.pointerId);
   }
 
   function applyEdit() {
@@ -111,7 +136,7 @@ export function CoverImagePicker(props: {
         sx={{
           position: "relative",
           overflow: "hidden",
-          aspectRatio: "16 / 9",
+          aspectRatio: "1 / 1",
           borderRadius: "14px",
           border: "1px dashed rgba(255,255,255,0.18)",
           backgroundColor: "rgba(255,255,255,0.025)",
@@ -139,7 +164,7 @@ export function CoverImagePicker(props: {
         ) : null}
       </Stack>
       <Typography variant="caption" color="text.secondary">
-        JPEG, PNG, or WebP · up to 5 MB · cropped to a 16:9 cover.
+        JPEG, PNG, or WebP · up to 5 MB · cropped to a square cover.
       </Typography>
       <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={(event) => selectImage(event.target.files?.[0])} />
 
@@ -147,9 +172,19 @@ export function CoverImagePicker(props: {
         <DialogTitle sx={{ fontWeight: 700 }}>Edit cover image</DialogTitle>
         <DialogContent>
           <Stack spacing={2.5} sx={{ pt: 1 }}>
-            <Box sx={{ overflow: "hidden", borderRadius: 2, backgroundColor: "#111", aspectRatio: "16 / 9" }}>
-              <canvas ref={canvasRef} style={{ display: "block", width: "100%", height: "100%" }} />
+            <Box sx={{ overflow: "hidden", borderRadius: 2, backgroundColor: "#111", aspectRatio: "1 / 1", maxWidth: 520, mx: "auto" }}>
+              <canvas
+                ref={canvasRef}
+                onPointerDown={startDrag}
+                onPointerMove={moveDrag}
+                onPointerUp={endDrag}
+                onPointerCancel={endDrag}
+                style={{ display: "block", width: "100%", height: "100%", cursor: "grab", touchAction: "none" }}
+              />
             </Box>
+            <Typography variant="caption" color="text.secondary" sx={{ textAlign: "center" }}>
+              Drag the image to position the square crop.
+            </Typography>
             {/* A native image element is required as the canvas source for client-side cropping. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img ref={imageRef} src={sourceUrl} alt="" hidden onLoad={() => setImageLoaded(true)} />

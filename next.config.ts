@@ -4,6 +4,10 @@ const allowedActionOrigins = process.env.ALLOWED_ACTION_ORIGINS
   ?.split(",")
   .map((origin) => origin.trim())
   .filter(Boolean);
+const allowedDevOrigins = process.env.NEXT_DEV_ALLOWED_ORIGINS
+  ?.split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 const developmentEvalSource =
   process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : "";
 const contentSecurityPolicy =
@@ -15,6 +19,7 @@ const nextConfig: NextConfig = {
   /** Prisma must not be bundled by Turbopack or model delegates (e.g. `eventSeries`) can be missing at runtime. */
   serverExternalPackages: ["@prisma/client"],
   output: "standalone",
+  ...(allowedDevOrigins?.length ? { allowedDevOrigins } : {}),
   experimental: {
     serverActions: {
       // The default is same-origin only. Configure this explicitly when a

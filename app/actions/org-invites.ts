@@ -8,6 +8,7 @@ import { getMembership, isOrgAdmin } from "@/lib/permissions";
 import { createOrgInviteSchema, revokeOrgInviteSchema } from "@/lib/validators";
 import type { ActionResult } from "./org";
 import { flattenZodErrors } from "./utils";
+import { isActionRateLimited } from "@/lib/actionRateLimit";
 
 function randomToken(): string {
   // 32 chars of base64url-ish entropy, no padding.
@@ -20,6 +21,9 @@ export async function createOrgInvite(input: unknown): Promise<
   const session = await auth();
   if (!session?.user?.id) {
     return { ok: false, error: "You must be signed in." };
+  }
+  if (await isActionRateLimited("invite", session.user.id)) {
+    return { ok: false, error: "Too many invite requests. Please try again later." };
   }
 
   const parsed = createOrgInviteSchema.safeParse(input);
@@ -83,6 +87,9 @@ export async function revokeOrgInvite(input: unknown): Promise<ActionResult> {
   if (!session?.user?.id) {
     return { ok: false, error: "You must be signed in." };
   }
+  if (await isActionRateLimited("invite", session.user.id)) {
+    return { ok: false, error: "Too many invite requests. Please try again later." };
+  }
 
   const parsed = revokeOrgInviteSchema.safeParse(input);
   if (!parsed.success) {
@@ -115,4 +122,3 @@ export async function revokeOrgInvite(input: unknown): Promise<ActionResult> {
   revalidatePath(`/dashboard/${org.slug}/members`);
   return { ok: true };
 }
-

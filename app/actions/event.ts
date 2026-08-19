@@ -20,6 +20,7 @@ import {
 import type { ActionResult } from "./org";
 import { flattenZodErrors } from "./utils";
 import { getPublicUrl, uploadFile } from "@/lib/storage";
+import { isActionRateLimited } from "@/lib/actionRateLimit";
 
 const MAX_COVER_IMAGE_BYTES = 5 * 1024 * 1024;
 const ACCEPTED_COVER_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -29,6 +30,9 @@ export async function uploadEventCoverImage(
 ): Promise<ActionResult<{ url: string }>> {
   const session = await auth();
   if (!session?.user?.id) return { ok: false, error: "You must be signed in." };
+  if (await isActionRateLimited("upload", session.user.id)) {
+    return { ok: false, error: "Too many uploads. Please try again later." };
+  }
 
   const organisationSlug = String(formData.get("organisationSlug") ?? "").trim();
   const file = formData.get("file");

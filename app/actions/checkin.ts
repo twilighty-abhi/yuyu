@@ -15,6 +15,7 @@ import {
 } from "@/lib/validators";
 import type { ActionResult } from "./org";
 import { flattenZodErrors } from "./utils";
+import { isActionRateLimited } from "@/lib/actionRateLimit";
 
 export type CheckInResultData = {
   rsvpId: string;
@@ -55,6 +56,9 @@ async function requireOrgMemberForEvent(
   const session = await auth();
   if (!session?.user?.id) {
     return { ok: false as const, error: "You must be signed in." };
+  }
+  if (await isActionRateLimited("checkin", session.user.id)) {
+    return { ok: false as const, error: "Too many check-in requests. Please try again shortly." };
   }
   const org = await prisma.organisation.findUnique({
     where: { slug: organisationSlug },

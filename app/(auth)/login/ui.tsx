@@ -109,11 +109,18 @@ export function LoginForm() {
     e.preventDefault();
     resetStatus();
     setLoading("credentials");
-    const r = await signIn("credentials", {
-      email,
-      password,
-      redirect: false,
-    });
+    let r;
+    try {
+      r = await signIn("credentials", {
+        email,
+        password,
+        redirect: false,
+      });
+    } catch {
+      setLoading(null);
+      setError("Sign-in is temporarily unavailable. Please refresh the page and try again.");
+      return;
+    }
     setLoading(null);
     if (!r) {
       setError("Unexpected error. Please try again.");

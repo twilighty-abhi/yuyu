@@ -138,7 +138,7 @@ export function EventCheckInClient(props: {
 
   useEffect(() => {
     if ("serviceWorker" in navigator) {
-      void navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => {
+      void navigator.serviceWorker.register("/sw.js", { scope: "/", updateViaCache: "none" }).catch(() => {
         // Offline data remains available even if the browser disallows service workers.
       });
     }

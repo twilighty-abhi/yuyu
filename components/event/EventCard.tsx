@@ -7,6 +7,7 @@ import Chip from "@mui/material/Chip";
 import Stack from "@mui/material/Stack";
 import Link from "next/link";
 import type { Event } from "@prisma/client";
+import ScheduleOutlinedIcon from "@mui/icons-material/ScheduleOutlined";
 
 function formatEventRange(start: Date, end: Date, timeZone: string) {
   const opts: Intl.DateTimeFormatOptions = {
@@ -27,6 +28,23 @@ function statusChip(status: Event["status"]) {
     return <Chip label="Hidden" size="small" color="default" variant="outlined" />;
   }
   return null;
+}
+
+function eventTimingLabel(start: Date, end: Date): string {
+  const now = Date.now();
+  const startMs = start.getTime();
+  const endMs = end.getTime();
+
+  if (now >= endMs) return "Ended";
+  if (now >= startMs) return "Happening now";
+
+  const remainingMinutes = Math.ceil((startMs - now) / 60_000);
+  if (remainingMinutes < 60) return `In ${remainingMinutes}m`;
+
+  const remainingHours = Math.ceil(remainingMinutes / 60);
+  if (remainingHours < 24) return `In ${remainingHours}h`;
+
+  return `In ${Math.ceil(remainingHours / 24)}d`;
 }
 
 export function EventCard(props: {
@@ -56,6 +74,8 @@ export function EventCard(props: {
       ? `${event.description.slice(0, 117)}…`
       : event.description;
   const tags = Array.isArray(event.tags) ? event.tags : [];
+  const timingLabel = eventTimingLabel(event.startDateTime, event.endDateTime);
+  const eventIsLive = timingLabel === "Happening now";
 
   return (
     <Card
@@ -100,6 +120,17 @@ export function EventCard(props: {
                   event.isOnline
                     ? { borderColor: "rgba(10,132,255,0.45)", color: "#72B7FF" }
                     : { borderColor: "rgba(48,209,88,0.4)", color: "#7CE6A2" }
+                }
+              />
+              <Chip
+                icon={<ScheduleOutlinedIcon sx={{ fontSize: 14 }} />}
+                label={timingLabel}
+                size="small"
+                variant="outlined"
+                sx={
+                  eventIsLive
+                    ? { borderColor: "rgba(48,209,88,0.5)", color: "#7CE6A2", "& .MuiChip-icon": { color: "inherit" } }
+                    : { borderColor: "rgba(255,255,255,0.16)", color: "rgba(255,255,255,0.68)", "& .MuiChip-icon": { color: "inherit" } }
                 }
               />
               {tags.slice(0, 3).map((t) => (

@@ -26,6 +26,7 @@ import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import PlaceOutlinedIcon from "@mui/icons-material/PlaceOutlined";
 import VideocamOutlinedIcon from "@mui/icons-material/VideocamOutlined";
 import type { AttendeeRow } from "@/components/attendees/AttendeeTable";
+import { PublishEventButton } from "@/components/event/PublishEventButton";
 
 function asDate(value: Event["startDateTime"]): Date {
   return value instanceof Date ? value : new Date(value as string);
@@ -181,10 +182,57 @@ export function EventManageOverview(props: {
   return (
     <Stack spacing={3}>
       {isDraft ? (
-        <Alert severity="info">
-          This event is a draft. Publish it from Details when you are ready to
-          share.
-        </Alert>
+        <Paper
+          variant="outlined"
+          sx={{
+            p: 3,
+            borderRadius: "12px",
+            backgroundColor: "#1C1C1E",
+            borderColor: "rgba(255, 255, 255, 0.08)",
+            boxShadow: "none",
+          }}
+        >
+          <Stack
+            direction={{ xs: "column", sm: "row" }}
+            spacing={2}
+            sx={{
+              justifyContent: "space-between",
+              alignItems: { xs: "stretch", sm: "center" },
+            }}
+          >
+            <Stack spacing={0.5}>
+              <Typography variant="body1" sx={{ fontWeight: 600, color: "#FFFFFF" }}>
+                This event is currently in Draft
+              </Typography>
+              <Typography variant="body2" sx={{ color: "#8E8E93" }}>
+                Publish this event to allow guests to register, view details, and receive tickets.
+              </Typography>
+            </Stack>
+            <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={() => onOpenTab(1)}
+                sx={{
+                  color: "#FFFFFF",
+                  borderColor: "rgba(255, 255, 255, 0.12)",
+                  textTransform: "none",
+                  fontWeight: 600,
+                  "&:hover": {
+                    backgroundColor: "rgba(255, 255, 255, 0.04)",
+                    borderColor: "rgba(255, 255, 255, 0.2)",
+                  },
+                }}
+              >
+                Edit Details
+              </Button>
+              <PublishEventButton
+                organisationSlug={organisationSlug}
+                eventSlug={event.slug}
+              />
+            </Stack>
+          </Stack>
+        </Paper>
       ) : null}
       {hasEnded && !isDraft ? (
         <Alert severity="success" variant="outlined">

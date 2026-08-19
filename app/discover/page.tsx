@@ -362,14 +362,14 @@ export default async function DiscoverPage({
           </Typography>
         </Paper>
       ) : (
-        <Grid container spacing={2.5}>
+        <Grid container spacing={2}>
           {pageItems.map((row) =>
             row.kind === "event" ? (
-              <Grid size={{ xs: 12, sm: 6, md: 6 }} key={row.id}>
-                <EventCard orgSlug={row.orgSlug} event={row.event} />
+              <Grid size={{ xs: 12, sm: 6, md: 4 }} key={row.id}>
+                <EventCard orgSlug={row.orgSlug} event={row.event} compact />
               </Grid>
             ) : (
-              <Grid size={{ xs: 12, sm: 6, md: 6 }} key={row.id}>
+              <Grid size={{ xs: 12, sm: 6, md: 4 }} key={row.id}>
                 <InstanceCard
                   orgSlug={row.orgSlug}
                   instanceId={row.instance.id}

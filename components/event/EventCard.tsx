@@ -34,6 +34,8 @@ export function EventCard(props: {
   orgSlug: string;
   /** Defaults to public event URL. */
   href?: string;
+  /** Denser presentation for collection pages such as Discover. */
+  compact?: boolean;
   event: Pick<
     Event,
     | "title"
@@ -50,7 +52,7 @@ export function EventCard(props: {
     tags?: string[] | null;
   };
 }) {
-  const { orgSlug, event } = props;
+  const { orgSlug, event, compact = false } = props;
   const href = props.href ?? `/${orgSlug}/${event.slug}`;
   const desc =
     event.description.length > 120
@@ -84,14 +86,14 @@ export function EventCard(props: {
           {event.coverImageUrl ? (
             <CardMedia
               component="img"
-              height="140"
+              height={compact ? "96" : "140"}
               image={event.coverImageUrl}
               alt=""
-              sx={{ objectFit: "cover" }}
+              sx={{ objectFit: "cover", display: "block" }}
             />
           ) : null}
-          <CardContent sx={{ p: 2.5, "&:last-child": { pb: 2.5 } }}>
-            <Stack direction="row" spacing={0.75} sx={{ mb: 1.5, flexWrap: "wrap" }}>
+          <CardContent sx={{ p: compact ? 1.75 : 2.5, "&:last-child": { pb: compact ? 1.75 : 2.5 } }}>
+            <Stack direction="row" spacing={0.75} sx={{ mb: compact ? 1 : 1.5, flexWrap: "wrap" }}>
               {statusChip(event.status)}
               <Chip
                 label={event.isOnline ? "Online" : "In person"}
@@ -111,10 +113,10 @@ export function EventCard(props: {
                 <Chip key={t} label={t} size="small" variant="outlined" />
               ))}
             </Stack>
-            <Typography variant="h6" component="h3" sx={{ fontWeight: 700, letterSpacing: "-0.25px", mb: 0.75 }}>
+            <Typography variant="h6" component="h3" sx={{ fontWeight: 700, letterSpacing: "-0.25px", mb: 0.5, lineHeight: 1.25 }}>
               {event.title}
             </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1.25 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: compact ? 0.75 : 1.25 }}>
               {formatEventRange(
                 event.startDateTime,
                 event.endDateTime,
@@ -122,7 +124,7 @@ export function EventCard(props: {
               )}
             </Typography>
             {desc ? (
-              <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.5 }}>
+              <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.5, display: "-webkit-box", WebkitLineClamp: compact ? 2 : undefined, WebkitBoxOrient: "vertical", overflow: compact ? "hidden" : undefined }}>
                 {desc}
               </Typography>
             ) : null}

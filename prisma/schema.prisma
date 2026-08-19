@@ -46,6 +46,13 @@ enum RegistrationFieldType {
   DATE
 }
 
+enum OutboxStatus {
+  PENDING
+  PROCESSING
+  SENT
+  FAILED
+}
+
 model User {
   id            String    @id @default(cuid())
   name          String?
@@ -62,6 +69,8 @@ model User {
   rsvps             RSVP[]
   orgInvitesCreated OrganisationInvite[] @relation("OrgInviteCreatedBy")
   orgInvitesUsed    OrganisationInvite[] @relation("OrgInviteUsedBy")
+  auditEvents       AuditEvent[]
+  checkInEvents     CheckInEvent[]
 }
 
 model Account {
@@ -112,6 +121,7 @@ model Organisation {
   events      Event[]
   eventSeries EventSeries[]
   assets      Asset[]
+  auditEvents AuditEvent[]
 }
 
 model OrganisationInvite {
@@ -260,6 +270,7 @@ model RSVP {
   eventInstance EventInstance? @relation(fields: [eventInstanceId], references: [id], onDelete: Cascade)
   user          User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
   answers       RsvpAnswer[]
+  checkInEvents CheckInEvent[]
 
   @@index([eventId])
   @@index([eventInstanceId])
@@ -317,6 +328,61 @@ model RsvpAnswer {
   @@index([rsvpId])
   @@index([fieldId])
   @@index([rsvpId, fieldId])
+}
+
+/// Append-only security and business-event audit trail. Metadata must never
+/// contain secrets, passwords, reset links, or ticket tokens.
+model AuditEvent {
+  id             String   @id @default(cuid())
+  action         String
+  actorUserId    String?
+  organisationId String?
+  targetType     String?
+  targetId       String?
+  metadata       Json?
+  createdAt      DateTime @default(now())
+
+  actor        User?         @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  organisation Organisation? @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([action, createdAt])
+}
+
+/// Immutable record of every check-in and undo operation, including offline
+/// synchronisation. `RSVP.checkedInAt` remains the current projection.
+model CheckInEvent {
+  id          String   @id @default(cuid())
+  rsvpId      String
+  actorUserId String?
+  action      String
+  source      String
+  occurredAt  DateTime @default(now())
+
+  rsvp  RSVP  @relation(fields: [rsvpId], references: [id], onDelete: Cascade)
+  actor User? @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([rsvpId, occurredAt])
+  @@index([actorUserId, occurredAt])
+}
+
+/// Durable queue for transactional messages. A background worker claims and
+/// retries these rows; request handlers only enqueue them.
+model OutboxMessage {
+  id          String       @id @default(cuid())
+  kind        String
+  payload     Json
+  status      OutboxStatus @default(PENDING)
+  attempts    Int          @default(0)
+  availableAt DateTime     @default(now())
+  lockedAt    DateTime?
+  sentAt      DateTime?
+  lastError   String?
+  createdAt   DateTime     @default(now())
+
+  @@index([status, availableAt])
+  @@index([createdAt])
 }
 
 /// Tracks stored files (S3/R2/MinIO/etc.) for per-org storage accounting.

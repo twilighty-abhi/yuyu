@@ -13,6 +13,8 @@ const envSchema = z.object({
   SMTP_PASSWORD: z.string().optional(),
   STORAGE_PUBLIC_BASE_URL: z.string().optional(),
   REDIS_URL: z.string().optional(),
+  ALLOWED_ACTION_ORIGINS: z.string().optional(),
+  TRUSTED_PROXY_IP_HEADER: z.enum(["cf-connecting-ip", "x-forwarded-for", "x-real-ip"]).optional(),
   SUPER_ADMIN_EMAIL: z.string().optional(),
 });
 
@@ -35,6 +37,15 @@ if (!parsed.success) {
   if (process.env.NODE_ENV === "production" && !isBuildPhase) {
     throw new Error("Invalid environment configuration. Check server logs.");
   }
+}
+
+if (
+  parsed.success &&
+  process.env.NODE_ENV === "production" &&
+  !process.argv.some((arg) => arg.includes("build")) &&
+  !parsed.data.REDIS_URL
+) {
+  throw new Error("REDIS_URL is required in production for distributed rate limiting.");
 }
 
 export const env = parsed.data;

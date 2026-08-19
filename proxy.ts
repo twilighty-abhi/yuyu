@@ -5,13 +5,14 @@ import { checkRateLimit } from "@/lib/rateLimit";
 function tooMany() {
   return NextResponse.json(
     { error: "Too many requests. Try again later." },
-    { status: 429 },
+    { status: 429, headers: { "Retry-After": "60", "Cache-Control": "no-store" } },
   );
 }
 
 function tooManyText() {
   return new NextResponse("Too many requests. Try again later.", {
     status: 429,
+    headers: { "Retry-After": "60", "Cache-Control": "no-store" },
   });
 }
 
@@ -26,6 +27,12 @@ export async function proxy(request: NextRequest) {
 
   if (pathname.startsWith("/api/auth")) {
     if (!(await checkRateLimit(request, "auth"))) {
+      return tooMany();
+    }
+  }
+
+  if (pathname === "/api/uploads" && request.method !== "GET") {
+    if (!(await checkRateLimit(request, "upload"))) {
       return tooMany();
     }
   }

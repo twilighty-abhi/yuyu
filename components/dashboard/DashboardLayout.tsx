@@ -6,6 +6,7 @@ import Button from "@mui/material/Button";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import Link from "next/link";
+import Paper from "@mui/material/Paper";
 
 export function DashboardLayout(props: {
   organisationName: string;
@@ -19,52 +20,51 @@ export function DashboardLayout(props: {
   const isEventPage = pathname?.includes("/event/");
 
   return (
-    <Stack spacing={3}>
+    <Stack spacing={3.5} sx={{ py: { xs: 1, sm: 2 } }}>
       {!isEventPage && (
-        <Stack
-          direction={{ xs: "column", sm: "row" }}
-          spacing={2}
-          useFlexGap
+        <Paper
+          variant="outlined"
           sx={{
-            flexWrap: "wrap",
-            alignItems: { xs: "flex-start", sm: "center" },
+            px: { xs: 1.5, sm: 2 },
+            py: 1.25,
+            borderRadius: "18px",
+            borderColor: "rgba(255, 255, 255, 0.09)",
+            backgroundColor: "rgba(28, 28, 30, 0.72)",
+            backdropFilter: "blur(14px)",
           }}
         >
           <Stack
-            direction="row"
-            spacing={1}
+            direction={{ xs: "column", sm: "row" }}
+            spacing={1.5}
             useFlexGap
-            sx={{ flexWrap: "wrap", alignItems: "center" }}
+            sx={{ alignItems: { xs: "flex-start", sm: "center" } }}
           >
-            <Link href="/dashboard" style={{ textDecoration: "none" }}>
-              <Button size="small" variant="text" component="span">
-                Organisations
-              </Button>
-            </Link>
-            <Typography variant="body2" color="text.secondary">
-              /
-            </Typography>
-            <Typography variant="h5" component="h1" sx={{ fontWeight: 600 }}>
-              {organisationName}
-            </Typography>
+            <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+              <Link href="/dashboard" style={{ textDecoration: "none" }}>
+                <Button size="small" variant="text" component="span" sx={{ textTransform: "none" }}>
+                  Organisations
+                </Button>
+              </Link>
+              <Typography variant="body2" color="text.secondary">/</Typography>
+              <Typography variant="body2" sx={{ fontWeight: 650, color: "text.primary" }}>
+                {organisationName}
+              </Typography>
+            </Stack>
+            <Box sx={{ flex: 1 }} />
+            <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
+              <Link href={`/${organisationSlug}`} style={{ textDecoration: "none" }}>
+                <Button size="small" variant="outlined" component="span" sx={{ textTransform: "none", borderRadius: 2 }}>
+                  Public page
+                </Button>
+              </Link>
+              <Link href={`/dashboard/${organisationSlug}/members`} style={{ textDecoration: "none" }}>
+                <Button size="small" variant="outlined" component="span" sx={{ textTransform: "none", borderRadius: 2 }}>
+                  Members
+                </Button>
+              </Link>
+            </Stack>
           </Stack>
-          <Box sx={{ flex: 1 }} />
-          <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
-            <Link href={`/${organisationSlug}`} style={{ textDecoration: "none" }}>
-              <Button size="small" variant="outlined" component="span">
-                Public page
-              </Button>
-            </Link>
-            <Link
-              href={`/dashboard/${organisationSlug}/members`}
-              style={{ textDecoration: "none" }}
-            >
-              <Button size="small" variant="outlined" component="span">
-                Members
-              </Button>
-            </Link>
-          </Stack>
-        </Stack>
+        </Paper>
       )}
       {children}
     </Stack>

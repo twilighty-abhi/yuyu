@@ -19,6 +19,9 @@ import { DeleteOrganisationButton } from "@/components/dashboard/DeleteOrganisat
 import NavigateBeforeIcon from "@mui/icons-material/NavigateBefore";
 import NavigateNextIcon from "@mui/icons-material/NavigateNext";
 import Chip from "@mui/material/Chip";
+import EventIcon from "@mui/icons-material/Event";
+import AddIcon from "@mui/icons-material/Add";
+import RepeatIcon from "@mui/icons-material/Repeat";
 
 import type { Metadata } from "next";
 
@@ -70,29 +73,27 @@ export default async function OrgDashboardPage({ params, searchParams }: Props) 
   });
   const seriesList = orgSeries?.eventSeries ?? [];
 
-  const totalRsvps = await prisma.rSVP.count({
-    where: {
-      OR: [
-        { event: { organisationId: organisation.id } },
-        { eventInstance: { series: { organisationId: organisation.id } } },
-      ],
-    },
-  });
-
   return (
     <>
-      <Stack
-        direction={{ xs: "column", sm: "row" }}
-        spacing={2}
+      <Paper
+        variant="outlined"
         sx={{
-          justifyContent: "space-between",
-          alignItems: { xs: "stretch", sm: "flex-end" },
-          pb: 1.5,
-          borderBottom: "1px solid rgba(255, 255, 255, 0.08)",
-          mb: 1,
+          p: { xs: 2.5, sm: 3.5 },
+          borderRadius: "22px",
+          borderColor: "rgba(255, 255, 255, 0.09)",
+          background: "linear-gradient(120deg, rgba(10,132,255,0.15), rgba(28,28,30,0.96) 55%, rgba(48,209,88,0.08))",
+          boxShadow: "0 18px 45px rgba(0,0,0,0.14)",
         }}
       >
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          spacing={2}
+          sx={{ justifyContent: "space-between", alignItems: { xs: "stretch", sm: "flex-end" } }}
+        >
         <Stack spacing={0.5}>
+          <Typography variant="overline" sx={{ color: "#0A84FF", fontWeight: 700, letterSpacing: "1.5px", lineHeight: 1.3 }}>
+            Organisation workspace
+          </Typography>
           <Typography
             variant="h4"
             component="h1"
@@ -100,93 +101,74 @@ export default async function OrgDashboardPage({ params, searchParams }: Props) 
           >
             {organisation.name}
           </Typography>
-          <Typography variant="body2" sx={{ color: "#8E8E93" }}>
-            Manage events, membership lists, and settings for this organisation.
+          <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.58)", maxWidth: 560 }}>
+            Plan events, manage your members, and keep your organisation moving.
           </Typography>
         </Stack>
-        <Stack direction="row" spacing={1.5} useFlexGap sx={{ flexWrap: "wrap", alignItems: "center" }}>
-          {admin ? (
-            <Link
-              href={`/dashboard/${organisation.slug}/settings`}
-              style={{ textDecoration: "none" }}
-            >
-              <Button variant="outlined" size="small">
-                Settings
-              </Button>
-            </Link>
-          ) : null}
-          {owner ? (
-            <DeleteOrganisationButton organisationSlug={organisation.slug} />
-          ) : null}
-        </Stack>
-      </Stack>
-
-      <Grid container spacing={2} sx={{ mt: 0 }}>
-        <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-          <Paper
-            variant="outlined"
-            sx={{
-              p: 3,
-              borderRadius: "16px",
-              backgroundColor: "#1C1C1E",
-              borderColor: "rgba(255, 255, 255, 0.08)",
-            }}
-          >
-            <Typography variant="body2" sx={{ color: "#8E8E93", fontWeight: 600, fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-              Total events
+        <Stack direction="row" spacing={2} useFlexGap sx={{ flexWrap: "wrap", alignItems: "center" }}>
+          <Stack spacing={0} sx={{ minWidth: 92, pr: { sm: 1 } }}>
+            <Typography variant="caption" sx={{ color: "rgba(255,255,255,0.58)", textTransform: "uppercase", letterSpacing: "0.8px", fontWeight: 700 }}>
+              Active events
             </Typography>
-            <Typography variant="h3" sx={{ fontWeight: 700, mt: 1, letterSpacing: "-1px" }}>
+            <Typography variant="h4" sx={{ fontWeight: 720, letterSpacing: "-1px" }}>
               {totalEvents}
             </Typography>
-          </Paper>
-        </Grid>
-        <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-          <Paper
-            variant="outlined"
-            sx={{
-              p: 3,
-              borderRadius: "16px",
-              backgroundColor: "#1C1C1E",
-              borderColor: "rgba(255, 255, 255, 0.08)",
-            }}
-          >
-            <Typography variant="body2" sx={{ color: "#8E8E93", fontWeight: 600, fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-              Total RSVPs
-            </Typography>
-            <Typography variant="h3" sx={{ fontWeight: 700, mt: 1, letterSpacing: "-1px" }}>
-              {totalRsvps}
-            </Typography>
-          </Paper>
-        </Grid>
-      </Grid>
+          </Stack>
+          <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", alignItems: "center" }}>
+            {admin ? (
+              <Link href={`/dashboard/${organisation.slug}/settings`} style={{ textDecoration: "none" }}>
+                <Button variant="outlined" size="small" sx={{ textTransform: "none", borderRadius: 2 }}>
+                  Settings
+                </Button>
+              </Link>
+            ) : null}
+            {owner ? <DeleteOrganisationButton organisationSlug={organisation.slug} /> : null}
+          </Stack>
+        </Stack>
+        </Stack>
+      </Paper>
 
       {manage ? (
-        <Stack direction="row" spacing={2} sx={{ flexWrap: "wrap", mt: 2 }}>
-          <CreateEventDialog
-            organisationSlug={organisation.slug}
-            canPublish={manage}
-            variant="button"
-          />
-          <CreateSeriesDialog
-            organisationSlug={organisation.slug}
-            canPublish={manage}
-          />
-        </Stack>
+        <Paper
+          variant="outlined"
+          sx={{
+            mt: 3,
+            px: { xs: 2, sm: 2.5 },
+            py: 1.5,
+            borderRadius: "16px",
+            borderColor: "rgba(255,255,255,0.08)",
+            backgroundColor: "rgba(255,255,255,0.025)",
+          }}
+        >
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} sx={{ justifyContent: "space-between", alignItems: { xs: "flex-start", sm: "center" } }}>
+            <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+              <Box sx={{ display: "grid", placeItems: "center", width: 30, height: 30, borderRadius: 2, color: "#0A84FF", backgroundColor: "rgba(10,132,255,0.14)" }}>
+                <AddIcon fontSize="small" />
+              </Box>
+              <Typography variant="body2" sx={{ fontWeight: 650 }}>Create something new</Typography>
+            </Stack>
+            <Stack direction="row" spacing={1.25} sx={{ flexWrap: "wrap" }}>
+              <CreateEventDialog organisationSlug={organisation.slug} canPublish={manage} variant="button" />
+              <CreateSeriesDialog organisationSlug={organisation.slug} canPublish={manage} />
+            </Stack>
+          </Stack>
+        </Paper>
       ) : null}
 
-      <Typography variant="h6" component="h2" sx={{ mt: 2, mb: 2 }}>
-        Event series
-      </Typography>
+      <Stack direction="row" spacing={1} sx={{ mt: 4, mb: 1.5, alignItems: "center" }}>
+        <RepeatIcon sx={{ color: "#8E8E93", fontSize: 20 }} />
+        <Typography variant="h6" component="h2" sx={{ fontWeight: 700, letterSpacing: "-0.3px" }}>Event series</Typography>
+      </Stack>
       {seriesList.length === 0 ? (
-        <Paper variant="outlined" sx={{ p: 3, mb: 2 }}>
-          <Typography color="text.secondary">
-            No recurring series yet.
+        <Paper variant="outlined" sx={{ p: { xs: 2, sm: 2.5 }, mb: 3, borderRadius: "16px", borderColor: "rgba(255,255,255,0.08)", backgroundColor: "rgba(255,255,255,0.025)" }}>
+          <Typography color="text.secondary" variant="body2">
+            No recurring series yet. Create one to keep a regular event rhythm.
           </Typography>
         </Paper>
       ) : (
         <Stack spacing={1} sx={{ mb: 3 }}>
           {seriesList.map((s) => (
-            <Paper key={s.id} variant="outlined" sx={{ px: 2, py: 1.5 }}>
+            <Paper key={s.id} variant="outlined" sx={{ px: 1, py: 0.5, borderRadius: "14px", borderColor: "rgba(255,255,255,0.08)" }}>
               <Link
                 href={`/dashboard/${organisation.slug}/series/${s.id}`}
                 style={{ textDecoration: "none" }}
@@ -203,12 +185,13 @@ export default async function OrgDashboardPage({ params, searchParams }: Props) 
         </Stack>
       )}
 
-      <Typography variant="h6" component="h2" sx={{ mt: 2, mb: 2 }}>
-        Events
-      </Typography>
+      <Stack direction="row" spacing={1} sx={{ mt: 4, mb: 1.5, alignItems: "center" }}>
+        <EventIcon sx={{ color: "#8E8E93", fontSize: 20 }} />
+        <Typography variant="h6" component="h2" sx={{ fontWeight: 700, letterSpacing: "-0.3px" }}>Events</Typography>
+      </Stack>
 
       {events.length === 0 ? (
-        <Paper variant="outlined" sx={{ p: 4, textAlign: "center" }}>
+        <Paper variant="outlined" sx={{ p: 5, textAlign: "center", borderRadius: "16px", borderColor: "rgba(255,255,255,0.08)", backgroundColor: "rgba(255,255,255,0.025)" }}>
           <Typography color="text.secondary">
             No events yet.
             {manage ? " Create one with the button below." : ""}
@@ -216,9 +199,9 @@ export default async function OrgDashboardPage({ params, searchParams }: Props) 
         </Paper>
       ) : (
         <Stack spacing={2.5}>
-          <Grid container spacing={2}>
-            {events.map((event) => (
-              <Grid size={{ xs: 12, sm: 6, md: 4 }} key={event.id}>
+            <Grid container spacing={2.5}>
+              {events.map((event) => (
+              <Grid size={{ xs: 12, sm: 6 }} key={event.id}>
                 <EventCard
                   orgSlug={organisation.slug}
                   href={

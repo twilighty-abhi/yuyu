@@ -268,7 +268,6 @@ export default async function DashboardPage() {
                       borderRadius: "16px",
                       backgroundColor: APPLE_COLORS.background,
                       borderColor: APPLE_COLORS.border,
-                      transition: "background-color 0.15s ease",
                       boxShadow: "0 8px 24px rgba(0,0,0,0.1)",
                       "&:hover": {
                         backgroundColor: "rgba(255, 255, 255, 0.06)",

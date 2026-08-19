@@ -15,7 +15,7 @@ import NavigateBeforeIcon from "@mui/icons-material/NavigateBefore";
 import NavigateNextIcon from "@mui/icons-material/NavigateNext";
 import { EventPrivacyType, EventStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { EventCard } from "@/components/event/EventCard";
+import { DiscoverEventCard } from "@/components/event/DiscoverEventCard";
 import { InstanceCard } from "@/components/event/InstanceCard";
 import type { Metadata } from "next";
 
@@ -362,11 +362,15 @@ export default async function DiscoverPage({
           </Typography>
         </Paper>
       ) : (
-        <Grid container spacing={2}>
+        <Grid container spacing={1.5}>
           {pageItems.map((row) =>
             row.kind === "event" ? (
               <Grid size={{ xs: 12, sm: 6, md: 4 }} key={row.id}>
-                <EventCard orgSlug={row.orgSlug} event={row.event} compact />
+                <DiscoverEventCard
+                  orgSlug={row.orgSlug}
+                  organisationName={row.event.organisation.name}
+                  event={row.event}
+                />
               </Grid>
             ) : (
               <Grid size={{ xs: 12, sm: 6, md: 4 }} key={row.id}>

@@ -18,7 +18,8 @@ import Alert from "@mui/material/Alert";
 import Stack from "@mui/material/Stack";
 import Fab from "@mui/material/Fab";
 import AddIcon from "@mui/icons-material/Add";
-import { createEvent } from "@/app/actions/event";
+import { createEvent, uploadEventCoverImage } from "@/app/actions/event";
+import { CoverImagePicker } from "@/components/event/CoverImagePicker";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
 import { DateTimePicker } from "@mui/x-date-pickers/DateTimePicker";
@@ -55,6 +56,7 @@ export function CreateEventDialog(props: {
   const [end, setEnd] = useState<Date | null>(null);
   const [tagsPreview, setTagsPreview] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
+  const [coverImageFile, setCoverImageFile] = useState<File | null>(null);
 
   // Wizard States
   const [activeStep, setActiveStep] = useState(0);
@@ -76,12 +78,24 @@ export function CreateEventDialog(props: {
     ) as EventPrivacyType;
 
     startTransition(async () => {
+      let coverImageUrl = "";
+      if (coverImageFile) {
+        const uploadData = new FormData();
+        uploadData.set("organisationSlug", organisationSlug);
+        uploadData.set("file", coverImageFile);
+        const upload = await uploadEventCoverImage(uploadData);
+        if (!upload.ok) {
+          setError(upload.error);
+          return;
+        }
+        coverImageUrl = upload.data!.url;
+      }
       const res = await createEvent({
         organisationSlug,
         title: String(fd.get("title") ?? ""),
         description: String(fd.get("description") ?? ""),
         tags: String(fd.get("tags") ?? ""),
-        coverImageUrl: String(fd.get("coverImageUrl") ?? ""),
+        coverImageUrl,
         startDateTime: String(fd.get("startDateTime") ?? ""),
         endDateTime: String(fd.get("endDateTime") ?? ""),
         timezone: String(fd.get("timezone") ?? "Asia/Kolkata"),
@@ -102,6 +116,7 @@ export function CreateEventDialog(props: {
       setTagsPreview([]);
       setTagInput("");
       setIsOnline(false);
+      setCoverImageFile(null);
       if (res.data?.id) {
         router.push(`/dashboard/${organisationSlug}/event/${res.data.id}`);
       } else {
@@ -122,6 +137,7 @@ export function CreateEventDialog(props: {
     setActiveStep(0);
     setError(null);
     setIsOnline(false);
+    setCoverImageFile(null);
     setOpen(true);
   };
 
@@ -334,11 +350,9 @@ export function CreateEventDialog(props: {
 
               {/* Step 4: Settings */}
               <Box sx={{ display: activeStep === 3 ? "flex" : "none", flexDirection: "column", gap: 2 }}>
-                <TextField
-                  name="coverImageUrl"
-                  label="Cover image URL"
-                  fullWidth
-                  type="url"
+                <CoverImagePicker
+                  disabled={pending}
+                  onChange={(file) => setCoverImageFile(file)}
                 />
                 <TextField
                   name="capacity"

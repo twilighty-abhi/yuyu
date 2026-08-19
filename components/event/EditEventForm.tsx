@@ -29,7 +29,8 @@ import ImageOutlinedIcon from "@mui/icons-material/ImageOutlined";
 import AccessTimeOutlinedIcon from "@mui/icons-material/AccessTimeOutlined";
 import PlaceOutlinedIcon from "@mui/icons-material/PlaceOutlined";
 import PublicOutlinedIcon from "@mui/icons-material/PublicOutlined";
-import { updateEvent, deleteEvent } from "@/app/actions/event";
+import { updateEvent, deleteEvent, uploadEventCoverImage } from "@/app/actions/event";
+import { CoverImagePicker } from "@/components/event/CoverImagePicker";
 import { useToast } from "@/components/feedback/ToastProvider";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
@@ -63,6 +64,7 @@ export function EditEventForm(props: {
   const [pending, startTransition] = useTransition();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [coverPreviewUrl, setCoverPreviewUrl] = useState(event.coverImageUrl ?? "");
+  const [coverImageFile, setCoverImageFile] = useState<File | null>(null);
   const [isOnlinePreview, setIsOnlinePreview] = useState(event.isOnline);
   const [mapLinkPreviewUrl, setMapLinkPreviewUrl] = useState(
     (event as Event & { mapLinkUrl?: string | null }).mapLinkUrl ?? "",
@@ -104,13 +106,26 @@ export function EditEventForm(props: {
     ) as EventPrivacyType;
 
     startTransition(async () => {
+      let coverImageUrl = coverPreviewUrl;
+      if (coverImageFile) {
+        const uploadData = new FormData();
+        uploadData.set("organisationSlug", organisationSlug);
+        uploadData.set("file", coverImageFile);
+        const upload = await uploadEventCoverImage(uploadData);
+        if (!upload.ok) {
+          setError(upload.error);
+          showToast(upload.error, "error");
+          return;
+        }
+        coverImageUrl = upload.data!.url;
+      }
       const res = await updateEvent({
         organisationSlug,
         eventId: event.id,
         title: String(fd.get("title") ?? ""),
         description: String(fd.get("description") ?? ""),
         tags: String(fd.get("tags") ?? ""),
-        coverImageUrl: String(fd.get("coverImageUrl") ?? ""),
+        coverImageUrl,
         showRegistrationCount: fd.get("showRegistrationCount") === "on",
         startDateTime: String(fd.get("startDateTime") ?? ""),
         endDateTime: String(fd.get("endDateTime") ?? ""),
@@ -282,53 +297,14 @@ export function EditEventForm(props: {
                 </Box>
               </Stack>
               <Divider />
-              <Grid container spacing={2} sx={{ alignItems: "stretch" }}>
-                <Grid size={{ xs: 12, md: 7 }}>
-                  <TextField
-                    name="coverImageUrl"
-                    label="Cover image URL"
-                    fullWidth
-                    type="url"
-                    defaultValue={event.coverImageUrl ?? ""}
-                    onChange={(e) => setCoverPreviewUrl(e.target.value)}
-                    helperText="Use a direct image URL (jpg/png/webp)."
-                  />
-                </Grid>
-                <Grid size={{ xs: 12, md: 5 }}>
-                  <Box
-                    sx={{
-                      border: 1,
-                      borderColor: "divider",
-                      borderRadius: 2,
-                      overflow: "hidden",
-                      height: { xs: 180, md: "100%" },
-                      minHeight: { md: 140 },
-                      background:
-                        "linear-gradient(145deg, rgba(124,245,182,0.08), rgba(185,174,255,0.08))",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    {coverPreviewUrl.trim() ? (
-                      <Box
-                        component="img"
-                        alt="Cover image preview"
-                        src={coverPreviewUrl}
-                        sx={{
-                          width: "100%",
-                          height: "100%",
-                          objectFit: "cover",
-                        }}
-                      />
-                    ) : (
-                      <Typography variant="body2" color="text.secondary" sx={{ px: 2 }}>
-                        Preview will show here.
-                      </Typography>
-                    )}
-                  </Box>
-                </Grid>
-              </Grid>
+              <CoverImagePicker
+                initialUrl={event.coverImageUrl}
+                disabled={pending}
+                onChange={(file, previewUrl) => {
+                  setCoverImageFile(file);
+                  setCoverPreviewUrl(previewUrl);
+                }}
+              />
             </Stack>
           </Paper>
 

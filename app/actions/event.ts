@@ -19,6 +19,51 @@ import {
 } from "@/lib/validators";
 import type { ActionResult } from "./org";
 import { flattenZodErrors } from "./utils";
+import { getPublicUrl, uploadFile } from "@/lib/storage";
+
+const MAX_COVER_IMAGE_BYTES = 5 * 1024 * 1024;
+const ACCEPTED_COVER_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+
+export async function uploadEventCoverImage(
+  formData: FormData,
+): Promise<ActionResult<{ url: string }>> {
+  const session = await auth();
+  if (!session?.user?.id) return { ok: false, error: "You must be signed in." };
+
+  const organisationSlug = String(formData.get("organisationSlug") ?? "").trim();
+  const file = formData.get("file");
+  if (!organisationSlug || !(file instanceof File)) {
+    return { ok: false, error: "Choose an image to upload." };
+  }
+  if (!ACCEPTED_COVER_IMAGE_TYPES.has(file.type)) {
+    return { ok: false, error: "Cover images must be JPEG, PNG, or WebP files." };
+  }
+  if (file.size === 0 || file.size > MAX_COVER_IMAGE_BYTES) {
+    return { ok: false, error: "Cover images must be 5 MB or smaller." };
+  }
+
+  const org = await prisma.organisation.findUnique({ where: { slug: organisationSlug } });
+  if (!org) return { ok: false, error: "Organisation not found." };
+  const membership = await getMembership(session.user.id, org.id);
+  if (!canCreateEvent(membership)) {
+    return { ok: false, error: "You do not have permission to upload cover images." };
+  }
+
+  try {
+    const extension = file.type === "image/png" ? "png" : file.type === "image/jpeg" ? "jpg" : "webp";
+    const key = `organisations/${org.id}/event-covers/${crypto.randomUUID()}.${extension}`;
+    await uploadFile({
+      key,
+      body: file,
+      contentType: file.type,
+      organisationId: org.id,
+    });
+    return { ok: true, data: { url: getPublicUrl(key) } };
+  } catch (error) {
+    console.error("[event] Cover image upload failed:", error);
+    return { ok: false, error: "Could not upload the cover image." };
+  }
+}
 
 function revalidateEventPaths(orgSlug: string, eventSlug: string, eventId: string) {
   revalidatePath(`/${orgSlug}`);

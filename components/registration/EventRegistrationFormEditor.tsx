@@ -29,6 +29,7 @@ import ArrowUpwardOutlinedIcon from "@mui/icons-material/ArrowUpwardOutlined";
 import ArrowDownwardOutlinedIcon from "@mui/icons-material/ArrowDownwardOutlined";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/feedback/ToastProvider";
+import { ConfirmationDialog } from "@/components/feedback/ConfirmationDialog";
 import {
   deleteEventRegistrationField,
   reorderEventRegistrationFields,
@@ -138,6 +139,7 @@ export function EventRegistrationFormEditor(props: {
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<RegistrationFieldRow | null>(null);
+  const [deleteConfirmField, setDeleteConfirmField] = useState<RegistrationFieldRow | null>(null);
 
   const [label, setLabel] = useState("");
   const [key, setKey] = useState("");
@@ -273,20 +275,7 @@ export function EventRegistrationFormEditor(props: {
                     <IconButton
                       aria-label="Delete"
                       disabled={pending}
-                      onClick={() => {
-                        startTransition(async () => {
-                          const res = await deleteEventRegistrationField({
-                            organisationSlug,
-                            eventId,
-                            fieldId: f.id,
-                          });
-                          if (!res.ok) showToast(res.error, "error");
-                          else {
-                            showToast("Field deleted", "success");
-                            router.refresh();
-                          }
-                        });
-                      }}
+                      onClick={() => setDeleteConfirmField(f)}
                       size="small"
                     >
                       <DeleteOutlineOutlinedIcon fontSize="small" />
@@ -434,6 +423,60 @@ export function EventRegistrationFormEditor(props: {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <ConfirmationDialog
+        open={!!deleteConfirmField}
+        title="Delete Field"
+        message={`Are you sure you want to delete the field "${deleteConfirmField?.label}"? This will also remove any answers collected for this field.`}
+        confirmLabel="Delete"
+        loading={pending}
+        onCancel={() => setDeleteConfirmField(null)}
+        onConfirm={() => {
+          if (!deleteConfirmField) return;
+          const targetField = { ...deleteConfirmField };
+          setDeleteConfirmField(null);
+          startTransition(async () => {
+            const res = await deleteEventRegistrationField({
+              organisationSlug,
+              eventId,
+              fieldId: targetField.id,
+            });
+            if (!res.ok) {
+              showToast(res.error, "error");
+            } else {
+              // 10 second undo popup toast!
+              showToast(
+                `Field "${targetField.label}" deleted`,
+                "success",
+                {
+                  label: "Undo",
+                  onClick: () => {
+                    startTransition(async () => {
+                      const restoreRes = await upsertEventRegistrationField({
+                        organisationSlug,
+                        eventId,
+                        key: targetField.key,
+                        label: targetField.label,
+                        type: targetField.type,
+                        required: targetField.required,
+                        options: targetField.options,
+                      });
+                      if (restoreRes.ok) {
+                        showToast("Field restored", "success");
+                        router.refresh();
+                      } else {
+                        showToast(restoreRes.error, "error");
+                      }
+                    });
+                  },
+                },
+                10000 // 10 seconds duration
+              );
+              router.refresh();
+            }
+          });
+        }}
+      />
     </Stack>
   );
 }

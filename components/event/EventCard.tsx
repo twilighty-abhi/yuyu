@@ -92,9 +92,16 @@ export function EventCard(props: {
           <CardContent sx={{ p: 2.5, "&:last-child": { pb: 2.5 } }}>
             <Stack direction="row" spacing={0.75} sx={{ mb: 1.5, flexWrap: "wrap" }}>
               {statusChip(event.status)}
-              {event.isOnline ? (
-                <Chip label="Online" size="small" variant="outlined" />
-              ) : null}
+              <Chip
+                label={event.isOnline ? "Online" : "In person"}
+                size="small"
+                variant="outlined"
+                sx={
+                  event.isOnline
+                    ? { borderColor: "rgba(10,132,255,0.45)", color: "#72B7FF" }
+                    : { borderColor: "rgba(48,209,88,0.4)", color: "#7CE6A2" }
+                }
+              />
               {tags.slice(0, 3).map((t) => (
                 <Chip key={t} label={t} size="small" variant="outlined" />
               ))}

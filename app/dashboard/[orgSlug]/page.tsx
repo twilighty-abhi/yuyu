@@ -16,19 +16,50 @@ import { EventCard } from "@/components/event/EventCard";
 import { CreateEventDialog } from "@/components/event/CreateEventDialog";
 import { CreateSeriesDialog } from "@/components/series/CreateSeriesDialog";
 import { DeleteOrganisationButton } from "@/components/dashboard/DeleteOrganisationButton";
+import NavigateBeforeIcon from "@mui/icons-material/NavigateBefore";
+import NavigateNextIcon from "@mui/icons-material/NavigateNext";
+import Chip from "@mui/material/Chip";
 
-type Props = { params: Promise<{ orgSlug: string }> };
+import type { Metadata } from "next";
 
-export default async function OrgDashboardPage({ params }: Props) {
+type Props = {
+  params: Promise<{ orgSlug: string }>;
+  searchParams: Promise<{ page?: string }>;
+};
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { orgSlug } = await params;
+  const org = await prisma.organisation.findUnique({
+    where: { slug: orgSlug },
+    select: { name: true },
+  });
+  return {
+    title: org ? `${org.name} Dashboard` : "Dashboard",
+  };
+}
+
+export default async function OrgDashboardPage({ params, searchParams }: Props) {
+  const { orgSlug } = await params;
+  const sp = await searchParams;
+  const page = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
+  const pageSize = 6;
+
   const { organisation, membership } = await requireOrgMembership(orgSlug);
   const manage = canManageEvents(membership);
   const owner = canDeleteOrg(membership);
   const admin = isOrgAdmin(membership.role);
 
+  const totalEvents = await prisma.event.count({
+    where: { organisationId: organisation.id },
+  });
+  const totalPages = Math.ceil(totalEvents / pageSize) || 1;
+  const safePage = Math.min(page, totalPages);
+
   const events = await prisma.event.findMany({
     where: { organisationId: organisation.id },
     orderBy: { startDateTime: "asc" },
+    skip: (safePage - 1) * pageSize,
+    take: pageSize,
   });
 
   const orgSeries = await prisma.organisation.findUnique({
@@ -156,21 +187,91 @@ export default async function OrgDashboardPage({ params }: Props) {
           </Typography>
         </Paper>
       ) : (
-        <Grid container spacing={2}>
-          {events.map((event) => (
-            <Grid size={{ xs: 12, sm: 6, md: 4 }} key={event.id}>
-              <EventCard
-                orgSlug={organisation.slug}
-                href={
-                  manage
-                    ? `/dashboard/${organisation.slug}/event/${event.id}`
-                    : undefined
+        <Stack spacing={2.5}>
+          <Grid container spacing={2}>
+            {events.map((event) => (
+              <Grid size={{ xs: 12, sm: 6, md: 4 }} key={event.id}>
+                <EventCard
+                  orgSlug={organisation.slug}
+                  href={
+                    manage
+                      ? `/dashboard/${organisation.slug}/event/${event.id}`
+                      : undefined
+                  }
+                  event={event}
+                />
+              </Grid>
+            ))}
+          </Grid>
+
+          <Stack
+            direction={{ xs: "column", sm: "row" }}
+            spacing={1}
+            sx={{ alignItems: "center", justifyContent: "space-between" }}
+          >
+            <Typography variant="body2" color="text.secondary">
+              Showing {((safePage - 1) * pageSize) + 1}–{Math.min(safePage * pageSize, totalEvents)} of {totalEvents} event{totalEvents === 1 ? "" : "s"}
+            </Typography>
+            {totalPages > 1 ? (
+              <Chip label={`Page ${safePage} of ${totalPages}`} size="small" variant="outlined" />
+            ) : null}
+          </Stack>
+
+          {totalPages > 1 ? (
+            <Stack direction="row" spacing={1} sx={{ justifyContent: "center", pt: 1 }}>
+              <Button
+                component={Link}
+                href={`/dashboard/${organisation.slug}?page=${safePage - 1}`}
+                variant="outlined"
+                size="small"
+                disabled={safePage <= 1}
+                startIcon={<NavigateBeforeIcon />}
+                sx={{ borderRadius: 2 }}
+              >
+                Previous
+              </Button>
+              {(() => {
+                const pages = [];
+                for (let i = 1; i <= totalPages; i++) {
+                  pages.push(i);
                 }
-                event={event}
-              />
-            </Grid>
-          ))}
-        </Grid>
+                return pages.map((p) => (
+                  <Button
+                    key={p}
+                    component={Link}
+                    href={`/dashboard/${organisation.slug}?page=${p}`}
+                    variant={p === safePage ? "contained" : "text"}
+                    size="small"
+                    sx={{
+                      minWidth: 40,
+                      borderRadius: 2,
+                      ...(p === safePage
+                        ? {
+                            background: "linear-gradient(135deg, #7CF5B6 0%, #B9AEFF 100%)",
+                            color: "#061814",
+                            fontWeight: 750,
+                          }
+                        : {}),
+                    }}
+                  >
+                    {p}
+                  </Button>
+                ));
+              })()}
+              <Button
+                component={Link}
+                href={`/dashboard/${organisation.slug}?page=${safePage + 1}`}
+                variant="outlined"
+                size="small"
+                disabled={safePage >= totalPages}
+                endIcon={<NavigateNextIcon />}
+                sx={{ borderRadius: 2 }}
+              >
+                Next
+              </Button>
+            </Stack>
+          ) : null}
+        </Stack>
       )}
 
       {manage ? (

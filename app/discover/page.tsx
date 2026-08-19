@@ -7,21 +7,43 @@ import TextField from "@mui/material/TextField";
 import Paper from "@mui/material/Paper";
 import Box from "@mui/material/Box";
 import InputAdornment from "@mui/material/InputAdornment";
+import Chip from "@mui/material/Chip";
 import Link from "next/link";
 import SearchIcon from "@mui/icons-material/Search";
 import FilterListIcon from "@mui/icons-material/FilterList";
 import ClearIcon from "@mui/icons-material/Clear";
+import NavigateBeforeIcon from "@mui/icons-material/NavigateBefore";
+import NavigateNextIcon from "@mui/icons-material/NavigateNext";
 import { EventPrivacyType, EventStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { EventCard } from "@/components/event/EventCard";
 import { InstanceCard } from "@/components/event/InstanceCard";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Discover Events",
+  description:
+    "Browse upcoming public events and find something worth attending.",
+};
+
+const PAGE_SIZE = 12;
 
 type SearchParams = Promise<{
   sort?: string;
   from?: string;
   to?: string;
   q?: string;
+  page?: string;
 }>;
+
+function buildQueryString(params: Record<string, string | undefined>): string {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v) p.set(k, v);
+  }
+  const s = p.toString();
+  return s ? `?${s}` : "";
+}
 
 export default async function DiscoverPage({
   searchParams,
@@ -31,11 +53,10 @@ export default async function DiscoverPage({
   const sp = await searchParams;
   const sort = sp.sort === "popular" ? "popular" : "upcoming";
   const q = sp.q?.trim() || "";
+  const page = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
 
   const fromDate = sp.from ? new Date(sp.from) : null;
   const toDate = sp.to ? new Date(sp.to) : null;
-
-
 
   const eventWhere = {
     status: EventStatus.PUBLISHED,
@@ -55,24 +76,6 @@ export default async function DiscoverPage({
       },
     }),
   } as const;
-
-  const events = await prisma.event.findMany({
-    where: eventWhere,
-    include: {
-      organisation: { select: { slug: true, name: true } },
-      _count: {
-        select: {
-          rsvps: {
-            where: { status: "CONFIRMED" },
-          },
-        },
-      },
-    },
-    orderBy:
-      sort === "popular"
-        ? { rsvps: { _count: "desc" } }
-        : { startDateTime: "asc" },
-  });
 
   const instanceWhere = {
     series: {
@@ -95,28 +98,61 @@ export default async function DiscoverPage({
     }),
   };
 
-  const instances = await prisma.eventInstance.findMany({
-    where: instanceWhere,
-    include: {
-      series: {
-        include: {
-          organisation: { select: { slug: true, name: true } },
-        },
-      },
-      _count: {
-        select: {
-          rsvps: {
-            where: { status: "CONFIRMED" },
+  // Get total counts for pagination
+  const [eventCount, instanceCount] = await Promise.all([
+    prisma.event.count({ where: eventWhere }),
+    prisma.eventInstance.count({ where: instanceWhere }),
+  ]);
+  const totalItems = eventCount + instanceCount;
+  const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+
+  // Fetch all matching items (we need to merge events + instances before paginating)
+  // For efficiency, fetch only what we need with a reasonable limit
+  const fetchLimit = Math.min(totalItems, 200);
+
+  const [events, instances] = await Promise.all([
+    prisma.event.findMany({
+      where: eventWhere,
+      include: {
+        organisation: { select: { slug: true, name: true } },
+        _count: {
+          select: {
+            rsvps: {
+              where: { status: "CONFIRMED" },
+            },
           },
         },
       },
-    },
-    orderBy:
-      sort === "popular"
-        ? { rsvps: { _count: "desc" } }
-        : { startDateTime: "asc" },
-    take: 60,
-  });
+      orderBy:
+        sort === "popular"
+          ? { rsvps: { _count: "desc" } }
+          : { startDateTime: "asc" },
+      take: fetchLimit,
+    }),
+    prisma.eventInstance.findMany({
+      where: instanceWhere,
+      include: {
+        series: {
+          include: {
+            organisation: { select: { slug: true, name: true } },
+          },
+        },
+        _count: {
+          select: {
+            rsvps: {
+              where: { status: "CONFIRMED" },
+            },
+          },
+        },
+      },
+      orderBy:
+        sort === "popular"
+          ? { rsvps: { _count: "desc" } }
+          : { startDateTime: "asc" },
+      take: fetchLimit,
+    }),
+  ]);
 
   type Row =
     | {
@@ -161,7 +197,19 @@ export default async function DiscoverPage({
       : a.sortKey - b.sortKey,
   );
 
+  // Apply pagination to the merged list
+  const startIdx = (safePage - 1) * PAGE_SIZE;
+  const pageItems = merged.slice(startIdx, startIdx + PAGE_SIZE);
+
   const hasActiveFilters = q || sp.from || sp.to || sort !== "upcoming";
+
+  // Build base params for pagination links (preserving current filters)
+  const baseParams = {
+    ...(q ? { q } : {}),
+    ...(sort !== "upcoming" ? { sort } : {}),
+    ...(sp.from ? { from: sp.from } : {}),
+    ...(sp.to ? { to: sp.to } : {}),
+  };
 
   return (
     <Stack spacing={4} sx={{ py: 3 }}>
@@ -338,13 +386,30 @@ export default async function DiscoverPage({
         </Stack>
       </Paper>
 
-      {merged.length === 0 ? (
+      {/* Results count */}
+      {totalItems > 0 ? (
+        <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+          <Typography variant="body2" color="text.secondary">
+            Showing {startIdx + 1}–{Math.min(startIdx + PAGE_SIZE, totalItems)} of{" "}
+            {totalItems} event{totalItems === 1 ? "" : "s"}
+          </Typography>
+          {totalPages > 1 ? (
+            <Chip
+              label={`Page ${safePage} of ${totalPages}`}
+              size="small"
+              variant="outlined"
+            />
+          ) : null}
+        </Stack>
+      ) : null}
+
+      {pageItems.length === 0 ? (
         <Typography color="text.secondary" sx={{ textAlign: "center", py: 4 }}>
           No public events match the selected filters. Try clearing some criteria!
         </Typography>
       ) : (
         <Grid container spacing={2}>
-          {merged.map((row) =>
+          {pageItems.map((row) =>
             row.kind === "event" ? (
               <Grid size={{ xs: 12, sm: 6, md: 4 }} key={row.id}>
                 <EventCard orgSlug={row.orgSlug} event={row.event} />
@@ -365,7 +430,76 @@ export default async function DiscoverPage({
           )}
         </Grid>
       )}
+
+      {/* Pagination controls */}
+      {totalPages > 1 ? (
+        <Stack
+          direction="row"
+          spacing={1}
+          sx={{
+            justifyContent: "center",
+            alignItems: "center",
+            pt: 2,
+          }}
+        >
+          <Button
+            component={Link}
+            href={`/discover${buildQueryString({ ...baseParams, page: String(safePage - 1) })}`}
+            variant="outlined"
+            size="small"
+            disabled={safePage <= 1}
+            startIcon={<NavigateBeforeIcon />}
+            sx={{ borderRadius: 2 }}
+          >
+            Previous
+          </Button>
+
+          {/* Page number buttons - show up to 7 pages */}
+          {(() => {
+            const pages: number[] = [];
+            let start = Math.max(1, safePage - 3);
+            const end = Math.min(totalPages, start + 6);
+            start = Math.max(1, end - 6);
+            for (let i = start; i <= end; i++) pages.push(i);
+
+            return pages.map((p) => (
+              <Button
+                key={p}
+                component={Link}
+                href={`/discover${buildQueryString({ ...baseParams, page: String(p) })}`}
+                variant={p === safePage ? "contained" : "text"}
+                size="small"
+                sx={{
+                  minWidth: 40,
+                  borderRadius: 2,
+                  ...(p === safePage
+                    ? {
+                        background:
+                          "linear-gradient(135deg, #7CF5B6 0%, #B9AEFF 100%)",
+                        color: "#061814",
+                        fontWeight: 700,
+                      }
+                    : {}),
+                }}
+              >
+                {p}
+              </Button>
+            ));
+          })()}
+
+          <Button
+            component={Link}
+            href={`/discover${buildQueryString({ ...baseParams, page: String(safePage + 1) })}`}
+            variant="outlined"
+            size="small"
+            disabled={safePage >= totalPages}
+            endIcon={<NavigateNextIcon />}
+            sx={{ borderRadius: 2 }}
+          >
+            Next
+          </Button>
+        </Stack>
+      ) : null}
     </Stack>
   );
 }
-

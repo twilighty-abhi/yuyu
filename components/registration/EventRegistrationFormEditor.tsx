@@ -152,6 +152,24 @@ export function EventRegistrationFormEditor(props: {
   const [required, setRequired] = useState(false);
   const [optionsCsv, setOptionsCsv] = useState("");
 
+  const previewFields = useMemo(() => {
+    if (!open || !label.trim()) return fields;
+
+    const draft: RegistrationFieldRow = {
+      id: editing?.id ?? "draft-preview-field",
+      key,
+      label: label.trim(),
+      type,
+      required,
+      options: optionsCsv.split(",").map((option) => option.trim()).filter(Boolean),
+      sortOrder: editing?.sortOrder ?? fields.length + 1,
+    };
+
+    return editing
+      ? fields.map((field) => field.id === editing.id ? draft : field)
+      : [...fields, draft];
+  }, [editing, fields, key, label, open, optionsCsv, required, type]);
+
   function openCreate() {
     setEditing(null);
     setLabel("");
@@ -391,7 +409,7 @@ export function EventRegistrationFormEditor(props: {
                 <TextField label="Email Address" size="small" type="email" fullWidth required placeholder="you@domain.com" />
 
                 {/* Render Custom Configured Fields */}
-                {fields.map((f) => {
+                {previewFields.map((f) => {
                   const requiredLabel = f.required ? " *" : "";
                   const fullLabel = `${f.label}${requiredLabel}`;
 

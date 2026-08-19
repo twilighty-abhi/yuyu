@@ -16,6 +16,7 @@ import {
 } from "@/lib/validators";
 import type { ActionResult } from "./org";
 import { flattenZodErrors } from "./utils";
+import { recordAuditEvent } from "@/lib/audit";
 
 export async function updateMemberRole(
   input: unknown,
@@ -54,6 +55,14 @@ export async function updateMemberRole(
   await prisma.membership.update({
     where: { id: target.id },
     data: { role },
+  });
+  await recordAuditEvent({
+    action: "MEMBERSHIP_ROLE_CHANGED",
+    actorUserId: session.user.id,
+    organisationId: org.id,
+    targetType: "membership",
+    targetId: target.id,
+    metadata: { role },
   });
 
   revalidatePath(`/dashboard/${org.slug}/members`);
@@ -101,6 +110,13 @@ export async function removeMember(input: unknown): Promise<ActionResult> {
   }
 
   await prisma.membership.delete({ where: { id: target.id } });
+  await recordAuditEvent({
+    action: "MEMBER_REMOVED",
+    actorUserId: session.user.id,
+    organisationId: org.id,
+    targetType: "membership",
+    targetId: target.id,
+  });
 
   revalidatePath(`/dashboard/${org.slug}/members`);
   revalidatePath(`/dashboard/${org.slug}`);
@@ -133,6 +149,14 @@ export async function deleteOrganisation(input: unknown): Promise<ActionResult> 
   }
 
   const slug = org.slug;
+  // Deliberately omit organisationId: deleting the organisation cascades its
+  // scoped records, while this event must survive as an instance-level record.
+  await recordAuditEvent({
+    action: "ORGANISATION_DELETED",
+    actorUserId: session.user.id,
+    targetType: "organisation",
+    targetId: org.id,
+  });
   await prisma.organisation.delete({ where: { id: org.id } });
 
   revalidatePath("/dashboard");

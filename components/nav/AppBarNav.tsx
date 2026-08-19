@@ -52,9 +52,6 @@ export function AppBarNav() {
           <Button component={Link} href="/discover" color="inherit" size="small">
             Discover
           </Button>
-          <Button component={Link} href="/search" color="inherit" size="small">
-            Search
-          </Button>
         </Box>
         <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
           {status === "authenticated" ? (

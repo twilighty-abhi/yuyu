@@ -27,7 +27,6 @@ Yuyu is a Next.js + PostgreSQL event platform with a clean Material Design 3 UI 
   - `/:orgSlug` organisation page
   - `/:orgSlug/:eventSlug` event page
   - `/discover` global discovery
-  - `/search?q=...` search UI
   - `/ticket/:token` ticket page for an RSVP token
 - **Auth**
   - `/login`
@@ -189,7 +188,7 @@ Rate limiting is enforced by `middleware.ts` using `lib/rateLimit.ts` for:
 - `/api/*` (global)
 - `/api/auth/*` (auth)
 - `POST /api/rsvp` (rsvp)
-- `/api/search` and `/search` (search)
+- `/api/search` (search)
 
 Note: the current implementation uses an **in-memory** store, which is fine for local/dev but should be replaced with a shared store (Redis/Upstash/etc.) for multi-instance production deployments.
 

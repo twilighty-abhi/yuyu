@@ -11,7 +11,6 @@ import { usePathname } from "next/navigation";
 
 const footerLinks = [
   { label: "Discover", href: "/discover" },
-  { label: "Search", href: "/search" },
   { label: "Dashboard", href: "/dashboard" },
 ];
 

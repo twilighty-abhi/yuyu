@@ -5,6 +5,7 @@ import "./globals.css";
 import { auth } from "@/lib/auth";
 import { Providers } from "@/components/providers";
 import { AppBarNav } from "@/components/nav/AppBarNav";
+import { AppFooter } from "@/components/nav/AppFooter";
 import Container from "@mui/material/Container";
 import Box from "@mui/material/Box";
 
@@ -35,13 +36,14 @@ export default async function RootLayout({
 
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
-      <body>
+      <body style={{ display: "flex", flexDirection: "column", minHeight: "100dvh" }}>
         <AppRouterCacheProvider options={{ key: "mui" }}>
           <Providers session={session}>
             <AppBarNav />
             <Box component="main" sx={{ flex: 1, py: 3 }}>
               <Container maxWidth="lg">{children}</Container>
             </Box>
+            <AppFooter />
           </Providers>
         </AppRouterCacheProvider>
       </body>

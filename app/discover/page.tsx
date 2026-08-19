@@ -212,30 +212,36 @@ export default async function DiscoverPage({
   };
 
   return (
-    <Stack spacing={4} sx={{ py: 3 }}>
-      {/* Apple Style Minimalist Header */}
-      <Stack
-        spacing={0.5}
+    <Stack spacing={3.5} sx={{ py: { xs: 3, sm: 5 } }}>
+      <Paper
+        variant="outlined"
         sx={{
-          pb: 2.5,
-          borderBottom: "1px solid rgba(255, 255, 255, 0.08)",
+          p: { xs: 2.5, sm: 3.5 },
+          borderRadius: "24px",
+          borderColor: "rgba(255,255,255,0.09)",
+          background: "linear-gradient(120deg, rgba(10,132,255,0.15), rgba(28,28,30,0.96) 58%, rgba(185,174,255,0.1))",
+          boxShadow: "0 18px 45px rgba(0,0,0,0.14)",
         }}
       >
+        <Typography variant="overline" sx={{ color: "#0A84FF", fontWeight: 700, letterSpacing: "1.5px", lineHeight: 1.3 }}>
+          Find your next moment
+        </Typography>
         <Typography
-          variant="h3"
+          variant="h2"
           component="h1"
           sx={{
+            mt: 0.5,
             fontWeight: 700,
-            letterSpacing: "-1px",
+            letterSpacing: "-1.5px",
             color: "#FFFFFF",
           }}
         >
           Discover events
         </Typography>
-        <Typography variant="body2" sx={{ color: "#8E8E93" }}>
+        <Typography variant="body1" sx={{ mt: 1, color: "rgba(255,255,255,0.62)", maxWidth: 620 }}>
           Explore open gatherings, dynamic workshops, and local meetups across all organisations on Yuyu.
         </Typography>
-      </Stack>
+      </Paper>
 
       {/* Modern Filter panel */}
       <Paper
@@ -244,14 +250,17 @@ export default async function DiscoverPage({
         action="/discover"
         method="get"
         sx={{
-          p: 3,
-          borderRadius: 3.5,
-          backgroundColor: "#1C1C1E",
-          borderColor: "rgba(255, 255, 255, 0.08)",
+          p: { xs: 2, sm: 2.5 },
+          borderRadius: "20px",
+          backgroundColor: "rgba(28,28,30,0.82)",
+          borderColor: "rgba(255, 255, 255, 0.09)",
+          boxShadow: "0 10px 30px rgba(0,0,0,0.1)",
         }}
       >
         <Stack spacing={2.5}>
-          {/* Main Search & Dropdown filters */}
+          <Typography variant="subtitle2" sx={{ fontWeight: 700, color: "rgba(255,255,255,0.85)" }}>
+            Refine your search
+          </Typography>
           <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ alignItems: "center" }}>
             <TextField
               name="q"
@@ -359,36 +368,37 @@ export default async function DiscoverPage({
         </Stack>
       </Paper>
 
-      {/* Results count */}
+      {/* Results */}
       {totalItems > 0 ? (
-        <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-          <Typography variant="body2" color="text.secondary">
-            Showing {startIdx + 1}–{Math.min(startIdx + PAGE_SIZE, totalItems)} of{" "}
-            {totalItems} event{totalItems === 1 ? "" : "s"}
-          </Typography>
-          {totalPages > 1 ? (
-            <Chip
-              label={`Page ${safePage} of ${totalPages}`}
-              size="small"
-              variant="outlined"
-            />
-          ) : null}
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ justifyContent: "space-between", alignItems: { xs: "flex-start", sm: "center" } }}>
+          <Stack spacing={0.25}>
+            <Typography variant="h6" component="h2" sx={{ fontWeight: 700, letterSpacing: "-0.3px" }}>
+              {q ? "Search results" : "Upcoming events"}
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Showing {startIdx + 1}–{Math.min(startIdx + PAGE_SIZE, totalItems)} of {totalItems} event{totalItems === 1 ? "" : "s"}
+            </Typography>
+          </Stack>
+          {totalPages > 1 ? <Chip label={`Page ${safePage} of ${totalPages}`} size="small" variant="outlined" /> : null}
         </Stack>
       ) : null}
 
       {pageItems.length === 0 ? (
-        <Typography color="text.secondary" sx={{ textAlign: "center", py: 4 }}>
-          No public events match the selected filters. Try clearing some criteria!
-        </Typography>
+        <Paper variant="outlined" sx={{ p: 6, textAlign: "center", borderRadius: "18px", borderColor: "rgba(255,255,255,0.08)", backgroundColor: "rgba(255,255,255,0.025)" }}>
+          <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>Nothing matches just yet</Typography>
+          <Typography color="text.secondary" variant="body2" sx={{ mt: 0.75 }}>
+            Try clearing a filter or searching for something else.
+          </Typography>
+        </Paper>
       ) : (
-        <Grid container spacing={2}>
+        <Grid container spacing={2.5}>
           {pageItems.map((row) =>
             row.kind === "event" ? (
-              <Grid size={{ xs: 12, sm: 6, md: 4 }} key={row.id}>
+              <Grid size={{ xs: 12, sm: 6, md: 6 }} key={row.id}>
                 <EventCard orgSlug={row.orgSlug} event={row.event} />
               </Grid>
             ) : (
-              <Grid size={{ xs: 12, sm: 6, md: 4 }} key={row.id}>
+              <Grid size={{ xs: 12, sm: 6, md: 6 }} key={row.id}>
                 <InstanceCard
                   orgSlug={row.orgSlug}
                   instanceId={row.instance.id}

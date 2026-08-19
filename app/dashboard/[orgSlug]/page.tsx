@@ -5,7 +5,6 @@ import Paper from "@mui/material/Paper";
 import Box from "@mui/material/Box";
 import { prisma } from "@/lib/db";
 import {
-  canDeleteOrg,
   canManageEvents,
   isOrgAdmin,
   requireOrgMembership,
@@ -15,7 +14,6 @@ import Button from "@mui/material/Button";
 import { EventCard } from "@/components/event/EventCard";
 import { CreateEventDialog } from "@/components/event/CreateEventDialog";
 import { CreateSeriesDialog } from "@/components/series/CreateSeriesDialog";
-import { DeleteOrganisationButton } from "@/components/dashboard/DeleteOrganisationButton";
 import NavigateBeforeIcon from "@mui/icons-material/NavigateBefore";
 import NavigateNextIcon from "@mui/icons-material/NavigateNext";
 import Chip from "@mui/material/Chip";
@@ -49,7 +47,6 @@ export default async function OrgDashboardPage({ params, searchParams }: Props) 
 
   const { organisation, membership } = await requireOrgMembership(orgSlug);
   const manage = canManageEvents(membership);
-  const owner = canDeleteOrg(membership);
   const admin = isOrgAdmin(membership.role);
 
   const totalEvents = await prisma.event.count({
@@ -122,7 +119,6 @@ export default async function OrgDashboardPage({ params, searchParams }: Props) 
                 </Button>
               </Link>
             ) : null}
-            {owner ? <DeleteOrganisationButton organisationSlug={organisation.slug} /> : null}
           </Stack>
         </Stack>
         </Stack>

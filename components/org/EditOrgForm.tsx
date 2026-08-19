@@ -54,7 +54,15 @@ export function EditOrgForm(props: {
     >
       {error ? <Alert severity="error">{error}</Alert> : null}
 
-      <Paper variant="outlined" sx={{ p: 2.5 }}>
+      <Paper
+        variant="outlined"
+        sx={{
+          p: { xs: 2, sm: 2.5 },
+          borderRadius: "16px",
+          borderColor: "rgba(255,255,255,0.08)",
+          backgroundColor: "rgba(255,255,255,0.025)",
+        }}
+      >
         <Stack spacing={2}>
           <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
             <SettingsOutlinedIcon color="primary" />
@@ -93,7 +101,15 @@ export function EditOrgForm(props: {
         </Stack>
       </Paper>
 
-      <Paper variant="outlined" sx={{ p: 2.5 }}>
+      <Paper
+        variant="outlined"
+        sx={{
+          p: { xs: 2, sm: 2.5 },
+          borderRadius: "16px",
+          borderColor: "rgba(255,255,255,0.08)",
+          backgroundColor: "rgba(255,255,255,0.025)",
+        }}
+      >
         <Stack spacing={2}>
           <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
             <ImageOutlinedIcon sx={{ color: "text.secondary" }} />
@@ -160,11 +176,10 @@ export function EditOrgForm(props: {
       </Paper>
 
       <Stack direction="row" spacing={2} useFlexGap sx={{ flexWrap: "wrap" }}>
-        <Button type="submit" variant="contained" disabled={pending}>
+        <Button type="submit" variant="contained" disabled={pending} sx={{ textTransform: "none", borderRadius: 2, px: 2.5 }}>
           Save changes
         </Button>
       </Stack>
     </Stack>
   );
 }
-

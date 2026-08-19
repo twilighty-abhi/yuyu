@@ -1,6 +1,7 @@
 import {
   EventPrivacyType,
   EventStatus,
+  Prisma,
   RegistrationFieldType,
   RsvpStatus,
 } from "@prisma/client";
@@ -8,10 +9,6 @@ import { prisma } from "@/lib/db";
 import { rsvpGuestSchema, rsvpLoggedInSchema } from "@/lib/validators";
 import type { ActionResult } from "@/app/actions/org";
 import { flattenZodErrors } from "@/app/actions/utils";
-import {
-  countConfirmedForEvent,
-  countConfirmedForInstance,
-} from "@/lib/rsvpCapacity";
 import { sendRSVPConfirmation } from "@/lib/email";
 
 function normalizeGuestEmail(email: string) {
@@ -33,6 +30,48 @@ function decideStatus(params: {
     return RsvpStatus.PENDING_APPROVAL;
   }
   return RsvpStatus.CONFIRMED;
+}
+
+type RsvpTarget = { eventId: string } | { eventInstanceId: string };
+
+/**
+ * Locks the event/occurrence row before counting confirmed attendees. This
+ * serializes admissions for a capacity while retaining a database constraint
+ * as the final duplicate-registration guard.
+ */
+async function reserveRsvp(params: {
+  target: RsvpTarget;
+  capacity: number | null;
+  privacyType: EventPrivacyType;
+  data: Omit<Prisma.RSVPUncheckedCreateInput, "status">;
+  afterCreate?: (tx: Prisma.TransactionClient, rsvpId: string) => Promise<void>;
+}) {
+  return prisma.$transaction(async (tx) => {
+    if ("eventId" in params.target) {
+      await tx.$queryRaw`SELECT "id" FROM "Event" WHERE "id" = ${params.target.eventId} FOR UPDATE`;
+    } else {
+      await tx.$queryRaw`SELECT "id" FROM "EventInstance" WHERE "id" = ${params.target.eventInstanceId} FOR UPDATE`;
+    }
+
+    const confirmedCount = await tx.rSVP.count({
+      where: {
+        ...params.target,
+        status: RsvpStatus.CONFIRMED,
+      },
+    });
+    const status = decideStatus({
+      capacity: params.capacity,
+      confirmedCount,
+      privacyType: params.privacyType,
+    });
+    const rsvp = await tx.rSVP.create({
+      data: { ...params.data, status },
+      select: { id: true, checkInToken: true },
+    });
+    await params.afterCreate?.(tx, rsvp.id);
+    const count = await tx.rSVP.count({ where: params.target });
+    return { ...rsvp, status, count };
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }
 
 async function resolveAttendeeEmail(
@@ -288,13 +327,6 @@ export async function submitRsvpCore(
       }
     }
 
-    const confirmedCount = await countConfirmedForEvent(event.id);
-    const status = decideStatus({
-      capacity: event.capacity,
-      confirmedCount,
-      privacyType: event.privacyType,
-    });
-
     const attendeeKey = `user:${userId}`;
 
     try {
@@ -329,29 +361,27 @@ export async function submitRsvpCore(
       });
       if ("error" in validated) return { ok: false, error: validated.error };
 
-      await prisma.$transaction(async (tx) => {
-        const rsvp = await tx.rSVP.create({
-          data: {
+      const reservation = await reserveRsvp({
+        target: { eventId: event.id },
+        capacity: event.capacity,
+        privacyType: event.privacyType,
+        data: {
             eventId: event.id,
             userId,
             guestEmail: null,
             attendeeKey,
-            status,
           },
-          select: { id: true, checkInToken: true },
-        });
-
-        if (!existingName && submittedName) {
-          await tx.user.update({
+        afterCreate: async (tx, rsvpId) => {
+          if (!existingName && submittedName) {
+            await tx.user.update({
             where: { id: userId },
             data: { name: submittedName },
           });
-        }
-
-        if (validated.rows.length > 0) {
-          await tx.rsvpAnswer.createMany({
+          }
+          if (validated.rows.length > 0) {
+            await tx.rsvpAnswer.createMany({
             data: validated.rows.map((row) => ({
-              rsvpId: rsvp.id,
+              rsvpId,
               fieldId: row.fieldId,
               valueText: row.valueText ?? null,
               valueBool: row.valueBool ?? null,
@@ -359,24 +389,19 @@ export async function submitRsvpCore(
               valueDate: row.valueDate ?? null,
             })),
           });
-        }
+          }
+        },
       });
 
-      const count = await prisma.rSVP.count({ where: { eventId: event.id } });
-      const latest = await prisma.rSVP.findFirst({
-        where: { eventId: event.id, attendeeKey },
-        select: { checkInToken: true },
-        orderBy: { createdAt: "desc" },
-      });
       await sendRSVPConfirmation({
         to: emailRes.email,
         eventTitle: event.title,
-        status,
-        checkInToken: latest?.checkInToken ?? undefined,
+        status: reservation.status,
+        checkInToken: reservation.checkInToken,
       });
       return {
         ok: true,
-        data: { count, status, ticketToken: latest?.checkInToken ?? "" },
+        data: { count: reservation.count, status: reservation.status, ticketToken: reservation.checkInToken },
       };
     } catch (e: unknown) {
       if (
@@ -446,13 +471,6 @@ export async function submitRsvpCore(
     }
   }
 
-  const confirmedCount = await countConfirmedForEvent(event.id);
-  const status = decideStatus({
-    capacity: event.capacity,
-    confirmedCount,
-    privacyType: event.privacyType,
-  });
-
   const attendeeKey = `guest:${emailNorm}`;
 
   try {
@@ -475,23 +493,22 @@ export async function submitRsvpCore(
     });
     if ("error" in validated) return { ok: false, error: validated.error };
 
-    await prisma.$transaction(async (tx) => {
-      const rsvp = await tx.rSVP.create({
-        data: {
+    const reservation = await reserveRsvp({
+      target: { eventId: event.id },
+      capacity: event.capacity,
+      privacyType: event.privacyType,
+      data: {
           eventId: event.id,
           userId: null,
           guestEmail: emailNorm,
           guestName: parsed.data.name.trim(),
           attendeeKey,
-          status,
         },
-        select: { id: true, checkInToken: true },
-      });
-
-      if (validated.rows.length > 0) {
-        await tx.rsvpAnswer.createMany({
+      afterCreate: async (tx, rsvpId) => {
+        if (validated.rows.length > 0) {
+          await tx.rsvpAnswer.createMany({
           data: validated.rows.map((row) => ({
-            rsvpId: rsvp.id,
+            rsvpId,
             fieldId: row.fieldId,
             valueText: row.valueText ?? null,
             valueBool: row.valueBool ?? null,
@@ -499,24 +516,19 @@ export async function submitRsvpCore(
             valueDate: row.valueDate ?? null,
           })),
         });
-      }
+        }
+      },
     });
 
-    const count = await prisma.rSVP.count({ where: { eventId: event.id } });
-    const latest = await prisma.rSVP.findFirst({
-      where: { eventId: event.id, attendeeKey },
-      select: { checkInToken: true },
-      orderBy: { createdAt: "desc" },
-    });
     await sendRSVPConfirmation({
       to: emailNorm,
       eventTitle: event.title,
-      status,
-      checkInToken: latest?.checkInToken ?? undefined,
+      status: reservation.status,
+      checkInToken: reservation.checkInToken,
     });
     return {
       ok: true,
-      data: { count, status, ticketToken: latest?.checkInToken ?? "" },
+      data: { count: reservation.count, status: reservation.status, ticketToken: reservation.checkInToken },
     };
   } catch (e: unknown) {
     if (
@@ -583,18 +595,12 @@ async function submitInstanceRsvp(params: {
     }
   }
 
-  const confirmedCount = await countConfirmedForInstance(instance.id);
-  const status = decideStatus({
-    capacity: series.capacity,
-    confirmedCount,
-    privacyType: series.privacyType,
-  });
-
   const attendeeKey = userId
     ? `user:${userId}`
     : `guest:${emailRes.email}`;
 
   try {
+    let reservation: Awaited<ReturnType<typeof reserveRsvp>>;
     if (userId) {
       const user = await prisma.user.findUnique({
         where: { id: userId },
@@ -606,55 +612,51 @@ async function submitInstanceRsvp(params: {
         return { ok: false, error: "Name is required." };
       }
 
-      await prisma.$transaction(async (tx) => {
-        await tx.rSVP.create({
-          data: {
+      reservation = await reserveRsvp({
+        target: { eventInstanceId: instance.id },
+        capacity: series.capacity,
+        privacyType: series.privacyType,
+        data: {
             eventInstanceId: instance.id,
             userId,
             guestEmail: null,
             attendeeKey,
-            status,
           },
-        });
-        if (!existingName && submittedName) {
-          await tx.user.update({
+        afterCreate: async (tx) => {
+          if (!existingName && submittedName) {
+            await tx.user.update({
             where: { id: userId },
             data: { name: submittedName },
           });
-        }
+          }
+        },
       });
     } else {
       const guestName = params.guestName?.trim() ?? "";
       if (!guestName) return { ok: false, error: "Name is required." };
-      await prisma.rSVP.create({
+      reservation = await reserveRsvp({
+        target: { eventInstanceId: instance.id },
+        capacity: series.capacity,
+        privacyType: series.privacyType,
         data: {
           eventInstanceId: instance.id,
           userId: null,
           guestEmail: emailRes.email,
           guestName,
           attendeeKey,
-          status,
         },
       });
     }
 
-    const count = await prisma.rSVP.count({
-      where: { eventInstanceId: instance.id },
-    });
-    const latest = await prisma.rSVP.findFirst({
-      where: { eventInstanceId: instance.id, attendeeKey },
-      select: { checkInToken: true },
-      orderBy: { createdAt: "desc" },
-    });
     await sendRSVPConfirmation({
       to: emailRes.email,
       eventTitle: series.title,
-      status,
-      checkInToken: latest?.checkInToken ?? undefined,
+      status: reservation.status,
+      checkInToken: reservation.checkInToken,
     });
     return {
       ok: true,
-      data: { count, status, ticketToken: latest?.checkInToken ?? "" },
+      data: { count: reservation.count, status: reservation.status, ticketToken: reservation.checkInToken },
     };
   } catch (e: unknown) {
     if (

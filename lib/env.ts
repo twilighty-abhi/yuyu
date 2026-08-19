@@ -39,13 +39,4 @@ if (!parsed.success) {
   }
 }
 
-if (
-  parsed.success &&
-  process.env.NODE_ENV === "production" &&
-  !process.argv.some((arg) => arg.includes("build")) &&
-  !parsed.data.REDIS_URL
-) {
-  throw new Error("REDIS_URL is required in production for distributed rate limiting.");
-}
-
 export const env = parsed.data;

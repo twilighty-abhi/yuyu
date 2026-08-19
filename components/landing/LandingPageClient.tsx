@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, type TargetAndTransition, type Variants } from "framer-motion";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Grid from "@mui/material/Grid";
@@ -11,7 +11,6 @@ import Typography from "@mui/material/Typography";
 import Paper from "@mui/material/Paper";
 import Divider from "@mui/material/Divider";
 import Chip from "@mui/material/Chip";
-import Avatar from "@mui/material/Avatar";
 import TextField from "@mui/material/TextField";
 import MenuItem from "@mui/material/MenuItem";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
@@ -26,12 +25,12 @@ import CheckCircleOutlineOutlinedIcon from "@mui/icons-material/CheckCircleOutli
 import StarsIcon from "@mui/icons-material/Stars";
 
 // Animation Variants
-const fadeInUp = {
+const fadeInUp: Variants = {
   hidden: { opacity: 0, y: 30 },
   visible: { opacity: 1, y: 0, transition: { duration: 0.6, ease: "easeOut" } },
-} as any;
+};
 
-const staggerContainer = {
+const staggerContainer: Variants = {
   hidden: { opacity: 0 },
   visible: {
     opacity: 1,
@@ -39,9 +38,9 @@ const staggerContainer = {
       staggerChildren: 0.15,
     },
   },
-} as any;
+};
 
-const floatAnimation = {
+const floatAnimation: { animate: TargetAndTransition } = {
   animate: {
     y: [0, -12, 0],
     transition: {
@@ -50,7 +49,7 @@ const floatAnimation = {
       ease: "easeInOut",
     },
   },
-} as any;
+};
 
 export function LandingPageClient(props: { getStartedHref: string }) {
   const { getStartedHref } = props;

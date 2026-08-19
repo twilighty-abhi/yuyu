@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { RsvpStatus } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { canManageEvents, getMembership } from "@/lib/permissions";
@@ -89,7 +90,7 @@ export async function restoreRsvp(input: {
   userId?: string | null;
   guestEmail?: string | null;
   guestName?: string | null;
-  status: any;
+  status: RsvpStatus;
   attendeeKey: string;
   checkInToken: string;
   checkedInAt?: Date | string | null;

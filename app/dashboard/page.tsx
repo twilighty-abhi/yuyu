@@ -18,8 +18,6 @@ import AddIcon from "@mui/icons-material/Add";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import EventIcon from "@mui/icons-material/Event";
 import PeopleIcon from "@mui/icons-material/People";
-import HourglassEmptyIcon from "@mui/icons-material/HourglassEmpty";
-import HowToRegIcon from "@mui/icons-material/HowToReg";
 
 import type { Metadata } from "next";
 
@@ -77,26 +75,6 @@ export default async function DashboardPage() {
     where: {
       organisation: { memberships: { some: { userId: session.user.id } } },
       status: "PUBLISHED",
-    },
-  });
-
-  const waitlistCount = await prisma.rSVP.count({
-    where: {
-      status: "WAITLISTED",
-      OR: [
-        { event: { organisation: { memberships: { some: { userId: session.user.id } } } } },
-        { eventInstance: { series: { organisation: { memberships: { some: { userId: session.user.id } } } } } },
-      ],
-    },
-  });
-
-  const confirmedCount = await prisma.rSVP.count({
-    where: {
-      status: "CONFIRMED",
-      OR: [
-        { event: { organisation: { memberships: { some: { userId: session.user.id } } } } },
-        { eventInstance: { series: { organisation: { memberships: { some: { userId: session.user.id } } } } } },
-      ],
     },
   });
 
@@ -196,59 +174,50 @@ export default async function DashboardPage() {
         </Link>
       </Stack>
 
-      {/* ── METRICS (APPLE APP WIDGET STYLE) ── */}
+      {/* ── PRIMARY METRIC ── */}
       <Grid container spacing={3}>
-        {[
-          { label: "Active Events", val: totalEventsCount, icon: EventIcon, color: APPLE_COLORS.blue },
-          { label: "Waitlisted Queue", val: waitlistCount, icon: HourglassEmptyIcon, color: APPLE_COLORS.orange },
-          { label: "Confirmed Registrations", val: confirmedCount, icon: HowToRegIcon, color: APPLE_COLORS.green },
-        ].map((stat, idx) => {
-          const Icon = stat.icon;
-          return (
-            <Grid size={{ xs: 12, md: 4 }} key={idx}>
-              <Paper
-                variant="outlined"
-                sx={{
-                  p: 3,
-                  borderRadius: "16px",
-                  backgroundColor: APPLE_COLORS.background,
-                  borderColor: APPLE_COLORS.border,
-                  boxShadow: "none",
-                }}
-              >
-                <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "flex-start" }}>
-                  <Stack spacing={1}>
-                    <Typography
-                      variant="body2"
-                      sx={{
-                        color: APPLE_COLORS.textSecondary,
-                        fontWeight: 600,
-                        fontSize: "0.8rem",
-                        textTransform: "uppercase",
-                        letterSpacing: "0.5px",
-                      }}
-                    >
-                      {stat.label}
-                    </Typography>
-                    <Typography
-                      variant="h3"
-                      sx={{
-                        fontWeight: 700,
-                        color: APPLE_COLORS.textPrimary,
-                        letterSpacing: "-1px",
-                      }}
-                    >
-                      {stat.val}
-                    </Typography>
-                  </Stack>
-                  <Box sx={{ color: stat.color }}>
-                    <Icon sx={{ fontSize: 28 }} />
-                  </Box>
-                </Stack>
-              </Paper>
-            </Grid>
-          );
-        })}
+        <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+          <Paper
+            variant="outlined"
+            sx={{
+              p: 3,
+              borderRadius: "16px",
+              backgroundColor: APPLE_COLORS.background,
+              borderColor: APPLE_COLORS.border,
+              boxShadow: "none",
+            }}
+          >
+            <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+              <Stack spacing={1}>
+                <Typography
+                  variant="body2"
+                  sx={{
+                    color: APPLE_COLORS.textSecondary,
+                    fontWeight: 600,
+                    fontSize: "0.8rem",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.5px",
+                  }}
+                >
+                  Active Events
+                </Typography>
+                <Typography
+                  variant="h3"
+                  sx={{
+                    fontWeight: 700,
+                    color: APPLE_COLORS.textPrimary,
+                    letterSpacing: "-1px",
+                  }}
+                >
+                  {totalEventsCount}
+                </Typography>
+              </Stack>
+              <Box sx={{ color: APPLE_COLORS.blue }}>
+                <EventIcon sx={{ fontSize: 28 }} />
+              </Box>
+            </Stack>
+          </Paper>
+        </Grid>
       </Grid>
 
       {/* ── TWO COLUMN LISTS (HIG GROUPED LAYOUT) ── */}

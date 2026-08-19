@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import type { RsvpStatus } from "@prisma/client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Alert from "@mui/material/Alert";
@@ -24,15 +25,30 @@ import TableRow from "@mui/material/TableRow";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
+import CloudDoneOutlinedIcon from "@mui/icons-material/CloudDoneOutlined";
+import CloudOffOutlinedIcon from "@mui/icons-material/CloudOffOutlined";
+import SyncOutlinedIcon from "@mui/icons-material/SyncOutlined";
 import {
   checkInByRsvpId,
+  downloadOfflineCheckInRoster,
   lookupAttendeesForCheckIn,
   previewCheckInByToken,
+  syncOfflineCheckIns,
   undoCheckIn,
   type CheckInPreviewData,
   type CheckInResultData,
   type LookupRow,
 } from "@/app/actions/checkin";
+import { gateCheckInForStatus, parseCheckInPayload } from "@/lib/checkIn";
+import {
+  getOfflineRoster,
+  getPendingOfflineCheckIns,
+  queueOfflineCheckIn,
+  removeQueuedOfflineCheckIns,
+  saveOfflineRoster,
+  type OfflineAttendee,
+  type OfflineRoster,
+} from "@/lib/offline-checkin.client";
 import { useToast } from "@/components/feedback/ToastProvider";
 import { CheckInQrScanner } from "@/components/checkin/CheckInQrScanner";
 
@@ -88,10 +104,164 @@ export function EventCheckInClient(props: {
   const [lookupRows, setLookupRows] = useState<LookupRow[]>([]);
   const [scanPreview, setScanPreview] = useState<CheckInPreviewData | null>(null);
   const [scanOpen, setScanOpen] = useState(false);
+  const [scanIsOffline, setScanIsOffline] = useState(false);
+  const [offlineRoster, setOfflineRoster] = useState<OfflineRoster | null>(null);
+  const [queuedCount, setQueuedCount] = useState(0);
+  const [isOnline, setIsOnline] = useState(true);
   const confirmRef = useRef<HTMLButtonElement | null>(null);
+
+  const refreshOfflineState = useCallback(async () => {
+    const [roster, pendingCheckIns] = await Promise.all([
+      getOfflineRoster(eventId),
+      getPendingOfflineCheckIns(eventId),
+    ]);
+    setOfflineRoster(roster ?? null);
+    setQueuedCount(pendingCheckIns.length);
+  }, [eventId]);
+
+  useEffect(() => {
+    const initialOfflineState = window.setTimeout(() => {
+      void refreshOfflineState();
+    }, 0);
+    const initialStatus = window.setTimeout(() => setIsOnline(navigator.onLine), 0);
+    const onOnline = () => setIsOnline(true);
+    const onOffline = () => setIsOnline(false);
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    return () => {
+      window.clearTimeout(initialStatus);
+      window.clearTimeout(initialOfflineState);
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+    };
+  }, [refreshOfflineState]);
+
+  useEffect(() => {
+    if ("serviceWorker" in navigator) {
+      void navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => {
+        // Offline data remains available even if the browser disallows service workers.
+      });
+    }
+  }, []);
+
+  const downloadOfflineRoster = useCallback(() => {
+    startTransition(async () => {
+      if (!navigator.onLine) {
+        showToast("Connect to the internet to download the attendee roster.", "warning");
+        return;
+      }
+      const res = await downloadOfflineCheckInRoster({ organisationSlug, eventId });
+      if (!res.ok) {
+        showToast(res.error, "error");
+        return;
+      }
+      const roster: OfflineRoster = { eventId, ...res.data! };
+      await saveOfflineRoster(roster);
+      await refreshOfflineState();
+      showToast("Offline roster saved to this device.", "success");
+    });
+  }, [eventId, organisationSlug, refreshOfflineState, showToast]);
+
+  const syncOfflineQueue = useCallback(() => {
+    startTransition(async () => {
+      if (!navigator.onLine) {
+        showToast("You are offline. Check-ins will sync when connected.", "warning");
+        return;
+      }
+      const pendingCheckIns = await getPendingOfflineCheckIns(eventId);
+      if (pendingCheckIns.length === 0) return;
+      const res = await syncOfflineCheckIns({
+        organisationSlug,
+        eventId,
+        checkIns: pendingCheckIns.map(({ rsvpId, id, checkedInAt, force }) => ({
+          rsvpId,
+          clientMutationId: id,
+          checkedInAt,
+          force,
+        })),
+      });
+      if (!res.ok) {
+        showToast(res.error, "error");
+        return;
+      }
+      const completedRsvpIds = new Set([
+        ...res.data!.syncedIds,
+        ...res.data!.alreadyCheckedInIds,
+      ]);
+      await removeQueuedOfflineCheckIns(
+        pendingCheckIns.filter((item) => completedRsvpIds.has(item.rsvpId)).map((item) => item.id),
+      );
+      await refreshOfflineState();
+      router.refresh();
+      if (res.data!.failed.length > 0) {
+        showToast(`${res.data!.failed.length} check-in${res.data!.failed.length === 1 ? "" : "s"} need attention.`, "warning");
+      } else {
+        showToast("Offline check-ins synced.", "success");
+      }
+    });
+  }, [eventId, organisationSlug, refreshOfflineState, router, showToast]);
+
+  useEffect(() => {
+    if (isOnline && queuedCount > 0) syncOfflineQueue();
+  }, [isOnline, queuedCount, syncOfflineQueue]);
+
+  const queueLocalCheckIn = useCallback(async (attendee: OfflineAttendee) => {
+    const checkedInAt = new Date().toISOString();
+    const roster = await getOfflineRoster(eventId);
+    if (!roster) {
+      showToast("No offline roster is available for this event.", "error");
+      return;
+    }
+    const updatedRoster: OfflineRoster = {
+      ...roster,
+      rows: roster.rows.map((row) => row.rsvpId === attendee.rsvpId ? { ...row, checkedInAt } : row),
+    };
+    await saveOfflineRoster(updatedRoster);
+    await queueOfflineCheckIn({ eventId, rsvpId: attendee.rsvpId, checkedInAt, force: override });
+    setLastResult({
+      rsvpId: attendee.rsvpId,
+      displayName: attendee.displayName,
+      email: attendee.email,
+      status: attendee.status,
+      alreadyCheckedIn: false,
+      checkedInAt,
+      kind: "success",
+    });
+    playSuccessFeedback();
+    await refreshOfflineState();
+    showToast(`Checked in offline: ${attendee.displayName}`, "success");
+  }, [eventId, override, refreshOfflineState, showToast]);
 
   const openPreviewForScan = useCallback(
     (text: string) => {
+      if (!navigator.onLine) {
+        void (async () => {
+          const roster = await getOfflineRoster(eventId);
+          if (!roster) {
+            showToast("No offline roster is available. Connect once and select Make available offline.", "warning");
+            return;
+          }
+          const token = parseCheckInPayload(text);
+          const attendee = roster.rows.find((row) => row.ticketToken === token);
+          if (!attendee) {
+            showToast("This ticket is not in the offline roster.", "error");
+            return;
+          }
+          const gate = gateCheckInForStatus(attendee.status as RsvpStatus, override);
+          setScanPreview({
+            rsvpId: attendee.rsvpId,
+            displayName: attendee.displayName,
+            email: attendee.email,
+            status: attendee.status,
+            alreadyCheckedIn: Boolean(attendee.checkedInAt),
+            checkedInAt: attendee.checkedInAt,
+            gate,
+          });
+          setScanIsOffline(true);
+          setScanOpen(true);
+        })();
+        return;
+      }
       startTransition(async () => {
         const res = await previewCheckInByToken({
           organisationSlug,
@@ -106,6 +276,7 @@ export function EventCheckInClient(props: {
           return;
         }
         setScanPreview(res.data!);
+        setScanIsOffline(false);
         setScanOpen(true);
       });
     },
@@ -121,6 +292,27 @@ export function EventCheckInClient(props: {
 
   const confirmScan = useCallback(() => {
     if (!scanPreview) return;
+    if (scanIsOffline) {
+      void (async () => {
+        const roster = await getOfflineRoster(eventId);
+        const attendee = roster?.rows.find((row) => row.rsvpId === scanPreview.rsvpId);
+        if (!attendee) {
+          showToast("This attendee is no longer in the offline roster.", "error");
+          return;
+        }
+        if (attendee.checkedInAt) {
+          setLastResult({ ...scanPreview, kind: "already" });
+          showToast("Already checked in on this device", "info");
+        } else {
+          await queueLocalCheckIn(attendee);
+        }
+        setScanOpen(false);
+        setScanPreview(null);
+        setScanIsOffline(false);
+        setManual("");
+      })();
+      return;
+    }
     startTransition(async () => {
       const res = await checkInByRsvpId({
         organisationSlug,
@@ -150,7 +342,7 @@ export function EventCheckInClient(props: {
       setManual("");
       router.refresh();
     });
-  }, [eventId, organisationSlug, override, router, scanPreview, showToast]);
+  }, [eventId, organisationSlug, override, queueLocalCheckIn, router, scanIsOffline, scanPreview, showToast]);
 
   useEffect(() => {
     if (!scanOpen) return;
@@ -166,6 +358,25 @@ export function EventCheckInClient(props: {
   };
 
   const runLookup = useCallback(() => {
+    if (!navigator.onLine) {
+      void (async () => {
+        const q = lookupQuery.trim().toLowerCase();
+        const roster = await getOfflineRoster(eventId);
+        if (!roster) {
+          showToast("No offline roster is available for this event.", "warning");
+          return;
+        }
+        setLookupRows(
+          q.length < 2
+            ? []
+            : roster.rows
+                .filter((row) => row.displayName.toLowerCase().includes(q) || row.email?.toLowerCase().includes(q))
+                .slice(0, 12)
+                .map(({ rsvpId, displayName, email, status, checkedInAt }) => ({ rsvpId, displayName, email, status, checkedInAt })),
+        );
+      })();
+      return;
+    }
     startTransition(async () => {
       const res = await lookupAttendeesForCheckIn({
         organisationSlug,
@@ -181,6 +392,28 @@ export function EventCheckInClient(props: {
   }, [eventId, lookupQuery, organisationSlug, showToast]);
 
   const checkInRow = (row: LookupRow, force: boolean) => {
+    if (!navigator.onLine) {
+      void (async () => {
+        const roster = await getOfflineRoster(eventId);
+        const attendee = roster?.rows.find((item) => item.rsvpId === row.rsvpId);
+        if (!attendee) {
+          showToast("This attendee is not available in the offline roster.", "error");
+          return;
+        }
+        const gate = gateCheckInForStatus(attendee.status as RsvpStatus, force);
+        if (!gate.ok) {
+          showToast(gate.reason, "warning");
+          return;
+        }
+        if (attendee.checkedInAt) {
+          showToast(`${attendee.displayName} was already checked in.`, "info");
+          return;
+        }
+        await queueLocalCheckIn(attendee);
+        void runLookup();
+      })();
+      return;
+    }
     startTransition(async () => {
       const res = await checkInByRsvpId({
         organisationSlug,
@@ -286,6 +519,42 @@ export function EventCheckInClient(props: {
           </Button>
         </Paper>
       </Stack>
+
+      <Paper
+        variant="outlined"
+        sx={{
+          p: 2,
+          borderRadius: "16px",
+          borderColor: offlineRoster ? "rgba(10,132,255,0.28)" : "rgba(255,255,255,0.08)",
+          backgroundColor: offlineRoster ? "rgba(10,132,255,0.05)" : "rgba(255,255,255,0.02)",
+        }}
+      >
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ alignItems: { xs: "flex-start", sm: "center" }, justifyContent: "space-between" }}>
+          <Stack direction="row" spacing={1.25} sx={{ alignItems: "center" }}>
+            {offlineRoster ? <CloudDoneOutlinedIcon color="primary" /> : <CloudOffOutlinedIcon color="disabled" />}
+            <Box>
+              <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                {offlineRoster ? "Offline check-in ready" : "Offline check-in is not ready"}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {offlineRoster
+                  ? `${offlineRoster.rows.length} attendees saved on this device${queuedCount ? ` · ${queuedCount} waiting to sync` : ""}.`
+                  : "Download the attendee roster while online to scan and search without a connection."}
+              </Typography>
+            </Box>
+          </Stack>
+          <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
+            <Button size="small" variant="outlined" startIcon={<DownloadOutlinedIcon />} onClick={downloadOfflineRoster} disabled={pending || !isOnline} sx={{ textTransform: "none" }}>
+              {offlineRoster ? "Refresh roster" : "Make available offline"}
+            </Button>
+            {queuedCount > 0 ? (
+              <Button size="small" variant="contained" startIcon={<SyncOutlinedIcon />} onClick={syncOfflineQueue} disabled={pending || !isOnline} sx={{ textTransform: "none" }}>
+                Sync {queuedCount}
+              </Button>
+            ) : null}
+          </Stack>
+        </Stack>
+      </Paper>
 
       <FormControlLabel
         control={
@@ -487,7 +756,7 @@ export function EventCheckInClient(props: {
                           size="small"
                           color="warning"
                           onClick={() => onUndo(row.rsvpId)}
-                          disabled={pending}
+                          disabled={pending || !isOnline}
                         >
                           Undo
                         </Button>
@@ -560,7 +829,7 @@ export function EventCheckInClient(props: {
                       size="small"
                       color="warning"
                       onClick={() => onUndo(r.rsvpId)}
-                      disabled={pending}
+                      disabled={pending || !isOnline}
                     >
                       Undo
                     </Button>

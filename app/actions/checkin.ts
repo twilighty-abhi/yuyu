@@ -9,6 +9,8 @@ import {
   attendeeLookupSchema,
   checkInByRsvpIdSchema,
   checkInByTokenSchema,
+  offlineCheckInRosterSchema,
+  syncOfflineCheckInsSchema,
   undoCheckInSchema,
 } from "@/lib/validators";
 import type { ActionResult } from "./org";
@@ -299,6 +301,95 @@ export type LookupRow = {
   status: string;
   checkedInAt: string | null;
 };
+
+export type OfflineCheckInRosterRow = LookupRow & {
+  ticketToken: string;
+};
+
+export async function downloadOfflineCheckInRoster(
+  input: unknown,
+): Promise<ActionResult<{ generatedAt: string; rows: OfflineCheckInRosterRow[] }>> {
+  const parsed = offlineCheckInRosterSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: "Invalid offline roster request." };
+  }
+
+  const { organisationSlug, eventId } = parsed.data;
+  const ctx = await requireOrgMemberForEvent(organisationSlug, eventId);
+  if (!ctx.ok) return { ok: false, error: ctx.error };
+
+  const rsvps = await prisma.rSVP.findMany({
+    where: { eventId: ctx.event.id },
+    include: { user: { select: { name: true, email: true } } },
+    orderBy: { createdAt: "desc" },
+  });
+
+  return {
+    ok: true,
+    data: {
+      generatedAt: new Date().toISOString(),
+      rows: rsvps.map((r) => ({
+        rsvpId: r.id,
+        ticketToken: r.checkInToken,
+        displayName: attendeeLabel(r),
+        email: r.user?.email ?? r.guestEmail,
+        status: r.status,
+        checkedInAt: r.checkedInAt?.toISOString() ?? null,
+      })),
+    },
+  };
+}
+
+export async function syncOfflineCheckIns(
+  input: unknown,
+): Promise<ActionResult<{ syncedIds: string[]; alreadyCheckedInIds: string[]; failed: { rsvpId: string; error: string }[] }>> {
+  const parsed = syncOfflineCheckInsSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: "Invalid offline check-in queue." };
+  }
+
+  const { organisationSlug, eventId, checkIns } = parsed.data;
+  const ctx = await requireOrgMemberForEvent(organisationSlug, eventId);
+  if (!ctx.ok) return { ok: false, error: ctx.error };
+
+  const rsvps = await prisma.rSVP.findMany({
+    where: { eventId: ctx.event.id, id: { in: checkIns.map((checkIn) => checkIn.rsvpId) } },
+    select: { id: true, status: true, checkedInAt: true },
+  });
+  const rsvpById = new Map(rsvps.map((rsvp) => [rsvp.id, rsvp]));
+  const syncedIds: string[] = [];
+  const alreadyCheckedInIds: string[] = [];
+  const failed: { rsvpId: string; error: string }[] = [];
+
+  for (const checkIn of checkIns) {
+    const rsvp = rsvpById.get(checkIn.rsvpId);
+    if (!rsvp) {
+      failed.push({ rsvpId: checkIn.rsvpId, error: "RSVP not found for this event." });
+      continue;
+    }
+    const gate = gateCheckInForStatus(rsvp.status, checkIn.force);
+    if (!gate.ok) {
+      failed.push({ rsvpId: checkIn.rsvpId, error: gate.reason });
+      continue;
+    }
+    if (rsvp.checkedInAt) {
+      alreadyCheckedInIds.push(rsvp.id);
+      continue;
+    }
+    await prisma.rSVP.update({
+      where: { id: rsvp.id },
+      data: { checkedInAt: new Date(checkIn.checkedInAt) },
+    });
+    syncedIds.push(rsvp.id);
+  }
+
+  if (syncedIds.length > 0) {
+    revalidatePath(`/dashboard/${ctx.orgSlug}/event/${ctx.event.id}`);
+    revalidatePath(`/dashboard/${ctx.orgSlug}/event/${ctx.event.id}/check-in`);
+  }
+
+  return { ok: true, data: { syncedIds, alreadyCheckedInIds, failed } };
+}
 
 export async function lookupAttendeesForCheckIn(
   input: unknown,

@@ -306,3 +306,19 @@ export const checkInByRsvpIdSchema = z.object({
   rsvpId: z.string().trim().min(1),
   force: z.boolean().optional(),
 });
+
+export const offlineCheckInRosterSchema = z.object({
+  organisationSlug: z.string().trim().min(1),
+  eventId: z.string().trim().min(1),
+});
+
+export const syncOfflineCheckInsSchema = offlineCheckInRosterSchema.extend({
+  checkIns: z.array(
+    z.object({
+      rsvpId: z.string().trim().min(1),
+      clientMutationId: z.string().trim().min(8).max(128),
+      checkedInAt: z.string().datetime(),
+      force: z.boolean().optional().default(false),
+    }),
+  ).min(1).max(500),
+});

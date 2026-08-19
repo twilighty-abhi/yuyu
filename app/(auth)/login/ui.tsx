@@ -297,6 +297,23 @@ export function LoginForm() {
         </Button>
       </Stack>
 
+      {!isSignUp ? (
+        <Box sx={{ textAlign: "right" }}>
+          <Link
+            component="a"
+            href="/reset-password"
+            underline="hover"
+            sx={{
+              color: "rgba(255,255,255,0.6)",
+              fontSize: "0.8125rem",
+              "&:hover": { color: "rgba(255,255,255,0.9)" },
+            }}
+          >
+            Forgot password?
+          </Link>
+        </Box>
+      ) : null}
+
       <Box sx={{ textAlign: "center" }}>
         <Link
           component="button"

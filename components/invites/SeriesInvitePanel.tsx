@@ -1,7 +1,5 @@
 "use client";
 
-"use client";
-
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Stack from "@mui/material/Stack";

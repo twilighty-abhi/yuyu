@@ -62,19 +62,24 @@ export default async function SeriesManagePage({ params }: Props) {
   }));
 
   return (
-    <Stack spacing={3}>
-      <Typography variant="h5" component="h1" sx={{ fontWeight: 600 }}>
-        {series.title}
-      </Typography>
+    <Stack spacing={3.5} sx={{ py: { xs: 1, sm: 2 } }}>
+      <Stack spacing={0.5}>
+        <Typography variant="h5" component="h1" sx={{ fontWeight: 700, letterSpacing: "-0.5px" }}>
+          {series.title}
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          Manage this recurring event and its upcoming occurrences.
+        </Typography>
+      </Stack>
 
-      <Paper variant="outlined" sx={{ p: 3 }}>
-        <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 600 }}>
+      <Paper variant="outlined" sx={{ p: { xs: 2, sm: 3 }, borderRadius: "18px", borderColor: "rgba(255,255,255,0.08)", backgroundColor: "rgba(255,255,255,0.025)" }}>
+        <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 700 }}>
           Series details
         </Typography>
         <EditSeriesForm organisationSlug={organisation.slug} series={series} />
       </Paper>
 
-      <Typography variant="h6" component="h2">
+      <Typography variant="h6" component="h2" sx={{ fontWeight: 700, letterSpacing: "-0.3px" }}>
         Invites
       </Typography>
       <SeriesInvitePanel
@@ -86,28 +91,28 @@ export default async function SeriesManagePage({ params }: Props) {
         }))}
       />
 
-      <Typography variant="h6" component="h2">
+      <Typography variant="h6" component="h2" sx={{ fontWeight: 700, letterSpacing: "-0.3px" }}>
         Upcoming instances
       </Typography>
-      <TableContainer component={Paper} variant="outlined">
+      <TableContainer component={Paper} variant="outlined" sx={{ overflow: "hidden", borderRadius: "16px", borderColor: "rgba(255,255,255,0.08)", backgroundColor: "rgba(28,28,30,0.82)" }}>
         <Table size="small">
           <TableHead>
-            <TableRow>
-              <TableCell>Start</TableCell>
-              <TableCell align="right">Link</TableCell>
+            <TableRow sx={{ backgroundColor: "rgba(255,255,255,0.025)" }}>
+              <TableCell sx={{ py: 1.25, color: "rgba(255,255,255,0.48)", fontSize: "0.7rem", fontWeight: 700, letterSpacing: "0.7px", textTransform: "uppercase" }}>Start</TableCell>
+              <TableCell align="right" sx={{ py: 1.25, color: "rgba(255,255,255,0.48)", fontSize: "0.7rem", fontWeight: 700, letterSpacing: "0.7px", textTransform: "uppercase" }}>Event page</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {series.instances.map((inst) => (
-              <TableRow key={inst.id}>
-                <TableCell>
+              <TableRow key={inst.id} hover sx={{ "&:last-child td": { borderBottom: 0 }, "&:hover": { backgroundColor: "rgba(255,255,255,0.035)" } }}>
+                <TableCell sx={{ py: 1.5, fontWeight: 600 }}>
                   {inst.startDateTime.toLocaleString(undefined, {
                     timeZone: series.timezone,
                   })}
                 </TableCell>
-                <TableCell align="right">
-                  <Link href={`/${organisation.slug}/i/${inst.id}`}>
-                    Public page
+                <TableCell align="right" sx={{ py: 1.5 }}>
+                  <Link href={`/${organisation.slug}/i/${inst.id}`} style={{ color: "#0A84FF", fontSize: "0.875rem", fontWeight: 650 }}>
+                    View event
                   </Link>
                 </TableCell>
               </TableRow>
@@ -118,7 +123,7 @@ export default async function SeriesManagePage({ params }: Props) {
 
       {firstInstanceId ? (
         <>
-          <Typography variant="h6" component="h2">
+          <Typography variant="h6" component="h2" sx={{ fontWeight: 700, letterSpacing: "-0.3px" }}>
             Attendees (first upcoming occurrence)
           </Typography>
           <AttendeeTable

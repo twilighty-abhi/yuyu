@@ -213,50 +213,29 @@ export default async function DiscoverPage({
 
   return (
     <Stack spacing={4} sx={{ py: 3 }}>
-      {/* Premium Gradient Header Hero */}
-      <Box
+      {/* Apple Style Minimalist Header */}
+      <Stack
+        spacing={0.5}
         sx={{
-          py: 5,
-          px: 4,
-          borderRadius: 5,
-          background:
-            "linear-gradient(135deg, rgba(124, 245, 182, 0.08) 0%, rgba(185, 174, 255, 0.05) 100%)",
-          border: "1px solid rgba(255,255,255,0.06)",
-          position: "relative",
-          overflow: "hidden",
+          pb: 2.5,
+          borderBottom: "1px solid rgba(255, 255, 255, 0.08)",
         }}
       >
-        <Box
-          sx={{
-            position: "absolute",
-            top: "-50%",
-            right: "-20%",
-            width: "400px",
-            height: "400px",
-            borderRadius: "50%",
-            background: "radial-gradient(circle, rgba(124, 245, 182, 0.12) 0%, transparent 70%)",
-            filter: "blur(50px)",
-            pointerEvents: "none",
-          }}
-        />
         <Typography
           variant="h3"
           component="h1"
           sx={{
-            fontWeight: 850,
-            background: "linear-gradient(135deg, #ffffff 40%, #7CF5B6 100%)",
-            WebkitBackgroundClip: "text",
-            WebkitTextFillColor: "transparent",
-            letterSpacing: "-0.5px",
-            mb: 1.5,
+            fontWeight: 700,
+            letterSpacing: "-1px",
+            color: "#FFFFFF",
           }}
         >
           Discover events
         </Typography>
-        <Typography variant="body1" sx={{ color: "rgba(255,255,255,0.65)", maxWidth: "600px", lineHeight: 1.6 }}>
+        <Typography variant="body2" sx={{ color: "#8E8E93" }}>
           Explore open gatherings, dynamic workshops, and local meetups across all organisations on Yuyu.
         </Typography>
-      </Box>
+      </Stack>
 
       {/* Modern Filter panel */}
       <Paper
@@ -266,11 +245,9 @@ export default async function DiscoverPage({
         method="get"
         sx={{
           p: 3,
-          borderRadius: 4,
-          backgroundColor: "rgba(255, 255, 255, 0.02)",
-          backdropFilter: "blur(12px)",
+          borderRadius: 3.5,
+          backgroundColor: "#1C1C1E",
           borderColor: "rgba(255, 255, 255, 0.08)",
-          boxShadow: "0 8px 32px 0 rgba(0, 0, 0, 0.2)",
         }}
       >
         <Stack spacing={2.5}>
@@ -315,7 +292,7 @@ export default async function DiscoverPage({
               alignItems: "center",
               justifyContent: "space-between",
               pt: 2,
-              borderTop: "1px dashed rgba(255,255,255,0.08)",
+              borderTop: "1px solid rgba(255, 255, 255, 0.08)",
             }}
           >
             <Stack direction="row" spacing={2} sx={{ width: { xs: "100%", sm: "auto" } }}>
@@ -351,9 +328,9 @@ export default async function DiscoverPage({
                   variant="text"
                   startIcon={<ClearIcon />}
                   sx={{
-                    color: "rgba(255,255,255,0.55)",
+                    color: "#8E8E93",
                     transition: "color 0.2s",
-                    "&:hover": { color: "#ffffff", backgroundColor: "rgba(255,255,255,0.05)" },
+                    "&:hover": { color: "#ffffff", backgroundColor: "rgba(255, 255, 255, 0.04)" },
                   }}
                 >
                   Clear Filters
@@ -364,18 +341,14 @@ export default async function DiscoverPage({
                 variant="contained"
                 startIcon={<FilterListIcon />}
                 sx={{
-                  background: "linear-gradient(135deg, #7CF5B6 0%, #B9AEFF 100%)",
-                  color: "#061814",
-                  fontWeight: 700,
+                  backgroundColor: "#0A84FF",
+                  color: "#FFFFFF",
+                  fontWeight: 600,
                   px: 3.5,
-                  py: 0.75,
-                  borderRadius: 2,
-                  boxShadow: "0 4px 14px rgba(124, 245, 182, 0.18)",
-                  transition: "all 0.2s ease-in-out",
+                  borderRadius: "8px",
                   "&:hover": {
-                    transform: "translateY(-1px)",
-                    boxShadow: "0 6px 20px rgba(124, 245, 182, 0.35)",
-                    background: "linear-gradient(135deg, #90ffd0 0%, #cac0ff 100%)",
+                    backgroundColor: "#0A84FF",
+                    opacity: 0.9,
                   },
                 }}
               >
@@ -474,12 +447,13 @@ export default async function DiscoverPage({
                   borderRadius: 2,
                   ...(p === safePage
                     ? {
-                        background:
-                          "linear-gradient(135deg, #7CF5B6 0%, #B9AEFF 100%)",
-                        color: "#061814",
-                        fontWeight: 700,
+                        backgroundColor: "#0A84FF",
+                        color: "#FFFFFF",
+                        fontWeight: 600,
                       }
-                    : {}),
+                    : {
+                        color: "#8E8E93",
+                      }),
                 }}
               >
                 {p}

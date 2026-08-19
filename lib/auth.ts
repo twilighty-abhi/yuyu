@@ -31,7 +31,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           Google({
             clientId: googleId,
             clientSecret: googleSecret,
-            allowDangerousEmailAccountLinking: true,
           }),
         ]
       : []),

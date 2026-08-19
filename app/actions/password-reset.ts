@@ -6,8 +6,13 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import type { ActionResult } from "./org";
 import { flattenZodErrors } from "./utils";
+import { isActionRateLimited } from "@/lib/actionRateLimit";
 
 const TOKEN_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
+
+function hashToken(token: string) {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
 
 // ── Request password reset ──────────────────────────────────────────
 
@@ -32,6 +37,10 @@ export async function requestPasswordReset(
   }
 
   const { email } = parsed.data;
+  if (await isActionRateLimited("passwordReset", email)) {
+    // Keep this indistinguishable from the usual non-enumerating response.
+    return { ok: true, data: { sent: true } };
+  }
   const user = await prisma.user.findUnique({
     where: { email },
     select: { id: true, passwordHash: true },
@@ -44,6 +53,7 @@ export async function requestPasswordReset(
 
   // Generate a secure random token
   const rawToken = crypto.randomBytes(32).toString("hex");
+  const tokenHash = hashToken(rawToken);
   const expires = new Date(Date.now() + TOKEN_EXPIRY_MS);
 
   // Delete any existing reset tokens for this email
@@ -55,7 +65,7 @@ export async function requestPasswordReset(
   await prisma.verificationToken.create({
     data: {
       identifier: `reset:${email}`,
-      token: rawToken,
+      token: tokenHash,
       expires,
     },
   });
@@ -104,11 +114,15 @@ export async function confirmPasswordReset(
   }
 
   const { email, token, password } = parsed.data;
+  if (await isActionRateLimited("passwordReset", email)) {
+    return { ok: false, error: "Invalid or expired reset link." };
+  }
+  const tokenHash = hashToken(token);
 
   const record = await prisma.verificationToken.findFirst({
     where: {
       identifier: `reset:${email}`,
-      token,
+      token: tokenHash,
     },
   });
 
@@ -119,7 +133,7 @@ export async function confirmPasswordReset(
   if (record.expires < new Date()) {
     // Clean up expired token
     await prisma.verificationToken.deleteMany({
-      where: { identifier: `reset:${email}`, token },
+      where: { identifier: `reset:${email}`, token: tokenHash },
     });
     return {
       ok: false,

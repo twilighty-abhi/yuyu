@@ -3,6 +3,7 @@
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
+import { isActionRateLimited } from "@/lib/actionRateLimit";
 import type { ActionResult } from "./org";
 import { flattenZodErrors } from "./utils";
 
@@ -34,29 +35,22 @@ export async function signUpWithPassword(
 
   const { name, email, password } = parsed.data;
 
+  if (await isActionRateLimited("signup", email)) {
+    return { ok: false, error: "Too many attempts. Please try again later." };
+  }
+
   const existing = await prisma.user.findUnique({
     where: { email },
     select: { id: true, passwordHash: true },
   });
 
   if (existing) {
-    if (existing.passwordHash) {
-      return {
-        ok: false,
-        error: "An account with that email already exists. Sign in instead.",
-        fieldErrors: { email: ["Email is already registered"] },
-      };
-    }
-    // Account exists via OAuth but no password yet — attach one.
-    const passwordHash = await bcrypt.hash(password, 12);
-    await prisma.user.update({
-      where: { id: existing.id },
-      data: {
-        passwordHash,
-        name: name,
-      },
-    });
-    return { ok: true, data: { email } };
+    // Never attach a password based solely on a claimed email address. In
+    // particular, doing so lets an attacker take over an OAuth-only account.
+    return {
+      ok: false,
+      error: "We couldn't create an account with those credentials. Try signing in or resetting your password.",
+    };
   }
 
   const passwordHash = await bcrypt.hash(password, 12);

@@ -13,8 +13,7 @@ export function PublishEventButton(props: {
   return (
     <Button
       size="small"
-      variant="outlined"
-      color="primary"
+      variant="contained"
       disabled={pending}
       onClick={() => {
         startTransition(() => {
@@ -24,8 +23,20 @@ export function PublishEventButton(props: {
           });
         });
       }}
+      sx={{
+        backgroundColor: "#0A84FF",
+        color: "#FFFFFF",
+        fontWeight: 600,
+        textTransform: "none",
+        borderRadius: "8px",
+        px: 2.5,
+        "&:hover": {
+          backgroundColor: "#0A84FF",
+          opacity: 0.9,
+        },
+      }}
     >
-      Publish
+      {pending ? "Publishing..." : "Publish Event"}
     </Button>
   );
 }

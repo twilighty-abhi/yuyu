@@ -111,26 +111,14 @@ export default async function OrganisationPage({ params }: Props) {
       <Paper
         variant="outlined"
         sx={{
-          p: { xs: 2.25, sm: 3 },
-          borderRadius: 4,
+          p: { xs: 3, sm: 4 },
+          borderRadius: 3.5,
           overflow: "hidden",
           position: "relative",
-          background:
-            "linear-gradient(135deg, rgba(124, 245, 182, 0.08) 0%, rgba(185, 174, 255, 0.06) 100%)",
-          border: "1px solid rgba(255,255,255,0.06)",
+          background: "#1C1C1E",
+          borderColor: "rgba(255, 255, 255, 0.08)",
         }}
       >
-        <Box
-          aria-hidden
-          sx={{
-            position: "absolute",
-            inset: 0,
-            pointerEvents: "none",
-            background:
-              "radial-gradient(700px circle at 0% 0%, rgba(124, 245, 182, 0.12), transparent 55%), radial-gradient(700px circle at 100% 0%, rgba(185, 174, 255, 0.1), transparent 55%)",
-          }}
-        />
-
         <Stack
           spacing={2.25}
           sx={{ position: "relative", alignItems: "stretch" }}
@@ -148,9 +136,10 @@ export default async function OrganisationPage({ params }: Props) {
                 sx={{
                   width: { xs: 52, sm: 60 },
                   height: { xs: 52, sm: 60 },
-                  borderRadius: 3,
-                  bgcolor: "action.selected",
+                  borderRadius: 2.5,
+                  bgcolor: "rgba(255,255,255,0.06)",
                   color: "text.primary",
+                  border: "1px solid rgba(255, 255, 255, 0.08)",
                 }}
               >
                 {org.name.trim().slice(0, 1).toUpperCase()}
@@ -166,7 +155,7 @@ export default async function OrganisationPage({ params }: Props) {
                   <Typography
                     variant="h4"
                     component="h1"
-                    sx={{ fontWeight: 800, lineHeight: 1.1 }}
+                    sx={{ fontWeight: 700, letterSpacing: "-1px" }}
                   >
                     {org.name}
                   </Typography>
@@ -203,9 +192,15 @@ export default async function OrganisationPage({ params }: Props) {
                   href="#events-list"
                   endIcon={<ArrowForwardIcon />}
                   sx={{
-                    background: "linear-gradient(135deg, #7CF5B6 0%, #B9AEFF 100%)",
-                    color: "#061814",
-                    fontWeight: 700,
+                    backgroundColor: "#0A84FF",
+                    color: "#FFFFFF",
+                    fontWeight: 600,
+                    textTransform: "none",
+                    borderRadius: "8px",
+                    "&:hover": {
+                      backgroundColor: "#0A84FF",
+                      opacity: 0.9,
+                    },
                   }}
                 >
                   Browse events
@@ -244,7 +239,11 @@ export default async function OrganisationPage({ params }: Props) {
                 label={`${upcomingCount} upcoming`}
                 variant="outlined"
                 color="primary"
-                sx={{ bgcolor: "rgba(124, 245, 182, 0.08)", color: "#7CF5B6", borderColor: "rgba(124, 245, 182, 0.2)" }}
+                sx={{
+                  bgcolor: "rgba(10, 132, 255, 0.08)",
+                  color: "#0A84FF",
+                  borderColor: "rgba(10, 132, 255, 0.2)",
+                }}
               />
             )}
           </Stack>

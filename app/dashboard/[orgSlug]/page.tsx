@@ -86,13 +86,25 @@ export default async function OrgDashboardPage({ params, searchParams }: Props) 
         spacing={2}
         sx={{
           justifyContent: "space-between",
-          alignItems: { xs: "flex-start", sm: "center" },
+          alignItems: { xs: "stretch", sm: "flex-end" },
+          pb: 1.5,
+          borderBottom: "1px solid rgba(255, 255, 255, 0.08)",
+          mb: 1,
         }}
       >
-        <Typography variant="body2" color="text.secondary">
-          Manage events and members for this organisation.
-        </Typography>
-        <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
+        <Stack spacing={0.5}>
+          <Typography
+            variant="h4"
+            component="h1"
+            sx={{ fontWeight: 700, letterSpacing: "-1px" }}
+          >
+            {organisation.name}
+          </Typography>
+          <Typography variant="body2" sx={{ color: "#8E8E93" }}>
+            Manage events, membership lists, and settings for this organisation.
+          </Typography>
+        </Stack>
+        <Stack direction="row" spacing={1.5} useFlexGap sx={{ flexWrap: "wrap", alignItems: "center" }}>
           {admin ? (
             <Link
               href={`/dashboard/${organisation.slug}/settings`}
@@ -111,21 +123,37 @@ export default async function OrgDashboardPage({ params, searchParams }: Props) 
 
       <Grid container spacing={2} sx={{ mt: 0 }}>
         <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-          <Paper variant="outlined" sx={{ p: 2 }}>
-            <Typography variant="subtitle2" color="text.secondary">
+          <Paper
+            variant="outlined"
+            sx={{
+              p: 3,
+              borderRadius: "16px",
+              backgroundColor: "#1C1C1E",
+              borderColor: "rgba(255, 255, 255, 0.08)",
+            }}
+          >
+            <Typography variant="body2" sx={{ color: "#8E8E93", fontWeight: 600, fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.5px" }}>
               Total events
             </Typography>
-            <Typography variant="h4" component="p">
-              {events.length}
+            <Typography variant="h3" sx={{ fontWeight: 700, mt: 1, letterSpacing: "-1px" }}>
+              {totalEvents}
             </Typography>
           </Paper>
         </Grid>
         <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-          <Paper variant="outlined" sx={{ p: 2 }}>
-            <Typography variant="subtitle2" color="text.secondary">
+          <Paper
+            variant="outlined"
+            sx={{
+              p: 3,
+              borderRadius: "16px",
+              backgroundColor: "#1C1C1E",
+              borderColor: "rgba(255, 255, 255, 0.08)",
+            }}
+          >
+            <Typography variant="body2" sx={{ color: "#8E8E93", fontWeight: 600, fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.5px" }}>
               Total RSVPs
             </Typography>
-            <Typography variant="h4" component="p">
+            <Typography variant="h3" sx={{ fontWeight: 700, mt: 1, letterSpacing: "-1px" }}>
               {totalRsvps}
             </Typography>
           </Paper>

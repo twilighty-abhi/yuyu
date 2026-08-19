@@ -16,6 +16,12 @@ const envSchema = z.object({
   ALLOWED_ACTION_ORIGINS: z.string().optional(),
   TRUSTED_PROXY_IP_HEADER: z.enum(["cf-connecting-ip", "x-forwarded-for", "x-real-ip"]).optional(),
   SUPER_ADMIN_EMAIL: z.string().optional(),
+  BACKUP_PROVIDER: z.string().max(80).optional(),
+  BACKUP_LAST_SUCCESS_AT: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z.string().datetime().optional(),
+  ),
+  BACKUP_RETENTION_DAYS: z.coerce.number().int().positive().max(3650).optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);

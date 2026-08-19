@@ -1,0 +1,102 @@
+import Grid from "@mui/material/Grid";
+import Paper from "@mui/material/Paper";
+import Stack from "@mui/material/Stack";
+import Typography from "@mui/material/Typography";
+import Chip from "@mui/material/Chip";
+import Divider from "@mui/material/Divider";
+import { OutboxStatus } from "@prisma/client";
+import { prisma } from "@/lib/db";
+import { env } from "@/lib/env";
+import { InstanceOperationsControls } from "@/components/super-admin/InstanceOperationsControls";
+
+function StatusChip(props: { ok: boolean; ready: string; missing: string }) {
+  return <Chip size="small" color={props.ok ? "success" : "warning"} variant="outlined" label={props.ok ? props.ready : props.missing} />;
+}
+
+function ageLabel(value: Date | null) {
+  if (!value) return "Not recorded";
+  const hours = Math.max(0, Math.floor((Date.now() - value.getTime()) / 3_600_000));
+  if (hours < 1) return "Less than an hour ago";
+  if (hours < 48) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} day${days === 1 ? "" : "s"} ago`;
+}
+
+export default async function SuperAdminOperationsPage() {
+  const now = new Date();
+  const [outboxGroups, expiredTokens, lastRestoreDrill, oldestPending] = await Promise.all([
+    prisma.outboxMessage.groupBy({ by: ["status"], _count: { _all: true } }),
+    prisma.verificationToken.count({ where: { expires: { lt: now } } }),
+    prisma.auditEvent.findFirst({
+      where: { action: "BACKUP_RESTORE_VERIFIED" },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true },
+    }),
+    prisma.outboxMessage.findFirst({
+      where: { status: OutboxStatus.PENDING },
+      orderBy: { createdAt: "asc" },
+      select: { createdAt: true },
+    }),
+  ]);
+  const outbox = new Map(outboxGroups.map((row) => [row.status, row._count._all]));
+  const reportedBackupAt = env?.BACKUP_LAST_SUCCESS_AT ? new Date(env.BACKUP_LAST_SUCCESS_AT) : null;
+  const backupFresh = reportedBackupAt != null && now.getTime() - reportedBackupAt.getTime() < 26 * 3_600_000;
+
+  return (
+    <Stack spacing={3}>
+      <Stack spacing={0.5}>
+        <Typography variant="h4" component="h1" sx={{ fontWeight: 800 }}>Instance operations</Typography>
+        <Typography color="text.secondary">Backup posture, queue health, retention jobs, and safe maintenance controls for this deployment.</Typography>
+      </Stack>
+
+      <Grid container spacing={2}>
+        <Grid size={{ xs: 12, md: 7 }}>
+          <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 3, height: "100%" }}>
+            <Stack spacing={1.5}>
+              <Typography variant="h6" sx={{ fontWeight: 700 }}>Database backups</Typography>
+              <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
+                <StatusChip ok={Boolean(env?.BACKUP_PROVIDER)} ready={`Provider: ${env?.BACKUP_PROVIDER}`} missing="Backup provider not configured" />
+                <StatusChip ok={backupFresh} ready="Latest backup is fresh" missing="Backup status is stale or unknown" />
+                <StatusChip ok={Boolean(env?.BACKUP_RETENTION_DAYS)} ready={`${env?.BACKUP_RETENTION_DAYS} day retention`} missing="Retention not configured" />
+              </Stack>
+              <Typography variant="body2" color="text.secondary">Last successful backup: {reportedBackupAt ? `${reportedBackupAt.toLocaleString()} (${ageLabel(reportedBackupAt)})` : "not reported by the backup job"}.</Typography>
+              <Typography variant="body2" color="text.secondary">Last restore drill: {lastRestoreDrill ? `${lastRestoreDrill.createdAt.toLocaleString()} (${ageLabel(lastRestoreDrill.createdAt)})` : "not recorded"}.</Typography>
+              <Typography variant="caption" color="text.secondary">The backup system remains external; set the backup environment metadata from the managed database job, then record each successful restore drill here.</Typography>
+            </Stack>
+          </Paper>
+        </Grid>
+        <Grid size={{ xs: 12, md: 5 }}>
+          <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 3, height: "100%" }}>
+            <Stack spacing={1.5}>
+              <Typography variant="h6" sx={{ fontWeight: 700 }}>Service prerequisites</Typography>
+              <StatusChip ok={Boolean(env?.REDIS_URL)} ready="Redis configured" missing="Redis missing — production writes will fail closed" />
+              <StatusChip ok={Boolean(process.env.CRON_SECRET)} ready="Outbox scheduler secret configured" missing="Outbox scheduler secret missing" />
+              <StatusChip ok={Boolean(process.env.HEALTHCHECK_SECRET)} ready="Readiness probe protected" missing="Readiness probe secret missing" />
+              <StatusChip ok={Boolean(env?.SMTP_HOST || env?.SMTP_SERVICE)} ready="Transactional email configured" missing="Transactional email not configured" />
+            </Stack>
+          </Paper>
+        </Grid>
+      </Grid>
+
+      <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 3 }}>
+        <Stack spacing={1.5}>
+          <Typography variant="h6" sx={{ fontWeight: 700 }}>Delivery and retention</Typography>
+          <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
+            <Chip size="small" label={`${outbox.get(OutboxStatus.PENDING) ?? 0} queued`} />
+            <Chip size="small" color={(outbox.get(OutboxStatus.FAILED) ?? 0) > 0 ? "error" : "success"} variant="outlined" label={`${outbox.get(OutboxStatus.FAILED) ?? 0} failed`} />
+            <Chip size="small" variant="outlined" label={`${outbox.get(OutboxStatus.SENT) ?? 0} sent`} />
+            <Chip size="small" color={expiredTokens > 0 ? "warning" : "success"} variant="outlined" label={`${expiredTokens} expired verification token${expiredTokens === 1 ? "" : "s"}`} />
+          </Stack>
+          <Typography variant="body2" color="text.secondary">Oldest queued message: {oldestPending ? `${oldestPending.createdAt.toLocaleString()} (${ageLabel(oldestPending.createdAt)})` : "none"}.</Typography>
+          <Divider />
+          <InstanceOperationsControls />
+        </Stack>
+      </Paper>
+
+      <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 3, backgroundColor: "rgba(10,132,255,0.06)" }}>
+        <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }}>Operational guardrail</Typography>
+        <Typography variant="body2" color="text.secondary">These controls do not create or delete provider backups. Backup creation, retention, encryption, and restore access must remain controlled by the managed database provider and deployment credentials. Use this page to verify posture and record evidence, not to expose infrastructure secrets in the application.</Typography>
+      </Paper>
+    </Stack>
+  );
+}

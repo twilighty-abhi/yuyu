@@ -181,67 +181,6 @@ export default async function DashboardPage() {
         </Link>
       </Stack>
 
-      {/* ── PRIMARY METRIC ── */}
-      <Grid container spacing={3}>
-        <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-          <Paper
-            variant="outlined"
-            sx={{
-              p: 3,
-              borderRadius: "16px",
-              backgroundColor: APPLE_COLORS.background,
-              borderColor: APPLE_COLORS.border,
-              background: "linear-gradient(145deg, rgba(10,132,255,0.2), rgba(28,28,30,0.96) 68%)",
-              boxShadow: "0 14px 30px rgba(10,132,255,0.08)",
-              minHeight: 144,
-            }}
-          >
-            <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "flex-start" }}>
-              <Stack spacing={1}>
-                <Typography
-                  variant="body2"
-                  sx={{
-                    color: APPLE_COLORS.textSecondary,
-                    fontWeight: 600,
-                    fontSize: "0.8rem",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.5px",
-                  }}
-                >
-                  Active Events
-                </Typography>
-                <Typography
-                  variant="h3"
-                  sx={{
-                    fontWeight: 700,
-                    color: APPLE_COLORS.textPrimary,
-                    letterSpacing: "-1px",
-                  }}
-                >
-                  {totalEventsCount}
-                </Typography>
-              </Stack>
-              <Box
-                sx={{
-                  display: "grid",
-                  placeItems: "center",
-                  width: 44,
-                  height: 44,
-                  borderRadius: "14px",
-                  color: "#fff",
-                  backgroundColor: "rgba(10,132,255,0.78)",
-                }}
-              >
-                <EventIcon sx={{ fontSize: 24 }} />
-              </Box>
-            </Stack>
-            <Typography variant="caption" sx={{ display: "block", mt: 2, color: "rgba(255,255,255,0.62)" }}>
-              Published across your workspaces
-            </Typography>
-          </Paper>
-        </Grid>
-      </Grid>
-
       {/* ── TWO COLUMN LISTS (HIG GROUPED LAYOUT) ── */}
       <Grid container spacing={4}>
         {/* Left Column: Organisations */}
@@ -434,6 +373,57 @@ export default async function DashboardPage() {
         {/* Right Column: Activity Feed (Grouped List Style) */}
         <Grid size={{ xs: 12, lg: 4 }}>
           <Stack spacing={2}>
+            <Paper
+              variant="outlined"
+              sx={{
+                p: 3,
+                borderRadius: "16px",
+                backgroundColor: APPLE_COLORS.background,
+                borderColor: APPLE_COLORS.border,
+                background: "linear-gradient(145deg, rgba(10,132,255,0.2), rgba(28,28,30,0.96) 68%)",
+                boxShadow: "0 14px 30px rgba(10,132,255,0.08)",
+              }}
+            >
+              <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+                <Stack spacing={1}>
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      color: APPLE_COLORS.textSecondary,
+                      fontWeight: 600,
+                      fontSize: "0.8rem",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.5px",
+                    }}
+                  >
+                    Active Events
+                  </Typography>
+                  <Typography
+                    variant="h3"
+                    sx={{ fontWeight: 700, color: APPLE_COLORS.textPrimary, letterSpacing: "-1px" }}
+                  >
+                    {totalEventsCount}
+                  </Typography>
+                </Stack>
+                <Box
+                  sx={{
+                    display: "grid",
+                    placeItems: "center",
+                    width: 44,
+                    height: 44,
+                    borderRadius: "14px",
+                    color: "#fff",
+                    backgroundColor: "rgba(10,132,255,0.78)",
+                  }}
+                >
+                  <EventIcon sx={{ fontSize: 24 }} />
+                </Box>
+              </Stack>
+              <Typography variant="caption" sx={{ display: "block", mt: 2, color: "rgba(255,255,255,0.62)" }}>
+                Published across your workspaces
+              </Typography>
+            </Paper>
+
             <Typography
               variant="h6"
               sx={{

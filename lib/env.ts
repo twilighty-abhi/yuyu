@@ -12,7 +12,10 @@ const envSchema = z.object({
   SMTP_USER: z.string().optional(),
   SMTP_PASSWORD: z.string().optional(),
   STORAGE_PUBLIC_BASE_URL: z.string().optional(),
+  NEXT_PUBLIC_BASE_URL: z.string().url().optional(),
   REDIS_URL: z.string().optional(),
+  CRON_SECRET: z.string().min(24).optional(),
+  HEALTHCHECK_SECRET: z.string().min(24).optional(),
   ALLOWED_ACTION_ORIGINS: z.string().optional(),
   TRUSTED_PROXY_IP_HEADER: z.enum(["cf-connecting-ip", "x-forwarded-for", "x-real-ip"]).optional(),
   SUPER_ADMIN_EMAIL: z.string().optional(),
@@ -24,7 +27,15 @@ const envSchema = z.object({
   BACKUP_RETENTION_DAYS: z.coerce.number().int().positive().max(3650).optional(),
 });
 
-const parsed = envSchema.safeParse(process.env);
+const parsed = envSchema.superRefine((value, ctx) => {
+  if (process.env.NODE_ENV !== "production") return;
+  for (const key of ["REDIS_URL", "CRON_SECRET", "HEALTHCHECK_SECRET", "NEXT_PUBLIC_BASE_URL"] as const) {
+    if (!value[key]) ctx.addIssue({ code: z.ZodIssueCode.custom, path: [key], message: `${key} is required in production` });
+  }
+  if (!value.EMAIL_FROM || !(value.SMTP_SERVICE || value.SMTP_HOST)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["EMAIL_FROM"], message: "EMAIL_FROM and SMTP_SERVICE or SMTP_HOST are required in production" });
+  }
+}).safeParse(process.env);
 
 if (!parsed.success) {
   console.error("=========================================");

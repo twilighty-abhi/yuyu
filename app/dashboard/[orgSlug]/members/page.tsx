@@ -63,30 +63,19 @@ export default async function OrgMembersPage({ params }: Props) {
     })();
 
   return (
-    <Stack spacing={3}>
-      <Paper
-        variant="outlined"
-        sx={{
-          p: { xs: 2.5, sm: 3 },
-          borderRadius: "20px",
-          borderColor: "rgba(255,255,255,0.09)",
-          background: "linear-gradient(120deg, rgba(10,132,255,0.12), rgba(28,28,30,0.96) 65%)",
-        }}
-      >
-        <Typography variant="overline" sx={{ color: "#0A84FF", fontWeight: 700, letterSpacing: "1.4px", lineHeight: 1.3 }}>
-          Organisation people
-        </Typography>
-        <Typography variant="h4" component="h1" sx={{ mt: 0.5, fontWeight: 700, letterSpacing: "-1px" }}>
+    <Stack spacing={3.5} sx={{ pb: 2 }}>
+      <Stack spacing={0.5} sx={{ px: { xs: 0.5, sm: 0 } }}>
+        <Typography variant="h5" component="h1" sx={{ fontWeight: 700, letterSpacing: "-0.5px" }}>
           Members
         </Typography>
-        <Typography variant="body2" sx={{ mt: 1, color: "rgba(255,255,255,0.6)" }}>
+        <Typography variant="body2" sx={{ color: "text.secondary" }}>
           {ownerView
             ? "Manage roles, invite collaborators, and keep your workspace in good shape."
             : adminView
               ? "Invite collaborators and manage the members of this workspace."
               : "Everyone who belongs to this organisation."}
         </Typography>
-      </Paper>
+      </Stack>
 
       {adminView ? (
         <OrgInviteLinkPanel
@@ -113,15 +102,15 @@ export default async function OrgMembersPage({ params }: Props) {
             borderRadius: "18px",
             borderColor: "rgba(255,255,255,0.09)",
             backgroundColor: "rgba(28,28,30,0.88)",
-            boxShadow: "0 10px 28px rgba(0,0,0,0.1)",
+            boxShadow: "none",
           }}
         >
           <Table size="small" sx={{ minWidth: 560 }}>
             <TableHead>
-              <TableRow sx={{ backgroundColor: "rgba(255,255,255,0.035)" }}>
-                <TableCell sx={{ py: 1.5, color: "rgba(255,255,255,0.52)", fontSize: "0.72rem", fontWeight: 700, letterSpacing: "0.75px", textTransform: "uppercase" }}>Member</TableCell>
-                <TableCell sx={{ display: { xs: "none", sm: "table-cell" }, py: 1.5, color: "rgba(255,255,255,0.52)", fontSize: "0.72rem", fontWeight: 700, letterSpacing: "0.75px", textTransform: "uppercase" }}>Email</TableCell>
-                <TableCell sx={{ py: 1.5, color: "rgba(255,255,255,0.52)", fontSize: "0.72rem", fontWeight: 700, letterSpacing: "0.75px", textTransform: "uppercase" }}>Role & actions</TableCell>
+              <TableRow sx={{ backgroundColor: "rgba(255,255,255,0.025)" }}>
+                <TableCell sx={{ py: 1.25, color: "rgba(255,255,255,0.48)", fontSize: "0.7rem", fontWeight: 700, letterSpacing: "0.7px", textTransform: "uppercase" }}>Member</TableCell>
+                <TableCell sx={{ display: { xs: "none", sm: "table-cell" }, py: 1.25, color: "rgba(255,255,255,0.48)", fontSize: "0.7rem", fontWeight: 700, letterSpacing: "0.7px", textTransform: "uppercase" }}>Email</TableCell>
+                <TableCell sx={{ py: 1.25, color: "rgba(255,255,255,0.48)", fontSize: "0.7rem", fontWeight: 700, letterSpacing: "0.7px", textTransform: "uppercase" }}>Access</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>

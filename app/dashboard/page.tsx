@@ -7,7 +7,6 @@ import CardContent from "@mui/material/CardContent";
 import Grid from "@mui/material/Grid";
 import Paper from "@mui/material/Paper";
 import Box from "@mui/material/Box";
-import Chip from "@mui/material/Chip";
 import Avatar from "@mui/material/Avatar";
 import Divider from "@mui/material/Divider";
 import Link from "next/link";
@@ -17,7 +16,6 @@ import BusinessIcon from "@mui/icons-material/Business";
 import AddIcon from "@mui/icons-material/Add";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import EventIcon from "@mui/icons-material/Event";
-import PeopleIcon from "@mui/icons-material/People";
 
 import type { Metadata } from "next";
 
@@ -66,7 +64,6 @@ export default async function DashboardPage() {
       slug: true,
       description: true,
       logoUrl: true,
-      _count: { select: { events: true, memberships: true } },
     },
   });
 
@@ -112,7 +109,7 @@ export default async function DashboardPage() {
   const userName = session.user.name || "User";
 
   return (
-    <Stack spacing={4} sx={{ py: 4, px: { xs: 1, sm: 2 } }}>
+    <Stack spacing={4} sx={{ py: { xs: 3, sm: 5 }, px: { xs: 1, sm: 2 } }}>
       {/* ── HEADER (APPLE HIG MINIMALIST STYLE) ── */}
       <Stack
         direction={{ xs: "column", sm: "row" }}
@@ -120,11 +117,21 @@ export default async function DashboardPage() {
         sx={{
           justifyContent: "space-between",
           alignItems: { xs: "stretch", sm: "flex-end" },
-          pb: 1.5,
-          borderBottom: `1px solid ${APPLE_COLORS.border}`,
+          gap: 2,
+          p: { xs: 2.5, sm: 3.5 },
+          border: `1px solid ${APPLE_COLORS.border}`,
+          borderRadius: "24px",
+          background: "linear-gradient(120deg, rgba(10,132,255,0.14), rgba(255,255,255,0.035) 55%, rgba(48,209,88,0.08))",
+          boxShadow: "0 18px 45px rgba(0,0,0,0.16)",
         }}
       >
         <Stack spacing={0.5}>
+          <Typography
+            variant="overline"
+            sx={{ color: APPLE_COLORS.blue, fontWeight: 700, letterSpacing: "1.6px", lineHeight: 1.3 }}
+          >
+            Workspace overview
+          </Typography>
           <Typography
             variant="h4"
             component="h1"
@@ -141,7 +148,7 @@ export default async function DashboardPage() {
             variant="body2"
             sx={{ color: APPLE_COLORS.textSecondary, fontWeight: 400 }}
           >
-            Welcome, {userName}. Review active queues and manage organisations.
+            Welcome back, {userName}. Everything you need to run your events, in one place.
           </Typography>
         </Stack>
 
@@ -184,7 +191,9 @@ export default async function DashboardPage() {
               borderRadius: "16px",
               backgroundColor: APPLE_COLORS.background,
               borderColor: APPLE_COLORS.border,
-              boxShadow: "none",
+              background: "linear-gradient(145deg, rgba(10,132,255,0.2), rgba(28,28,30,0.96) 68%)",
+              boxShadow: "0 14px 30px rgba(10,132,255,0.08)",
+              minHeight: 144,
             }}
           >
             <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -212,10 +221,23 @@ export default async function DashboardPage() {
                   {totalEventsCount}
                 </Typography>
               </Stack>
-              <Box sx={{ color: APPLE_COLORS.blue }}>
-                <EventIcon sx={{ fontSize: 28 }} />
+              <Box
+                sx={{
+                  display: "grid",
+                  placeItems: "center",
+                  width: 44,
+                  height: 44,
+                  borderRadius: "14px",
+                  color: "#fff",
+                  backgroundColor: "rgba(10,132,255,0.78)",
+                }}
+              >
+                <EventIcon sx={{ fontSize: 24 }} />
               </Box>
             </Stack>
+            <Typography variant="caption" sx={{ display: "block", mt: 2, color: "rgba(255,255,255,0.62)" }}>
+              Published across your workspaces
+            </Typography>
           </Paper>
         </Grid>
       </Grid>
@@ -225,16 +247,21 @@ export default async function DashboardPage() {
         {/* Left Column: Organisations */}
         <Grid size={{ xs: 12, lg: 8 }}>
           <Stack spacing={2}>
-            <Typography
-              variant="h6"
-              sx={{
-                fontWeight: 700,
-                color: APPLE_COLORS.textPrimary,
-                letterSpacing: "-0.3px",
-              }}
-            >
-              Organisations
-            </Typography>
+                <Stack direction="row" spacing={1} sx={{ alignItems: "baseline" }}>
+                  <Typography
+                    variant="h6"
+                    sx={{
+                      fontWeight: 700,
+                      color: APPLE_COLORS.textPrimary,
+                      letterSpacing: "-0.3px",
+                    }}
+                  >
+                    Organisations
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: APPLE_COLORS.textSecondary }}>
+                    Your workspaces
+                  </Typography>
+                </Stack>
 
             {orgs.length === 0 ? (
               <Paper
@@ -303,10 +330,13 @@ export default async function DashboardPage() {
                       backgroundColor: APPLE_COLORS.background,
                       borderColor: APPLE_COLORS.border,
                       transition: "background-color 0.15s ease",
-                      boxShadow: "none",
+                      boxShadow: "0 8px 24px rgba(0,0,0,0.1)",
                       "&:hover": {
                         backgroundColor: "rgba(255, 255, 255, 0.06)",
+                        transform: "translateY(-2px)",
+                        borderColor: "rgba(10,132,255,0.35)",
                       },
+                      transition: "background-color 0.15s ease, transform 0.15s ease, border-color 0.15s ease",
                     }}
                   >
                     <Link
@@ -361,6 +391,15 @@ export default async function DashboardPage() {
                                 >
                                   /{org.slug}
                                 </Typography>
+                                {org.description ? (
+                                  <Typography
+                                    variant="caption"
+                                    sx={{ color: "rgba(255,255,255,0.52)", display: "block", mt: 0.75 }}
+                                    noWrap
+                                  >
+                                    {org.description}
+                                  </Typography>
+                                ) : null}
                               </Box>
                             </Stack>
 
@@ -376,36 +415,9 @@ export default async function DashboardPage() {
                                 borderTop: { xs: `1px solid ${APPLE_COLORS.border}`, sm: "none" },
                               }}
                             >
-                              <Stack direction="row" spacing={1.5}>
-                                <Chip
-                                  size="small"
-                                  icon={<EventIcon sx={{ fontSize: 14 }} />}
-                                  label={`${org._count.events} event${org._count.events === 1 ? "" : "s"}`}
-                                  variant="outlined"
-                                  sx={{
-                                    height: 24,
-                                    borderRadius: "6px",
-                                    borderColor: APPLE_COLORS.border,
-                                    color: APPLE_COLORS.textSecondary,
-                                    fontSize: "0.75rem",
-                                    "& .MuiChip-icon": { color: "inherit" },
-                                  }}
-                                />
-                                <Chip
-                                  size="small"
-                                  icon={<PeopleIcon sx={{ fontSize: 14 }} />}
-                                  label={`${org._count.memberships} member${org._count.memberships === 1 ? "" : "s"}`}
-                                  variant="outlined"
-                                  sx={{
-                                    height: 24,
-                                    borderRadius: "6px",
-                                    borderColor: APPLE_COLORS.border,
-                                    color: APPLE_COLORS.textSecondary,
-                                    fontSize: "0.75rem",
-                                    "& .MuiChip-icon": { color: "inherit" },
-                                  }}
-                                />
-                              </Stack>
+                              <Typography variant="body2" sx={{ color: APPLE_COLORS.textSecondary, fontWeight: 600 }}>
+                                Open workspace
+                              </Typography>
                               <ArrowForwardIcon sx={{ color: APPLE_COLORS.textSecondary, fontSize: 18 }} />
                             </Stack>
                           </Stack>
@@ -440,7 +452,7 @@ export default async function DashboardPage() {
                 borderRadius: "16px",
                 backgroundColor: APPLE_COLORS.background,
                 borderColor: APPLE_COLORS.border,
-                boxShadow: "none",
+                boxShadow: "0 8px 24px rgba(0,0,0,0.1)",
               }}
             >
               {recentRsvps.length === 0 ? (

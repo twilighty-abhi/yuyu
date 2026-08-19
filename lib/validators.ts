@@ -2,6 +2,13 @@ import { EventPrivacyType, EventStatus } from "@prisma/client";
 import { z } from "zod";
 
 const slugRegex = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const coverImageUrlSchema = z
+  .union([
+    z.string().url(),
+    z.string().regex(/^\/api\/uploads\/.+/, "Invalid uploaded image URL"),
+    z.literal(""),
+  ])
+  .optional();
 
 export const createOrganisationSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(120),
@@ -42,7 +49,7 @@ export const createEventSchema = z
         z.array(z.string().min(1).max(32)).optional(),
       )
       .optional(),
-    coverImageUrl: z.string().url().optional().or(z.literal("")),
+    coverImageUrl: coverImageUrlSchema,
     showRegistrationCount: z.preprocess(
       (v) => v === true || v === "true" || v === "on",
       z.boolean(),
@@ -117,7 +124,7 @@ export const updateEventSchema = z
         z.array(z.string().min(1).max(32)).optional(),
       )
       .optional(),
-    coverImageUrl: z.string().url().optional().or(z.literal("")),
+    coverImageUrl: coverImageUrlSchema,
     showRegistrationCount: z.preprocess(
       (v) => v === true || v === "true" || v === "on",
       z.boolean(),

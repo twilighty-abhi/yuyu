@@ -129,7 +129,7 @@ export function LandingPageClient(props: { getStartedHref: string }) {
                 >
                   <StarsIcon sx={{ fontSize: 16, color: "#7CF5B6" }} />
                   <Typography variant="caption" sx={{ color: "#7CF5B6", fontWeight: 700, letterSpacing: 0.5 }}>
-                    INTRODUCING YUYU 2.0
+                    OPEN SOURCE & SELF-HOSTED
                   </Typography>
                 </Box>
               </motion.div>
@@ -171,7 +171,7 @@ export function LandingPageClient(props: { getStartedHref: string }) {
                     mb: 4,
                   }}
                 >
-                  Streamline event creation with interactive forms, automated waitlists, invite panels, and timezone-aware schedules. Eliminate no-shows with Yuyu.
+                  Yuyu is a fully open-source, self-hosted developer-first platform. Set up in seconds to manage mixers, meetups, or hackathons with complete data ownership.
                 </Typography>
               </motion.div>
 
@@ -325,27 +325,6 @@ export function LandingPageClient(props: { getStartedHref: string }) {
               </motion.div>
             </motion.div>
           </Grid>
-        </Grid>
-      </Box>
-
-      {/* ── TRUSTED SAAS METRICS ── */}
-      <Box sx={{ py: 6, borderY: "1px solid rgba(255, 255, 255, 0.05)", bgcolor: "rgba(255,255,255,0.01)" }}>
-        <Grid container spacing={3} sx={{ textAlign: "center" }}>
-          {[
-            { metric: "30k+", label: "RSVPs Managed" },
-            { metric: "99.99%", label: "Platform Uptime" },
-            { metric: "<15s", label: "Event Setup Time" },
-            { metric: "100%", label: "Self-Hosted Control" },
-          ].map((item, idx) => (
-            <Grid size={{ xs: 6, md: 3 }} key={idx}>
-              <Typography variant="h4" sx={{ fontWeight: 900, background: "linear-gradient(135deg, #ffffff 30%, #7CF5B6 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
-                {item.metric}
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, fontWeight: 500, letterSpacing: 0.3 }}>
-                {item.label}
-              </Typography>
-            </Grid>
-          ))}
         </Grid>
       </Box>
 
@@ -663,7 +642,7 @@ export function LandingPageClient(props: { getStartedHref: string }) {
                 Ready to run your next mixer?
               </Typography>
               <Typography variant="body1" color="text.secondary" sx={{ maxWidth: 500, lineHeight: 1.6 }}>
-                Create an organisation space, set waitlists, and start approving RSVPs in under a minute. Absolutely free.
+                Deploy Yuyu on your own server, retain 100% data ownership, and manage meetups with absolute control. Open source under MIT.
               </Typography>
               <Link href={getStartedHref} style={{ textDecoration: "none" }}>
                 <Button

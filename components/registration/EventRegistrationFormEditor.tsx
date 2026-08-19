@@ -13,6 +13,7 @@ import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
 import TableCell from "@mui/material/TableCell";
 import TableBody from "@mui/material/TableBody";
+import Divider from "@mui/material/Divider";
 import IconButton from "@mui/material/IconButton";
 import Dialog from "@mui/material/Dialog";
 import DialogTitle from "@mui/material/DialogTitle";
@@ -73,6 +74,51 @@ function needsOptions(t: RegistrationFieldType) {
     t === RegistrationFieldTypeEnum.RADIO
   );
 }
+
+const FIELD_PRESETS = [
+  {
+    label: "Phone Number",
+    type: "TEXT" as RegistrationFieldType,
+    required: false,
+    optionsCsv: "",
+  },
+  {
+    label: "Company / Organisation",
+    type: "TEXT" as RegistrationFieldType,
+    required: false,
+    optionsCsv: "",
+  },
+  {
+    label: "Job Title",
+    type: "TEXT" as RegistrationFieldType,
+    required: false,
+    optionsCsv: "",
+  },
+  {
+    label: "Dietary Restrictions",
+    type: "MULTI_SELECT" as RegistrationFieldType,
+    required: false,
+    optionsCsv: "None, Vegetarian, Vegan, Gluten Free, Dairy Free, Halal, Kosher",
+  },
+  {
+    label: "T-Shirt Size",
+    type: "SELECT" as RegistrationFieldType,
+    required: false,
+    optionsCsv: "XS, S, M, L, XL, XXL, 3XL",
+  },
+  {
+    label: "LinkedIn Profile",
+    type: "TEXT" as RegistrationFieldType,
+    required: false,
+    optionsCsv: "",
+  },
+  {
+    label: "How did you hear about us?",
+    type: "SELECT" as RegistrationFieldType,
+    required: false,
+    optionsCsv: "Social Media, Friend / Word of Mouth, Search Engine, Newsletter, Community Slack, Other",
+  },
+];
 
 export function EventRegistrationFormEditor(props: {
   organisationSlug: string;
@@ -257,6 +303,44 @@ export function EventRegistrationFormEditor(props: {
         <DialogTitle>{editing ? "Edit field" : "Add field"}</DialogTitle>
         <DialogContent sx={{ pt: 2 }}>
           <Stack spacing={2} sx={{ mt: 1 }}>
+            {!editing && (
+              <Box sx={{ mb: 1 }}>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ fontWeight: 600, display: "block", mb: 1, textTransform: "uppercase", letterSpacing: "0.5px" }}
+                >
+                  Preset templates
+                </Typography>
+                <Stack direction="row" useFlexGap sx={{ flexWrap: "wrap", gap: 1 }}>
+                  {FIELD_PRESETS.map((preset) => (
+                    <Button
+                      key={preset.label}
+                      variant="outlined"
+                      size="small"
+                      onClick={() => {
+                        setLabel(preset.label);
+                        setKey(uniqueKey(makeKeyFromLabel(preset.label), existingKeys));
+                        setType(preset.type);
+                        setRequired(preset.required);
+                        setOptionsCsv(preset.optionsCsv);
+                      }}
+                      sx={{
+                        textTransform: "none",
+                        fontSize: "0.75rem",
+                        borderRadius: "6px",
+                        py: 0.5,
+                        px: 1.25,
+                      }}
+                    >
+                      {preset.label}
+                    </Button>
+                  ))}
+                </Stack>
+                <Divider sx={{ mt: 2, mb: 1 }} />
+              </Box>
+            )}
+
             <TextField
               label="Label"
               value={label}

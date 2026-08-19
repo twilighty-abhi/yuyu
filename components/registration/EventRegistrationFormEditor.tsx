@@ -134,10 +134,11 @@ export function EventRegistrationFormEditor(props: {
   const router = useRouter();
   const { showToast } = useToast();
   const [pending, startTransition] = useTransition();
+  const [localFields, setLocalFields] = useState<RegistrationFieldRow[]>(props.fields);
 
   const fields = useMemo(() => {
-    return [...props.fields].sort((a, b) => a.sortOrder - b.sortOrder);
-  }, [props.fields]);
+    return [...localFields].sort((a, b) => a.sortOrder - b.sortOrder);
+  }, [localFields]);
 
   const existingKeys = useMemo(() => new Set(fields.map((f) => f.key)), [fields]);
 
@@ -179,14 +180,19 @@ export function EventRegistrationFormEditor(props: {
     const tmp = next[idx]!;
     next[idx] = next[nextIdx]!;
     next[nextIdx] = tmp;
+    const reordered = next.map((field, order) => ({ ...field, sortOrder: order + 1 }));
+    const previousFields = localFields;
+    setLocalFields(reordered);
     startTransition(async () => {
       const res = await reorderEventRegistrationFields({
         organisationSlug,
         eventId,
-        fieldIds: next.map((f) => f.id),
+        fieldIds: reordered.map((f) => f.id),
       });
-      if (!res.ok) showToast(res.error, "error");
-      else router.refresh();
+      if (!res.ok) {
+        setLocalFields(previousFields);
+        showToast(res.error, "error");
+      } else router.refresh();
     });
   }
 
@@ -269,7 +275,7 @@ export function EventRegistrationFormEditor(props: {
               {fields.length === 0 ? (
                 <Paper variant="outlined" sx={{ p: 4, textAlign: "center", backgroundColor: "rgba(255,255,255,0.01)", borderColor: "rgba(255,255,255,0.06)" }}>
                   <Typography variant="body2" color="text.secondary">
-                    No custom fields configured. Click "Add Custom Field" to capture dietary needs, phone numbers, or sizes.
+                    No custom fields configured. Click &quot;Add Custom Field&quot; to capture dietary needs, phone numbers, or sizes.
                   </Typography>
                 </Paper>
               ) : (
@@ -596,6 +602,20 @@ export function EventRegistrationFormEditor(props: {
                   showToast(res.error, "error");
                   return;
                 }
+                const savedField: RegistrationFieldRow = {
+                  id: res.data!.fieldId,
+                  key,
+                  label,
+                  type,
+                  required,
+                  options,
+                  sortOrder: editing?.sortOrder ?? fields.length + 1,
+                };
+                setLocalFields((current) =>
+                  editing
+                    ? current.map((field) => field.id === editing.id ? savedField : field)
+                    : [...current, savedField],
+                );
                 showToast("Saved field config", "success");
                 setOpen(false);
                 router.refresh();
@@ -626,7 +646,9 @@ export function EventRegistrationFormEditor(props: {
         onConfirm={() => {
           if (!deleteConfirmField) return;
           const targetField = { ...deleteConfirmField };
+          const previousFields = localFields;
           setDeleteConfirmField(null);
+          setLocalFields((current) => current.filter((field) => field.id !== targetField.id));
           startTransition(async () => {
             const res = await deleteEventRegistrationField({
               organisationSlug,
@@ -634,6 +656,7 @@ export function EventRegistrationFormEditor(props: {
               fieldId: targetField.id,
             });
             if (!res.ok) {
+              setLocalFields(previousFields);
               showToast(res.error, "error");
             } else {
               showToast(
@@ -653,6 +676,13 @@ export function EventRegistrationFormEditor(props: {
                         options: targetField.options,
                       });
                       if (restoreRes.ok) {
+                        setLocalFields((current) => [
+                          ...current,
+                          {
+                            ...targetField,
+                            id: restoreRes.data!.fieldId,
+                          },
+                        ]);
                         showToast("Field restored", "success");
                         router.refresh();
                       } else {

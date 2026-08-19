@@ -13,6 +13,7 @@ import Divider from "@mui/material/Divider";
 import Chip from "@mui/material/Chip";
 import TextField from "@mui/material/TextField";
 import MenuItem from "@mui/material/MenuItem";
+import { useTheme } from "@mui/material/styles";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import EventAvailableOutlinedIcon from "@mui/icons-material/EventAvailableOutlined";
 import GroupsOutlinedIcon from "@mui/icons-material/GroupsOutlined";
@@ -54,12 +55,21 @@ const floatAnimation: { animate: TargetAndTransition } = {
 export function LandingPageClient(props: { getStartedHref: string }) {
   const { getStartedHref } = props;
   const [activeTab, setActiveTab] = useState<"rsvp" | "waitlist" | "checkin">("rsvp");
+  const theme = useTheme();
+  const isDark = theme.palette.mode === "dark";
+  const subtleSurface = isDark ? "rgba(255,255,255,0.02)" : "rgba(60, 60, 67, 0.045)";
+  const softSurface = isDark ? "rgba(255,255,255,0.015)" : "rgba(255,255,255,0.86)";
+  const borderColor = isDark ? "rgba(255,255,255,0.08)" : "rgba(60, 60, 67, 0.16)";
+  const mutedText = isDark ? "rgba(255,255,255,0.72)" : theme.palette.text.secondary;
+  const accentGradient = isDark
+    ? "linear-gradient(135deg, #7CF5B6 10%, #B9AEFF 100%)"
+    : "linear-gradient(135deg, #087A5A 10%, #2D63C8 100%)";
 
   // Grid background style
   const gridBackground = {
     backgroundImage: `
-      linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px)
+      linear-gradient(${isDark ? "rgba(255, 255, 255, 0.03)" : "rgba(60, 60, 67, 0.06)"} 1px, transparent 1px),
+      linear-gradient(90deg, ${isDark ? "rgba(255, 255, 255, 0.03)" : "rgba(60, 60, 67, 0.06)"} 1px, transparent 1px)
     `,
     backgroundSize: "40px 40px",
     backgroundPosition: "center top",
@@ -148,7 +158,7 @@ export function LandingPageClient(props: { getStartedHref: string }) {
                   <Box
                     component="span"
                     sx={{
-                      background: "linear-gradient(135deg, #7CF5B6 10%, #B9AEFF 100%)",
+                      background: accentGradient,
                       WebkitBackgroundClip: "text",
                       WebkitTextFillColor: "transparent",
                     }}
@@ -163,7 +173,7 @@ export function LandingPageClient(props: { getStartedHref: string }) {
                 <Typography
                   variant="body1"
                   sx={{
-                    color: "rgba(255, 255, 255, 0.65)",
+                    color: "text.secondary",
                     fontSize: { xs: "1.05rem", sm: "1.15rem" },
                     lineHeight: 1.6,
                     maxWidth: 580,
@@ -214,13 +224,13 @@ export function LandingPageClient(props: { getStartedHref: string }) {
                         borderRadius: 2.5,
                         fontWeight: 700,
                         fontSize: "0.95rem",
-                        borderColor: "rgba(255, 255, 255, 0.15)",
-                        color: "#ffffff",
+                        borderColor,
+                        color: "text.primary",
                         backdropFilter: "blur(10px)",
                         transition: "all 0.2s ease",
                         "&:hover": {
-                          borderColor: "rgba(255, 255, 255, 0.35)",
-                          backgroundColor: "rgba(255, 255, 255, 0.05)",
+                          borderColor: isDark ? "rgba(255, 255, 255, 0.35)" : "rgba(60, 60, 67, 0.32)",
+                          backgroundColor: isDark ? "rgba(255, 255, 255, 0.05)" : "rgba(60, 60, 67, 0.05)",
                           transform: "translateY(-1px)",
                         },
                       }}
@@ -246,10 +256,10 @@ export function LandingPageClient(props: { getStartedHref: string }) {
                   sx={{
                     p: 3,
                     borderRadius: 5,
-                    backgroundColor: "rgba(10, 24, 18, 0.55)",
+                    backgroundColor: isDark ? "rgba(10, 24, 18, 0.55)" : "rgba(255,255,255,0.82)",
                     backdropFilter: "blur(20px)",
-                    borderColor: "rgba(124, 245, 182, 0.15)",
-                    boxShadow: "0 30px 70px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.05)",
+                    borderColor: isDark ? "rgba(124, 245, 182, 0.15)" : "rgba(60, 60, 67, 0.14)",
+                    boxShadow: isDark ? "0 30px 70px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.05)" : "0 24px 60px rgba(15, 23, 42, 0.12)",
                     position: "relative",
                   }}
                 >
@@ -265,29 +275,29 @@ export function LandingPageClient(props: { getStartedHref: string }) {
                     <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "center" }}>
                       <Box>
                         <Typography variant="caption" color="text.secondary">ORGANISATION EVENT</Typography>
-                        <Typography variant="h6" sx={{ fontWeight: 800, color: "#fff", mt: 0.25 }}>Tech Founders Mixer</Typography>
+                        <Typography variant="h6" sx={{ fontWeight: 800, color: "text.primary", mt: 0.25 }}>Tech Founders Mixer</Typography>
                       </Box>
                       <Chip label="Published" size="small" sx={{ bgcolor: "rgba(124, 245, 182, 0.12)", color: "#7CF5B6", fontWeight: 700 }} />
                     </Stack>
 
-                    <Divider sx={{ borderColor: "rgba(255,255,255,0.06)" }} />
+                    <Divider sx={{ borderColor }} />
 
                     {/* Dashboard Metrics */}
                     <Grid container spacing={2}>
                       <Grid size={4}>
-                        <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)" }}>
+                        <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: subtleSurface, border: `1px solid ${borderColor}` }}>
                           <Typography variant="caption" color="text.secondary">RSVPs</Typography>
                           <Typography variant="body1" sx={{ fontWeight: 800, mt: 0.5 }}>148 / 150</Typography>
                         </Box>
                       </Grid>
                       <Grid size={4}>
-                        <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)" }}>
+                        <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: subtleSurface, border: `1px solid ${borderColor}` }}>
                           <Typography variant="caption" color="text.secondary">Waitlisted</Typography>
                           <Typography variant="body1" sx={{ fontWeight: 800, mt: 0.5, color: "#B9AEFF" }}>24</Typography>
                         </Box>
                       </Grid>
                       <Grid size={4}>
-                        <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)" }}>
+                        <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: subtleSurface, border: `1px solid ${borderColor}` }}>
                           <Typography variant="caption" color="text.secondary">Attended</Typography>
                           <Typography variant="body1" sx={{ fontWeight: 800, mt: 0.5, color: "#7CF5B6" }}>92%</Typography>
                         </Box>
@@ -300,7 +310,7 @@ export function LandingPageClient(props: { getStartedHref: string }) {
                         <Typography variant="caption" color="text.secondary">Capacity Fill Rate</Typography>
                         <Typography variant="caption" sx={{ fontWeight: 700 }}>98%</Typography>
                       </Stack>
-                      <Box sx={{ width: "100%", height: 6, bgcolor: "rgba(255,255,255,0.08)", borderRadius: 3, overflow: "hidden" }}>
+                      <Box sx={{ width: "100%", height: 6, bgcolor: isDark ? "rgba(255,255,255,0.08)" : "rgba(60,60,67,0.14)", borderRadius: 3, overflow: "hidden" }}>
                         <Box sx={{ width: "98%", height: "100%", bg: "linear-gradient(90deg, #7CF5B6, #B9AEFF)", borderRadius: 3 }} />
                       </Box>
                     </Box>
@@ -308,14 +318,14 @@ export function LandingPageClient(props: { getStartedHref: string }) {
                     {/* Simulated Check-in logs */}
                     <Stack spacing={1}>
                       <Typography variant="caption" color="text.secondary">Live Check-in Stream</Typography>
-                      <Stack direction="row" spacing={1.5} sx={{ alignItems: "center", p: 1, borderRadius: 1.5, bgcolor: "rgba(124, 245, 182, 0.03)" }}>
+                      <Stack direction="row" spacing={1.5} sx={{ alignItems: "center", p: 1, borderRadius: 1.5, bgcolor: isDark ? "rgba(124, 245, 182, 0.03)" : "rgba(124, 245, 182, 0.11)" }}>
                         <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: "#7CF5B6", boxShadow: "0 0 8px #7CF5B6" }} />
-                        <Typography variant="caption" sx={{ color: "rgba(255,255,255,0.85)" }}><b>Arjun Sharma</b> checked in via QR code</Typography>
+                        <Typography variant="caption" sx={{ color: "text.primary" }}><b>Arjun Sharma</b> checked in via QR code</Typography>
                         <Typography variant="caption" color="text.secondary" sx={{ ml: "auto" }}>1m ago</Typography>
                       </Stack>
-                      <Stack direction="row" spacing={1.5} sx={{ alignItems: "center", p: 1, borderRadius: 1.5, bgcolor: "rgba(255,255,255,0.01)" }}>
+                      <Stack direction="row" spacing={1.5} sx={{ alignItems: "center", p: 1, borderRadius: 1.5, bgcolor: subtleSurface }}>
                         <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: "#B9AEFF", opacity: 0.6 }} />
-                        <Typography variant="caption" sx={{ color: "rgba(255,255,255,0.85)" }}><b>Sarah Chen</b> joined the waitlist</Typography>
+                        <Typography variant="caption" sx={{ color: "text.primary" }}><b>Sarah Chen</b> joined the waitlist</Typography>
                         <Typography variant="caption" color="text.secondary" sx={{ ml: "auto" }}>5m ago</Typography>
                       </Stack>
                     </Stack>
@@ -370,9 +380,9 @@ export function LandingPageClient(props: { getStartedHref: string }) {
                         boxShadow: "0 4px 15px rgba(124, 245, 182, 0.2)",
                       }
                     : {
-                        borderColor: "rgba(255,255,255,0.1)",
-                        color: "rgba(255,255,255,0.6)",
-                        "&:hover": { borderColor: "rgba(255,255,255,0.3)" },
+                        borderColor,
+                        color: mutedText,
+                        "&:hover": { borderColor: isDark ? "rgba(255,255,255,0.3)" : "rgba(60,60,67,0.32)" },
                       }),
                 }}
               >
@@ -397,9 +407,9 @@ export function LandingPageClient(props: { getStartedHref: string }) {
                 sx={{
                   p: { xs: 3, md: 5 },
                   borderRadius: 4,
-                  backgroundColor: "rgba(255,255,255,0.015)",
-                  borderColor: "rgba(255,255,255,0.08)",
-                  boxShadow: "0 20px 50px rgba(0,0,0,0.3)",
+                  backgroundColor: softSurface,
+                  borderColor,
+                  boxShadow: isDark ? "0 20px 50px rgba(0,0,0,0.3)" : "0 16px 40px rgba(15,23,42,0.09)",
                 }}
               >
                 <Grid container spacing={4} sx={{ alignItems: "center" }}>
@@ -427,7 +437,7 @@ export function LandingPageClient(props: { getStartedHref: string }) {
                       <Stack spacing={1} sx={{ pt: 1 }}>
                         <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
                           <CheckCircleOutlineOutlinedIcon sx={{ fontSize: 16, color: "#7CF5B6" }} />
-                          <Typography variant="caption" sx={{ color: "rgba(255,255,255,0.85)" }}>
+                          <Typography variant="caption" sx={{ color: "text.primary" }}>
                             {activeTab === "rsvp" && "Supports Date, Checkbox, Select & Phone inputs"}
                             {activeTab === "waitlist" && "Instant automated waitlist promotions"}
                             {activeTab === "checkin" && "No extra scanner app required"}
@@ -435,7 +445,7 @@ export function LandingPageClient(props: { getStartedHref: string }) {
                         </Stack>
                         <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
                           <CheckCircleOutlineOutlinedIcon sx={{ fontSize: 16, color: "#7CF5B6" }} />
-                          <Typography variant="caption" sx={{ color: "rgba(255,255,255,0.85)" }}>
+                          <Typography variant="caption" sx={{ color: "text.primary" }}>
                             {activeTab === "rsvp" && "Draggable form ordering configuration"}
                             {activeTab === "waitlist" && "Manual override approvals or rejections"}
                             {activeTab === "checkin" && "Real-time door metrics and csv logs"}
@@ -451,8 +461,8 @@ export function LandingPageClient(props: { getStartedHref: string }) {
                       sx={{
                         p: 3,
                         borderRadius: 3,
-                        backgroundColor: "rgba(0, 0, 0, 0.35)",
-                        border: "1px solid rgba(255, 255, 255, 0.05)",
+                        backgroundColor: isDark ? "rgba(0, 0, 0, 0.35)" : "rgba(60, 60, 67, 0.045)",
+                        border: `1px solid ${borderColor}`,
                         minHeight: 240,
                         display: "flex",
                         flexDirection: "column",
@@ -461,9 +471,9 @@ export function LandingPageClient(props: { getStartedHref: string }) {
                     >
                       {activeTab === "rsvp" && (
                         <Stack spacing={2}>
-                          <Typography variant="subtitle2" sx={{ color: "#fff", fontWeight: 700 }}>Registration Form Preview</Typography>
-                          <TextField label="Full Name" size="small" placeholder="Jane Doe" disabled sx={{ input: { color: "#fff" } }} />
-                          <TextField label="Developer Experience" select size="small" defaultValue="senior" disabled sx={{ select: { color: "#fff" } }}>
+                          <Typography variant="subtitle2" sx={{ color: "text.primary", fontWeight: 700 }}>Registration Form Preview</Typography>
+                          <TextField label="Full Name" size="small" placeholder="Jane Doe" disabled />
+                          <TextField label="Developer Experience" select size="small" defaultValue="senior" disabled>
                             <MenuItem value="senior">Senior Developer</MenuItem>
                           </TextField>
                           <Button variant="contained" disabled size="small" sx={{ alignSelf: "flex-start", bgcolor: "rgba(124, 245, 182, 0.2)" }}>
@@ -474,14 +484,14 @@ export function LandingPageClient(props: { getStartedHref: string }) {
 
                       {activeTab === "waitlist" && (
                         <Stack spacing={1.5}>
-                          <Typography variant="subtitle2" sx={{ color: "#fff", fontWeight: 700 }}>Waitlist Promotion Flow</Typography>
-                          <Paper sx={{ p: 1.5, bgcolor: "rgba(255, 255, 255, 0.02)", border: "1px solid rgba(255,255,255,0.05)" }}>
+                          <Typography variant="subtitle2" sx={{ color: "text.primary", fontWeight: 700 }}>Waitlist Promotion Flow</Typography>
+                          <Paper sx={{ p: 1.5, bgcolor: subtleSurface, border: `1px solid ${borderColor}` }}>
                             <Stack direction="row" sx={{ justifyContent: "space-between" }}>
                               <Typography variant="caption" sx={{ fontWeight: 700 }}>1. Arjun Verma</Typography>
                               <Chip label="Promoted" size="small" color="success" sx={{ height: 20 }} />
                             </Stack>
                           </Paper>
-                          <Paper sx={{ p: 1.5, bgcolor: "rgba(255, 255, 255, 0.02)", border: "1px solid rgba(255,255,255,0.05)" }}>
+                          <Paper sx={{ p: 1.5, bgcolor: subtleSurface, border: `1px solid ${borderColor}` }}>
                             <Stack direction="row" sx={{ justifyContent: "space-between" }}>
                               <Typography variant="caption" sx={{ fontWeight: 700 }}>2. Kelly Wong</Typography>
                               <Chip label="Waitlisted" size="small" sx={{ height: 20 }} />
@@ -492,7 +502,7 @@ export function LandingPageClient(props: { getStartedHref: string }) {
 
                       {activeTab === "checkin" && (
                         <Stack spacing={2} sx={{ alignItems: "center", textAlign: "center" }}>
-                          <Typography variant="subtitle2" sx={{ color: "#fff", fontWeight: 700 }}>Instant Door Check-in</Typography>
+                          <Typography variant="subtitle2" sx={{ color: "text.primary", fontWeight: 700 }}>Instant Door Check-in</Typography>
                           {/* QR Mock */}
                           <Box sx={{ p: 2, bgcolor: "#fff", borderRadius: 2, width: 100, height: 100, display: "flex", justifyContent: "center", alignItems: "center" }}>
                             <Box sx={{ width: 80, height: 80, border: "4px solid #000" }} />
@@ -571,14 +581,14 @@ export function LandingPageClient(props: { getStartedHref: string }) {
                       p: 3.5,
                       borderRadius: 4,
                       height: "100%",
-                      backgroundColor: "rgba(255, 255, 255, 0.01)",
-                      borderColor: "rgba(255, 255, 255, 0.06)",
+                      backgroundColor: softSurface,
+                      borderColor,
                       transition: "all 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
                       "&:hover": {
                         transform: "translateY(-5px)",
                         borderColor: "rgba(124, 245, 182, 0.25)",
-                        backgroundColor: "rgba(124, 245, 182, 0.01)",
-                        boxShadow: "0 15px 40px rgba(124, 245, 182, 0.05)",
+                        backgroundColor: isDark ? "rgba(124, 245, 182, 0.01)" : "rgba(124, 245, 182, 0.08)",
+                        boxShadow: isDark ? "0 15px 40px rgba(124, 245, 182, 0.05)" : "0 12px 28px rgba(15,23,42,0.10)",
                       },
                     }}
                   >
@@ -624,16 +634,20 @@ export function LandingPageClient(props: { getStartedHref: string }) {
             sx={{
               p: { xs: 4, md: 8 },
               borderRadius: 6,
-              background: `
+              background: isDark ? `
                 radial-gradient(circle at 100% 0%, rgba(124, 245, 182, 0.15) 0%, transparent 60%),
                 radial-gradient(circle at 0% 100%, rgba(185, 174, 255, 0.10) 0%, transparent 60%),
                 linear-gradient(135deg, rgba(255,255,255,0.015) 0%, rgba(255,255,255,0.005) 100%)
+              ` : `
+                radial-gradient(circle at 100% 0%, rgba(124, 245, 182, 0.28) 0%, transparent 58%),
+                radial-gradient(circle at 0% 100%, rgba(185, 174, 255, 0.20) 0%, transparent 58%),
+                #ffffff
               `,
-              borderColor: "rgba(255,255,255,0.08)",
+              borderColor,
               textAlign: "center",
               position: "relative",
               overflow: "hidden",
-              boxShadow: "0 30px 60px rgba(0,0,0,0.3)",
+              boxShadow: isDark ? "0 30px 60px rgba(0,0,0,0.3)" : "0 22px 55px rgba(15,23,42,0.12)",
             }}
           >
             <Stack spacing={3} sx={{ alignItems: "center", position: "relative", zIndex: 1 }}>

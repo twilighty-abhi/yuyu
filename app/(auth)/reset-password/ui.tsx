@@ -9,6 +9,7 @@ import Typography from "@mui/material/Typography";
 import TextField from "@mui/material/TextField";
 import Button from "@mui/material/Button";
 import Alert from "@mui/material/Alert";
+import { useTheme } from "@mui/material/styles";
 import Link from "next/link";
 import MuiLink from "@mui/material/Link";
 import {
@@ -51,6 +52,7 @@ const primaryButtonSx = {
 export function ResetPasswordForm(props: { token: string; email: string }) {
   const { token, email: initialEmail } = props;
   const router = useRouter();
+  const theme = useTheme();
   const hasToken = Boolean(token && initialEmail);
 
   const [email, setEmail] = useState(initialEmail || "");
@@ -112,7 +114,9 @@ export function ResetPasswordForm(props: { token: string; email: string }) {
         p: { xs: 2, sm: 3, md: 4 },
         overflow: "auto",
         background:
-          "radial-gradient(1000px 600px at 18% 18%, rgba(124, 245, 182, 0.18), transparent 55%), radial-gradient(900px 600px at 88% 22%, rgba(185, 174, 255, 0.12), transparent 55%), linear-gradient(135deg, rgba(6,18,14,1) 0%, rgba(8,26,20,1) 55%, rgba(10,30,24,1) 120%)",
+          theme.palette.mode === "dark"
+            ? "radial-gradient(1000px 600px at 18% 18%, rgba(124, 245, 182, 0.18), transparent 55%), radial-gradient(900px 600px at 88% 22%, rgba(185, 174, 255, 0.12), transparent 55%), linear-gradient(135deg, rgba(6,18,14,1) 0%, rgba(8,26,20,1) 55%, rgba(10,30,24,1) 120%)"
+            : "radial-gradient(1000px 600px at 18% 18%, rgba(10,132,255,0.10), transparent 55%), radial-gradient(900px 600px at 88% 22%, rgba(94,92,230,0.10), transparent 55%), #f2f2f7",
       }}
     >
       <Paper
@@ -123,7 +127,7 @@ export function ResetPasswordForm(props: { token: string; email: string }) {
           borderRadius: 3,
           border: "1px solid",
           borderColor: "rgba(255,255,255,0.10)",
-          backgroundColor: "rgba(10, 24, 18, 0.62)",
+          backgroundColor: "background.paper",
           backdropFilter: "blur(10px)",
           boxShadow: "0 30px 90px rgba(0,0,0,0.45)",
         }}
@@ -162,7 +166,7 @@ export function ResetPasswordForm(props: { token: string; email: string }) {
                 borderRadius: 2,
                 border: "1px solid",
                 borderColor: "rgba(255,255,255,0.10)",
-                backgroundColor: "rgba(6, 18, 14, 0.42)",
+                backgroundColor: "action.hover",
                 p: { xs: 2.25, sm: 2.75 },
               }}
             >

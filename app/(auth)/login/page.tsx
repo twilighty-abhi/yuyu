@@ -18,8 +18,10 @@ export default function LoginPage() {
         justifyContent: "center",
         p: { xs: 2, sm: 3, md: 4 },
         overflow: "auto",
-        background:
-          "radial-gradient(1000px 600px at 18% 18%, rgba(124, 245, 182, 0.18), transparent 55%), radial-gradient(900px 600px at 88% 22%, rgba(185, 174, 255, 0.12), transparent 55%), linear-gradient(135deg, rgba(6,18,14,1) 0%, rgba(8,26,20,1) 55%, rgba(10,30,24,1) 120%)",
+        background: (theme) =>
+          theme.palette.mode === "dark"
+            ? "radial-gradient(1000px 600px at 18% 18%, rgba(124, 245, 182, 0.18), transparent 55%), radial-gradient(900px 600px at 88% 22%, rgba(185, 174, 255, 0.12), transparent 55%), linear-gradient(135deg, rgba(6,18,14,1) 0%, rgba(8,26,20,1) 55%, rgba(10,30,24,1) 120%)"
+            : "radial-gradient(1000px 600px at 18% 18%, rgba(10, 132, 255, 0.10), transparent 55%), radial-gradient(900px 600px at 88% 22%, rgba(94, 92, 230, 0.10), transparent 55%), #f2f2f7",
       }}
     >
       <Paper
@@ -31,7 +33,7 @@ export default function LoginPage() {
           borderRadius: 3,
           border: "1px solid",
           borderColor: "rgba(255,255,255,0.10)",
-          backgroundColor: "rgba(10, 24, 18, 0.62)",
+          backgroundColor: "background.paper",
           backdropFilter: "blur(10px)",
           boxShadow: "0 30px 90px rgba(0,0,0,0.45)",
         }}
@@ -71,7 +73,7 @@ export default function LoginPage() {
                     borderRadius: 2,
                     border: "1px solid",
                     borderColor: "rgba(255,255,255,0.10)",
-                    backgroundColor: "rgba(6, 18, 14, 0.42)",
+                    backgroundColor: "action.hover",
                     p: { xs: 2.25, sm: 2.75 },
                   }}
                 >
@@ -89,7 +91,8 @@ export default function LoginPage() {
               sx={{
                 height: "100%",
                 minHeight: 640,
-                backgroundColor: "rgba(255,255,255,0.04)",
+                backgroundColor: (theme) =>
+                  theme.palette.mode === "dark" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.025)",
                 position: "relative",
               }}
             >
@@ -109,8 +112,10 @@ export default function LoginPage() {
                 sx={{
                   position: "absolute",
                   inset: 0,
-                  background:
-                    "linear-gradient(90deg, rgba(10, 24, 18, 0.92) 0%, rgba(10, 24, 18, 0.34) 44%, rgba(10, 24, 18, 0.12) 100%)",
+                  background: (theme) =>
+                    theme.palette.mode === "dark"
+                      ? "linear-gradient(90deg, rgba(10, 24, 18, 0.92) 0%, rgba(10, 24, 18, 0.34) 44%, rgba(10, 24, 18, 0.12) 100%)"
+                      : "linear-gradient(90deg, rgba(255,255,255,0.86) 0%, rgba(255,255,255,0.28) 44%, rgba(255,255,255,0.08) 100%)",
                 }}
               />
             </Box>

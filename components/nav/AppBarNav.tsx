@@ -9,11 +9,17 @@ import Link from "next/link";
 import { signOut, useSession } from "next-auth/react";
 import { alpha, useTheme } from "@mui/material/styles";
 import { usePathname } from "next/navigation";
+import IconButton from "@mui/material/IconButton";
+import Tooltip from "@mui/material/Tooltip";
+import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
+import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
+import { useAppColorMode } from "@/components/providers";
 
 export function AppBarNav() {
   const { status } = useSession();
   const theme = useTheme();
   const pathname = usePathname();
+  const { mode, toggleColorMode } = useAppColorMode();
 
   if (pathname === "/login") return null;
   const bg =
@@ -54,6 +60,16 @@ export function AppBarNav() {
           </Button>
         </Box>
         <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+          <Tooltip title={`Switch to ${mode === "dark" ? "light" : "dark"} mode`}>
+            <IconButton
+              onClick={toggleColorMode}
+              aria-label={`Switch to ${mode === "dark" ? "light" : "dark"} mode`}
+              size="small"
+              sx={{ color: "text.primary", border: "1px solid", borderColor: "divider" }}
+            >
+              {mode === "dark" ? <LightModeOutlinedIcon fontSize="small" /> : <DarkModeOutlinedIcon fontSize="small" />}
+            </IconButton>
+          </Tooltip>
           {status === "authenticated" ? (
             <>
               <Button component={Link} href="/dashboard" color="inherit">

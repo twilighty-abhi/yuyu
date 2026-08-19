@@ -9,7 +9,7 @@ import { prisma } from "@/lib/db";
 import { rsvpGuestSchema, rsvpLoggedInSchema } from "@/lib/validators";
 import type { ActionResult } from "@/app/actions/org";
 import { flattenZodErrors } from "@/app/actions/utils";
-import { sendRSVPConfirmation } from "@/lib/email";
+import { enqueueRsvpConfirmation } from "@/lib/outbox";
 
 function normalizeGuestEmail(email: string) {
   return email.trim().toLowerCase();
@@ -44,6 +44,7 @@ async function reserveRsvp(params: {
   capacity: number | null;
   privacyType: EventPrivacyType;
   data: Omit<Prisma.RSVPUncheckedCreateInput, "status">;
+  notification: { to: string; eventTitle: string };
   afterCreate?: (tx: Prisma.TransactionClient, rsvpId: string) => Promise<void>;
 }) {
   return prisma.$transaction(async (tx) => {
@@ -67,6 +68,12 @@ async function reserveRsvp(params: {
     const rsvp = await tx.rSVP.create({
       data: { ...params.data, status },
       select: { id: true, checkInToken: true },
+    });
+    await enqueueRsvpConfirmation(tx, {
+      to: params.notification.to,
+      eventTitle: params.notification.eventTitle,
+      status,
+      checkInToken: rsvp.checkInToken,
     });
     await params.afterCreate?.(tx, rsvp.id);
     const count = await tx.rSVP.count({ where: params.target });
@@ -365,6 +372,7 @@ export async function submitRsvpCore(
         target: { eventId: event.id },
         capacity: event.capacity,
         privacyType: event.privacyType,
+        notification: { to: emailRes.email, eventTitle: event.title },
         data: {
             eventId: event.id,
             userId,
@@ -393,12 +401,6 @@ export async function submitRsvpCore(
         },
       });
 
-      await sendRSVPConfirmation({
-        to: emailRes.email,
-        eventTitle: event.title,
-        status: reservation.status,
-        checkInToken: reservation.checkInToken,
-      });
       return {
         ok: true,
         data: { count: reservation.count, status: reservation.status, ticketToken: reservation.checkInToken },
@@ -497,6 +499,7 @@ export async function submitRsvpCore(
       target: { eventId: event.id },
       capacity: event.capacity,
       privacyType: event.privacyType,
+      notification: { to: emailNorm, eventTitle: event.title },
       data: {
           eventId: event.id,
           userId: null,
@@ -520,12 +523,6 @@ export async function submitRsvpCore(
       },
     });
 
-    await sendRSVPConfirmation({
-      to: emailNorm,
-      eventTitle: event.title,
-      status: reservation.status,
-      checkInToken: reservation.checkInToken,
-    });
     return {
       ok: true,
       data: { count: reservation.count, status: reservation.status, ticketToken: reservation.checkInToken },
@@ -616,6 +613,7 @@ async function submitInstanceRsvp(params: {
         target: { eventInstanceId: instance.id },
         capacity: series.capacity,
         privacyType: series.privacyType,
+        notification: { to: emailRes.email, eventTitle: series.title },
         data: {
             eventInstanceId: instance.id,
             userId,
@@ -638,6 +636,7 @@ async function submitInstanceRsvp(params: {
         target: { eventInstanceId: instance.id },
         capacity: series.capacity,
         privacyType: series.privacyType,
+        notification: { to: emailRes.email, eventTitle: series.title },
         data: {
           eventInstanceId: instance.id,
           userId: null,
@@ -648,12 +647,6 @@ async function submitInstanceRsvp(params: {
       });
     }
 
-    await sendRSVPConfirmation({
-      to: emailRes.email,
-      eventTitle: series.title,
-      status: reservation.status,
-      checkInToken: reservation.checkInToken,
-    });
     return {
       ok: true,
       data: { count: reservation.count, status: reservation.status, ticketToken: reservation.checkInToken },

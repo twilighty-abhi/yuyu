@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import "@/lib/env";
 import { AppRouterCacheProvider } from "@mui/material-nextjs/v16-appRouter";
 import "./globals.css";
 import { auth } from "@/lib/auth";
@@ -8,16 +8,6 @@ import { AppBarNav } from "@/components/nav/AppBarNav";
 import { AppFooter } from "@/components/nav/AppFooter";
 import Container from "@mui/material/Container";
 import Box from "@mui/material/Box";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   title: {
@@ -35,7 +25,7 @@ export default async function RootLayout({
   const session = await auth();
 
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
+    <html lang="en">
       <body style={{ display: "flex", flexDirection: "column", minHeight: "100dvh" }}>
         <AppRouterCacheProvider options={{ key: "mui" }}>
           <Providers session={session}>

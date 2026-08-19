@@ -14,7 +14,7 @@ Yuyu must not be released until every item below is complete and recorded in the
 ## Deployment procedure
 
 1. Review and approve the Prisma migration; take a backup before applying it.
-2. Run `npm ci`, `npm run db:deploy`, `npm run lint`, `npx tsc --noEmit`, and `npm run build` in staging.
+2. Run `npm ci`, `npm run production:check`, `npm run db:deploy`, `npm run lint`, `npx tsc --noEmit`, and `npm run build` in staging.
 3. Exercise auth, organisation permissions, RSVP capacity, duplicate RSVP, upload rejection, email delivery, and offline-check-in sync in staging.
 4. Deploy an immutable image, run the authenticated `/api/health/db` readiness probe, and verify the outbox scheduler.
 5. Confirm alert delivery and record the release, backup point, migration version, and rollback owner.

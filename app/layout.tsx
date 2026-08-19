@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import "@/lib/env";
 import { AppRouterCacheProvider } from "@mui/material-nextjs/v16-appRouter";
 import "./globals.css";
 import { auth } from "@/lib/auth";

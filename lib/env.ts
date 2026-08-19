@@ -27,15 +27,7 @@ const envSchema = z.object({
   BACKUP_RETENTION_DAYS: z.coerce.number().int().positive().max(3650).optional(),
 });
 
-const parsed = envSchema.superRefine((value, ctx) => {
-  if (process.env.NODE_ENV !== "production") return;
-  for (const key of ["REDIS_URL", "CRON_SECRET", "HEALTHCHECK_SECRET", "NEXT_PUBLIC_BASE_URL"] as const) {
-    if (!value[key]) ctx.addIssue({ code: z.ZodIssueCode.custom, path: [key], message: `${key} is required in production` });
-  }
-  if (!value.EMAIL_FROM || !(value.SMTP_SERVICE || value.SMTP_HOST)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["EMAIL_FROM"], message: "EMAIL_FROM and SMTP_SERVICE or SMTP_HOST are required in production" });
-  }
-}).safeParse(process.env);
+const parsed = envSchema.safeParse(process.env);
 
 if (!parsed.success) {
   console.error("=========================================");
@@ -49,11 +41,6 @@ if (!parsed.success) {
   }
   console.error("=========================================");
 
-  // Throw to fail-fast only at runtime in production (avoiding build-time crashes)
-  const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build" || process.argv.some(arg => arg.includes("build"));
-  if (process.env.NODE_ENV === "production" && !isBuildPhase) {
-    throw new Error("Invalid environment configuration. Check server logs.");
-  }
 }
 
 export const env = parsed.data;

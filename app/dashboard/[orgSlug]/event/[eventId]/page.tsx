@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import Link from "next/link";
 import Typography from "@mui/material/Typography";
 import Stack from "@mui/material/Stack";
@@ -12,6 +13,15 @@ import { EventManageTabs } from "@/components/dashboard/EventManageTabs";
 type Props = {
   params: Promise<{ orgSlug: string; eventId: string }>;
 };
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { eventId } = await params;
+  const event = await prisma.event.findUnique({
+    where: { id: eventId },
+    select: { title: true },
+  });
+  return { title: event ? `Manage · ${event.title}` : "Manage Event" };
+}
 
 export default async function EventManagePage({ params }: Props) {
   const { orgSlug, eventId } = await params;

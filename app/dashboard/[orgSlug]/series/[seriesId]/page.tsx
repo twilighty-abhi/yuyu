@@ -54,10 +54,11 @@ export default async function SeriesManagePage({ params }: Props) {
     createdAt: r.createdAt.toISOString(),
     guestEmail: r.guestEmail,
     user: r.user
-      ? { name: r.user.name, email: r.user.email }
+      ? { id: r.user.id, name: r.user.name, email: r.user.email }
       : null,
     checkedInAt: r.checkedInAt?.toISOString() ?? null,
     ticketUrl: `${origin}/ticket/${r.checkInToken}`,
+    rawAnswers: [],
   }));
 
   return (

@@ -49,10 +49,17 @@ export default async function EventManagePage({ params }: Props) {
     guestEmail: r.guestEmail,
     guestName: r.guestName,
     user: r.user
-      ? { name: r.user.name, email: r.user.email }
+      ? { id: r.user.id, name: r.user.name, email: r.user.email }
       : null,
     checkedInAt: r.checkedInAt?.toISOString() ?? null,
     ticketUrl: `${origin}/ticket/${r.checkInToken}`,
+    rawAnswers: r.answers.map((ans) => ({
+      fieldId: ans.fieldId,
+      valueText: ans.valueText,
+      valueBool: ans.valueBool,
+      valueNumber: ans.valueNumber,
+      valueDate: ans.valueDate?.toISOString() ?? null,
+    })),
     answers: (() => {
       const byField: Record<string, { label: string; values: string[] }> = {};
       for (const a of r.answers) {

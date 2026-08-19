@@ -23,7 +23,8 @@ import DialogTitle from "@mui/material/DialogTitle";
 import DialogContent from "@mui/material/DialogContent";
 import DialogActions from "@mui/material/DialogActions";
 import { CopyTicketButton } from "@/components/attendees/CopyTicketButton";
-import { deleteRsvp } from "@/app/actions/rsvp-admin";
+import { deleteRsvp, restoreRsvp } from "@/app/actions/rsvp-admin";
+import { ConfirmationDialog } from "@/components/feedback/ConfirmationDialog";
 import {
   approveRsvp,
   promoteFromWaitlist,
@@ -38,10 +39,17 @@ export type AttendeeRow = {
   createdAt: string;
   guestEmail: string | null;
   guestName?: string | null;
-  user: { name: string | null; email: string | null } | null;
+  user: { id: string; name: string | null; email: string | null } | null;
   checkedInAt: string | null;
   ticketUrl: string;
   answers?: { label: string; value: string }[];
+  rawAnswers?: Array<{
+    fieldId: string;
+    valueText?: string | null;
+    valueBool?: boolean | null;
+    valueNumber?: number | null;
+    valueDate?: string | null;
+  }>;
 };
 
 type FilterKind = "all" | "guests" | "users";
@@ -80,6 +88,7 @@ export function AttendeeTable(props: {
   const [answersOpen, setAnswersOpen] = useState(false);
   const [answersTitle, setAnswersTitle] = useState<string>("");
   const [answersRows, setAnswersRows] = useState<{ label: string; value: string }[]>([]);
+  const [deleteConfirmAttendee, setDeleteConfirmAttendee] = useState<AttendeeRow | null>(null);
 
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -340,21 +349,7 @@ export function AttendeeTable(props: {
                           <IconButton
                             aria-label="Remove RSVP"
                             disabled={pending}
-                            onClick={() => {
-                              startTransition(async () => {
-                                const res = await deleteRsvp({
-                                  organisationSlug,
-                                  rsvpId: a.id,
-                                  ...targetPayload(),
-                                });
-                                if (!res.ok) {
-                                  showToast(res.error, "error");
-                                  return;
-                                }
-                                showToast("Attendee removed", "success");
-                                router.refresh();
-                              });
-                            }}
+                            onClick={() => setDeleteConfirmAttendee(a)}
                           >
                             <DeleteOutlineOutlinedIcon fontSize="small" />
                           </IconButton>
@@ -393,6 +388,72 @@ export function AttendeeTable(props: {
           <Button onClick={() => setAnswersOpen(false)}>Close</Button>
         </DialogActions>
       </Dialog>
+
+      <ConfirmationDialog
+        open={!!deleteConfirmAttendee}
+        title="Remove Attendee"
+        message={`Are you sure you want to remove ${
+          deleteConfirmAttendee?.user?.name ?? deleteConfirmAttendee?.guestName ?? deleteConfirmAttendee?.guestEmail ?? "this attendee"
+        }'s RSVP registration?`}
+        confirmLabel="Remove"
+        loading={pending}
+        onCancel={() => setDeleteConfirmAttendee(null)}
+        onConfirm={() => {
+          if (!deleteConfirmAttendee) return;
+          const targetAttendee = { ...deleteConfirmAttendee };
+          setDeleteConfirmAttendee(null);
+          startTransition(async () => {
+            const res = await deleteRsvp({
+              organisationSlug,
+              rsvpId: targetAttendee.id,
+              ...targetPayload(),
+            });
+            if (!res.ok) {
+              showToast(res.error, "error");
+            } else {
+              // 10 second undo popup toast!
+              showToast(
+                "Attendee removed",
+                "success",
+                {
+                  label: "Undo",
+                  onClick: () => {
+                    startTransition(async () => {
+                      const checkInToken = targetAttendee.ticketUrl.split("/").pop() || "";
+                      const attendeeKey = targetAttendee.user
+                        ? `user:${targetAttendee.user.id}`
+                        : `guest:${(targetAttendee.guestEmail || "").trim().toLowerCase()}`;
+
+                      const restoreRes = await restoreRsvp({
+                        organisationSlug,
+                        eventId,
+                        eventInstanceId,
+                        userId: targetAttendee.user?.id,
+                        guestEmail: targetAttendee.guestEmail,
+                        guestName: targetAttendee.guestName,
+                        status: targetAttendee.status,
+                        attendeeKey,
+                        checkInToken,
+                        checkedInAt: targetAttendee.checkedInAt,
+                        createdAt: targetAttendee.createdAt,
+                        answers: targetAttendee.rawAnswers || [],
+                      });
+                      if (restoreRes.ok) {
+                        showToast("Attendee restored", "success");
+                        router.refresh();
+                      } else {
+                        showToast(restoreRes.error, "error");
+                      }
+                    });
+                  },
+                },
+                10000 // 10 seconds duration
+              );
+              router.refresh();
+            }
+          });
+        }}
+      />
     </Stack>
   );
 }

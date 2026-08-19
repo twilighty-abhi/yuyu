@@ -8,11 +8,14 @@ import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
+import Paper from "@mui/material/Paper";
 import Slider from "@mui/material/Slider";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import ImageOutlinedIcon from "@mui/icons-material/ImageOutlined";
 import RotateRightOutlinedIcon from "@mui/icons-material/RotateRightOutlined";
+import CropOutlinedIcon from "@mui/icons-material/CropOutlined";
+import RestartAltOutlinedIcon from "@mui/icons-material/RestartAltOutlined";
 
 const MAX_COVER_IMAGE_BYTES = 5 * 1024 * 1024;
 const OUTPUT_SIZE = 1200;
@@ -174,7 +177,7 @@ export function CoverImagePicker(props: {
         <DialogTitle sx={{ fontWeight: 700 }}>Edit cover image</DialogTitle>
         <DialogContent>
           <Stack spacing={2.5} sx={{ pt: 1 }}>
-            <Box sx={{ overflow: "hidden", borderRadius: 2, backgroundColor: "#111", aspectRatio: "1 / 1", maxWidth: 520, mx: "auto" }}>
+            <Box sx={{ position: "relative", overflow: "hidden", borderRadius: 2, backgroundColor: "#111", aspectRatio: "1 / 1", maxWidth: 520, mx: "auto" }}>
               <canvas
                 ref={canvasRef}
                 onPointerDown={startDrag}
@@ -183,6 +186,16 @@ export function CoverImagePicker(props: {
                 onPointerCancel={endDrag}
                 style={{ display: "block", width: "100%", height: "100%", cursor: "grab", touchAction: "none" }}
               />
+              <Box
+                sx={{
+                  pointerEvents: "none",
+                  position: "absolute",
+                  inset: 0,
+                  border: "2px solid rgba(255,255,255,0.8)",
+                  boxShadow: "inset 0 0 0 1px rgba(0,0,0,0.35)",
+                  backgroundImage: "linear-gradient(to right, transparent 33.2%, rgba(255,255,255,0.3) 33.2%, rgba(255,255,255,0.3) 33.6%, transparent 33.6%, transparent 66.4%, rgba(255,255,255,0.3) 66.4%, rgba(255,255,255,0.3) 66.8%, transparent 66.8%), linear-gradient(to bottom, transparent 33.2%, rgba(255,255,255,0.3) 33.2%, rgba(255,255,255,0.3) 33.6%, transparent 33.6%, transparent 66.4%, rgba(255,255,255,0.3) 66.4%, rgba(255,255,255,0.3) 66.8%, transparent 66.8%)",
+                }}
+              />
             </Box>
             <Typography variant="caption" color="text.secondary" sx={{ textAlign: "center" }}>
               Drag the image to position the square crop.
@@ -190,19 +203,28 @@ export function CoverImagePicker(props: {
             {/* A native image element is required as the canvas source for client-side cropping. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img ref={imageRef} src={sourceUrl} alt="" hidden onLoad={() => setImageLoaded(true)} />
-            <Stack direction={{ xs: "column", sm: "row" }} spacing={3}>
-              <Box sx={{ flex: 1 }}>
-                <Typography variant="caption" color="text.secondary">Zoom</Typography>
-                <Slider value={zoom} min={1} max={3} step={0.05} onChange={(_, value) => setZoom(value as number)} />
-              </Box>
-              <Box sx={{ flex: 1 }}>
-                <Typography variant="caption" color="text.secondary">Rotation</Typography>
-                <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-                  <RotateRightOutlinedIcon fontSize="small" color="action" />
-                  <Slider value={rotation} min={-180} max={180} step={1} onChange={(_, value) => setRotation(value as number)} />
-                </Stack>
-              </Box>
-            </Stack>
+            <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, backgroundColor: "rgba(255,255,255,0.025)" }}>
+              <Stack direction="row" spacing={1} sx={{ alignItems: "center", mb: 1.5 }}>
+                <CropOutlinedIcon fontSize="small" color="primary" />
+                <Typography variant="subtitle2" sx={{ fontWeight: 700, flexGrow: 1 }}>Crop &amp; position</Typography>
+                <Button size="small" startIcon={<RestartAltOutlinedIcon />} onClick={() => { setZoom(1); setRotation(0); setOffset({ x: 0, y: 0 }); }} sx={{ textTransform: "none" }}>
+                  Reset
+                </Button>
+              </Stack>
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={3}>
+                <Box sx={{ flex: 1 }}>
+                  <Typography variant="caption" color="text.secondary">Crop zoom</Typography>
+                  <Slider value={zoom} min={1} max={3} step={0.05} onChange={(_, value) => setZoom(value as number)} />
+                </Box>
+                <Box sx={{ flex: 1 }}>
+                  <Typography variant="caption" color="text.secondary">Rotation</Typography>
+                  <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                    <RotateRightOutlinedIcon fontSize="small" color="action" />
+                    <Slider value={rotation} min={-180} max={180} step={1} onChange={(_, value) => setRotation(value as number)} />
+                  </Stack>
+                </Box>
+              </Stack>
+            </Paper>
           </Stack>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2.5 }}>

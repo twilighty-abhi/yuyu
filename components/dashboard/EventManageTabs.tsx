@@ -8,6 +8,7 @@ import Tabs from "@mui/material/Tabs";
 import Button from "@mui/material/Button";
 import { EditEventForm } from "@/components/event/EditEventForm";
 import { AttendeeTable, type AttendeeRow } from "@/components/attendees/AttendeeTable";
+import { ExportCsvButton } from "@/components/attendees/ExportCsvButton";
 import { EventInvitePanel } from "@/components/invites/EventInvitePanel";
 import { EventManageOverview } from "@/components/dashboard/EventManageOverview";
 import { EventAnalyticsPanel } from "@/components/dashboard/EventAnalyticsPanel";
@@ -73,12 +74,17 @@ export function EventManageTabs(props: {
         <EditEventForm organisationSlug={organisationSlug} event={event} />
       ) : null}
       {tab === 2 ? (
-        <AttendeeTable
-          organisationSlug={organisationSlug}
-          eventId={event.id}
-          attendees={attendees}
-          canManage
-        />
+        <Stack spacing={2}>
+          <Stack direction="row" sx={{ justifyContent: "flex-end" }}>
+            <ExportCsvButton eventTitle={event.title} attendees={attendees} />
+          </Stack>
+          <AttendeeTable
+            organisationSlug={organisationSlug}
+            eventId={event.id}
+            attendees={attendees}
+            canManage
+          />
+        </Stack>
       ) : null}
       {tab === 3 ? (
         <EventAnalyticsPanel analytics={analytics} />

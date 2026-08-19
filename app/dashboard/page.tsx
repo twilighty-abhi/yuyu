@@ -18,6 +18,13 @@ import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import EventIcon from "@mui/icons-material/Event";
 import PeopleIcon from "@mui/icons-material/People";
 
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Dashboard",
+  description: "Manage your organisations, events, and RSVPs.",
+};
+
 export default async function DashboardPage() {
   const session = await auth();
   if (!session?.user?.id) return null;
@@ -191,18 +198,7 @@ export default async function DashboardPage() {
                         >
                           <Chip
                             size="small"
-                            avatar={
-                              <Avatar
-                                sx={{
-                                  width: 22,
-                                  height: 22,
-                                  bgcolor: "transparent",
-                                  color: "text.secondary",
-                                }}
-                              >
-                                <EventIcon sx={{ fontSize: 16 }} />
-                              </Avatar>
-                            }
+                            icon={<EventIcon sx={{ fontSize: 16 }} />}
                             label={`${org._count.events} event${org._count.events === 1 ? "" : "s"}`}
                             variant="outlined"
                             sx={{
@@ -212,18 +208,7 @@ export default async function DashboardPage() {
                           />
                           <Chip
                             size="small"
-                            avatar={
-                              <Avatar
-                                sx={{
-                                  width: 22,
-                                  height: 22,
-                                  bgcolor: "transparent",
-                                  color: "text.secondary",
-                                }}
-                              >
-                                <PeopleIcon sx={{ fontSize: 16 }} />
-                              </Avatar>
-                            }
+                            icon={<PeopleIcon sx={{ fontSize: 16 }} />}
                             label={`${org._count.memberships} member${org._count.memberships === 1 ? "" : "s"}`}
                             variant="outlined"
                             sx={{

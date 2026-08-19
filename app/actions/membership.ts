@@ -17,6 +17,7 @@ import {
 import type { ActionResult } from "./org";
 import { flattenZodErrors } from "./utils";
 import { recordAuditEvent } from "@/lib/audit";
+import { hasRecentAuthentication } from "@/lib/reauth";
 
 export async function updateMemberRole(
   input: unknown,
@@ -44,6 +45,9 @@ export async function updateMemberRole(
   const actor = await getMembership(session.user.id, org.id);
   if (!canManageMembers(actor)) {
     return { ok: false, error: "Only the organisation owner can change roles." };
+  }
+  if (!(await hasRecentAuthentication())) {
+    return { ok: false, error: "For security, sign in again before changing member roles." };
   }
 
   const target = await getMembership(targetUserId, org.id);
@@ -146,6 +150,9 @@ export async function deleteOrganisation(input: unknown): Promise<ActionResult> 
   const membership = await getMembership(session.user.id, org.id);
   if (!canDeleteOrg(membership)) {
     return { ok: false, error: "Only the organisation owner can delete it." };
+  }
+  if (!(await hasRecentAuthentication())) {
+    return { ok: false, error: "For security, sign in again before deleting an organisation." };
   }
 
   const slug = org.slug;

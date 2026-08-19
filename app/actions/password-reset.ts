@@ -145,7 +145,7 @@ export async function confirmPasswordReset(
   const passwordHash = await bcrypt.hash(password, 12);
   await prisma.user.update({
     where: { email },
-    data: { passwordHash },
+    data: { passwordHash, sessionVersion: { increment: 1 } },
   });
 
   // Delete the used token

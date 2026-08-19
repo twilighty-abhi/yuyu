@@ -72,11 +72,35 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   ],
   callbacks: {
     async jwt({ token, user }) {
-      if (user?.id) token.sub = user.id;
+      const userId = user?.id ?? token.sub;
+      if (!userId) return token;
+
+      const currentUser = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { sessionVersion: true },
+      });
+      if (!currentUser) {
+        (token as typeof token & { sessionRevoked?: boolean }).sessionRevoked = true;
+        return token;
+      }
+
+      const sessionToken = token as typeof token & { authenticatedAt?: number; sessionVersion?: number; sessionRevoked?: boolean };
+      if (user) {
+        token.sub = user.id;
+        sessionToken.authenticatedAt = Date.now();
+        sessionToken.sessionVersion = currentUser.sessionVersion;
+        sessionToken.sessionRevoked = false;
+      } else if (sessionToken.sessionVersion !== currentUser.sessionVersion) {
+        sessionToken.sessionRevoked = true;
+      }
       return token;
     },
     session({ session, token }) {
-      if (session.user && token.sub) session.user.id = token.sub;
+      const sessionToken = token as typeof token & { authenticatedAt?: number; sessionRevoked?: boolean };
+      if (session.user && token.sub && !sessionToken.sessionRevoked) session.user.id = token.sub;
+      if (sessionToken.sessionRevoked && session.user) session.user.id = "";
+      (session as typeof session & { authenticatedAt?: number }).authenticatedAt =
+        sessionToken.authenticatedAt;
       return session;
     },
   },

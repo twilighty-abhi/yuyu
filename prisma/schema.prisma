@@ -61,6 +61,8 @@ model User {
   image         String?
   /// Bcrypt hash for email + password credential logins. Null for OAuth-only users.
   passwordHash  String?
+  /// Incremented to invalidate all issued JWT sessions after account recovery.
+  sessionVersion Int      @default(0)
   createdAt     DateTime  @default(now())
 
   accounts          Account[]

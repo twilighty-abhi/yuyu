@@ -83,7 +83,7 @@ function needsOptions(t: RegistrationFieldType) {
 const FIELD_PRESETS = [
   {
     label: "Phone Number",
-    type: "TEXT" as RegistrationFieldType,
+    type: "PHONE" as RegistrationFieldType,
     required: false,
     optionsCsv: "",
   },
@@ -415,6 +415,12 @@ export function EventRegistrationFormEditor(props: {
 
                   if (f.type === "TEXT") {
                     return <TextField key={f.id} label={fullLabel} size="small" fullWidth placeholder="Enter answer..." />;
+                  }
+                  if (f.type === "EMAIL") {
+                    return <TextField key={f.id} label={fullLabel} size="small" type="email" fullWidth placeholder="you@example.com" />;
+                  }
+                  if (f.type === "PHONE") {
+                    return <TextField key={f.id} label={fullLabel} size="small" type="tel" inputMode="tel" fullWidth placeholder="Phone number" helperText="Include country code" />;
                   }
                   if (f.type === "TEXTAREA") {
                     return <TextField key={f.id} label={fullLabel} size="small" multiline rows={3} fullWidth placeholder="Enter answer..." />;

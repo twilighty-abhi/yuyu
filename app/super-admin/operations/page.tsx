@@ -31,6 +31,9 @@ function safeErrorSummary(value: string | null) {
 
 export default async function SuperAdminOperationsPage() {
   const now = new Date();
+  const heartbeat = (prisma as unknown as {
+    operationalHeartbeat?: Pick<typeof prisma.operationalHeartbeat, "findUnique">;
+  }).operationalHeartbeat;
   const [outboxGroups, expiredTokens, lastRestoreDrill, oldestPending, schedulerHeartbeat, failedMessages] = await Promise.all([
     prisma.outboxMessage.groupBy({ by: ["status"], _count: { _all: true } }),
     prisma.verificationToken.count({ where: { expires: { lt: now } } }),
@@ -44,16 +47,18 @@ export default async function SuperAdminOperationsPage() {
       orderBy: { createdAt: "asc" },
       select: { createdAt: true },
     }),
-    prisma.operationalHeartbeat.findUnique({
-      where: { key: OUTBOX_SCHEDULER_HEARTBEAT_KEY },
-      select: {
-        lastStartedAt: true,
-        lastSucceededAt: true,
-        lastSent: true,
-        lastFailed: true,
-        lastError: true,
-      },
-    }),
+    heartbeat
+      ? heartbeat.findUnique({
+          where: { key: OUTBOX_SCHEDULER_HEARTBEAT_KEY },
+          select: {
+            lastStartedAt: true,
+            lastSucceededAt: true,
+            lastSent: true,
+            lastFailed: true,
+            lastError: true,
+          },
+        })
+      : Promise.resolve(null),
     prisma.outboxMessage.findMany({
       where: { status: OutboxStatus.FAILED },
       orderBy: { createdAt: "desc" },

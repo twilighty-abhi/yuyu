@@ -20,7 +20,9 @@ function tooManyText() {
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  if (pathname.startsWith("/api")) {
+  // Liveness must not depend on Redis. Readiness remains protected because a
+  // failed distributed limiter means the application is not fully ready.
+  if (pathname.startsWith("/api") && pathname !== "/api/health") {
     if (!(await checkRateLimit(request, "global"))) {
       return tooMany();
     }
@@ -71,8 +73,10 @@ export async function proxy(request: NextRequest) {
     "font-src 'self' data: https:",
     "connect-src 'self' https:",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${isDevelopment ? " 'unsafe-eval'" : ""}`,
-    // MUI emits runtime style attributes; scripts remain nonce-protected.
-    `style-src 'self' 'nonce-${nonce}' 'unsafe-inline'`,
+    // MUI/Emotion emits runtime style tags and attributes. A nonce combined
+    // with unsafe-inline causes browsers to ignore unsafe-inline entirely.
+    // Scripts remain protected by a per-request nonce and strict-dynamic.
+    "style-src 'self' 'unsafe-inline'",
     ...(process.env.NODE_ENV === "production" ? ["upgrade-insecure-requests"] : []),
   ].join("; ");
   const requestHeaders = new Headers(request.headers);

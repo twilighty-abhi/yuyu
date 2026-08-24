@@ -7,7 +7,7 @@ Yuyu must not be released until every item below is complete and recorded in the
 - PostgreSQL with TLS, encryption at rest, daily backups, point-in-time recovery, and a documented restore drill.
 - Redis configured through `REDIS_URL`. The application deliberately rejects security-sensitive traffic when Redis is unavailable in production.
 - A transactional email provider with a verified sending domain, SPF, DKIM, DMARC, bounce handling, and alerting.
-- A scheduler that invokes `POST /api/internal/outbox` at least once per minute with `Authorization: Bearer $CRON_SECRET`.
+- A scheduler that invokes `POST /api/internal/outbox` at least once per minute with `Authorization: Bearer $CRON_SECRET`. This delivers queued mail and purges expired operational records; monitor both delivery and cleanup results.
 - WAF/CDN and TLS termination in front of the app. Forward only the configured trusted client-IP header.
 - Centralized PII-scrubbed logs, error reporting, uptime checks, and alerts for database, Redis, outbox, mail, and backup failures.
 
@@ -16,7 +16,7 @@ Yuyu must not be released until every item below is complete and recorded in the
 1. Review and approve the Prisma migration; take a backup before applying it.
 2. Run `npm ci`, `npm run production:check`, `npm run db:deploy`, `npm run db:verify`, `npm run lint`, `npx tsc --noEmit`, and `npm run build` in staging.
 3. Exercise auth, organisation permissions, RSVP capacity, duplicate RSVP, upload rejection, email delivery, and offline-check-in sync in staging.
-4. Deploy an immutable image (with runtime-injected secrets only), run the authenticated `/api/health/db` readiness probe, and verify the outbox scheduler.
+4. Build an immutable image with `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` supplied as a build argument, inject that same value at runtime, run the authenticated `/api/health/db` readiness probe, and verify the outbox scheduler.
 5. Confirm alert delivery and record the release, backup point, migration version, and rollback owner.
 
 ## Required operating controls

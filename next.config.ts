@@ -4,10 +4,13 @@ const allowedActionOrigins = process.env.ALLOWED_ACTION_ORIGINS
   ?.split(",")
   .map((origin) => origin.trim())
   .filter(Boolean);
-const allowedDevOrigins = process.env.NEXT_DEV_ALLOWED_ORIGINS
-  ?.split(",")
-  .map((origin) => origin.trim())
-  .filter(Boolean);
+const allowedDevOrigins = Array.from(new Set([
+  "127.0.0.1",
+  ...(process.env.NEXT_DEV_ALLOWED_ORIGINS
+    ?.split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean) ?? []),
+]));
 const isProduction = process.env.NODE_ENV === "production";
 
 const nextConfig: NextConfig = {
@@ -15,7 +18,7 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["@prisma/client"],
   output: "standalone",
   poweredByHeader: false,
-  ...(allowedDevOrigins?.length ? { allowedDevOrigins } : {}),
+  allowedDevOrigins,
   experimental: {
     serverActions: {
       // The default is same-origin only. Configure this explicitly when a

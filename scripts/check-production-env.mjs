@@ -28,6 +28,17 @@ for (const key of ["AUTH_SECRET", "CRON_SECRET", "HEALTHCHECK_SECRET"]) {
   }
 }
 
+const actionsKey = process.env.NEXT_SERVER_ACTIONS_ENCRYPTION_KEY;
+const decodedActionsKey = Buffer.from(actionsKey, "base64");
+const normalizedActionsKey = actionsKey.replace(/=+$/, "");
+if (
+  ![16, 24, 32].includes(decodedActionsKey.length) ||
+  decodedActionsKey.toString("base64").replace(/=+$/, "") !== normalizedActionsKey
+) {
+  console.error("NEXT_SERVER_ACTIONS_ENCRYPTION_KEY must be valid base64 that decodes to 16, 24, or 32 bytes.");
+  process.exit(1);
+}
+
 if (process.env.SMTP_HOST && (!process.env.SMTP_USER?.trim() || !process.env.SMTP_PASSWORD?.trim())) {
   console.error("SMTP_HOST requires SMTP_USER and SMTP_PASSWORD in production.");
   process.exit(1);

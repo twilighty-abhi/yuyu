@@ -4,6 +4,23 @@ import { z } from "zod";
 
 const secret = z.string().min(32, "must be at least 32 characters");
 
+function isValidServerActionsKey(value: string) {
+  try {
+    const normalized = value.replace(/=+$/, "");
+    const decoded = Buffer.from(value, "base64");
+    return (
+      [16, 24, 32].includes(decoded.length) &&
+      decoded.toString("base64").replace(/=+$/, "") === normalized
+    );
+  } catch {
+    return false;
+  }
+}
+
+const serverActionsKey = z.string().refine(isValidServerActionsKey, {
+  message: "must be valid base64 that decodes to a 16, 24, or 32 byte AES key",
+});
+
 export const envSchema = z.object({
   DATABASE_URL: z.string().url("must be a valid database connection URL"),
   AUTH_SECRET: secret,
@@ -19,13 +36,14 @@ export const envSchema = z.object({
   REDIS_URL: z.string().url().optional(),
   CRON_SECRET: secret.optional(),
   HEALTHCHECK_SECRET: secret.optional(),
-  NEXT_SERVER_ACTIONS_ENCRYPTION_KEY: z.string().min(22).optional(),
+  NEXT_SERVER_ACTIONS_ENCRYPTION_KEY: serverActionsKey.optional(),
   ALLOWED_ACTION_ORIGINS: z.string().optional(),
   TRUSTED_PROXY_IP_HEADER: z.enum(["cf-connecting-ip", "x-forwarded-for", "x-real-ip"]).optional(),
   SUPER_ADMIN_EMAIL: z.string().email().optional(),
   BACKUP_PROVIDER: z.string().max(80).optional(),
   BACKUP_LAST_SUCCESS_AT: z.preprocess((value) => value === "" ? undefined : value, z.string().datetime().optional()),
   BACKUP_RETENTION_DAYS: z.coerce.number().int().positive().max(3650).optional(),
+  OUTBOX_RETENTION_DAYS: z.coerce.number().int().positive().max(365).optional(),
 });
 
 // Optional display-only configuration for server-rendered operations pages.
@@ -40,7 +58,7 @@ function issueMessages(error: z.ZodError) {
 export function validateRuntimeEnvironment() {
   if (process.env.NODE_ENV !== "production") return;
   const parsed = envSchema.safeParse(process.env);
-  const missing = ["AUTH_URL", "NEXT_PUBLIC_BASE_URL", "REDIS_URL", "CRON_SECRET", "HEALTHCHECK_SECRET", "EMAIL_FROM", "TRUSTED_PROXY_IP_HEADER"]
+  const missing = ["AUTH_URL", "NEXT_PUBLIC_BASE_URL", "REDIS_URL", "CRON_SECRET", "HEALTHCHECK_SECRET", "NEXT_SERVER_ACTIONS_ENCRYPTION_KEY", "EMAIL_FROM", "TRUSTED_PROXY_IP_HEADER"]
     .filter((key) => !process.env[key]?.trim());
   if (!(process.env.SMTP_SERVICE?.trim() || process.env.SMTP_HOST?.trim())) missing.push("SMTP_SERVICE or SMTP_HOST");
   if (process.env.SMTP_HOST && (!process.env.SMTP_USER || !process.env.SMTP_PASSWORD)) {

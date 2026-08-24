@@ -241,6 +241,16 @@ At minimum, set:
 - `EMAIL_FROM` plus either `SMTP_SERVICE` or a complete `SMTP_HOST` / `SMTP_USER` / `SMTP_PASSWORD` configuration
 - `TRUSTED_PROXY_IP_HEADER` matching the header your reverse proxy overwrites
 
+Build the production image with the same Server Action key supplied to the
+runtime deployment (and set the public Google flag at build time when used):
+
+```bash
+docker build \
+  --build-arg NEXT_SERVER_ACTIONS_ENCRYPTION_KEY="$NEXT_SERVER_ACTIONS_ENCRYPTION_KEY" \
+  --build-arg NEXT_PUBLIC_AUTH_GOOGLE_CONFIGURED="${NEXT_PUBLIC_AUTH_GOOGLE_CONFIGURED:-0}" \
+  -t yuyu:release .
+```
+
 Recommended:
 
 - `NEXT_PUBLIC_BASE_URL` (canonical base URL used for links)

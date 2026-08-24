@@ -23,6 +23,7 @@ jobs:
       DATABASE_URL: postgresql://yuyu:yuyu_ci@localhost:5432/yuyu_ci
       AUTH_SECRET: ci-only-not-a-production-secret-0123456789
       AUTH_URL: http://localhost:3000
+      NEXT_SERVER_ACTIONS_ENCRYPTION_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -30,6 +31,7 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+      - run: npm audit --omit=dev
       - run: npm run db:deploy
       - run: npm run db:verify
       - run: npm run lint
@@ -37,5 +39,6 @@ jobs:
       - run: npm run test:unit
       - run: npm run test:integration
       - run: npm run build
+      - run: docker build --build-arg NEXT_SERVER_ACTIONS_ENCRYPTION_KEY="$NEXT_SERVER_ACTIONS_ENCRYPTION_KEY" -t yuyu:ci .
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e

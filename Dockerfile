@@ -9,13 +9,19 @@ RUN npm ci
 # Stage 2: Rebuild the source code
 FROM node:20-alpine AS builder
 WORKDIR /app
+ARG NEXT_SERVER_ACTIONS_ENCRYPTION_KEY
+ARG NEXT_PUBLIC_AUTH_GOOGLE_CONFIGURED=0
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV NEXT_PUBLIC_AUTH_GOOGLE_CONFIGURED=${NEXT_PUBLIC_AUTH_GOOGLE_CONFIGURED}
 
 RUN npx prisma generate
-RUN npm run build
+# The key is consumed by Next.js while compiling Server Actions. Every image
+# replica must be built with one stable key and receive that same key at runtime.
+RUN test -n "$NEXT_SERVER_ACTIONS_ENCRYPTION_KEY" && \
+    NEXT_SERVER_ACTIONS_ENCRYPTION_KEY="$NEXT_SERVER_ACTIONS_ENCRYPTION_KEY" npm run build
 
 # Stage 3: Production runner
 FROM node:20-alpine AS runner

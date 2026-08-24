@@ -6,7 +6,9 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 # `npm ci` runs the Prisma postinstall hook, which needs the schema available.
 COPY prisma/schema.prisma ./prisma/schema.prisma
-RUN npm ci
+# Temporary workaround for npm nested-lockfile inconsistencies (for example
+# magicast, picomatch, and yaml). Restore `npm ci` once that issue is resolved.
+RUN npm install
 
 # A small, purpose-built target for CI/CD or Helm pre-upgrade migration Jobs.
 # Build and publish this target separately from the application runtime image.

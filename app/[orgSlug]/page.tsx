@@ -285,10 +285,13 @@ export default async function OrganisationPage({ params }: Props) {
             </Stack>
           </Paper>
         ) : (
-          <OrgEventsContainer orgSlug={org.slug} items={merged} />
+          <OrgEventsContainer
+            orgSlug={org.slug}
+            organisationName={org.name}
+            items={merged}
+          />
         )}
       </Box>
     </Stack>
   );
 }
-

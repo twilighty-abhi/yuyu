@@ -16,7 +16,7 @@ import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import GridViewIcon from "@mui/icons-material/GridView";
 import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
 import Link from "next/link";
-import { EventCard } from "@/components/event/EventCard";
+import { DiscoverEventCard } from "@/components/event/DiscoverEventCard";
 import { InstanceCard } from "@/components/event/InstanceCard";
 
 type MergedItem =
@@ -43,10 +43,11 @@ type MergedItem =
 
 type OrgEventsContainerProps = {
   orgSlug: string;
+  organisationName: string;
   items: MergedItem[];
 };
 
-export function OrgEventsContainer({ orgSlug, items }: OrgEventsContainerProps) {
+export function OrgEventsContainer({ orgSlug, organisationName, items }: OrgEventsContainerProps) {
   const [activeTab, setActiveTab] = useState<"upcoming" | "past">("upcoming");
   const [viewMode, setViewMode] = useState<"grid" | "calendar">("grid");
 
@@ -189,7 +190,11 @@ export function OrgEventsContainer({ orgSlug, items }: OrgEventsContainerProps) 
               {filteredItems.map((item) =>
                 item.kind === "event" ? (
                   <Grid size={{ xs: 12, sm: 6, md: 4 }} key={item.id}>
-                    <EventCard orgSlug={orgSlug} event={item.event} />
+                    <DiscoverEventCard
+                      orgSlug={orgSlug}
+                      organisationName={organisationName}
+                      event={item.event}
+                    />
                   </Grid>
                 ) : (
                   <Grid size={{ xs: 12, sm: 6, md: 4 }} key={item.id}>
@@ -438,7 +443,11 @@ export function OrgEventsContainer({ orgSlug, items }: OrgEventsContainerProps) 
                   {selectedDayEvents.map((item) =>
                     item.kind === "event" ? (
                       <Grid size={{ xs: 12, sm: 6, md: 4 }} key={item.id}>
-                        <EventCard orgSlug={orgSlug} event={item.event} />
+                        <DiscoverEventCard
+                          orgSlug={orgSlug}
+                          organisationName={organisationName}
+                          event={item.event}
+                        />
                       </Grid>
                     ) : (
                       <Grid size={{ xs: 12, sm: 6, md: 4 }} key={item.id}>

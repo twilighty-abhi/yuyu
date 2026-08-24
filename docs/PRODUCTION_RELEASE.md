@@ -10,7 +10,7 @@ Yuyu must not be released until every item below is complete and recorded in the
 - Redis configured through `REDIS_URL`. The application deliberately rejects security-sensitive traffic when Redis is unavailable in production.
 - Private S3-compatible object storage configured with `S3_BUCKET` and `S3_REGION`. Use an IAM workload role where possible; keep the bucket private.
 - A transactional email provider with a verified sending domain, SPF, DKIM, DMARC, bounce handling, and alerting.
-- A scheduler that invokes `POST /api/internal/outbox` at least once per minute with `Authorization: Bearer $CRON_SECRET`. This delivers queued mail and purges expired operational records; monitor both delivery and cleanup results.
+- The self-hosted Node.js service runs an in-process outbox worker once per minute. Keep `POST /api/internal/outbox` with `Authorization: Bearer $CRON_SECRET` available as an independent scheduler or recovery trigger, and monitor both delivery and cleanup results.
 - WAF/CDN and TLS termination in front of the app. Forward only the configured trusted client-IP header.
 - Centralized PII-scrubbed logs, error reporting, uptime checks, and alerts for database, Redis, outbox, mail, and backup failures.
 

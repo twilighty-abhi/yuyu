@@ -64,7 +64,7 @@ Opaque ticket and certificate URLs are bearer capabilities. Do not log them or p
 | `GET /api/health/db` | `Authorization: Bearer $HEALTHCHECK_SECRET` | Database readiness check |
 | `POST /api/internal/outbox` | `Authorization: Bearer $CRON_SECRET` | Deliver queued email and purge expired operational data |
 
-Call the outbox endpoint at least once per minute in production. Protected operational endpoints return a generic not-found response when authorization fails.
+Self-hosted Node.js instances run the outbox worker every minute. The endpoint remains available for an independent scheduler or manual recovery. Protected operational endpoints return a generic not-found response when authorization fails.
 
 ## Mutation endpoints
 

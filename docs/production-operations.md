@@ -15,7 +15,7 @@
 1. Build and test the immutable image in CI.
 2. Run `npm run db:status`, then `npm run db:deploy` once as a release job using the migration database role. Run `npm run storage:migrate` when legacy database assets remain.
 3. Deploy application instances using a least-privileged runtime database role and production secrets from a secrets manager.
-4. Configure a scheduler to call `POST /api/internal/outbox` every minute with `Authorization: Bearer $CRON_SECRET`, and an authenticated readiness probe to call `GET /api/health/db` with `Authorization: Bearer $HEALTHCHECK_SECRET`.
+4. Verify the in-process outbox worker has recorded a fresh heartbeat after deployment. Optionally configure an independent scheduler to call `POST /api/internal/outbox` every minute with `Authorization: Bearer $CRON_SECRET`; also configure an authenticated readiness probe to call `GET /api/health/db` with `Authorization: Bearer $HEALTHCHECK_SECRET`.
 5. Verify readiness, error rate, email queue depth, database connections, and Redis health before shifting traffic.
 
 ## Backup and incident minimums

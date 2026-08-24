@@ -209,6 +209,10 @@ At minimum, set:
 - `DATABASE_URL`
 - `AUTH_SECRET`
 - `AUTH_URL`
+- `NEXT_PUBLIC_BASE_URL` (the same HTTPS origin as `AUTH_URL`)
+- `REDIS_URL`, `CRON_SECRET`, `HEALTHCHECK_SECRET`, and `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY`
+- `EMAIL_FROM` plus either `SMTP_SERVICE` or a complete `SMTP_HOST` / `SMTP_USER` / `SMTP_PASSWORD` configuration
+- `TRUSTED_PROXY_IP_HEADER` matching the header your reverse proxy overwrites
 
 Recommended:
 

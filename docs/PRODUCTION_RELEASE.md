@@ -14,9 +14,9 @@ Yuyu must not be released until every item below is complete and recorded in the
 ## Deployment procedure
 
 1. Review and approve the Prisma migration; take a backup before applying it.
-2. Run `npm ci`, `npm run production:check`, `npm run db:deploy`, `npm run lint`, `npx tsc --noEmit`, and `npm run build` in staging.
+2. Run `npm ci`, `npm run production:check`, `npm run db:deploy`, `npm run db:verify`, `npm run lint`, `npx tsc --noEmit`, and `npm run build` in staging.
 3. Exercise auth, organisation permissions, RSVP capacity, duplicate RSVP, upload rejection, email delivery, and offline-check-in sync in staging.
-4. Deploy an immutable image, run the authenticated `/api/health/db` readiness probe, and verify the outbox scheduler.
+4. Deploy an immutable image (with runtime-injected secrets only), run the authenticated `/api/health/db` readiness probe, and verify the outbox scheduler.
 5. Confirm alert delivery and record the release, backup point, migration version, and rollback owner.
 
 ## Required operating controls
@@ -25,6 +25,8 @@ Yuyu must not be released until every item below is complete and recorded in the
 - Define organiser data export approvals, account export/delete handling, retention periods, and a subprocessor register.
 - Run periodic restore drills, access reviews, dependency scans, load tests, and security tests.
 - MFA and device/session revocation are required before permitting high-risk organiser accounts in a public multi-tenant deployment.
+- Set `TRUSTED_PROXY_IP_HEADER` to the one client-IP header your CDN overwrites; do not expose the application directly to the internet behind an arbitrary forwarded header.
+- Preserve `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` across every container serving a release. Rotating it invalidates outstanding Server Action forms.
 
 ## Current product limitation
 

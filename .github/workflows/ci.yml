@@ -54,3 +54,6 @@ jobs:
       - run: npm run db:deploy
         env:
           DATABASE_URL: postgresql://yuyu:yuyu@localhost:5432/yuyu
+      - run: npm run db:verify
+        env:
+          DATABASE_URL: postgresql://yuyu:yuyu@localhost:5432/yuyu

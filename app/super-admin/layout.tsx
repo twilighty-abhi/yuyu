@@ -1,6 +1,6 @@
 import Stack from "@mui/material/Stack";
 import Box from "@mui/material/Box";
-import { requireSuperAdmin } from "@/lib/permissions";
+import { requireSuperAdminMfa } from "@/lib/permissions";
 import { SuperAdminTabs } from "@/components/super-admin/SuperAdminTabs";
 
 // These pages require an authenticated database-backed session and must never
@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 export default async function SuperAdminLayout(props: {
   children: React.ReactNode;
 }) {
-  await requireSuperAdmin();
+  await requireSuperAdminMfa();
 
   return (
     <Stack spacing={2} sx={{ py: 2 }}>

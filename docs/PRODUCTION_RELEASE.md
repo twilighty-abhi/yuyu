@@ -33,7 +33,7 @@ When replacing the current hostname, update the two canonical URL variables, OAu
 - Publish privacy, cookie, acceptable-use, retention, and incident-response policies.
 - Define organiser data export approvals, account export/delete handling, retention periods, and a subprocessor register.
 - Run periodic restore drills, access reviews, dependency scans, load tests, and security tests.
-- Require high-risk organisers to enable authenticator MFA from `/dashboard/security`; Google-based users must also be covered by the organisation's Google MFA policy. Session revocation is available from the same page.
+- Require high-risk organisers to enable authenticator MFA from `/dashboard/security`; Google-based users must also be covered by the organisation's Google MFA policy. Super-admin access additionally requires a fresh TOTP step-up and cannot be used until application MFA is enrolled. Session revocation is available from the same page.
 - Set `TRUSTED_PROXY_IP_HEADER` to the one client-IP header your CDN overwrites; do not expose the application directly to the internet behind an arbitrary forwarded header.
 - Preserve `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` across every container serving a release. Rotating it invalidates outstanding Server Action forms.
 

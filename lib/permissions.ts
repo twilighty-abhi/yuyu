@@ -1,7 +1,9 @@
 import type { Membership, MembershipRole } from "@prisma/client";
 import { notFound, redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { hasValidSuperAdminMfaProof, SUPER_ADMIN_MFA_COOKIE } from "@/lib/superAdminMfa";
 import type { Session } from "next-auth";
 
 const roleRank: Record<MembershipRole, number> = {
@@ -86,6 +88,24 @@ export async function requireSuperAdmin(): Promise<
   if (normalizeEmail(userEmail) !== normalizeEmail(configured)) notFound();
 
   return session as Session & { user: { id: string; email: string } };
+}
+
+/**
+ * Require a fresh, separate TOTP challenge for the instance-wide admin panel.
+ * The proof is a short-lived, signed HttpOnly cookie bound to the current user
+ * and session version, so account/session revocation invalidates it immediately.
+ */
+export async function requireSuperAdminMfa() {
+  const session = await requireSuperAdmin();
+  const user = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { mfaEnabledAt: true, sessionVersion: true },
+  });
+  const proof = (await cookies()).get(SUPER_ADMIN_MFA_COOKIE)?.value;
+  if (!user?.mfaEnabledAt || !hasValidSuperAdminMfaProof(proof, session.user.id, user.sessionVersion)) {
+    redirect("/super-admin-mfa");
+  }
+  return session;
 }
 
 export type OrgAccessContext = {

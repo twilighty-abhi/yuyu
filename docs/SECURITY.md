@@ -12,6 +12,7 @@ This page documents implemented controls and security boundaries. It is not a su
 - Credential users can enable TOTP MFA and receive one-use recovery codes.
 - TOTP seeds are encrypted with AES-256-GCM using `MFA_ENCRYPTION_KEY`; recovery codes are stored as keyed hashes.
 - Sensitive account operations revoke existing sessions and write audit events.
+- The super-admin panel requires a second, fresh TOTP step-up verification even after a normal authenticated session. Its signed, HttpOnly proof lasts 10 minutes and is bound to the user/session version.
 - Google OAuth security, including MFA, is governed by the linked Google account.
 
 ## Authorization and tenancy
@@ -74,7 +75,7 @@ Store secrets in a deployment secrets manager. Use a least-privileged database r
 ## Known boundaries and follow-up work
 
 - Certificate eligibility currently proves knowledge of the confirmed attendee email, not control of that inbox. Add a one-time emailed verification link if certificates carry material value or personal information.
-- Google OAuth accounts do not use the application's TOTP challenge.
+- Google OAuth accounts do not use the application's normal sign-in TOTP challenge, but an account must enroll application TOTP before it can enter the super-admin panel.
 - Current automated coverage is broad in scope but low in percentage; expand authorization and mutation-path tests before making a high-assurance claim.
 - Application controls cannot replace CDN/WAF configuration, patch management, database backups, restore drills, alerting, access reviews, and incident response.
 - Conduct an independent security review before processing sensitive or regulated data.

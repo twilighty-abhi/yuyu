@@ -11,19 +11,22 @@
     "test:unit": "vitest run",
     "test:unit:watch": "vitest",
     "test:integration": "vitest run --config vitest.integration.config.mts",
-    "test:coverage": "vitest run --coverage",
+    "test:coverage": "vitest run --config vitest.coverage.config.mts --coverage",
     "test:e2e": "playwright test",
+    "test:e2e:production": "node scripts/prepare-standalone.mjs && PLAYWRIGHT_PRODUCTION_SERVER=1 playwright test",
     "postinstall": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:status": "prisma migrate status",
     "db:verify": "node scripts/verify-production-schema.mjs",
+    "storage:migrate": "node scripts/migrate-assets-to-s3.mjs",
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
     "production:check": "node scripts/check-production-env.mjs"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.3",
+    "@aws-sdk/client-s3": "^3.1116.0",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
     "@mui/icons-material": "^9.0.0",
@@ -39,6 +42,7 @@
     "next": "^16.3.1",
     "next-auth": "^5.0.0-beta.32",
     "nodemailer": "^9.0.5",
+    "otpauth": "^9.5.1",
     "qrcode": "^1.5.4",
     "react": "19.2.4",
     "react-dom": "19.2.4",
@@ -46,6 +50,9 @@
     "rrule": "^2.8.1",
     "sharp": "^0.35.3",
     "zod": "^4.3.6"
+  },
+  "overrides": {
+    "deepmerge-ts": "^8.0.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",

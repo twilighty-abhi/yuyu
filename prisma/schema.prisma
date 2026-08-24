@@ -54,16 +54,20 @@ enum OutboxStatus {
 }
 
 model User {
-  id            String    @id @default(cuid())
-  name          String?
-  email         String?   @unique
-  emailVerified DateTime?
-  image         String?
+  id                 String    @id @default(cuid())
+  name               String?
+  email              String?   @unique
+  emailVerified      DateTime?
+  image              String?
   /// Bcrypt hash for email + password credential logins. Null for OAuth-only users.
-  passwordHash  String?
+  passwordHash       String?
   /// Incremented to invalidate all issued JWT sessions after account recovery.
-  sessionVersion Int      @default(0)
-  createdAt     DateTime  @default(now())
+  sessionVersion     Int       @default(0)
+  /// AES-GCM encrypted TOTP seed. Never expose or log this value.
+  mfaSecretEncrypted String?
+  mfaEnabledAt       DateTime?
+  recoveryCodeHashes String[]  @default([])
+  createdAt          DateTime  @default(now())
 
   accounts          Account[]
   sessions          Session[]
@@ -119,12 +123,12 @@ model Organisation {
   logoUrl     String?
   createdAt   DateTime @default(now())
 
-  memberships Membership[]
-  invites     OrganisationInvite[]
-  events      Event[]
-  eventSeries EventSeries[]
-  assets      Asset[]
-  auditEvents AuditEvent[]
+  memberships       Membership[]
+  invites           OrganisationInvite[]
+  events            Event[]
+  eventSeries       EventSeries[]
+  assets            Asset[]
+  auditEvents       AuditEvent[]
   rsvpDeletionUndos RsvpDeletionUndo[]
 }
 
@@ -267,16 +271,16 @@ model RSVP {
   attendeeKey     String
   status          RsvpStatus @default(CONFIRMED)
   /// Opaque per-RSVP token for QR / manual check-in (never include PII).
-  checkInToken    String     @unique @default(cuid())
+  checkInToken    String     @unique @default(cuid(2))
   checkedInAt     DateTime?
   createdAt       DateTime   @default(now())
 
-  event         Event?         @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  eventInstance EventInstance? @relation(fields: [eventInstanceId], references: [id], onDelete: Cascade)
-  user          User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
-  answers       RsvpAnswer[]
+  event             Event?                  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventInstance     EventInstance?          @relation(fields: [eventInstanceId], references: [id], onDelete: Cascade)
+  user              User?                   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  answers           RsvpAnswer[]
   feedbackResponses EventFeedbackResponse[]
-  checkInEvents CheckInEvent[]
+  checkInEvents     CheckInEvent[]
 
   @@index([eventId])
   @@index([eventInstanceId])
@@ -384,7 +388,7 @@ model EventFeedbackField {
   createdAt DateTime              @default(now())
   updatedAt DateTime              @updatedAt
 
-  form    EventFeedbackForm @relation(fields: [formId], references: [id], onDelete: Cascade)
+  form    EventFeedbackForm     @relation(fields: [formId], references: [id], onDelete: Cascade)
   answers EventFeedbackAnswer[]
 
   @@unique([formId, key])
@@ -394,27 +398,26 @@ model EventFeedbackField {
 model EventFeedbackResponse {
   id               String   @id @default(cuid())
   formId           String
-  rsvpId           String
-  certificateToken String   @unique @default(cuid())
+  rsvpId           String?
+  certificateToken String?  @unique @default(cuid(2))
   submittedAt      DateTime @default(now())
 
   form    EventFeedbackForm     @relation(fields: [formId], references: [id], onDelete: Cascade)
-  rsvp    RSVP                  @relation(fields: [rsvpId], references: [id], onDelete: Cascade)
+  rsvp    RSVP?                 @relation(fields: [rsvpId], references: [id], onDelete: Cascade)
   answers EventFeedbackAnswer[]
 
-  @@unique([formId, rsvpId])
   @@index([rsvpId])
 }
 
 model EventFeedbackAnswer {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   responseId  String
   fieldId     String
   valueText   String?
   valueBool   Boolean?
   valueNumber Float?
   valueDate   DateTime?
-  createdAt   DateTime @default(now())
+  createdAt   DateTime  @default(now())
 
   response EventFeedbackResponse @relation(fields: [responseId], references: [id], onDelete: Cascade)
   field    EventFeedbackField    @relation(fields: [fieldId], references: [id], onDelete: Cascade)

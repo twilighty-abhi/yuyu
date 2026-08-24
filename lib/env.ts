@@ -21,6 +21,18 @@ const serverActionsKey = z.string().refine(isValidServerActionsKey, {
   message: "must be valid base64 that decodes to a 16, 24, or 32 byte AES key",
 });
 
+const mfaEncryptionKey = z.string().refine((value) => {
+  try {
+    const normalized = value.replace(/=+$/, "");
+    const decoded = Buffer.from(value, "base64");
+    return decoded.length === 32 && decoded.toString("base64").replace(/=+$/, "") === normalized;
+  } catch {
+    return false;
+  }
+}, {
+  message: "must be valid base64 that decodes to a 32 byte AES key",
+});
+
 export const envSchema = z.object({
   DATABASE_URL: z.string().url("must be a valid database connection URL"),
   AUTH_SECRET: secret,
@@ -32,11 +44,20 @@ export const envSchema = z.object({
   SMTP_SERVICE: z.string().min(1).optional(),
   SMTP_USER: z.string().min(1).optional(),
   SMTP_PASSWORD: z.string().min(1).optional(),
+  SMTP_ALLOW_UNAUTHENTICATED: z.enum(["0", "1"]).optional(),
   NEXT_PUBLIC_BASE_URL: z.string().url().optional(),
   REDIS_URL: z.string().url().optional(),
   CRON_SECRET: secret.optional(),
   HEALTHCHECK_SECRET: secret.optional(),
   NEXT_SERVER_ACTIONS_ENCRYPTION_KEY: serverActionsKey.optional(),
+  MFA_ENCRYPTION_KEY: mfaEncryptionKey.optional(),
+  S3_BUCKET: z.string().min(1).optional(),
+  S3_REGION: z.string().min(1).optional(),
+  S3_ENDPOINT: z.string().url().optional(),
+  S3_ACCESS_KEY_ID: z.string().min(1).optional(),
+  S3_SECRET_ACCESS_KEY: z.string().min(1).optional(),
+  S3_FORCE_PATH_STYLE: z.enum(["0", "1"]).optional(),
+  ALLOW_INSECURE_PRODUCTION_TESTS: z.enum(["0", "1"]).optional(),
   ALLOWED_ACTION_ORIGINS: z.string().optional(),
   TRUSTED_PROXY_IP_HEADER: z.enum(["cf-connecting-ip", "x-forwarded-for", "x-real-ip"]).optional(),
   SUPER_ADMIN_EMAIL: z.string().email().optional(),
@@ -58,11 +79,14 @@ function issueMessages(error: z.ZodError) {
 export function validateRuntimeEnvironment() {
   if (process.env.NODE_ENV !== "production") return;
   const parsed = envSchema.safeParse(process.env);
-  const missing = ["AUTH_URL", "NEXT_PUBLIC_BASE_URL", "REDIS_URL", "CRON_SECRET", "HEALTHCHECK_SECRET", "NEXT_SERVER_ACTIONS_ENCRYPTION_KEY", "EMAIL_FROM", "TRUSTED_PROXY_IP_HEADER"]
+  const missing = ["AUTH_URL", "NEXT_PUBLIC_BASE_URL", "REDIS_URL", "CRON_SECRET", "HEALTHCHECK_SECRET", "NEXT_SERVER_ACTIONS_ENCRYPTION_KEY", "MFA_ENCRYPTION_KEY", "EMAIL_FROM", "TRUSTED_PROXY_IP_HEADER", "S3_BUCKET", "S3_REGION"]
     .filter((key) => !process.env[key]?.trim());
   if (!(process.env.SMTP_SERVICE?.trim() || process.env.SMTP_HOST?.trim())) missing.push("SMTP_SERVICE or SMTP_HOST");
-  if (process.env.SMTP_HOST && (!process.env.SMTP_USER || !process.env.SMTP_PASSWORD)) {
-    missing.push("SMTP_USER and SMTP_PASSWORD for SMTP_HOST");
+  if ((process.env.SMTP_HOST || process.env.SMTP_SERVICE) && process.env.SMTP_ALLOW_UNAUTHENTICATED !== "1" && (!process.env.SMTP_USER || !process.env.SMTP_PASSWORD)) {
+    missing.push("SMTP_USER and SMTP_PASSWORD (or SMTP_ALLOW_UNAUTHENTICATED=1)");
+  }
+  if (Boolean(process.env.S3_ACCESS_KEY_ID) !== Boolean(process.env.S3_SECRET_ACCESS_KEY)) {
+    missing.push("both S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY, or neither when using an IAM role");
   }
   if (!parsed.success || missing.length > 0) {
     const details = [...(parsed.success ? [] : issueMessages(parsed.error)), ...missing.map((key) => `${key}: required in production`)];
@@ -70,7 +94,19 @@ export function validateRuntimeEnvironment() {
   }
   const baseUrl = new URL(process.env.NEXT_PUBLIC_BASE_URL!);
   const authUrl = new URL(process.env.AUTH_URL!);
-  if (baseUrl.protocol !== "https:" || authUrl.protocol !== "https:" || baseUrl.origin !== authUrl.origin) {
+  const insecureCiTest = process.env.CI === "true" && process.env.ALLOW_INSECURE_PRODUCTION_TESTS === "1";
+  if ((!insecureCiTest && (baseUrl.protocol !== "https:" || authUrl.protocol !== "https:")) || baseUrl.origin !== authUrl.origin) {
     throw new Error("AUTH_URL and NEXT_PUBLIC_BASE_URL must be the same HTTPS origin in production.");
+  }
+  const databaseUrl = new URL(process.env.DATABASE_URL!);
+  if (!insecureCiTest && !["require", "verify-ca", "verify-full"].includes(databaseUrl.searchParams.get("sslmode") ?? "")) {
+    throw new Error("DATABASE_URL must require TLS using sslmode=require, verify-ca, or verify-full.");
+  }
+  const redisUrl = new URL(process.env.REDIS_URL!);
+  if (!insecureCiTest && redisUrl.protocol !== "rediss:") {
+    throw new Error("REDIS_URL must use TLS (rediss://) in production.");
+  }
+  if (!insecureCiTest && process.env.S3_ENDPOINT && new URL(process.env.S3_ENDPOINT).protocol !== "https:") {
+    throw new Error("S3_ENDPOINT must use HTTPS in production.");
   }
 }

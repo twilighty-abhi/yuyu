@@ -11,6 +11,8 @@ function getTransporter() {
   const secure = process.env.SMTP_SECURE === "true";
   const user = process.env.SMTP_USER;
   const pass = process.env.SMTP_PASSWORD;
+  const tls = process.env.NODE_ENV === "production" ? { minVersion: "TLSv1.2" as const, rejectUnauthorized: true } : undefined;
+  const requireTLS = process.env.NODE_ENV === "production" && !secure;
 
   if (service) {
     return nodemailer.createTransport({
@@ -18,6 +20,8 @@ function getTransporter() {
       auth: user && pass ? { user, pass } : undefined,
       disableFileAccess: true,
       disableUrlAccess: true,
+      requireTLS,
+      tls,
     });
   }
 
@@ -30,6 +34,8 @@ function getTransporter() {
     auth: user && pass ? { user, pass } : undefined,
     disableFileAccess: true,
     disableUrlAccess: true,
+    requireTLS,
+    tls,
   });
 }
 

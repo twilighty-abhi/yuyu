@@ -93,6 +93,7 @@ export function LoginForm() {
   const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [totp, setTotp] = useState("");
   const [name, setName] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -114,6 +115,7 @@ export function LoginForm() {
       r = await signIn("credentials", {
         email,
         password,
+        totp,
         redirect: false,
       });
     } catch {
@@ -286,6 +288,17 @@ export function LoginForm() {
           }
           sx={inputSx}
         />
+        {!isSignUp ? (
+          <TextField
+            label="Authenticator or recovery code"
+            fullWidth
+            value={totp}
+            onChange={(e) => setTotp(e.target.value)}
+            autoComplete="one-time-code"
+            helperText="Required only when MFA is enabled."
+            sx={inputSx}
+          />
+        ) : null}
         <Button
           type="submit"
           variant="contained"

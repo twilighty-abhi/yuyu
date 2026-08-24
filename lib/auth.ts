@@ -6,6 +6,7 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { hasVerifiedGoogleEmail } from "@/lib/googleAuth";
+import { decryptMfaSecret, hashRecoveryCode, verifyMfaCode } from "@/lib/mfa";
 
 const googleId = process.env.AUTH_GOOGLE_ID ?? process.env.GOOGLE_CLIENT_ID;
 const googleSecret =
@@ -14,6 +15,7 @@ const googleSecret =
 const credentialsSchema = z.object({
   email: z.string().trim().toLowerCase().email(),
   password: z.string().min(1),
+  totp: z.string().trim().max(32).optional(),
 });
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
@@ -64,12 +66,29 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             email: true,
             image: true,
             passwordHash: true,
+            mfaSecretEncrypted: true,
+            recoveryCodeHashes: true,
           },
         });
         if (!user?.passwordHash) return null;
 
         const ok = await bcrypt.compare(password, user.passwordHash);
         if (!ok) return null;
+
+        if (user.mfaSecretEncrypted) {
+          const code = parsed.data.totp ?? "";
+          if (!user.email || !code) return null;
+          const validTotp = verifyMfaCode(decryptMfaSecret(user.mfaSecretEncrypted), user.email, code);
+          const recoveryHash = hashRecoveryCode(code);
+          const validRecovery = user.recoveryCodeHashes.includes(recoveryHash);
+          if (!validTotp && !validRecovery) return null;
+          if (validRecovery) {
+            await prisma.user.update({
+              where: { id: user.id },
+              data: { recoveryCodeHashes: { set: user.recoveryCodeHashes.filter((hash) => hash !== recoveryHash) } },
+            });
+          }
+        }
 
         return {
           id: user.id,

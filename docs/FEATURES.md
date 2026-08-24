@@ -78,8 +78,8 @@ Only eligible confirmed attendees receive a scannable ticket by default. Organis
 
 - Instance-wide super-admin area restricted by `SUPER_ADMIN_EMAIL`.
 - Separate TOTP step-up verification for super-admin access; verification lasts 10 minutes and requires an enrolled authenticator.
-- Organisation, user, event, invitation, authentication, monitoring, operations, and storage views.
+- Organisation, user, event, invitation, authentication, monitoring, operations, storage, and searchable audit-log views.
 - Public liveness and secret-protected database readiness endpoints.
-- Outbox delivery, retries, retention cleanup, and operational health metadata.
+- Outbox delivery, retries, retention cleanup, scheduler-heartbeat monitoring, and safe failed-email diagnostics.
 - Private S3-compatible object storage with database asset accounting.
 - Application audit events plus database-triggered fallback audit records for important mutations.

@@ -55,7 +55,7 @@ export default async function SuperAdminAuthPage() {
     prisma.verificationToken.findMany({
       orderBy: { expires: "desc" },
       take: 50,
-      select: { identifier: true, token: true, expires: true },
+      select: { identifier: true, expires: true },
     }),
   ]);
 
@@ -138,22 +138,20 @@ export default async function SuperAdminAuthPage() {
           Recent verification tokens
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-          Tokens are sensitive; this view is super-admin only.
+          Only token type and expiry are shown. Identifiers and token values are never exposed.
         </Typography>
         <Table size="small">
           <TableHead>
             <TableRow>
-              <TableCell>Identifier</TableCell>
+              <TableCell>Type</TableCell>
               <TableCell>Expires</TableCell>
-              <TableCell>Token</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {tokens.map((t) => (
               <TableRow key={`${t.identifier}:${t.expires.toISOString()}`}>
-                <TableCell sx={{ fontFamily: "monospace" }}>{t.identifier}</TableCell>
+                <TableCell>{t.identifier.startsWith("mfa:") ? "MFA enrollment" : t.identifier.startsWith("reset:") ? "Password reset" : "Other verification"}</TableCell>
                 <TableCell>{t.expires.toLocaleString()}</TableCell>
-                <TableCell sx={{ fontFamily: "monospace" }}>{t.token}</TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -162,4 +160,3 @@ export default async function SuperAdminAuthPage() {
     </Stack>
   );
 }
-

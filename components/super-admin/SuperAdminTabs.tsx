@@ -9,6 +9,7 @@ const tabs = [
   { label: "Overview", href: "/super-admin" },
   { label: "Monitoring", href: "/super-admin/monitoring" },
   { label: "Operations", href: "/super-admin/operations" },
+  { label: "Audit log", href: "/super-admin/audit" },
   { label: "Orgs", href: "/super-admin/orgs" },
   { label: "Events", href: "/super-admin/events" },
   { label: "Users", href: "/super-admin/users" },

@@ -38,7 +38,7 @@ Dashboard pages require authentication and enforce membership/role permissions o
 
 ## Super-admin pages
 
-The `/super-admin` area includes overview, auth, events, invites, monitoring, operations, organisations, storage, and users. Access requires the authenticated email configured in `SUPER_ADMIN_EMAIL`; other users receive a not-found response.
+The `/super-admin` area includes overview, audit log, auth, events, invites, monitoring, operations, organisations, storage, and users. Access requires the authenticated email configured in `SUPER_ADMIN_EMAIL`; other users receive a not-found response.
 
 Every super-admin page additionally requires a current TOTP verification. Users without a valid 10-minute step-up proof are sent to `/super-admin-mfa`; authenticator MFA must be enrolled first from `/dashboard/security`.
 

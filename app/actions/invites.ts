@@ -14,6 +14,7 @@ import type { ActionResult } from "./org";
 import { flattenZodErrors } from "./utils";
 import { recordAuditEvent } from "@/lib/audit";
 import { isActionRateLimited } from "@/lib/actionRateLimit";
+import { enqueueEventInvite } from "@/lib/outbox";
 
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
@@ -54,11 +55,21 @@ export async function addEventInvite(input: unknown): Promise<ActionResult> {
   if (!event) return { ok: false, error: "Event not found." };
 
   try {
-    const invite = await prisma.eventInvite.create({
-      data: {
-        eventId: event.id,
-        email: normalizeEmail(email),
-      },
+    const invite = await prisma.$transaction(async (tx) => {
+      const created = await tx.eventInvite.create({
+        data: {
+          eventId: event.id,
+          email: normalizeEmail(email),
+        },
+      });
+      await enqueueEventInvite(tx, {
+        to: created.email,
+        eventTitle: event.title,
+        organisationName: org.name,
+        orgSlug: org.slug,
+        eventSlug: event.slug,
+      });
+      return created;
     });
     await recordAuditEvent({ action: "EVENT_INVITE_ADDED", actorUserId: session.user.id, organisationId: org.id, targetType: "EventInvite", targetId: invite.id });
     revalidatePath(`/dashboard/${org.slug}/event/${event.id}`);

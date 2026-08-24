@@ -48,6 +48,7 @@ Google OAuth users rely on the Google account's MFA policy; the application TOTP
 - Pending approval, approval, rejection, cancellation, and waitlist promotion.
 - Removing an RSVP creates a short-lived, server-owned undo snapshot.
 - Confirmation and lifecycle emails are queued through a durable outbox.
+- Event dashboard invitations are queued through the same durable outbox and link invitees to the event registration page.
 
 ## Tickets and check-in
 

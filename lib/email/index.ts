@@ -199,6 +199,47 @@ export async function sendApprovalNotification(params: {
   });
 }
 
+export async function sendEventInvitation(params: {
+  to: string;
+  eventTitle: string;
+  organisationName: string;
+  orgSlug: string;
+  eventSlug: string;
+}): Promise<void> {
+  const transporter = getTransporter();
+  const from = getFromAddress();
+  const eventUrl = `${getBaseUrl()}/${encodeURIComponent(params.orgSlug)}/${encodeURIComponent(params.eventSlug)}`;
+  const safeTitle = escapeHtml(params.eventTitle);
+  const safeOrganisationName = escapeHtml(params.organisationName);
+  const safeEventUrl = escapeHtml(eventUrl);
+  const subject = `You’re invited: ${params.eventTitle}`;
+  const text = `You’re invited to "${params.eventTitle}" by ${params.organisationName}.\n\nOpen the event and register with this email address:\n${eventUrl}\n\nYuyu Events`;
+  const html = `
+    <!DOCTYPE html>
+    <html><head><meta charset="utf-8"><title>${escapeHtml(subject)}</title></head>
+    <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background:#f8f9fa; margin:0; padding:20px; color:#1c1b1f;">
+      <div style="max-width:600px; margin:40px auto; background:#fff; border:1px solid #e0e0e0; border-radius:16px; overflow:hidden;">
+        <div style="background:#6750A4; color:#fff; padding:24px; text-align:center;"><strong>Yuyu Events</strong></div>
+        <div style="padding:32px;">
+          <h2 style="margin-top:0; color:#6750A4;">You’re invited</h2>
+          <p><strong>${safeOrganisationName}</strong> invited you to <strong>${safeTitle}</strong>.</p>
+          <p>Open the event and register with this email address.</p>
+          <p style="margin:28px 0;"><a href="${safeEventUrl}" style="background:#6750A4; color:#fff; padding:14px 24px; border-radius:999px; text-decoration:none; font-weight:600;">View event</a></p>
+          <p style="font-size:13px; color:#666; overflow-wrap:anywhere;">${safeEventUrl}</p>
+        </div>
+      </div>
+    </body></html>`;
+
+  if (!transporter) {
+    console.log(`[EMAIL MOCK] To: ${params.to}`);
+    console.log(`[EMAIL MOCK] Subject: ${subject}`);
+    console.log(`[EMAIL MOCK] Text:\n${text}`);
+    return;
+  }
+
+  await transporter.sendMail({ from, to: params.to, subject, text, html });
+}
+
 export async function sendReminder(params: {
   to: string;
   eventTitle: string;

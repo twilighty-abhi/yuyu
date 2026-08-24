@@ -2,7 +2,7 @@ import "server-only";
 
 import { OutboxStatus, Prisma, RsvpStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { sendApprovalNotification, sendRSVPConfirmation } from "@/lib/email";
+import { sendApprovalNotification, sendEventInvitation, sendRSVPConfirmation } from "@/lib/email";
 import { sendPasswordResetEmail } from "@/lib/email/passwordReset";
 import { redactSensitiveText } from "@/lib/redactSensitiveText";
 
@@ -26,6 +26,14 @@ type PasswordResetPayload = {
   to: string;
   resetUrl: string;
   expiresAt: string;
+};
+
+type EventInvitePayload = {
+  to: string;
+  eventTitle: string;
+  organisationName: string;
+  orgSlug: string;
+  eventSlug: string;
 };
 
 export async function enqueueRsvpConfirmation(
@@ -59,6 +67,18 @@ export async function enqueuePasswordReset(
   return client.outboxMessage.create({
     data: {
       kind: "password-reset",
+      payload: payload as Prisma.InputJsonValue,
+    },
+  });
+}
+
+export async function enqueueEventInvite(
+  client: OutboxClient,
+  payload: EventInvitePayload,
+) {
+  return client.outboxMessage.create({
+    data: {
+      kind: "event-invite",
       payload: payload as Prisma.InputJsonValue,
     },
   });
@@ -100,6 +120,19 @@ function asPasswordResetPayload(value: Prisma.JsonValue): PasswordResetPayload |
     Number.isNaN(Date.parse(payload.expiresAt))
   ) return null;
   return payload as PasswordResetPayload;
+}
+
+function asEventInvitePayload(value: Prisma.JsonValue): EventInvitePayload | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const payload = value as Record<string, unknown>;
+  if (
+    typeof payload.to !== "string" ||
+    typeof payload.eventTitle !== "string" ||
+    typeof payload.organisationName !== "string" ||
+    typeof payload.orgSlug !== "string" ||
+    typeof payload.eventSlug !== "string"
+  ) return null;
+  return payload as EventInvitePayload;
 }
 
 /** Deliver a small batch. Run this from a protected scheduler, never a request path. */
@@ -160,6 +193,10 @@ export async function deliverOutboxBatch(limit = 20) {
         // Reset URLs are bearer secrets. Remove them immediately after sending
         // rather than retaining them with ordinary delivery history.
         removeAfterDelivery = true;
+      } else if (message.kind === "event-invite") {
+        const payload = asEventInvitePayload(message.payload);
+        if (!payload) throw new Error("Invalid event invite payload");
+        await sendEventInvitation(payload);
       } else {
         throw new Error("Unsupported outbox message kind");
       }

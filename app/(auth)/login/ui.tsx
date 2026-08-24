@@ -87,7 +87,7 @@ export function LoginForm() {
   const sp = useSearchParams();
   const callbackUrl = useMemo(() => {
     const c = sp.get("callbackUrl")?.trim();
-    return c && c.startsWith("/") ? c : "/dashboard";
+    return c && c.startsWith("/") && !c.startsWith("//") ? c : "/dashboard";
   }, [sp]);
 
   const [mode, setMode] = useState<Mode>("signin");

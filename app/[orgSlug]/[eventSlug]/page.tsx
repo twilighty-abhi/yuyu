@@ -7,6 +7,7 @@ import { canManageEvents, getMembership } from "@/lib/permissions";
 import { shouldIndexPublicEvent } from "@/lib/eventVisibility";
 import { countConfirmedForEvent } from "@/lib/rsvpCapacity";
 import { EventPublicShell } from "@/components/event/EventPublicShell";
+import { safeTimeZone } from "@/lib/timeZone";
 
 type Props = { params: Promise<{ orgSlug: string; eventSlug: string }> };
 
@@ -94,17 +95,6 @@ function formatTzLabel(timeZone: string) {
   }
 }
 
-function buildAttendeeSummary(confirmed: number, firstNames: string[]) {
-  const a = firstNames[0];
-  const b = firstNames[1];
-  if (confirmed === 0) return "";
-  if (!a) return `${confirmed} going`;
-  if (confirmed === 1) return a;
-  if (confirmed === 2 && b) return `${a} and ${b}`;
-  if (confirmed > 2 && b) return `${a}, ${b} and ${confirmed - 2} others`;
-  return `${a} and ${confirmed - 1} others`;
-}
-
 export default async function EventPage({ params }: Props) {
   const { orgSlug, eventSlug } = await params;
   const org = await prisma.organisation.findUnique({
@@ -142,7 +132,8 @@ export default async function EventPage({ params }: Props) {
 
   if (event.status === EventStatus.DRAFT && !canPreviewDraft) notFound();
 
-  const showRsvp = event.status === EventStatus.PUBLISHED;
+  const isPast = event.endDateTime <= new Date();
+  const showRsvp = event.status === EventStatus.PUBLISHED && !isPast;
   const confirmedCount = await countConfirmedForEvent(event.id);
   const totalRsvps = await prisma.rSVP.count({ where: { eventId: event.id } });
   const spotsLeft =
@@ -151,43 +142,18 @@ export default async function EventPage({ params }: Props) {
       : null;
   const full = spotsLeft !== null && spotsLeft <= 0;
 
-  const isPast = event.endDateTime < new Date();
-
-  const rsvpRows = await prisma.rSVP.findMany({
-    where: { eventId: event.id, status: "CONFIRMED" },
-    orderBy: { createdAt: "desc" },
-    take: 12,
-    include: {
-      user: { select: { name: true, image: true } },
-    },
-  });
-
-  function firstNameFromFullName(name: string) {
-    const s = name.trim();
-    if (!s) return null;
-    return s.split(/\s+/)[0] ?? null;
-  }
-
-  const avatars = rsvpRows.map((r) => ({
-    id: r.id,
-    // Public page privacy: never surface email addresses.
-    label: firstNameFromFullName(r.user?.name ?? "") ?? "Guest",
-    imageUrl: r.user?.image ?? null,
-  }));
-
-  const firstNames = avatars
-    .map((x) => x.label)
-    .filter((x) => x !== "Guest")
-    .slice(0, 2);
-  const attendeeSummary = buildAttendeeSummary(confirmedCount, firstNames);
-
-  const datePrimary = formatDateHeading(event.startDateTime, event.timezone);
+  // Attendance is private by default. Public pages expose only the aggregate
+  // count when the organiser has enabled it, never attendee names or images.
+  const avatars: never[] = [];
+  const attendeeSummary = confirmedCount > 0 ? `${confirmedCount} going` : "";
+  const timeZone = safeTimeZone(event.timezone);
+  const datePrimary = formatDateHeading(event.startDateTime, timeZone);
   const timeRange = formatTimeRange(
     event.startDateTime,
     event.endDateTime,
-    event.timezone,
+    timeZone,
   );
-  const tzLabel = formatTzLabel(event.timezone);
+  const tzLabel = formatTzLabel(timeZone);
 
   return (
     <EventPublicShell

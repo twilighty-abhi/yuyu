@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import QRCode from "qrcode";
 import { prisma } from "@/lib/db";
+import { safeTimeZone } from "@/lib/timeZone";
 
 export const dynamic = "force-dynamic";
 
@@ -17,13 +18,13 @@ export async function GET(_request: Request, context: RouteContext<"/api/ticket/
       eventInstance: { select: { startDateTime: true, series: { select: { title: true, timezone: true, organisation: { select: { name: true } } } } } },
     },
   });
-  if (!rsvp || rsvp.status === "REJECTED") notFound();
+  if (!rsvp || rsvp.status !== "CONFIRMED") notFound();
   const event = rsvp.event;
   const instance = rsvp.eventInstance;
   if (!event && !instance) notFound();
   const title = event?.title ?? instance!.series.title;
   const org = event?.organisation.name ?? instance!.series.organisation.name;
-  const timeZone = event?.timezone ?? instance!.series.timezone;
+  const timeZone = safeTimeZone(event?.timezone ?? instance!.series.timezone);
   const start = event?.startDateTime ?? instance!.startDateTime;
   const when = start.toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone, timeZoneName: "short" });
   const attendee = rsvp.user?.name?.trim() || rsvp.guestName?.trim() || rsvp.guestEmail?.split("@")[0] || "Guest";

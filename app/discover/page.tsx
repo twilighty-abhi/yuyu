@@ -106,9 +106,9 @@ export default async function DiscoverPage({
   const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
 
-  // Fetch all matching items (we need to merge events + instances before paginating)
-  // For efficiency, fetch only what we need with a reasonable limit
-  const fetchLimit = Math.min(totalItems, 200);
+  // Each source must contribute enough rows to cover the requested merged
+  // page. A fixed cap made valid pages beyond the first 200 results empty.
+  const fetchLimit = Math.min(totalItems, safePage * PAGE_SIZE);
 
   const [events, instances] = await Promise.all([
     prisma.event.findMany({

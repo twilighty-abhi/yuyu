@@ -3,11 +3,13 @@ import type { Metadata } from "next";
 import Typography from "@mui/material/Typography";
 import Stack from "@mui/material/Stack";
 import Chip from "@mui/material/Chip";
+import Alert from "@mui/material/Alert";
 import { prisma } from "@/lib/db";
 import { getRequestOrigin } from "@/lib/publicUrl";
 import { TicketQrPanel } from "@/components/ticket/TicketQrPanel";
 import { CancelRsvpButton } from "@/components/ticket/CancelRsvpButton";
 import { TicketDownloadButton } from "@/components/ticket/TicketDownloadButton";
+import { safeTimeZone } from "@/lib/timeZone";
 
 type Props = {
   params: Promise<{ token: string }>;
@@ -115,13 +117,13 @@ export default async function TicketPage({ params }: Props) {
       day: "numeric",
       hour: "numeric",
       minute: "2-digit",
-      timeZone: ev.timezone,
+      timeZone: safeTimeZone(ev.timezone),
       timeZoneName: "short",
     });
     locationLine = ev.location ? ` · ${ev.location}` : "";
   } else if (rsvp.eventInstanceId && rsvp.eventInstance) {
     const inst = rsvp.eventInstance;
-    const tz = inst.series.timezone;
+    const tz = safeTimeZone(inst.series.timezone);
     orgName = inst.series.organisation.name;
     orgSlug = inst.series.organisation.slug;
     title = inst.series.title;
@@ -172,17 +174,21 @@ export default async function TicketPage({ params }: Props) {
         {displayName(rsvp)}
       </Typography>
 
-      <TicketQrPanel token={rsvp.checkInToken} />
-
-      {rsvp.status !== "REJECTED" ? (
-        <TicketDownloadButton
-          downloadUrl={`/api/ticket/${rsvp.checkInToken}/download`}
-        />
-      ) : null}
-
-      <Typography variant="caption" color="text.secondary" sx={{ wordBreak: "break-all" }}>
-        Ticket link: {origin}/ticket/{rsvp.checkInToken}
-      </Typography>
+      {rsvp.status === "CONFIRMED" ? (
+        <>
+          <TicketQrPanel token={rsvp.checkInToken} />
+          <TicketDownloadButton
+            downloadUrl={`/api/ticket/${rsvp.checkInToken}/download`}
+          />
+          <Typography variant="caption" color="text.secondary" sx={{ wordBreak: "break-all" }}>
+            Ticket link: {origin}/ticket/{rsvp.checkInToken}
+          </Typography>
+        </>
+      ) : (
+        <Alert severity={rsvp.status === "REJECTED" ? "error" : "info"}>
+          A scannable ticket will be available after this registration is confirmed.
+        </Alert>
+      )}
 
       {!isCheckedIn && rsvp.status !== "REJECTED" ? (
         <CancelRsvpButton

@@ -293,7 +293,7 @@ export function EventPublicShell(props: Props) {
                   </Stack>
                 ) : (
                   <Typography variant="body2" color="text.secondary">
-                    Be the first to RSVP.
+                    {confirmedCount > 0 ? "Attendee details are private." : "Be the first to RSVP."}
                   </Typography>
                 )}
               </Paper>

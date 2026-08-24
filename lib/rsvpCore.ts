@@ -313,7 +313,11 @@ export async function submitRsvpCore(
         organisationId_slug: { organisationId: org.id, slug: eventSlug },
       },
     });
-    if (!event || event.status !== EventStatus.PUBLISHED) {
+    if (
+      !event ||
+      event.status !== EventStatus.PUBLISHED ||
+      event.endDateTime <= new Date()
+    ) {
       return { ok: false, error: "This event is not open for RSVP." };
     }
 
@@ -455,7 +459,11 @@ export async function submitRsvpCore(
       organisationId_slug: { organisationId: org.id, slug: eventSlug },
     },
   });
-  if (!event || event.status !== EventStatus.PUBLISHED) {
+  if (
+    !event ||
+    event.status !== EventStatus.PUBLISHED ||
+    event.endDateTime <= new Date()
+  ) {
     return { ok: false, error: "This event is not open for RSVP." };
   }
 
@@ -557,7 +565,10 @@ async function submitInstanceRsvp(params: {
     return { ok: false, error: "Event not found." };
   }
 
-  if (instance.series.status !== EventStatus.PUBLISHED) {
+  if (
+    instance.series.status !== EventStatus.PUBLISHED ||
+    instance.endDateTime <= new Date()
+  ) {
     return { ok: false, error: "This event is not open for RSVP." };
   }
 

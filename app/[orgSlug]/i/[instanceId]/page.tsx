@@ -12,6 +12,7 @@ import { canManageEvents, getMembership } from "@/lib/permissions";
 import { RsvpForm } from "@/components/rsvp/RsvpForm";
 import { shouldIndexPublicEvent } from "@/lib/eventVisibility";
 import { countConfirmedForInstance } from "@/lib/rsvpCapacity";
+import { safeTimeZone } from "@/lib/timeZone";
 
 type Props = { params: Promise<{ orgSlug: string; instanceId: string }> };
 
@@ -93,7 +94,8 @@ export default async function InstanceEventPage({ params }: Props) {
 
   if (series.status === EventStatus.DRAFT && !canPreviewDraft) notFound();
 
-  const showRsvp = series.status === EventStatus.PUBLISHED;
+  const isPast = instance.endDateTime <= new Date();
+  const showRsvp = series.status === EventStatus.PUBLISHED && !isPast;
   const confirmedCount = await countConfirmedForInstance(instance.id);
   const spotsLeft =
     series.capacity != null
@@ -128,7 +130,7 @@ export default async function InstanceEventPage({ params }: Props) {
         {formatLongDate(
           instance.startDateTime,
           instance.endDateTime,
-          series.timezone,
+          safeTimeZone(series.timezone),
         )}
       </Typography>
       {series.description ? (
@@ -152,7 +154,7 @@ export default async function InstanceEventPage({ params }: Props) {
         </Paper>
       ) : (
         <Typography color="text.secondary">
-          RSVP opens when the series is published.
+          {isPast ? "Registration for this occurrence has ended." : "RSVP opens when the series is published."}
         </Typography>
       )}
     </Stack>

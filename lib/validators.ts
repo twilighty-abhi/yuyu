@@ -1,10 +1,26 @@
 import { EventPrivacyType, EventStatus } from "@prisma/client";
 import { z } from "zod";
+import { isValidTimeZone } from "@/lib/timeZone";
 
 const slugRegex = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const httpUrlSchema = z.string().url().refine((value) => {
+  try {
+    const protocol = new URL(value).protocol;
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
+  }
+}, "Only HTTP and HTTPS URLs are allowed");
+const optionalHttpUrlSchema = httpUrlSchema.optional().or(z.literal(""));
+const timeZoneSchema = z
+  .string()
+  .trim()
+  .min(1, "Timezone is required")
+  .max(64)
+  .refine(isValidTimeZone, "Select a valid IANA timezone");
 const coverImageUrlSchema = z
   .union([
-    z.string().url(),
+    httpUrlSchema,
     z.string().regex(/^\/api\/uploads\/.+/, "Invalid uploaded image URL"),
     z.literal(""),
   ])
@@ -19,14 +35,14 @@ export const createOrganisationSchema = z.object({
     .max(64)
     .regex(slugRegex, "Use lowercase letters, numbers, and single hyphens"),
   description: z.string().trim().max(2000).optional().default(""),
-  logoUrl: z.string().url().optional().or(z.literal("")),
+  logoUrl: optionalHttpUrlSchema,
 });
 
 export const updateOrganisationSchema = z.object({
   organisationSlug: z.string().trim().min(1),
   name: z.string().trim().min(1, "Name is required").max(120),
   description: z.string().trim().max(2000).optional().default(""),
-  logoUrl: z.string().url().optional().or(z.literal("")),
+  logoUrl: optionalHttpUrlSchema,
 });
 
 export const createEventSchema = z
@@ -56,9 +72,9 @@ export const createEventSchema = z
     ).optional().default(true),
     startDateTime: z.coerce.date(),
     endDateTime: z.coerce.date(),
-    timezone: z.string().trim().min(1, "Timezone is required").max(64),
+    timezone: timeZoneSchema,
     location: z.string().trim().max(500).optional().default(""),
-    mapLinkUrl: z.string().url().optional().or(z.literal("")),
+    mapLinkUrl: optionalHttpUrlSchema,
     isOnline: z.preprocess(
       (v) => v === true || v === "true" || v === "on",
       z.boolean(),
@@ -131,9 +147,9 @@ export const updateEventSchema = z
     ).optional().default(true),
     startDateTime: z.coerce.date(),
     endDateTime: z.coerce.date(),
-    timezone: z.string().trim().min(1, "Timezone is required").max(64),
+    timezone: timeZoneSchema,
     location: z.string().trim().max(500).optional().default(""),
-    mapLinkUrl: z.string().url().optional().or(z.literal("")),
+    mapLinkUrl: optionalHttpUrlSchema,
     isOnline: z.preprocess(
       (v) => v === true || v === "true" || v === "on",
       z.boolean(),
@@ -257,7 +273,7 @@ export const createSeriesSchema = z
     anchorStartDateTime: z.coerce.date(),
     anchorEndDateTime: z.coerce.date(),
     rruleLine: z.string().trim().min(1, "Recurrence rule is required"),
-    timezone: z.string().trim().min(1, "Timezone is required").max(64),
+    timezone: timeZoneSchema,
     capacity: z.preprocess((v) => {
       if (v === "" || v === null || v === undefined) return undefined;
       const n = Number(v);
@@ -278,7 +294,7 @@ export const updateSeriesMetaSchema = orgScoped.extend({
   eventSeriesId: z.string().trim().min(1),
   title: z.string().trim().min(1, "Title is required").max(200),
   description: z.string().trim().max(10000).optional().default(""),
-  timezone: z.string().trim().min(1, "Timezone is required").max(64),
+  timezone: timeZoneSchema,
   capacity: z.preprocess((v) => {
     if (v === "" || v === null || v === undefined) return undefined;
     const n = Number(v);

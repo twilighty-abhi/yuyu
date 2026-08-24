@@ -15,6 +15,7 @@ import { flattenZodErrors } from "./utils";
 import { recordAuditEvent } from "@/lib/audit";
 import { isActionRateLimited } from "@/lib/actionRateLimit";
 import { enqueueEventInvite } from "@/lib/outbox";
+import { startOutboxWorker } from "@/lib/outboxWorker";
 
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
@@ -71,6 +72,9 @@ export async function addEventInvite(input: unknown): Promise<ActionResult> {
       });
       return created;
     });
+    // Covers long-lived dev processes and any deployment where instrumentation
+    // did not run yet. The worker is globally deduplicated per Node process.
+    startOutboxWorker();
     await recordAuditEvent({ action: "EVENT_INVITE_ADDED", actorUserId: session.user.id, organisationId: org.id, targetType: "EventInvite", targetId: invite.id });
     revalidatePath(`/dashboard/${org.slug}/event/${event.id}`);
     return { ok: true };

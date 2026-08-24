@@ -22,7 +22,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     },
   });
   const title = rsvp?.event?.title ?? rsvp?.eventInstance?.series?.title;
-  return { title: title ? `Ticket · ${title}` : "Your Ticket" };
+  return {
+    title: title ? `Ticket · ${title}` : "Your Ticket",
+    robots: { index: false, follow: false },
+  };
 }
 
 function displayName(r: {

@@ -1,0 +1,19 @@
+"use client";
+
+import { useEffect } from "react";
+import Button from "@mui/material/Button";
+import Stack from "@mui/material/Stack";
+import Typography from "@mui/material/Typography";
+
+export default function ErrorBoundary({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
+  useEffect(() => {
+    console.error("[ui] route error", error);
+  }, [error]);
+  return (
+    <Stack spacing={2} sx={{ py: 8, textAlign: "center", alignItems: "center" }}>
+      <Typography component="h1" variant="h4">Something went wrong</Typography>
+      <Typography color="text.secondary">Please try again. If this keeps happening, contact support.</Typography>
+      <Button variant="contained" onClick={reset}>Try again</Button>
+    </Stack>
+  );
+}

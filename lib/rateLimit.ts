@@ -66,29 +66,23 @@ function keyFor(bucket: Bucket, id: string) {
 
 export function getClientIp(request: NextRequest): string {
   const configuredHeader = process.env.TRUSTED_PROXY_IP_HEADER;
-  const cloudflare = request.headers.get("cf-connecting-ip");
-  if ((configuredHeader === "cf-connecting-ip" || !configuredHeader) && cloudflare) {
-    return cloudflare.trim();
-  }
-  const forwarded = request.headers.get("x-forwarded-for");
-  if (forwarded) {
-    const first = forwarded.split(",")[0]?.trim();
-    if (first) return first;
-  }
-  const real = request.headers.get("x-real-ip");
-  if (real) return real.trim();
+  if (isTrustedProxyHeader(configuredHeader)) return readConfiguredIp(request.headers, configuredHeader);
   return "unknown";
 }
 
 export function getClientIpFromHeaders(headers: Headers): string {
   const configuredHeader = process.env.TRUSTED_PROXY_IP_HEADER;
-  const cloudflare = headers.get("cf-connecting-ip");
-  if ((configuredHeader === "cf-connecting-ip" || !configuredHeader) && cloudflare) {
-    return cloudflare.trim();
-  }
-  const forwarded = headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0]?.trim() || "unknown";
-  return headers.get("x-real-ip")?.trim() || "unknown";
+  return isTrustedProxyHeader(configuredHeader) ? readConfiguredIp(headers, configuredHeader) : "unknown";
+}
+
+function isTrustedProxyHeader(value: string | undefined): value is "cf-connecting-ip" | "x-forwarded-for" | "x-real-ip" {
+  return value === "cf-connecting-ip" || value === "x-forwarded-for" || value === "x-real-ip";
+}
+
+function readConfiguredIp(headers: Headers, header: "cf-connecting-ip" | "x-forwarded-for" | "x-real-ip") {
+  const value = headers.get(header)?.trim();
+  if (!value) return "unknown";
+  return header === "x-forwarded-for" ? value.split(",")[0]?.trim() || "unknown" : value;
 }
 
 function checkRateLimitMemory(bucket: Bucket, id: string): boolean {
@@ -125,29 +119,15 @@ export async function checkRateLimitById(bucket: Bucket, id: string): Promise<bo
   const { max, windowMs } = limits[bucket];
 
   try {
-    const pipeline = redis.pipeline();
-    pipeline.incr(k);
-    pipeline.ttl(k);
-    const results = await pipeline.exec();
-    
-    if (!results) {
-      throw new Error("Pipeline returned no results");
-    }
-
-    const [incrErr, count] = results[0];
-    const [ttlErr, ttl] = results[1];
-
-    if (incrErr) throw incrErr;
-    if (ttlErr) throw ttlErr;
-
-    const countNum = count as number;
-    const ttlNum = ttl as number;
-
-    if (ttlNum < 0) {
-      await redis.pexpire(k, windowMs);
-    }
-
-    return countNum <= max;
+    // Increment and expiry must be one Redis operation. A pipeline can leave
+    // an unexpiring key behind if the process dies between INCR and PEXPIRE.
+    const count = await redis.eval(
+      "local c = redis.call('INCR', KEYS[1]); if c == 1 then redis.call('PEXPIRE', KEYS[1], ARGV[1]); end; return c",
+      1,
+      k,
+      String(windowMs),
+    );
+    return Number(count) <= max;
   } catch (e) {
     console.warn("[rateLimit] Redis check failed:", e);
     if (process.env.NODE_ENV === "production") return false;

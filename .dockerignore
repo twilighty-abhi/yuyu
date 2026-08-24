@@ -1,0 +1,16 @@
+# Keep local secrets, generated output, and developer-only files out of Docker
+# build contexts. Runtime secrets must be injected by the deployment platform.
+.env
+.env.*
+!.env.example
+.git
+.github
+.next
+node_modules
+coverage
+playwright-report
+test-results
+*.log
+*.tsbuildinfo
+.DS_Store
+

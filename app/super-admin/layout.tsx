@@ -3,6 +3,10 @@ import Box from "@mui/material/Box";
 import { requireSuperAdmin } from "@/lib/permissions";
 import { SuperAdminTabs } from "@/components/super-admin/SuperAdminTabs";
 
+// These pages require an authenticated database-backed session and must never
+// be rendered during the build with placeholder database credentials.
+export const dynamic = "force-dynamic";
+
 export default async function SuperAdminLayout(props: {
   children: React.ReactNode;
 }) {
@@ -17,4 +21,3 @@ export default async function SuperAdminLayout(props: {
     </Stack>
   );
 }
-

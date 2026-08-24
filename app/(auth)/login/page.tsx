@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import Box from "@mui/material/Box";
 import Grid from "@mui/material/Grid";
 import Paper from "@mui/material/Paper";
@@ -79,7 +80,9 @@ export default function LoginPage() {
                     p: { xs: 2.25, sm: 2.75 },
                   }}
                 >
-                  <LoginForm />
+                  <Suspense fallback={<Typography color="text.secondary">Loading sign in…</Typography>}>
+                    <LoginForm />
+                  </Suspense>
                 </Box>
               </Stack>
             </Box>

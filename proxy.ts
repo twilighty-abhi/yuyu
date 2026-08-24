@@ -28,7 +28,11 @@ export async function proxy(request: NextRequest) {
     }
   }
 
-  if (pathname.startsWith("/api/auth")) {
+  // Auth.js polls session, CSRF, and provider endpoints with GET requests.
+  // Counting those reads against the strict sign-in bucket logs active users
+  // out after a few tabs or routine session refreshes. Mutating auth requests
+  // retain the dedicated protection; all reads remain under the global limit.
+  if (pathname.startsWith("/api/auth") && request.method !== "GET") {
     if (!(await checkRateLimit(request, "auth"))) {
       return tooMany();
     }

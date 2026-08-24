@@ -59,6 +59,15 @@ test("public health endpoint is available", async ({ request }) => {
   await expect(response.json()).resolves.toMatchObject({ ok: true });
 });
 
+test("Auth.js session polling is not treated as repeated sign-in attempts", async ({ request }) => {
+  const responses = await Promise.all(
+    Array.from({ length: 12 }, () => request.get("/api/auth/session")),
+  );
+  expect(responses.map((response) => response.status())).toEqual(
+    Array.from({ length: 12 }, () => 200),
+  );
+});
+
 test("login and crawler controls render", async ({ page }) => {
   const browserErrors: string[] = [];
   page.on("console", (message) => {

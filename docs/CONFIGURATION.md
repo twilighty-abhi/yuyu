@@ -17,6 +17,29 @@ Copy `.env.example` to `.env` for local development. Production secrets must com
 | `NEXT_PUBLIC_AUTH_GOOGLE_CONFIGURED` | Optional | Set to `1` to render Google sign-in; this is build-visible configuration |
 | `SUPER_ADMIN_EMAIL` | Recommended | Sole email allowed into the instance administration area |
 
+### Deployment example: `events.dev.idliapps.com`
+
+For the current deployment hostname, configure both canonical URL settings to the exact same HTTPS origin:
+
+```env
+AUTH_URL=https://events.dev.idliapps.com
+NEXT_PUBLIC_BASE_URL=https://events.dev.idliapps.com
+```
+
+If Google OAuth is enabled, register this callback with Google Cloud:
+
+```text
+https://events.dev.idliapps.com/api/auth/callback/google
+```
+
+Leave `ALLOWED_ACTION_ORIGINS` empty when browsers reach the application on this same hostname. Configure it only if a trusted CDN or reverse proxy uses a different host for Server Action requests.
+
+### Changing the public domain
+
+When the application moves to a new hostname, update `AUTH_URL` and `NEXT_PUBLIC_BASE_URL`, update the Google OAuth callback/origin if used, then rebuild and deploy because `NEXT_PUBLIC_BASE_URL` is build-visible. Update DNS, TLS, the CDN/WAF, scheduler and uptime-monitor targets, and any reverse-proxy host allowlists at the same time.
+
+Keep an HTTPS redirect from the old hostname to the new one for as long as invitation, ticket, certificate, and shared event links may be used. Auth cookies are host-specific, so existing users may need to sign in again after the change.
+
 ## Application secrets
 
 | Variable | Production | Purpose |

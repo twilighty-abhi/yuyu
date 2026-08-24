@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { prisma } from "@/lib/db";
+import { downloadFile } from "@/lib/storage";
 
 type Context = { params: Promise<{ key: string[] }> };
 
@@ -9,17 +9,14 @@ export async function GET(request: NextRequest, { params }: Context) {
     const { key } = await params;
     const dbKey = key.join("/");
 
-    const asset = await prisma.asset.findUnique({
-      where: { key: dbKey },
-    });
-
-    if (!asset || !asset.fileData) {
+    const asset = await downloadFile(dbKey);
+    if (!asset) {
       return new NextResponse("Not Found", { status: 404 });
     }
 
-    return new Response(asset.fileData, {
+    return new Response(Uint8Array.from(asset.body).buffer, {
       headers: {
-        "Content-Type": asset.contentType || "application/octet-stream",
+        "Content-Type": asset.contentType,
         "Content-Disposition": "inline",
         "Cross-Origin-Resource-Policy": "same-site",
         "X-Content-Type-Options": "nosniff",

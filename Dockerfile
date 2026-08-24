@@ -4,7 +4,16 @@ RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
 COPY package.json package-lock.json ./
+# `npm ci` runs the Prisma postinstall hook, which needs the schema available.
+COPY prisma/schema.prisma ./prisma/schema.prisma
 RUN npm ci
+
+# A small, purpose-built target for CI/CD or Helm pre-upgrade migration Jobs.
+# Build and publish this target separately from the application runtime image.
+FROM deps AS migrator
+WORKDIR /app
+COPY prisma ./prisma
+CMD ["npx", "prisma", "migrate", "deploy"]
 
 # Stage 2: Rebuild the source code
 FROM node:20-alpine AS builder

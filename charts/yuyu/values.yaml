@@ -1,0 +1,62 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/your-org/yuyu
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# Create this Secret outside Helm (External Secrets, Sealed Secrets, or kubectl).
+# It must contain every production runtime variable in .env.example.
+existingSecret: yuyu-runtime
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: events.dev.idliapps.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: "2"
+    memory: 4Gi
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 75
+
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+
+migration:
+  # Enable for production releases after publishing the Docker `migrator` target.
+  enabled: true
+  image:
+    repository: ghcr.io/your-org/yuyu-migrator
+    tag: ""
+    pullPolicy: IfNotPresent
+  backoffLimit: 1
+  activeDeadlineSeconds: 300
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

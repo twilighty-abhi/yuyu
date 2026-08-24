@@ -1,0 +1,7 @@
+Yuyu has been installed.
+
+The runtime configuration is read from the existing Secret:
+  {{ .Values.existingSecret }}
+
+Check rollout status:
+  kubectl rollout status deployment/{{ include "yuyu.fullname" . }} --namespace {{ .Release.Namespace }}

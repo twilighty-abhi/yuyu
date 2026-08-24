@@ -1,0 +1,7 @@
+apiVersion: v2
+name: yuyu
+description: Production Helm chart for the Yuyu events application
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.25.0-0"

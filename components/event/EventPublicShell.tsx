@@ -145,15 +145,18 @@ export function EventPublicShell(props: Props) {
             : "rgba(232, 245, 240, 0.85)",
         borderRadius: { md: 3 },
         px: { xs: 0, md: 2 },
+        width: "100%",
+        maxWidth: "100%",
+        overflowX: "hidden",
       }}
     >
       <Grid
         container
         spacing={{ xs: 2, md: 3 }}
-        sx={{ alignItems: "flex-start" }}
+        sx={{ alignItems: "flex-start", minWidth: 0, width: "100%" }}
       >
-        <Grid size={{ xs: 12, md: 4 }}>
-          <Stack spacing={2.5} sx={{ position: { md: "sticky" }, top: { md: 88 } }}>
+        <Grid size={{ xs: 12, md: 4 }} sx={{ minWidth: 0 }}>
+          <Stack spacing={2.5} sx={{ position: { md: "sticky" }, top: { md: 88 }, minWidth: 0 }}>
             <Paper
               elevation={0}
               sx={{
@@ -189,7 +192,11 @@ export function EventPublicShell(props: Props) {
                     justifyContent: "center",
                   }}
                 >
-                  <Typography variant="h5" color="primary.dark" sx={{ px: 2, textAlign: "center" }}>
+                  <Typography
+                    variant="h5"
+                    color="primary.dark"
+                    sx={{ px: 2, textAlign: "center", maxWidth: "100%", overflowWrap: "anywhere", wordBreak: "break-word" }}
+                  >
                     {event.title}
                   </Typography>
                 </Box>
@@ -226,7 +233,7 @@ export function EventPublicShell(props: Props) {
                   {orgName.slice(0, 1)}
                 </Avatar>
                 <Box sx={{ flex: 1, minWidth: 0 }}>
-                  <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 700, overflowWrap: "anywhere", wordBreak: "break-word" }}>
                     {orgName}
                   </Typography>
                 </Box>
@@ -301,10 +308,10 @@ export function EventPublicShell(props: Props) {
           </Stack>
         </Grid>
 
-        <Grid size={{ xs: 12, md: 8 }}>
-          <Stack spacing={3}>
-            <Box>
-              <Typography variant="overline" color="primary" sx={{ fontWeight: 600 }}>
+        <Grid size={{ xs: 12, md: 8 }} sx={{ minWidth: 0 }}>
+          <Stack spacing={3} sx={{ minWidth: 0 }}>
+            <Box sx={{ minWidth: 0 }}>
+              <Typography variant="overline" color="primary" sx={{ fontWeight: 600, display: "block", overflowWrap: "anywhere", wordBreak: "break-word" }}>
                 {orgName}
               </Typography>
               <Typography
@@ -315,6 +322,10 @@ export function EventPublicShell(props: Props) {
                   letterSpacing: "-0.03em",
                   mt: 0.5,
                   lineHeight: 1.12,
+                  maxWidth: "100%",
+                  overflowWrap: "anywhere",
+                  wordBreak: "break-word",
+                  fontSize: { xs: "2.25rem", sm: "2.75rem", md: "3.25rem" },
                 }}
               >
                 {event.title}
@@ -423,8 +434,7 @@ export function EventPublicShell(props: Props) {
                     <Typography
                       variant="body2"
                       color="text.secondary"
-                      sx={{ mt: 0.5, lineHeight: 1.7 }}
-                      noWrap
+                      sx={{ mt: 0.5, lineHeight: 1.7, overflowWrap: "anywhere", wordBreak: "break-word" }}
                     >
                       {event.location}
                     </Typography>
@@ -538,7 +548,7 @@ export function EventPublicShell(props: Props) {
                     },
                   }}
                 >
-                  <DialogTitle sx={{ fontWeight: 750 }}>
+                  <DialogTitle sx={{ fontWeight: 750, overflowWrap: "anywhere", wordBreak: "break-word" }}>
                     Register · {event.title}
                   </DialogTitle>
                   <DialogContent sx={{ pt: 1 }}>
@@ -595,7 +605,7 @@ export function EventPublicShell(props: Props) {
                     paper: { sx: { borderRadius: 4 } },
                   }}
                 >
-                  <DialogTitle sx={{ fontWeight: 750 }}>
+                  <DialogTitle sx={{ fontWeight: 750, overflowWrap: "anywhere", wordBreak: "break-word" }}>
                     Feedback · {event.title}
                   </DialogTitle>
                   <DialogContent sx={{ pt: 1 }}>

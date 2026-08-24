@@ -32,7 +32,12 @@ export default async function RootLayout({
           <Providers>
             <AppBarNav />
             <Box component="main" sx={{ flex: 1, py: 3 }}>
-              <Container maxWidth="lg">{children}</Container>
+              <Container
+                maxWidth={false}
+                sx={{ width: "100%", maxWidth: 1440, mx: "auto", px: { xs: 2, sm: 3, lg: 4 } }}
+              >
+                {children}
+              </Container>
             </Box>
             <AppFooter />
           </Providers>

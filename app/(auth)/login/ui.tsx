@@ -12,6 +12,7 @@ import Box from "@mui/material/Box";
 import Tabs from "@mui/material/Tabs";
 import Tab from "@mui/material/Tab";
 import Link from "@mui/material/Link";
+import Typography from "@mui/material/Typography";
 import { signUpWithPassword } from "@/app/actions/auth";
 
 const showGoogle = process.env.NEXT_PUBLIC_AUTH_GOOGLE_CONFIGURED === "1";
@@ -137,7 +138,6 @@ export function LoginForm() {
     if (r.error) {
       if (r.code === "mfa_required") {
         setMfaRequired(true);
-        setMessage("Enter the code from your authenticator app to finish signing in.");
         return;
       }
       setError(mfaRequired ? "Invalid authenticator or recovery code." : "Invalid email or password.");
@@ -175,6 +175,59 @@ export function LoginForm() {
   }
 
   const isSignUp = mode === "signup";
+
+  if (mfaRequired) {
+    return (
+      <Stack component="form" spacing={2.5} onSubmit={handleSignIn}>
+        <Stack spacing={0.5}>
+          <Typography variant="h5" component="h2" sx={{ color: "common.white", fontWeight: 700 }}>
+            Verify it&apos;s you
+          </Typography>
+          <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.70)" }}>
+            Enter the code from your authenticator app for {email}.
+          </Typography>
+        </Stack>
+
+        {error ? <Alert severity="error">{error}</Alert> : null}
+
+        <TextField
+          label="Authenticator or recovery code"
+          required
+          fullWidth
+          autoFocus
+          value={totp}
+          onChange={(e) => setTotp(e.target.value)}
+          autoComplete="one-time-code"
+          helperText="Use a six-digit authenticator code or a recovery code."
+          sx={inputSx}
+        />
+
+        <Button
+          type="submit"
+          variant="contained"
+          size="large"
+          disabled={!!loading}
+          fullWidth
+          sx={primaryButtonSx}
+        >
+          {loading === "credentials" ? "Verifying…" : "Verify and sign in"}
+        </Button>
+
+        <Button
+          type="button"
+          variant="text"
+          disabled={!!loading}
+          onClick={() => {
+            resetMfaChallenge();
+            resetStatus();
+          }}
+          sx={{ alignSelf: "center", color: "rgba(255,255,255,0.7)", textTransform: "none" }}
+        >
+          Use a different account
+        </Button>
+      </Stack>
+    );
+  }
 
   return (
     <Stack spacing={2}>
@@ -306,18 +359,6 @@ export function LoginForm() {
           }
           sx={inputSx}
         />
-        {!isSignUp && mfaRequired ? (
-          <TextField
-            label="Authenticator or recovery code"
-            required
-            fullWidth
-            value={totp}
-            onChange={(e) => setTotp(e.target.value)}
-            autoComplete="one-time-code"
-            helperText="Use a six-digit authenticator code or a recovery code."
-            sx={inputSx}
-          />
-        ) : null}
         <Button
           type="submit"
           variant="contained"
@@ -332,9 +373,7 @@ export function LoginForm() {
               : "Create account"
             : loading === "credentials"
               ? "Signing in…"
-              : mfaRequired
-                ? "Verify and sign in"
-                : "Sign in"}
+              : "Sign in"}
         </Button>
       </Stack>
 

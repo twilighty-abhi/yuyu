@@ -7,6 +7,7 @@ import { prisma } from "@/lib/db";
 import { getRequestOrigin } from "@/lib/publicUrl";
 import { TicketQrPanel } from "@/components/ticket/TicketQrPanel";
 import { CancelRsvpButton } from "@/components/ticket/CancelRsvpButton";
+import { TicketDownloadButton } from "@/components/ticket/TicketDownloadButton";
 
 type Props = {
   params: Promise<{ token: string }>;
@@ -172,6 +173,17 @@ export default async function TicketPage({ params }: Props) {
       </Typography>
 
       <TicketQrPanel token={rsvp.checkInToken} />
+
+      {rsvp.status !== "REJECTED" ? (
+        <TicketDownloadButton
+          attendeeName={displayName(rsvp)}
+          eventTitle={title}
+          organisationName={orgName}
+          when={when}
+          location={locationLine.replace(/^ · /, "") || undefined}
+          ticketUrl={`${origin}/ticket/${rsvp.checkInToken}`}
+        />
+      ) : null}
 
       <Typography variant="caption" color="text.secondary" sx={{ wordBreak: "break-all" }}>
         Ticket link: {origin}/ticket/{rsvp.checkInToken}

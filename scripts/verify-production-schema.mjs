@@ -17,7 +17,7 @@ try {
     prisma.$queryRaw`
       SELECT indexname
       FROM pg_indexes
-      WHERE schemaname = 'public' AND tablename = 'Asset' AND indexname = 'Asset_key_key'
+      WHERE schemaname = 'public' AND indexname IN ('Asset_key_key', 'RSVP_event_attendee_unique', 'RSVP_instance_attendee_unique')
     `,
   ]);
   const columnNames = new Set(assetColumns.map((row) => row.column_name));
@@ -26,7 +26,7 @@ try {
   const missing = [
     ...["fileData", "key"].filter((column) => !columnNames.has(column)),
     ...["RSVP_exactly_one_target", "CheckInEvent_rsvpId_fkey", "AuditEvent_organisationId_fkey"].filter((name) => !constraintNames.has(name)),
-    ...["Asset_key_key"].filter((name) => !indexNames.has(name)),
+    ...["Asset_key_key", "RSVP_event_attendee_unique", "RSVP_instance_attendee_unique"].filter((name) => !indexNames.has(name)),
   ];
   if (missing.length > 0) {
     throw new Error(`Database schema contract failed; missing: ${missing.join(", ")}`);

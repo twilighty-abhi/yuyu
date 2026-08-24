@@ -1,17 +1,19 @@
 # Production operations
 
+[Documentation index](README.md)
+
 ## Required managed services
 
 - PostgreSQL with TLS, encryption at rest, point-in-time recovery, daily backups, and a tested restore process.
 - Redis reachable through `REDIS_URL`; production writes fail closed when it is unavailable.
-- S3-compatible object storage/CDN for future non-database asset delivery.
+- Private S3-compatible object storage for generated safe image derivatives.
 - Transactional email with a verified sending domain, SPF, DKIM, DMARC, bounce handling, and delivery monitoring.
 - Edge TLS termination and WAF/rate limiting. Configure only proxy headers that the edge overwrites.
 
 ## Deploy procedure
 
 1. Build and test the immutable image in CI.
-2. Run `npm run db:status`, then `npm run db:deploy` once as a release job using the migration database role.
+2. Run `npm run db:status`, then `npm run db:deploy` once as a release job using the migration database role. Run `npm run storage:migrate` when legacy database assets remain.
 3. Deploy application instances using a least-privileged runtime database role and production secrets from a secrets manager.
 4. Configure a scheduler to call `POST /api/internal/outbox` every minute with `Authorization: Bearer $CRON_SECRET`, and an authenticated readiness probe to call `GET /api/health/db` with `Authorization: Bearer $HEALTHCHECK_SECRET`.
 5. Verify readiness, error rate, email queue depth, database connections, and Redis health before shifting traffic.

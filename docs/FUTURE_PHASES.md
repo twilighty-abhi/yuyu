@@ -1,38 +1,42 @@
-# Future phases and reference
+# Future phases
 
-Living notes for work after Phase 1. Keep the Prisma schema lean; expand here first, then migrate.
+[Documentation index](README.md)
 
-## Deferred product scope
+This page contains only work that is not currently implemented. Current behavior belongs in [Features](FEATURES.md).
 
-- Recurring events and exception dates
-- Waitlists and RSVP states (e.g. `CONFIRMED`, `WAITLISTED`, `CANCELLED`)
-- Invite-only events and approval flows
-- Real email (magic links, confirmations, reminders) — replace Nodemailer stub with SMTP, Resend, etc.
-- Analytics (views, conversion, attendance)
-- Org-level billing and roles beyond OWNER/ADMIN/MEMBER
+## Security and assurance
 
-## Schema ideas (not implemented)
+- Replace email-knowledge certificate eligibility with one-time inbox verification when certificates carry value or personal data.
+- Expand automated coverage for every Server Action, role boundary, cross-tenant access attempt, and failure/rollback path.
+- Add automated SAST, secret scanning, container scanning, and a documented vulnerability-disclosure policy.
+- Commission an independent penetration test and threat-model review before handling sensitive or regulated data.
+- Add optional step-up authentication for especially destructive organiser and super-admin operations.
 
-- `Event`: `createdByUserId`, `recurrenceRule`, `visibility` enum, `cancelledAt`
-- `RSVP`: `status`, `checkedInAt`, optional `plusOne` count
-- Partial unique indexes on `(eventId, userId)` / `(eventId, guestEmail)` if `attendeeKey` is removed
-- Invite tokens table for private events
+## Privacy and account lifecycle
 
-Phase 1 uses `RSVP.attendeeKey` (`user:{id}` or `guest:{email}`) for a single `@@unique([eventId, attendeeKey])` under Prisma.
+- Self-service account data export, correction, and deletion workflows.
+- Audited organiser exports with purpose/approval recording.
+- Configurable tenant-level retention policies for registrations, feedback, and audit history.
+- Consent and policy-version records where legally required.
 
-## Suggested phases
+## Product expansion
 
-- **Phase 2**: Outbound email, RSVP confirmation, organiser notifications
-- **Phase 3**: Ticketing / paid events (Stripe or similar), refunds
-- **Phase 4**: Discovery, SEO landing for orgs, social previews
+- Paid tickets, taxes, refunds, discounts, and payment-provider reconciliation.
+- Rich attendee communications: campaigns, reminders, templates, delivery preferences, and unsubscribe management.
+- Calendar feeds and external calendar synchronization.
+- Expanded event analytics with privacy-preserving aggregation.
+- Organisation branding, custom domains, and configurable certificate templates.
+- More granular custom roles and per-action permissions.
+- Import/export tools for events and attendee rosters.
 
-## Operations
+## Scale and reliability
 
-- **Local DB**: `docker compose up -d`, `DATABASE_URL` in `.env`, then `npx prisma migrate dev`
-- **Production**: managed PostgreSQL; set `AUTH_SECRET`, `AUTH_URL`, OAuth credentials; run `prisma migrate deploy`
-- **RSVP abuse**: add rate limiting (per IP / per email) at the action or edge layer in a later phase
-- **App container**: Phase 1 runs Next on the host; a `Dockerfile` for the app is optional later
+- Dedicated asynchronous workers instead of scheduler-driven HTTP batches.
+- Load and soak testing with documented capacity targets.
+- Queue-depth, latency, object-store, and email-delivery service-level objectives.
+- Multi-region/read-replica planning if real traffic requires it.
+- Automated restore verification and disaster-recovery exercises.
 
-## Google sign-in UI
+## Documentation rule
 
-Set `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, and `NEXT_PUBLIC_AUTH_GOOGLE_CONFIGURED=1` so the login page shows the Google button.
+Move an item from this file to the appropriate current-state document only after the code, migrations, tests, configuration, and operational requirements are complete.

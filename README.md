@@ -1,289 +1,48 @@
-# Yuyu — Open-source event platform
+# Yuyu
 
-Yuyu is a Next.js + PostgreSQL event platform with a clean Material Design 3 UI and a solid foundation for multi-tenant orgs, organiser dashboards, and future scalability.
+Yuyu is a self-hosted, multi-tenant event platform built with Next.js, PostgreSQL, Prisma, Auth.js, and Material UI. It supports public and private events, registrations, recurring series, attendee workflows, QR check-in, feedback, certificates, and instance administration.
 
-## Tech stack
-
-- Next.js (App Router, TypeScript)
-- PostgreSQL
-- Prisma ORM
-- Auth.js / NextAuth v5 (email + password credentials and Google OAuth)
-- Material Design 3 (MUI v9 + custom theme tokens)
-- Zod validation
-
-## What you can do (today)
-
-- **Create organisations** (multi-member ready)
-- **Create events**
-- **Share public links**
-- **RSVP** as a signed-in user or guest email
-- **Organiser dashboard** for managing events, members, attendees, invites, and check-in
-- **Discovery + search** for public events
-
-## Routes (high level)
-
-- **Public**
-  - `/` home
-  - `/:orgSlug` organisation page
-  - `/:orgSlug/:eventSlug` event page
-  - `/discover` global discovery
-  - `/ticket/:token` ticket page for an RSVP token
-- **Auth**
-  - `/login`
-- **Dashboard**
-  - `/dashboard` your organisations
-  - `/dashboard/org/new` create organisation
-  - `/dashboard/:orgSlug` organisation dashboard
-  - `/dashboard/:orgSlug/event/:eventId` event management
-  - `/dashboard/:orgSlug/event/:eventId/check-in` check-in station
-  - `/dashboard/:orgSlug/members` members + invite links
-  - `/dashboard/:orgSlug/series/:seriesId` series management
-- **API**
-  - `POST /api/rsvp` submit RSVP (guest or logged-in)
-  - `GET /api/search?q=...` search endpoint for public events
-
-## Local development setup
-
-### Prerequisites
-
-- Node.js (recommended: 20+)
-- Docker + Docker Compose
-
-### 1) Install dependencies
+## Quick start
 
 ```bash
 npm install
-```
-
-### 2) Start Postgres
-
-```bash
 docker compose up -d
-```
-
-Default credentials are defined in `docker-compose.yml`.
-
-### 3) Configure environment variables
-
-Copy the example env file:
-
-```bash
 cp .env.example .env
-```
-
-Minimum required values:
-
-- `DATABASE_URL`: your Postgres connection string
-- `AUTH_SECRET`: session encryption secret
-- `AUTH_URL`: base URL for auth callbacks (local: `http://localhost:3000`)
-
-Optional:
-
-- `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`: enable Google OAuth
-- `NEXT_PUBLIC_AUTH_GOOGLE_CONFIGURED=1`: shows the Google button in the UI
-- `EMAIL_FROM`: used in the email stub logs
-- `SUPER_ADMIN_EMAIL`: a single email allowed to access `/super-admin`
-- `NEXT_PUBLIC_BASE_URL`: used to generate share links/invite links/ticket links (recommended in production)
-- `STORAGE_PUBLIC_BASE_URL`: used by `lib/storage` (stub) for URL generation
-
-Generate a strong `AUTH_SECRET`:
-
-```bash
-openssl rand -base64 32
-```
-
-### 4) Run migrations + generate Prisma client
-
-```bash
 npm run db:migrate
-```
-
-### 5) Start the app
-
-```bash
 npm run dev
 ```
 
 Open `http://localhost:3000`.
 
-### Testing
+## Documentation
 
-Run the fast unit suite while developing:
+The project handbook lives in [`docs/`](docs/README.md):
 
-```bash
-npm run test:unit
-```
+- [Features](docs/FEATURES.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Local development](docs/DEVELOPMENT.md)
+- [Configuration](docs/CONFIGURATION.md)
+- [Routes and HTTP endpoints](docs/ROUTES.md)
+- [Security model](docs/SECURITY.md)
+- [Testing and quality gates](docs/TESTING.md)
+- [Production release checklist](docs/PRODUCTION_RELEASE.md)
+- [Production operations](docs/production-operations.md)
+- [Future work](docs/FUTURE_PHASES.md)
 
-Run the browser smoke suite (the first run downloads Chromium):
-
-```bash
-npx playwright install chromium
-npm run test:e2e
-```
-
-Run the PostgreSQL-backed integration suite after starting the local database:
-
-```bash
-npm run test:integration
-```
-
-For focused coverage of RSVP validation and capacity controls:
+## Common commands
 
 ```bash
-npm run test:coverage
+npm run dev                  # development server
+npm run lint                 # ESLint
+npx tsc --noEmit             # TypeScript validation
+npm run test:unit            # unit tests
+npm run test:integration     # PostgreSQL-backed tests
+npm run test:e2e             # browser tests against development
+npm run test:e2e:production  # browser tests against standalone output
+npm run test:coverage        # repository-wide coverage report
+npm run build                # production build
 ```
-
-## Authentication
-
-### Email and password
-
-Users can create an account with name, email, and password, or sign in with an
-existing email/password pair. Passwords are hashed with `bcryptjs` (cost 12) and
-stored on `User.passwordHash`. Sessions use JWTs (required by Auth.js Credentials
-provider); OAuth accounts are still persisted via the Prisma adapter.
-
-Minimum password length: 8 characters. Update the schema in
-`app/actions/auth.ts` if you want stricter rules.
-
-### Google OAuth
-
-1. Create OAuth credentials in Google Cloud Console.
-2. Set:
-   - `AUTH_GOOGLE_ID`
-   - `AUTH_GOOGLE_SECRET`
-   - `NEXT_PUBLIC_AUTH_GOOGLE_CONFIGURED=1`
-3. Restart the dev server.
-
-## Core workflows
-
-### Create an organisation
-
-1. Sign in.
-2. Go to `/dashboard`.
-3. Create an organisation at `/dashboard/org/new`.
-4. You become the **OWNER** automatically.
-
-### Create an event
-
-1. Open `/dashboard/:orgSlug`.
-2. Click **Create Event**.
-3. Fill details (title, times, timezone, location/online, capacity, status).
-4. If the event is **published**, it becomes visible on:
-   - `/:orgSlug/:eventSlug`
-   - the org page
-
-### Share link
-
-- Share the public event page URL: `/:orgSlug/:eventSlug`
-
-### RSVP (guest or signed-in)
-
-- Public event page shows an RSVP UI.
-- Guests provide an email; signed-in users can RSVP without typing email.
-- Duplicate RSVP attempts are blocked.
-
-### Organiser: manage attendees
-
-From `/dashboard/:orgSlug/event/:eventId`:
-
-- View all RSVPs
-- Search/filter attendees
-- Remove RSVPs
-- For advanced privacy modes:
-  - Approve/reject pending approvals
-  - Promote waitlisted attendees
-
-### Organiser: member management + invite links
-
-From `/dashboard/:orgSlug/members`:
-
-- View members + roles
-- Owner can change roles and remove members
-- Admins can create invite links (token-based) for members to join
-
-### Check-in station + tickets
-
-- Each RSVP gets a `checkInToken`
-- Attendees can open their ticket page: `/ticket/:token`
-- Organisers can use the check-in station:
-  - `/dashboard/:orgSlug/event/:eventId/check-in`
-
-## Rate limiting
-
-Rate limiting is enforced by `middleware.ts` using `lib/rateLimit.ts` for:
-
-- `/api/*` (global)
-- `/api/auth/*` (auth)
-- `POST /api/rsvp` (rsvp)
-- `/api/search` (search)
-
-Production requires `REDIS_URL`. Sensitive limits fail closed when Redis is unavailable; local development may use the in-memory fallback.
-
-## Super admin panel
-
-- Route: `/super-admin`
-- Access: **server-side enforced** by `SUPER_ADMIN_EMAIL` (only that email can access; others get a 404).
-- Monitoring endpoints:
-  - `GET /api/health`
-  - `GET /api/health/db`
-
-## Production deployment notes
-
-### Environment variables
-
-At minimum, set:
-
-- `DATABASE_URL`
-- `AUTH_SECRET`
-- `AUTH_URL`
-- `NEXT_PUBLIC_BASE_URL` (the same HTTPS origin as `AUTH_URL`)
-- `REDIS_URL`, `CRON_SECRET`, `HEALTHCHECK_SECRET`, and `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY`
-- `EMAIL_FROM` plus either `SMTP_SERVICE` or a complete `SMTP_HOST` / `SMTP_USER` / `SMTP_PASSWORD` configuration
-- `TRUSTED_PROXY_IP_HEADER` matching the header your reverse proxy overwrites
-
-Build the production image with the same Server Action key supplied to the
-runtime deployment (and set the public Google flag at build time when used):
-
-```bash
-docker build \
-  --build-arg NEXT_SERVER_ACTIONS_ENCRYPTION_KEY="$NEXT_SERVER_ACTIONS_ENCRYPTION_KEY" \
-  --build-arg NEXT_PUBLIC_AUTH_GOOGLE_CONFIGURED="${NEXT_PUBLIC_AUTH_GOOGLE_CONFIGURED:-0}" \
-  -t yuyu:release .
-```
-
-Recommended:
-
-- `NEXT_PUBLIC_BASE_URL` (canonical base URL used for links)
-- `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` if using Google OAuth
-
-### Database
-
-Use managed Postgres with TLS, backups, point-in-time recovery, and scheduled restore drills. Run production-safe migrations:
-
-```bash
-npm run db:deploy
-```
-
-### Prisma + Next.js bundling
-
-`next.config.ts` includes:
-
-- `serverExternalPackages: ["@prisma/client"]`
-
-This prevents runtime issues where Prisma delegates for newer models (e.g. `eventSeries`) can be missing when bundled.
-
-## Repo structure (core)
-
-- `app/` routes (public + dashboard + API)
-- `components/` reusable UI components (MUI)
-- `lib/`
-  - `auth.ts` NextAuth config
-  - `db.ts` Prisma client singleton
-  - `permissions.ts` RBAC helpers
-  - `rateLimit.ts` middleware rate limiting
-  - `validators.ts` Zod schemas
-- `prisma/` schema + migrations
 
 ## License
 
-Open-source (add your preferred license file if publishing).
+No license file is currently included. Add one before distributing the project as open source.

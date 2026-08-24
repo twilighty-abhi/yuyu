@@ -17,9 +17,9 @@ export function AccountProfileForm(props: {
   email: string | null;
   image: string | null;
   gravatarUrl: string | null;
-  createdAt: Date;
+  createdAtLabel: string;
 }) {
-  const { email, image, gravatarUrl, createdAt } = props;
+  const { email, image, gravatarUrl, createdAtLabel } = props;
   const [name, setName] = useState(props.initialName);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -73,7 +73,7 @@ export function AccountProfileForm(props: {
           />
           <TextField label="Email address" value={email ?? ""} fullWidth disabled helperText="Email changes will be available in a future update." />
           <Typography variant="caption" color="text.secondary">
-            Account created {createdAt.toLocaleDateString(undefined, { dateStyle: "medium" })}
+            Account created {createdAtLabel}
           </Typography>
           <Button type="submit" variant="contained" disabled={pending} sx={{ alignSelf: "flex-start" }}>
             {pending ? "Saving…" : "Save profile"}

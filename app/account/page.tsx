@@ -19,7 +19,10 @@ export default async function AccountPage() {
       email={user.email}
       image={user.image}
       gravatarUrl={user.email ? gravatarUrl(user.email) : null}
-      createdAt={user.createdAt}
+      createdAtLabel={new Intl.DateTimeFormat("en-GB", {
+        dateStyle: "medium",
+        timeZone: "UTC",
+      }).format(user.createdAt)}
     />
   );
 }

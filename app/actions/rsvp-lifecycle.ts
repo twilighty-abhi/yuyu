@@ -6,10 +6,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { sendApprovalNotification } from "@/lib/email";
 import { canManageEvents, getMembership } from "@/lib/permissions";
-import {
-  countConfirmedForEvent,
-  countConfirmedForInstance,
-} from "@/lib/rsvpCapacity";
+import { confirmRsvpWithinCapacity } from "@/lib/rsvpCapacity";
 import { rsvpTransitionSchema } from "@/lib/validators";
 import type { ActionResult } from "./org";
 import { flattenZodErrors } from "./utils";
@@ -119,18 +116,19 @@ export async function approveRsvp(input: unknown): Promise<ActionResult> {
   }
 
   if (ctx.event) {
-    const cap = ctx.event.capacity;
-    const confirmed = await countConfirmedForEvent(ctx.event.id);
-    if (cap != null && confirmed >= cap) {
+    const result = await confirmRsvpWithinCapacity({
+      rsvpId: rsvp.id,
+      eventId: ctx.event.id,
+      capacity: ctx.event.capacity,
+      expectedStatuses: [RsvpStatus.PENDING_APPROVAL],
+    });
+    if (result === "full") {
       return {
         ok: false,
         error: "Event is at capacity. Free a spot or promote from waitlist first.",
       };
     }
-    await prisma.rSVP.update({
-      where: { id: rsvp.id },
-      data: { status: RsvpStatus.CONFIRMED },
-    });
+    if (result !== "confirmed") return { ok: false, error: "This RSVP was changed by another organiser." };
     const to = attendeeEmail(
       await prisma.rSVP.findUniqueOrThrow({
         where: { id: rsvp.id },
@@ -154,18 +152,19 @@ export async function approveRsvp(input: unknown): Promise<ActionResult> {
 
   const instance = ctx.instance!;
   const series = instance.series;
-  const cap = series.capacity;
-  const confirmed = await countConfirmedForInstance(instance.id);
-  if (cap != null && confirmed >= cap) {
+  const result = await confirmRsvpWithinCapacity({
+    rsvpId: rsvp.id,
+    eventInstanceId: instance.id,
+    capacity: series.capacity,
+    expectedStatuses: [RsvpStatus.PENDING_APPROVAL],
+  });
+  if (result === "full") {
     return {
       ok: false,
       error: "This occurrence is at capacity.",
     };
   }
-  await prisma.rSVP.update({
-    where: { id: rsvp.id },
-    data: { status: RsvpStatus.CONFIRMED },
-  });
+  if (result !== "confirmed") return { ok: false, error: "This RSVP was changed by another organiser." };
   const row = await prisma.rSVP.findUniqueOrThrow({
     where: { id: rsvp.id },
     include: { user: { select: { email: true } } },
@@ -219,10 +218,11 @@ export async function rejectRsvp(input: unknown): Promise<ActionResult> {
     return { ok: false, error: "This RSVP cannot be rejected." };
   }
 
-  await prisma.rSVP.update({
-    where: { id: rsvp.id },
+  const rejected = await prisma.rSVP.updateMany({
+    where: { id: rsvp.id, status: { in: [RsvpStatus.PENDING_APPROVAL, RsvpStatus.WAITLISTED] } },
     data: { status: RsvpStatus.REJECTED },
   });
+  if (rejected.count !== 1) return { ok: false, error: "This RSVP was changed by another organiser." };
 
   if (ctx.event) {
     const to = attendeeEmail(
@@ -299,15 +299,16 @@ export async function promoteFromWaitlist(input: unknown): Promise<ActionResult>
   }
 
   if (ctx.event) {
-    const cap = ctx.event.capacity;
-    const confirmed = await countConfirmedForEvent(ctx.event.id);
-    if (cap != null && confirmed >= cap) {
+    const result = await confirmRsvpWithinCapacity({
+      rsvpId: rsvp.id,
+      eventId: ctx.event.id,
+      capacity: ctx.event.capacity,
+      expectedStatuses: [RsvpStatus.WAITLISTED],
+    });
+    if (result === "full") {
       return { ok: false, error: "Event is still at capacity." };
     }
-    await prisma.rSVP.update({
-      where: { id: rsvp.id },
-      data: { status: RsvpStatus.CONFIRMED },
-    });
+    if (result !== "confirmed") return { ok: false, error: "This RSVP was changed by another organiser." };
     revalidateRsvpPaths({
       orgSlug: org.slug,
       eventSlug: ctx.event.slug,
@@ -318,15 +319,16 @@ export async function promoteFromWaitlist(input: unknown): Promise<ActionResult>
 
   const instance = ctx.instance!;
   const series = instance.series;
-  const cap = series.capacity;
-  const confirmed = await countConfirmedForInstance(instance.id);
-  if (cap != null && confirmed >= cap) {
+  const result = await confirmRsvpWithinCapacity({
+    rsvpId: rsvp.id,
+    eventInstanceId: instance.id,
+    capacity: series.capacity,
+    expectedStatuses: [RsvpStatus.WAITLISTED],
+  });
+  if (result === "full") {
     return { ok: false, error: "This occurrence is still at capacity." };
   }
-  await prisma.rSVP.update({
-    where: { id: rsvp.id },
-    data: { status: RsvpStatus.CONFIRMED },
-  });
+  if (result !== "confirmed") return { ok: false, error: "This RSVP was changed by another organiser." };
   revalidateRsvpPaths({
     orgSlug: org.slug,
     eventInstanceId: instance.id,

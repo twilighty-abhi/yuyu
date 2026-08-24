@@ -57,37 +57,32 @@ export async function cancelRsvp(input: {
     return { ok: false, error: "You can only cancel your own registration." };
   }
 
-  if (rsvp.checkedInAt) {
-    return { ok: false, error: "Cannot cancel — you have already checked in." };
-  }
-
-  const wasConfirmed = rsvp.status === "CONFIRMED";
-
-  // Delete the RSVP
-  await prisma.rSVP.delete({ where: { id: rsvp.id } });
-
-  // Auto-promote oldest waitlisted RSVP if a confirmed spot opened
-  if (wasConfirmed) {
-    const waitlistKey = rsvp.eventId
-      ? { eventId: rsvp.eventId }
-      : rsvp.eventInstanceId
-        ? { eventInstanceId: rsvp.eventInstanceId }
-        : null;
-
-    if (waitlistKey) {
-      const nextWaitlisted = await prisma.rSVP.findFirst({
-        where: { ...waitlistKey, status: "WAITLISTED" },
+  const cancellation = await prisma.$transaction(async (tx) => {
+    if (rsvp.eventId) {
+      await tx.$queryRaw`SELECT "id" FROM "Event" WHERE "id" = ${rsvp.eventId} FOR UPDATE`;
+    } else if (rsvp.eventInstanceId) {
+      await tx.$queryRaw`SELECT "id" FROM "EventInstance" WHERE "id" = ${rsvp.eventInstanceId} FOR UPDATE`;
+    }
+    const current = await tx.rSVP.findUnique({ where: { id: rsvp.id } });
+    if (!current) return { error: "RSVP not found." };
+    if (current.checkedInAt) return { error: "Cannot cancel — you have already checked in." };
+    await tx.rSVP.delete({ where: { id: current.id } });
+    if (current.status === "CONFIRMED") {
+      const target = current.eventId ? { eventId: current.eventId } : { eventInstanceId: current.eventInstanceId! };
+      const nextWaitlisted = await tx.rSVP.findFirst({
+        where: { ...target, status: "WAITLISTED" },
         orderBy: { createdAt: "asc" },
       });
-
       if (nextWaitlisted) {
-        await prisma.rSVP.update({
-          where: { id: nextWaitlisted.id },
+        await tx.rSVP.updateMany({
+          where: { id: nextWaitlisted.id, status: "WAITLISTED" },
           data: { status: "CONFIRMED" },
         });
       }
     }
-  }
+    return { error: null };
+  });
+  if (cancellation.error) return { ok: false, error: cancellation.error };
 
   // Revalidate public pages
   const orgSlug =

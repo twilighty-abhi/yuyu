@@ -138,7 +138,7 @@ export function EventCheckInClient(props: {
 
   useEffect(() => {
     if ("serviceWorker" in navigator) {
-      void navigator.serviceWorker.register("/sw.js", { scope: "/", updateViaCache: "none" }).catch(() => {
+      void navigator.serviceWorker.register("/sw.js", { scope: "/dashboard/", updateViaCache: "none" }).catch(() => {
         // Offline data remains available even if the browser disallows service workers.
       });
     }
@@ -155,7 +155,13 @@ export function EventCheckInClient(props: {
         showToast(res.error, "error");
         return;
       }
-      const roster: OfflineRoster = { eventId, ...res.data! };
+      const roster: OfflineRoster = {
+        eventId,
+        ...res.data!,
+        // Attendee data and bearer ticket tokens must not persist on a shared
+        // device beyond the event-day operational window.
+        expiresAt: new Date(Date.now() + 24 * 60 * 60_000).toISOString(),
+      };
       await saveOfflineRoster(roster);
       await refreshOfflineState();
       showToast("Offline roster saved to this device.", "success");

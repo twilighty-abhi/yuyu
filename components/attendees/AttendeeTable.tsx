@@ -419,24 +419,9 @@ export function AttendeeTable(props: {
                   label: "Undo",
                   onClick: () => {
                     startTransition(async () => {
-                      const checkInToken = targetAttendee.ticketUrl.split("/").pop() || "";
-                      const attendeeKey = targetAttendee.user
-                        ? `user:${targetAttendee.user.id}`
-                        : `guest:${(targetAttendee.guestEmail || "").trim().toLowerCase()}`;
-
                       const restoreRes = await restoreRsvp({
                         organisationSlug,
-                        eventId,
-                        eventInstanceId,
-                        userId: targetAttendee.user?.id,
-                        guestEmail: targetAttendee.guestEmail,
-                        guestName: targetAttendee.guestName,
-                        status: targetAttendee.status,
-                        attendeeKey,
-                        checkInToken,
-                        checkedInAt: targetAttendee.checkedInAt,
-                        createdAt: targetAttendee.createdAt,
-                        answers: targetAttendee.rawAnswers || [],
+                        undoId: res.data!.undoId,
                       });
                       if (restoreRes.ok) {
                         showToast("Attendee restored", "success");

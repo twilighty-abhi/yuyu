@@ -1,6 +1,10 @@
 import type { RsvpStatus } from "@prisma/client";
 import nodemailer from "nodemailer";
 
+function escapeHtml(value: string) {
+  return value.replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]!);
+}
+
 function getTransporter() {
   const service = process.env.SMTP_SERVICE;
   const host = process.env.SMTP_HOST;
@@ -13,6 +17,8 @@ function getTransporter() {
     return nodemailer.createTransport({
       service,
       auth: user && pass ? { user, pass } : undefined,
+      disableFileAccess: true,
+      disableUrlAccess: true,
     });
   }
 
@@ -25,6 +31,8 @@ function getTransporter() {
     port,
     secure,
     auth: user && pass ? { user, pass } : undefined,
+    disableFileAccess: true,
+    disableUrlAccess: true,
   });
 }
 
@@ -47,6 +55,8 @@ export async function sendRSVPConfirmation(params: {
   const baseUrl = getBaseUrl();
 
   const ticketUrl = params.checkInToken ? `${baseUrl}/ticket/${params.checkInToken}` : null;
+  const safeTitle = escapeHtml(params.eventTitle);
+  const safeTicketUrl = ticketUrl ? escapeHtml(ticketUrl) : null;
 
   let statusText = "Confirmed";
   let statusMessage = "Your RSVP has been confirmed. We look forward to seeing you!";
@@ -63,7 +73,7 @@ export async function sendRSVPConfirmation(params: {
     <html>
       <head>
         <meta charset="utf-8">
-        <title>RSVP ${statusText}: ${params.eventTitle}</title>
+        <title>RSVP ${statusText}: ${safeTitle}</title>
       </head>
       <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8f9fa; margin: 0; padding: 20px; color: #1c1b1f;">
         <div style="max-width: 600px; margin: 40px auto; background-color: #ffffff; border-radius: 16px; border: 1px solid #e0e0e0; box-shadow: 0 4px 12px rgba(0,0,0,0.05); overflow: hidden;">
@@ -74,19 +84,19 @@ export async function sendRSVPConfirmation(params: {
             <h2 style="margin-top: 0; color: #6750A4; font-size: 20px; font-weight: 600;">RSVP Status: ${statusText}</h2>
             <p style="font-size: 16px; line-height: 1.5; color: #49454f; margin-bottom: 24px;">
               Hello,<br><br>
-              Thank you for registering for <strong>${params.eventTitle}</strong>. ${statusMessage}
+              Thank you for registering for <strong>${safeTitle}</strong>. ${statusMessage}
             </p>
             ${
               ticketUrl && params.status === "CONFIRMED"
                 ? `
               <div style="text-align: center; margin: 32px 0;">
-                <a href="${ticketUrl}" style="background-color: #6750A4; color: #ffffff; padding: 14px 28px; border-radius: 100px; text-decoration: none; font-weight: 600; font-size: 16px; display: inline-block; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                <a href="${safeTicketUrl}" style="background-color: #6750A4; color: #ffffff; padding: 14px 28px; border-radius: 100px; text-decoration: none; font-weight: 600; font-size: 16px; display: inline-block; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
                   View Your Ticket & QR Code
                 </a>
               </div>
               <p style="font-size: 14px; text-align: center; color: #79747e; margin-bottom: 24px;">
                 Or copy and paste this link: <br>
-                <a href="${ticketUrl}" style="color: #6750A4; text-decoration: underline;">${ticketUrl}</a>
+                <a href="${safeTicketUrl}" style="color: #6750A4; text-decoration: underline;">${safeTicketUrl}</a>
               </p>
             `
                 : ""
@@ -130,9 +140,10 @@ export async function sendApprovalNotification(params: {
   const from = getFromAddress();
 
   const statusText = params.approved ? "Approved" : "Declined";
+  const safeTitle = escapeHtml(params.eventTitle);
   const statusMessage = params.approved
-    ? `Great news! Your RSVP request for <strong>${params.eventTitle}</strong> has been approved by the organizer.`
-    : `We regret to inform you that your RSVP request for <strong>${params.eventTitle}</strong> has been declined by the organizer.`;
+    ? `Great news! Your RSVP request for <strong>${safeTitle}</strong> has been approved by the organizer.`
+    : `We regret to inform you that your RSVP request for <strong>${safeTitle}</strong> has been declined by the organizer.`;
 
   const html = `
     <!DOCTYPE html>
@@ -191,6 +202,7 @@ export async function sendReminder(params: {
   const from = getFromAddress();
 
   const formattedDate = new Date(params.startsAtIso).toLocaleString();
+  const safeTitle = escapeHtml(params.eventTitle);
 
   const html = `
     <!DOCTYPE html>
@@ -208,7 +220,7 @@ export async function sendReminder(params: {
             <h2 style="margin-top: 0; color: #6750A4; font-size: 20px; font-weight: 600;">Upcoming Event Reminder</h2>
             <p style="font-size: 16px; line-height: 1.5; color: #49454f; margin-bottom: 24px;">
               Hello,<br><br>
-              This is a reminder that the event <strong>${params.eventTitle}</strong> is starting soon!<br><br>
+              This is a reminder that the event <strong>${safeTitle}</strong> is starting soon!<br><br>
               <strong>Start Time:</strong> ${formattedDate}
             </p>
           </div>

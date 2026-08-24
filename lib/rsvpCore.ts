@@ -460,17 +460,10 @@ export async function submitRsvpCore(
   }
 
   if (event.privacyType === EventPrivacyType.INVITE_ONLY) {
-    const ok = await prisma.eventInvite.findUnique({
-      where: {
-        eventId_email: { eventId: event.id, email: emailNorm },
-      },
-    });
-    if (!ok) {
-      return {
-        ok: false,
-        error: "This event is invite-only. Use the email you were invited with.",
-      };
-    }
+    // A guest can assert any email address. Invite-only registration therefore
+    // requires an authenticated account; do not issue bearer ticket tokens
+    // solely because an entered address appears on an invite list.
+    return { ok: false, error: "This event is invite-only. Sign in with the invited account to register." };
   }
 
   const attendeeKey = `guest:${emailNorm}`;
@@ -576,6 +569,9 @@ async function submitInstanceRsvp(params: {
   if ("error" in emailRes) return { ok: false, error: emailRes.error };
 
   if (series.privacyType === EventPrivacyType.INVITE_ONLY) {
+    if (!userId) {
+      return { ok: false, error: "This event is invite-only. Sign in with the invited account to register." };
+    }
     const ok = await prisma.seriesInvite.findUnique({
       where: {
         eventSeriesId_email: {

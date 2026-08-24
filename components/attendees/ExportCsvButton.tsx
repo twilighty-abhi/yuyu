@@ -5,10 +5,13 @@ import FileDownloadOutlinedIcon from "@mui/icons-material/FileDownloadOutlined";
 import type { AttendeeRow } from "@/components/attendees/AttendeeTable";
 
 function escapeCell(value: string): string {
-  if (/[",\n\r]/.test(value)) {
-    return `"${value.replace(/"/g, '""')}"`;
+  // Spreadsheet applications treat these prefixes as formulas even in a CSV.
+  // Prefix with a tab so attendee-controlled values remain literal text.
+  const safeValue = /^[=+\-@]/.test(value) ? `\t${value}` : value;
+  if (/[",\n\r]/.test(safeValue)) {
+    return `"${safeValue.replace(/"/g, '""')}"`;
   }
-  return value;
+  return safeValue;
 }
 
 export function ExportCsvButton(props: {

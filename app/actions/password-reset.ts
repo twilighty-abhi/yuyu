@@ -119,39 +119,26 @@ export async function confirmPasswordReset(
   }
   const tokenHash = hashToken(token);
 
-  const record = await prisma.verificationToken.findFirst({
-    where: {
-      identifier: `reset:${email}`,
-      token: tokenHash,
-    },
-  });
-
-  if (!record) {
-    return { ok: false, error: "Invalid or expired reset link." };
-  }
-
-  if (record.expires < new Date()) {
-    // Clean up expired token
-    await prisma.verificationToken.deleteMany({
-      where: { identifier: `reset:${email}`, token: tokenHash },
-    });
-    return {
-      ok: false,
-      error: "This reset link has expired. Please request a new one.",
-    };
-  }
-
-  // Update the password
   const passwordHash = await bcrypt.hash(password, 12);
-  await prisma.user.update({
-    where: { email },
-    data: { passwordHash, sessionVersion: { increment: 1 } },
+  const result = await prisma.$transaction(async (tx) => {
+    // Consume the exact token before changing credentials. This makes a reset
+    // link single-use even if two requests arrive at the same time.
+    const consumed = await tx.verificationToken.deleteMany({
+      where: {
+        identifier: `reset:${email}`,
+        token: tokenHash,
+        expires: { gt: new Date() },
+      },
+    });
+    if (consumed.count !== 1) return false;
+    await tx.user.update({
+      where: { email },
+      data: { passwordHash, sessionVersion: { increment: 1 } },
+    });
+    await tx.verificationToken.deleteMany({ where: { identifier: `reset:${email}` } });
+    return true;
   });
-
-  // Delete the used token
-  await prisma.verificationToken.deleteMany({
-    where: { identifier: `reset:${email}` },
-  });
+  if (!result) return { ok: false, error: "Invalid or expired reset link." };
 
   return { ok: true, data: { reset: true } };
 }

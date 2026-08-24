@@ -1,5 +1,9 @@
 import nodemailer from "nodemailer";
 
+function escapeHtml(value: string) {
+  return value.replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]!);
+}
+
 function getTransporter() {
   const service = process.env.SMTP_SERVICE;
   const host = process.env.SMTP_HOST;
@@ -12,6 +16,8 @@ function getTransporter() {
     return nodemailer.createTransport({
       service,
       auth: user && pass ? { user, pass } : undefined,
+      disableFileAccess: true,
+      disableUrlAccess: true,
     });
   }
 
@@ -22,6 +28,8 @@ function getTransporter() {
     port,
     secure,
     auth: user && pass ? { user, pass } : undefined,
+    disableFileAccess: true,
+    disableUrlAccess: true,
   });
 }
 
@@ -35,6 +43,7 @@ export async function sendPasswordResetEmail(params: {
 }): Promise<void> {
   const transporter = getTransporter();
   const from = getFromAddress();
+  const safeResetUrl = escapeHtml(params.resetUrl);
 
   const html = `
     <!DOCTYPE html>
@@ -55,13 +64,13 @@ export async function sendPasswordResetEmail(params: {
               We received a request to reset the password for your account. Click the button below to set a new password. This link will expire in 1 hour.
             </p>
             <div style="text-align: center; margin: 32px 0;">
-              <a href="${params.resetUrl}" style="background-color: #6750A4; color: #ffffff; padding: 14px 28px; border-radius: 100px; text-decoration: none; font-weight: 600; font-size: 16px; display: inline-block; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+              <a href="${safeResetUrl}" style="background-color: #6750A4; color: #ffffff; padding: 14px 28px; border-radius: 100px; text-decoration: none; font-weight: 600; font-size: 16px; display: inline-block; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
                 Reset Password
               </a>
             </div>
             <p style="font-size: 14px; text-align: center; color: #79747e; margin-bottom: 24px;">
               Or copy and paste this link: <br>
-              <a href="${params.resetUrl}" style="color: #6750A4; text-decoration: underline; word-break: break-all;">${params.resetUrl}</a>
+              <a href="${safeResetUrl}" style="color: #6750A4; text-decoration: underline; word-break: break-all;">${safeResetUrl}</a>
             </p>
             <p style="font-size: 13px; color: #79747e; line-height: 1.5;">
               If you didn't request a password reset, you can safely ignore this email. Your password will not be changed.

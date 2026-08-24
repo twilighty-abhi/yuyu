@@ -73,6 +73,7 @@ model User {
   orgInvitesUsed    OrganisationInvite[] @relation("OrgInviteUsedBy")
   auditEvents       AuditEvent[]
   checkInEvents     CheckInEvent[]
+  rsvpDeletionUndos RsvpDeletionUndo[]
 }
 
 model Account {
@@ -124,6 +125,7 @@ model Organisation {
   eventSeries EventSeries[]
   assets      Asset[]
   auditEvents AuditEvent[]
+  rsvpDeletionUndos RsvpDeletionUndo[]
 }
 
 model OrganisationInvite {
@@ -281,6 +283,23 @@ model RSVP {
   @@index([checkInToken])
 }
 
+/// Short-lived, server-created snapshots used to undo an organiser deletion.
+/// Never accept RSVP snapshots directly from a browser.
+model RsvpDeletionUndo {
+  id              String   @id @default(cuid())
+  organisationId  String
+  deletedByUserId String
+  payload         Json
+  expiresAt       DateTime
+  createdAt       DateTime @default(now())
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  deletedBy    User         @relation(fields: [deletedByUserId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId, expiresAt])
+  @@index([expiresAt])
+}
+
 model EventRegistrationForm {
   id        String   @id @default(cuid())
   eventId   String   @unique
@@ -345,7 +364,7 @@ model AuditEvent {
   createdAt      DateTime @default(now())
 
   actor        User?         @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
-  organisation Organisation? @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  organisation Organisation? @relation(fields: [organisationId], references: [id], onDelete: SetNull)
 
   @@index([organisationId, createdAt])
   @@index([actorUserId, createdAt])
@@ -356,13 +375,13 @@ model AuditEvent {
 /// synchronisation. `RSVP.checkedInAt` remains the current projection.
 model CheckInEvent {
   id          String   @id @default(cuid())
-  rsvpId      String
+  rsvpId      String?
   actorUserId String?
   action      String
   source      String
   occurredAt  DateTime @default(now())
 
-  rsvp  RSVP  @relation(fields: [rsvpId], references: [id], onDelete: Cascade)
+  rsvp  RSVP? @relation(fields: [rsvpId], references: [id], onDelete: SetNull)
   actor User? @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
 
   @@index([rsvpId, occurredAt])

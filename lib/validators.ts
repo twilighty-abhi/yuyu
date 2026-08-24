@@ -201,10 +201,14 @@ export const deleteRsvpSchema = z
   })
   .refine(
     (d) =>
-      (d.eventId != null && d.eventId.length > 0) ||
-      (d.eventInstanceId != null && d.eventInstanceId.length > 0),
+      Boolean(d.eventId?.length) !== Boolean(d.eventInstanceId?.length),
     { message: "Event or instance is required.", path: ["eventId"] },
   );
+
+export const restoreRsvpSchema = z.object({
+  organisationSlug: z.string().trim().min(1),
+  undoId: z.string().trim().min(1),
+});
 
 export const deleteOrganisationSchema = z.object({
   organisationSlug: z.string().trim().min(1),

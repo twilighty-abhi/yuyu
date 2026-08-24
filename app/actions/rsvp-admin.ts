@@ -1,161 +1,187 @@
 "use server";
 
+import { Prisma, RsvpStatus } from "@prisma/client";
 import { revalidatePath } from "next/cache";
-import { RsvpStatus } from "@prisma/client";
+import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { canManageEvents, getMembership } from "@/lib/permissions";
-import { deleteRsvpSchema } from "@/lib/validators";
+import { deleteRsvpSchema, restoreRsvpSchema } from "@/lib/validators";
 import type { ActionResult } from "./org";
 import { flattenZodErrors } from "./utils";
 
-export async function deleteRsvp(input: unknown): Promise<ActionResult> {
-  const session = await auth();
-  if (!session?.user?.id) {
-    return { ok: false, error: "You must be signed in." };
+const UNDO_TTL_MS = 5 * 60_000;
+
+const snapshotSchema = z.object({
+  eventId: z.string().min(1).nullable(),
+  eventInstanceId: z.string().min(1).nullable(),
+  userId: z.string().min(1).nullable(),
+  guestEmail: z.string().email().nullable(),
+  guestName: z.string().max(200).nullable(),
+  status: z.nativeEnum(RsvpStatus),
+  attendeeKey: z.string().min(1).max(512),
+  checkInToken: z.string().min(8).max(256),
+  checkedInAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+  answers: z.array(z.object({
+    fieldId: z.string().min(1),
+    valueText: z.string().nullable(),
+    valueBool: z.boolean().nullable(),
+    valueNumber: z.number().finite().nullable(),
+    valueDate: z.string().datetime().nullable(),
+  })).max(200),
+}).refine(
+  (value) => Boolean(value.eventId) !== Boolean(value.eventInstanceId),
+  { message: "Invalid RSVP target." },
+);
+
+function revalidateRsvpPaths(orgSlug: string, target: { eventId: string | null; eventInstanceId: string | null; eventSlug?: string }) {
+  revalidatePath(`/${orgSlug}`);
+  revalidatePath(`/dashboard/${orgSlug}`);
+  if (target.eventId) {
+    revalidatePath(`/dashboard/${orgSlug}/event/${target.eventId}`);
+    if (target.eventSlug) revalidatePath(`/${orgSlug}/${target.eventSlug}`);
   }
+  if (target.eventInstanceId) revalidatePath(`/${orgSlug}/i/${target.eventInstanceId}`);
+}
+
+export async function deleteRsvp(input: unknown): Promise<ActionResult<{ undoId: string }>> {
+  const session = await auth();
+  if (!session?.user?.id) return { ok: false, error: "You must be signed in." };
 
   const parsed = deleteRsvpSchema.safeParse(input);
   if (!parsed.success) {
-    return {
-      ok: false,
-      error: "Invalid input.",
-      fieldErrors: flattenZodErrors(parsed.error),
-    };
+    return { ok: false, error: "Invalid input.", fieldErrors: flattenZodErrors(parsed.error) };
   }
 
   const { organisationSlug, eventId, eventInstanceId, rsvpId } = parsed.data;
-  const org = await prisma.organisation.findUnique({
-    where: { slug: organisationSlug },
-  });
+  const org = await prisma.organisation.findUnique({ where: { slug: organisationSlug } });
   if (!org) return { ok: false, error: "Organisation not found." };
-
   const membership = await getMembership(session.user.id, org.id);
-  if (!canManageEvents(membership)) {
-    return {
-      ok: false,
-      error: "You do not have permission to manage attendees.",
-    };
-  }
+  if (!canManageEvents(membership)) return { ok: false, error: "You do not have permission to manage attendees." };
 
-  if (eventId) {
-    const event = await prisma.event.findFirst({
-      where: { id: eventId, organisationId: org.id },
-    });
-    if (!event) return { ok: false, error: "Event not found." };
-
-    const rsvp = await prisma.rSVP.findFirst({
-      where: { id: rsvpId, eventId: event.id },
-    });
-    if (!rsvp) return { ok: false, error: "RSVP not found." };
-
-    await prisma.rSVP.delete({ where: { id: rsvp.id } });
-
-    revalidatePath(`/${org.slug}/${event.slug}`);
-    revalidatePath(`/${org.slug}`);
-    revalidatePath(`/dashboard/${org.slug}`);
-    revalidatePath(`/dashboard/${org.slug}/event/${event.id}`);
-    return { ok: true };
-  }
-
-  if (eventInstanceId) {
-    const instance = await prisma.eventInstance.findFirst({
-      where: {
-        id: eventInstanceId,
-        series: { organisationId: org.id },
-      },
-    });
-    if (!instance) return { ok: false, error: "Event not found." };
-
-    const rsvp = await prisma.rSVP.findFirst({
-      where: { id: rsvpId, eventInstanceId: instance.id },
-    });
-    if (!rsvp) return { ok: false, error: "RSVP not found." };
-
-    await prisma.rSVP.delete({ where: { id: rsvp.id } });
-
-    revalidatePath(`/${org.slug}/i/${instance.id}`);
-    revalidatePath(`/${org.slug}`);
-    revalidatePath(`/dashboard/${org.slug}`);
-    return { ok: true };
-  }
-
-  return { ok: false, error: "Event not found." };
-}
-
-export async function restoreRsvp(input: {
-  organisationSlug: string;
-  eventId?: string | null;
-  eventInstanceId?: string | null;
-  userId?: string | null;
-  guestEmail?: string | null;
-  guestName?: string | null;
-  status: RsvpStatus;
-  attendeeKey: string;
-  checkInToken: string;
-  checkedInAt?: Date | string | null;
-  createdAt: Date | string;
-  answers: Array<{
-    fieldId: string;
-    valueText?: string | null;
-    valueBool?: boolean | null;
-    valueNumber?: number | null;
-    valueDate?: Date | string | null;
-  }>;
-}): Promise<ActionResult> {
-  const session = await auth();
-  if (!session?.user?.id) {
-    return { ok: false, error: "You must be signed in." };
-  }
-
-  const org = await prisma.organisation.findUnique({
-    where: { slug: input.organisationSlug },
-  });
-  if (!org) return { ok: false, error: "Organisation not found." };
-
-  const membership = await getMembership(session.user.id, org.id);
-  if (!canManageEvents(membership)) {
-    return {
-      ok: false,
-      error: "You do not have permission to restore RSVPs.",
-    };
-  }
-
-  await prisma.rSVP.create({
-    data: {
-      eventId: input.eventId || null,
-      eventInstanceId: input.eventInstanceId || null,
-      userId: input.userId || null,
-      guestEmail: input.guestEmail || null,
-      guestName: input.guestName || null,
-      status: input.status,
-      attendeeKey: input.attendeeKey,
-      checkInToken: input.checkInToken,
-      checkedInAt: input.checkedInAt ? new Date(input.checkedInAt) : null,
-      createdAt: new Date(input.createdAt),
-      answers: {
-        create: input.answers.map((ans) => ({
-          fieldId: ans.fieldId,
-          valueText: ans.valueText || null,
-          valueBool: ans.valueBool ?? null,
-          valueNumber: ans.valueNumber ?? null,
-          valueDate: ans.valueDate ? new Date(ans.valueDate) : null,
-        })),
-      },
+  const rsvp = await prisma.rSVP.findFirst({
+    where: {
+      id: rsvpId,
+      ...(eventId ? { eventId, event: { organisationId: org.id } } : { eventInstanceId, eventInstance: { series: { organisationId: org.id } } }),
+    },
+    include: {
+      answers: true,
+      event: { select: { slug: true } },
     },
   });
+  if (!rsvp) return { ok: false, error: "RSVP not found." };
 
-  if (input.eventId) {
-    const event = await prisma.event.findUnique({ where: { id: input.eventId } });
-    if (event) {
-      revalidatePath(`/${org.slug}/${event.slug}`);
-      revalidatePath(`/dashboard/${org.slug}/event/${event.id}`);
+  const snapshot = {
+    eventId: rsvp.eventId,
+    eventInstanceId: rsvp.eventInstanceId,
+    userId: rsvp.userId,
+    guestEmail: rsvp.guestEmail,
+    guestName: rsvp.guestName,
+    status: rsvp.status,
+    attendeeKey: rsvp.attendeeKey,
+    checkInToken: rsvp.checkInToken,
+    checkedInAt: rsvp.checkedInAt?.toISOString() ?? null,
+    createdAt: rsvp.createdAt.toISOString(),
+    answers: rsvp.answers.map((answer) => ({
+      fieldId: answer.fieldId,
+      valueText: answer.valueText,
+      valueBool: answer.valueBool,
+      valueNumber: answer.valueNumber,
+      valueDate: answer.valueDate?.toISOString() ?? null,
+    })),
+  };
+
+  const undo = await prisma.$transaction(async (tx) => {
+    // Keep the short-lived undo table bounded even when no scheduled cleanup is
+    // configured. Expired snapshots are never eligible for restoration.
+    await tx.rsvpDeletionUndo.deleteMany({ where: { expiresAt: { lte: new Date() } } });
+    const created = await tx.rsvpDeletionUndo.create({
+      data: {
+        organisationId: org.id,
+        deletedByUserId: session.user.id,
+        payload: snapshot as Prisma.InputJsonValue,
+        expiresAt: new Date(Date.now() + UNDO_TTL_MS),
+      },
+      select: { id: true },
+    });
+    await tx.rSVP.delete({ where: { id: rsvp.id } });
+    return created;
+  });
+
+  revalidateRsvpPaths(org.slug, { eventId: rsvp.eventId, eventInstanceId: rsvp.eventInstanceId, eventSlug: rsvp.event?.slug });
+  return { ok: true, data: { undoId: undo.id } };
+}
+
+/** Restore only a short-lived snapshot created by this server for this organiser. */
+export async function restoreRsvp(input: unknown): Promise<ActionResult> {
+  const session = await auth();
+  if (!session?.user?.id) return { ok: false, error: "You must be signed in." };
+  const parsed = restoreRsvpSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Invalid restore request." };
+
+  const org = await prisma.organisation.findUnique({ where: { slug: parsed.data.organisationSlug } });
+  if (!org) return { ok: false, error: "Organisation not found." };
+  const membership = await getMembership(session.user.id, org.id);
+  if (!canManageEvents(membership)) return { ok: false, error: "You do not have permission to restore RSVPs." };
+
+  const undo = await prisma.rsvpDeletionUndo.findFirst({
+    where: {
+      id: parsed.data.undoId,
+      organisationId: org.id,
+      deletedByUserId: session.user.id,
+      expiresAt: { gt: new Date() },
+    },
+  });
+  if (!undo) return { ok: false, error: "This undo has expired or is unavailable." };
+  const snapshot = snapshotSchema.safeParse(undo.payload);
+  if (!snapshot.success) return { ok: false, error: "Could not restore this RSVP safely." };
+
+  const targetExists = snapshot.data.eventId
+    ? await prisma.event.findFirst({ where: { id: snapshot.data.eventId, organisationId: org.id }, select: { id: true, slug: true } })
+    : await prisma.eventInstance.findFirst({ where: { id: snapshot.data.eventInstanceId!, series: { organisationId: org.id } }, select: { id: true } });
+  if (!targetExists) return { ok: false, error: "The original event no longer exists." };
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.rSVP.create({
+        data: {
+          eventId: snapshot.data.eventId,
+          eventInstanceId: snapshot.data.eventInstanceId,
+          userId: snapshot.data.userId,
+          guestEmail: snapshot.data.guestEmail,
+          guestName: snapshot.data.guestName,
+          status: snapshot.data.status,
+          attendeeKey: snapshot.data.attendeeKey,
+          checkInToken: snapshot.data.checkInToken,
+          checkedInAt: snapshot.data.checkedInAt ? new Date(snapshot.data.checkedInAt) : null,
+          createdAt: new Date(snapshot.data.createdAt),
+          answers: { create: snapshot.data.answers.map((answer) => ({
+            fieldId: answer.fieldId,
+            valueText: answer.valueText,
+            valueBool: answer.valueBool,
+            valueNumber: answer.valueNumber,
+            valueDate: answer.valueDate ? new Date(answer.valueDate) : null,
+          })) },
+        },
+      });
+      await tx.rsvpDeletionUndo.delete({ where: { id: undo.id } });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  } catch (error) {
+    if (typeof error === "object" && error !== null && "code" in error && (error as { code?: string }).code === "P2002") {
+      return { ok: false, error: "This RSVP can no longer be restored because a conflicting registration exists." };
     }
-  } else if (input.eventInstanceId) {
-    revalidatePath(`/${org.slug}/i/${input.eventInstanceId}`);
+    console.error("[rsvp] restore failed", error);
+    return { ok: false, error: "Could not restore the RSVP." };
   }
-  revalidatePath(`/${org.slug}`);
-  revalidatePath(`/dashboard/${org.slug}`);
 
+  const eventSlug = snapshot.data.eventId && "slug" in targetExists
+    ? String(targetExists.slug)
+    : undefined;
+  revalidateRsvpPaths(org.slug, {
+    eventId: snapshot.data.eventId,
+    eventInstanceId: snapshot.data.eventInstanceId,
+    eventSlug,
+  });
   return { ok: true };
 }

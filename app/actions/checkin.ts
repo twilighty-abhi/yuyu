@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { gateCheckInForStatus, parseCheckInPayload } from "@/lib/checkIn";
 import { prisma } from "@/lib/db";
-import { getMembership, hasRoleAtLeast } from "@/lib/permissions";
+import { canManageEvents, getMembership } from "@/lib/permissions";
 import {
   attendeeLookupSchema,
   checkInByRsvpIdSchema,
@@ -66,11 +66,8 @@ async function requireOrgMemberForEvent(
   if (!org) return { ok: false as const, error: "Organisation not found." };
 
   const membership = await getMembership(session.user.id, org.id);
-  if (!membership) {
-    return { ok: false as const, error: "You are not a member of this organisation." };
-  }
-  if (!hasRoleAtLeast(membership.role, "MEMBER")) {
-    return { ok: false as const, error: "You do not have access." };
+  if (!canManageEvents(membership)) {
+    return { ok: false as const, error: "Only organisation admins can operate check-in." };
   }
 
   const event = await prisma.event.findFirst({
@@ -173,9 +170,9 @@ async function resolveRsvpForToken(
       return { ok: false as const, error: "This ticket is not for this event." };
     }
   } else if (rsvp.eventInstanceId && rsvp.eventInstance) {
-    if (rsvp.eventInstance.series.organisationId !== orgId) {
-      return { ok: false as const, error: "This ticket belongs to another organisation." };
-    }
+    // This station is for one standalone event. A series occurrence must be
+    // checked in from its own dedicated workflow, never merely by org match.
+    return { ok: false as const, error: "This ticket is not for this event." };
   } else {
     return { ok: false as const, error: "Invalid registration." };
   }
@@ -334,9 +331,7 @@ export async function undoCheckIn(input: unknown): Promise<ActionResult> {
       return { ok: false, error: "RSVP not found." };
     }
   } else if (rsvp.eventInstanceId) {
-    if (rsvp.eventInstance?.series.organisationId !== orgId) {
-      return { ok: false, error: "RSVP not found." };
-    }
+    return { ok: false, error: "RSVP not found." };
   } else {
     return { ok: false, error: "RSVP not found." };
   }

@@ -10,6 +10,7 @@ export type OfflineAttendee = {
 export type OfflineRoster = {
   eventId: string;
   generatedAt: string;
+  expiresAt: string;
   rows: OfflineAttendee[];
 };
 
@@ -62,7 +63,13 @@ export function saveOfflineRoster(roster: OfflineRoster) {
 }
 
 export function getOfflineRoster(eventId: string) {
-  return runTransaction<OfflineRoster | undefined>(ROSTER_STORE, "readonly", (store) => store.get(eventId));
+  return runTransaction<OfflineRoster | undefined>(ROSTER_STORE, "readonly", (store) => store.get(eventId)).then(async (roster) => {
+    if (roster && new Date(roster.expiresAt).getTime() <= Date.now()) {
+      await removeOfflineRoster(eventId);
+      return undefined;
+    }
+    return roster;
+  });
 }
 
 export function queueOfflineCheckIn(checkIn: Omit<PendingOfflineCheckIn, "id">) {

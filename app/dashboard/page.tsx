@@ -111,10 +111,9 @@ export default async function DashboardPage() {
           border: 1,
           borderColor: "divider",
           borderRadius: "24px",
-          background: (theme) => theme.palette.mode === "dark"
-            ? "linear-gradient(120deg, rgba(10,132,255,0.14), rgba(255,255,255,0.035) 55%, rgba(48,209,88,0.08))"
-            : "linear-gradient(120deg, rgba(0,122,255,0.12), rgba(255,255,255,0.94) 55%, rgba(52,199,89,0.1))",
-          boxShadow: (theme) => theme.palette.mode === "dark" ? "0 18px 45px rgba(0,0,0,0.16)" : "0 18px 45px rgba(28,28,30,0.08)",
+          backgroundColor: "background.paper",
+          backgroundImage: "linear-gradient(120deg, rgba(10,132,255,0.14), transparent 55%, rgba(48,209,88,0.08))",
+          boxShadow: "0 18px 45px rgba(28,28,30,0.1)",
         }}
       >
         <Stack spacing={0.5}>
@@ -373,10 +372,8 @@ export default async function DashboardPage() {
                 borderRadius: "16px",
                 backgroundColor: "background.paper",
                 borderColor: "divider",
-                background: (theme) => theme.palette.mode === "dark"
-                  ? "linear-gradient(145deg, rgba(10,132,255,0.2), rgba(28,28,30,0.96) 68%)"
-                  : "linear-gradient(145deg, rgba(0,122,255,0.14), rgba(255,255,255,0.98) 68%)",
-                boxShadow: (theme) => theme.palette.mode === "dark" ? "0 14px 30px rgba(10,132,255,0.08)" : "0 14px 30px rgba(0,122,255,0.1)",
+                backgroundImage: "linear-gradient(145deg, rgba(10,132,255,0.18), transparent 68%)",
+                boxShadow: "0 14px 30px rgba(10,132,255,0.1)",
               }}
             >
               <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "flex-start" }}>

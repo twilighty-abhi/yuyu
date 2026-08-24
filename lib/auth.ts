@@ -5,6 +5,7 @@ import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
+import { hasVerifiedGoogleEmail } from "@/lib/googleAuth";
 
 const googleId = process.env.AUTH_GOOGLE_ID ?? process.env.GOOGLE_CLIENT_ID;
 const googleSecret =
@@ -37,6 +38,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           Google({
             clientId: googleId,
             clientSecret: googleSecret,
+            // Existing password users can use the same verified Google email.
+            // This is deliberately scoped to Google, never arbitrary providers.
+            allowDangerousEmailAccountLinking: true,
           }),
         ]
       : []),
@@ -77,6 +81,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
   ],
   callbacks: {
+    async signIn({ account, profile }) {
+      if (account?.provider !== "google") return true;
+      return hasVerifiedGoogleEmail(profile);
+    },
     async jwt({ token, user }) {
       const userId = user?.id ?? token.sub;
       if (!userId) return token;

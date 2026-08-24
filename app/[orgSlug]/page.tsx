@@ -14,7 +14,6 @@ import { getMembership } from "@/lib/permissions";
 import { OrgEventsContainer } from "@/components/org/OrgEventsContainer";
 import { EventStatus } from "@prisma/client";
 import EventIcon from "@mui/icons-material/Event";
-import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 
 import type { Metadata } from "next";
 
@@ -185,27 +184,6 @@ export default async function OrganisationPage({ params }: Props) {
                 justifyContent: "flex-start",
               }}
             >
-              {merged.length > 0 && (
-                <Button
-                  variant="contained"
-                  component="a"
-                  href="#events-list"
-                  endIcon={<ArrowForwardIcon />}
-                  sx={{
-                    backgroundColor: "#0A84FF",
-                    color: "#FFFFFF",
-                    fontWeight: 600,
-                    textTransform: "none",
-                    borderRadius: "8px",
-                    "&:hover": {
-                      backgroundColor: "#0A84FF",
-                      opacity: 0.9,
-                    },
-                  }}
-                >
-                  Browse events
-                </Button>
-              )}
               {membership ? (
                 <Link
                   href={`/dashboard/${org.slug}`}

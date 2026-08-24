@@ -2,6 +2,11 @@ import crypto from "crypto";
 import { NextResponse } from "next/server";
 import { deliverOutboxBatch } from "@/lib/outbox";
 import { purgeExpiredOperationalData } from "@/lib/retention";
+import {
+  recordOutboxSchedulerFailure,
+  recordOutboxSchedulerStarted,
+  recordOutboxSchedulerSuccess,
+} from "@/lib/operationalHeartbeat";
 
 export async function POST(request: Request) {
   const configuredSecret = process.env.CRON_SECRET;
@@ -10,7 +15,14 @@ export async function POST(request: Request) {
     return new NextResponse("Not found", { status: 404 });
   }
 
-  const result = await deliverOutboxBatch();
-  const purged = await purgeExpiredOperationalData();
-  return NextResponse.json({ ok: true, ...result, purged });
+  await recordOutboxSchedulerStarted();
+  try {
+    const result = await deliverOutboxBatch();
+    const purged = await purgeExpiredOperationalData();
+    await recordOutboxSchedulerSuccess(result);
+    return NextResponse.json({ ok: true, ...result, purged });
+  } catch (error) {
+    await recordOutboxSchedulerFailure(error).catch(() => undefined);
+    throw error;
+  }
 }

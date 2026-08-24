@@ -67,7 +67,7 @@ Refer to `prisma/schema.prisma` for the authoritative fields, constraints, index
 
 ## Background and scheduled work
 
-Request handlers enqueue transactional messages in `OutboxMessage`; they do not wait for SMTP delivery. A scheduler calls `POST /api/internal/outbox` with `CRON_SECRET`. The handler claims and sends a batch, retries failures, and purges expired operational records.
+Request handlers enqueue transactional messages in `OutboxMessage`; they do not wait for SMTP delivery. A scheduler calls `POST /api/internal/outbox` with `CRON_SECRET`. The handler claims and sends a batch, retries failures, purges expired operational records, and updates a one-row `OperationalHeartbeat` so the operations page can detect a stale scheduler without adding scheduler noise to the human audit trail.
 
 ## Storage
 

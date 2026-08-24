@@ -4,6 +4,7 @@ import { OutboxStatus, Prisma, RsvpStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { sendApprovalNotification, sendRSVPConfirmation } from "@/lib/email";
 import { sendPasswordResetEmail } from "@/lib/email/passwordReset";
+import { redactSensitiveText } from "@/lib/redactSensitiveText";
 
 type OutboxClient = Prisma.TransactionClient | typeof prisma;
 
@@ -182,7 +183,7 @@ export async function deliverOutboxBatch(limit = 20) {
           data: {
             status: attempts >= 8 ? OutboxStatus.FAILED : OutboxStatus.PENDING,
             availableAt: retryAt,
-            lastError: error instanceof Error ? error.message.slice(0, 500) : "Delivery failed",
+            lastError: redactSensitiveText(error instanceof Error ? error.message : "Delivery failed").slice(0, 500),
           },
         });
       }

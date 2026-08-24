@@ -481,6 +481,19 @@ model OutboxMessage {
   @@index([createdAt])
 }
 
+/// One-row operational state for externally scheduled work. This is separate
+/// from the append-only human audit trail so frequent scheduler runs do not
+/// drown out meaningful application activity.
+model OperationalHeartbeat {
+  key             String   @id
+  lastStartedAt   DateTime?
+  lastSucceededAt DateTime?
+  lastSent        Int      @default(0)
+  lastFailed      Int      @default(0)
+  lastError       String?
+  updatedAt       DateTime @updatedAt
+}
+
 /// Tracks stored files (S3/R2/MinIO/etc.) for per-org storage accounting.
 /// This is optional for runtime today but enables accurate “bytes stored” metrics.
 model Asset {

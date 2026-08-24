@@ -4,10 +4,13 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import Chip from "@mui/material/Chip";
 import Divider from "@mui/material/Divider";
+import Box from "@mui/material/Box";
 import { OutboxStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { env } from "@/lib/env";
 import { InstanceOperationsControls } from "@/components/super-admin/InstanceOperationsControls";
+import { OUTBOX_SCHEDULER_HEARTBEAT_KEY } from "@/lib/operationalHeartbeat";
+import { redactSensitiveText } from "@/lib/redactSensitiveText";
 
 function StatusChip(props: { ok: boolean; ready: string; missing: string }) {
   return <Chip size="small" color={props.ok ? "success" : "warning"} variant="outlined" label={props.ok ? props.ready : props.missing} />;
@@ -22,9 +25,13 @@ function ageLabel(value: Date | null) {
   return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
+function safeErrorSummary(value: string | null) {
+  return value ? redactSensitiveText(value).slice(0, 500) : "No error detail recorded.";
+}
+
 export default async function SuperAdminOperationsPage() {
   const now = new Date();
-  const [outboxGroups, expiredTokens, lastRestoreDrill, oldestPending] = await Promise.all([
+  const [outboxGroups, expiredTokens, lastRestoreDrill, oldestPending, schedulerHeartbeat, failedMessages] = await Promise.all([
     prisma.outboxMessage.groupBy({ by: ["status"], _count: { _all: true } }),
     prisma.verificationToken.count({ where: { expires: { lt: now } } }),
     prisma.auditEvent.findFirst({
@@ -37,10 +44,28 @@ export default async function SuperAdminOperationsPage() {
       orderBy: { createdAt: "asc" },
       select: { createdAt: true },
     }),
+    prisma.operationalHeartbeat.findUnique({
+      where: { key: OUTBOX_SCHEDULER_HEARTBEAT_KEY },
+      select: {
+        lastStartedAt: true,
+        lastSucceededAt: true,
+        lastSent: true,
+        lastFailed: true,
+        lastError: true,
+      },
+    }),
+    prisma.outboxMessage.findMany({
+      where: { status: OutboxStatus.FAILED },
+      orderBy: { createdAt: "desc" },
+      take: 25,
+      select: { id: true, kind: true, attempts: true, lastError: true, createdAt: true },
+    }),
   ]);
   const outbox = new Map(outboxGroups.map((row) => [row.status, row._count._all]));
   const reportedBackupAt = env?.BACKUP_LAST_SUCCESS_AT ? new Date(env.BACKUP_LAST_SUCCESS_AT) : null;
   const backupFresh = reportedBackupAt != null && now.getTime() - reportedBackupAt.getTime() < 26 * 3_600_000;
+  const schedulerFresh = schedulerHeartbeat?.lastSucceededAt != null
+    && now.getTime() - schedulerHeartbeat.lastSucceededAt.getTime() < 3 * 60_000;
 
   return (
     <Stack spacing={3}>
@@ -87,10 +112,47 @@ export default async function SuperAdminOperationsPage() {
             <Chip size="small" variant="outlined" label={`${outbox.get(OutboxStatus.SENT) ?? 0} sent`} />
             <Chip size="small" color={expiredTokens > 0 ? "warning" : "success"} variant="outlined" label={`${expiredTokens} expired verification token${expiredTokens === 1 ? "" : "s"}`} />
           </Stack>
+          <Stack spacing={0.5}>
+            <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
+              <StatusChip ok={schedulerFresh} ready="Outbox scheduler healthy" missing="Outbox scheduler stale or unknown" />
+              {schedulerHeartbeat ? <Chip size="small" variant="outlined" label={`Last batch: ${schedulerHeartbeat.lastSent} sent, ${schedulerHeartbeat.lastFailed} failed`} /> : null}
+            </Stack>
+            <Typography variant="body2" color="text.secondary">
+              Last scheduler success: {schedulerHeartbeat?.lastSucceededAt ? `${schedulerHeartbeat.lastSucceededAt.toLocaleString()} (${ageLabel(schedulerHeartbeat.lastSucceededAt)})` : "not recorded"}.
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Last scheduler start: {schedulerHeartbeat?.lastStartedAt ? `${schedulerHeartbeat.lastStartedAt.toLocaleString()} (${ageLabel(schedulerHeartbeat.lastStartedAt)})` : "not recorded"}.
+            </Typography>
+            {schedulerHeartbeat?.lastError ? <Typography variant="body2" color="error">Last scheduler error: {safeErrorSummary(schedulerHeartbeat.lastError)}</Typography> : null}
+          </Stack>
           <Typography variant="body2" color="text.secondary">Oldest queued message: {oldestPending ? `${oldestPending.createdAt.toLocaleString()} (${ageLabel(oldestPending.createdAt)})` : "none"}.</Typography>
           <Divider />
           <InstanceOperationsControls />
         </Stack>
+      </Paper>
+
+      <Paper variant="outlined" sx={{ borderRadius: 3, overflow: "hidden" }}>
+        <Stack spacing={0.5} sx={{ p: 2.5, pb: 1.5 }}>
+          <Typography variant="h6" sx={{ fontWeight: 700 }}>Failed email deliveries</Typography>
+          <Typography variant="body2" color="text.secondary">Recipient addresses, message payloads, and bearer links are never shown here.</Typography>
+        </Stack>
+        {failedMessages.length === 0 ? (
+          <Typography color="text.secondary" sx={{ px: 2.5, pb: 2.5 }}>No failed email deliveries.</Typography>
+        ) : (
+          <Box component="table" sx={{ width: "100%", borderCollapse: "collapse", "& th, & td": { p: 1.5, borderTop: "1px solid", borderColor: "divider", textAlign: "left", verticalAlign: "top" } }}>
+            <Box component="thead"><Box component="tr"><Box component="th">Kind</Box><Box component="th">Attempts</Box><Box component="th">Failed</Box><Box component="th">Last error</Box></Box></Box>
+            <Box component="tbody">
+              {failedMessages.map((message) => (
+                <Box component="tr" key={message.id}>
+                  <Box component="td" sx={{ fontFamily: "monospace" }}>{message.kind}</Box>
+                  <Box component="td">{message.attempts}</Box>
+                  <Box component="td">{message.createdAt.toLocaleString()}</Box>
+                  <Box component="td" sx={{ overflowWrap: "anywhere" }}>{safeErrorSummary(message.lastError)}</Box>
+                </Box>
+              ))}
+            </Box>
+          </Box>
+        )}
       </Paper>
 
       <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 3, backgroundColor: "rgba(10,132,255,0.06)" }}>

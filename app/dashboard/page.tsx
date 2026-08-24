@@ -24,18 +24,7 @@ export const metadata: Metadata = {
   description: "Manage your organisations, events, and RSVPs.",
 };
 
-// Apple iOS/macOS HIG Style Constants
-const APPLE_COLORS = {
-  blue: "#0A84FF",
-  green: "#30D158",
-  orange: "#FF9F0A",
-  gray: "#8E8E93",
-  background: "#1C1C1E", // Secondary system background (Dark Mode)
-  cardBg: "rgba(255, 255, 255, 0.04)",
-  border: "rgba(255, 255, 255, 0.08)",
-  textPrimary: "#FFFFFF",
-  textSecondary: "#8E8E93",
-};
+const DASHBOARD_BLUE = "#0A84FF";
 
 function getTimeAgo(date: Date): string {
   const seconds = Math.floor((new Date().getTime() - date.getTime()) / 1000);
@@ -119,16 +108,19 @@ export default async function DashboardPage() {
           alignItems: { xs: "stretch", sm: "flex-end" },
           gap: 2,
           p: { xs: 2.5, sm: 3.5 },
-          border: `1px solid ${APPLE_COLORS.border}`,
+          border: 1,
+          borderColor: "divider",
           borderRadius: "24px",
-          background: "linear-gradient(120deg, rgba(10,132,255,0.14), rgba(255,255,255,0.035) 55%, rgba(48,209,88,0.08))",
-          boxShadow: "0 18px 45px rgba(0,0,0,0.16)",
+          background: (theme) => theme.palette.mode === "dark"
+            ? "linear-gradient(120deg, rgba(10,132,255,0.14), rgba(255,255,255,0.035) 55%, rgba(48,209,88,0.08))"
+            : "linear-gradient(120deg, rgba(0,122,255,0.12), rgba(255,255,255,0.94) 55%, rgba(52,199,89,0.1))",
+          boxShadow: (theme) => theme.palette.mode === "dark" ? "0 18px 45px rgba(0,0,0,0.16)" : "0 18px 45px rgba(28,28,30,0.08)",
         }}
       >
         <Stack spacing={0.5}>
           <Typography
             variant="overline"
-            sx={{ color: APPLE_COLORS.blue, fontWeight: 700, letterSpacing: "1.6px", lineHeight: 1.3 }}
+            sx={{ color: "primary.main", fontWeight: 700, letterSpacing: "1.6px", lineHeight: 1.3 }}
           >
             Workspace overview
           </Typography>
@@ -138,7 +130,7 @@ export default async function DashboardPage() {
             sx={{
               fontWeight: 700,
               letterSpacing: "-1px",
-              color: APPLE_COLORS.textPrimary,
+              color: "text.primary",
               fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
             }}
           >
@@ -146,7 +138,7 @@ export default async function DashboardPage() {
           </Typography>
           <Typography
             variant="body2"
-            sx={{ color: APPLE_COLORS.textSecondary, fontWeight: 400 }}
+            sx={{ color: "text.secondary", fontWeight: 400 }}
           >
             Welcome back, {userName}. Everything you need to run your events, in one place.
           </Typography>
@@ -159,7 +151,7 @@ export default async function DashboardPage() {
             startIcon={<AddIcon />}
             sx={{
               alignSelf: { xs: "flex-start", sm: "center" },
-              backgroundColor: APPLE_COLORS.blue,
+              backgroundColor: DASHBOARD_BLUE,
               color: "#FFFFFF",
               fontWeight: 600,
               textTransform: "none",
@@ -170,7 +162,7 @@ export default async function DashboardPage() {
               boxShadow: "none",
               transition: "opacity 0.15s ease",
               "&:hover": {
-                backgroundColor: APPLE_COLORS.blue,
+                backgroundColor: DASHBOARD_BLUE,
                 opacity: 0.9,
                 boxShadow: "none",
               },
@@ -191,13 +183,13 @@ export default async function DashboardPage() {
                     variant="h6"
                     sx={{
                       fontWeight: 700,
-                      color: APPLE_COLORS.textPrimary,
+                      color: "text.primary",
                       letterSpacing: "-0.3px",
                     }}
                   >
                     Organisations
                   </Typography>
-                  <Typography variant="body2" sx={{ color: APPLE_COLORS.textSecondary }}>
+                  <Typography variant="body2" sx={{ color: "text.secondary" }}>
                     Your workspaces
                   </Typography>
                 </Stack>
@@ -209,27 +201,27 @@ export default async function DashboardPage() {
                   p: 6,
                   borderRadius: "16px",
                   textAlign: "center",
-                  backgroundColor: APPLE_COLORS.background,
-                  borderColor: APPLE_COLORS.border,
+                  backgroundColor: "background.paper",
+                  borderColor: "divider",
                 }}
               >
                 <Stack spacing={2} sx={{ alignItems: "center" }}>
                   <Avatar
                     sx={{
-                      bgcolor: "rgba(255,255,255,0.06)",
-                      color: APPLE_COLORS.textSecondary,
+                      bgcolor: "action.hover",
+                      color: "text.secondary",
                       width: 56,
                       height: 56,
                     }}
                   >
                     <BusinessIcon sx={{ fontSize: 30 }} />
                   </Avatar>
-                  <Typography variant="body1" sx={{ fontWeight: 600, color: APPLE_COLORS.textPrimary }}>
+                  <Typography variant="body1" sx={{ fontWeight: 600, color: "text.primary" }}>
                     No organisations yet
                   </Typography>
                   <Typography
                     variant="body2"
-                    sx={{ color: APPLE_COLORS.textSecondary, maxWidth: 360, lineHeight: 1.5 }}
+                    sx={{ color: "text.secondary", maxWidth: 360, lineHeight: 1.5 }}
                   >
                     Create your first organisation workspace to manage events and check-ins.
                   </Typography>
@@ -240,14 +232,14 @@ export default async function DashboardPage() {
                         component="span"
                         startIcon={<AddIcon />}
                         sx={{
-                          backgroundColor: APPLE_COLORS.blue,
+                          backgroundColor: DASHBOARD_BLUE,
                           color: "#FFFFFF",
                           fontWeight: 600,
                           textTransform: "none",
                           borderRadius: "10px",
                           px: 3,
                           "&:hover": {
-                            backgroundColor: APPLE_COLORS.blue,
+                            backgroundColor: DASHBOARD_BLUE,
                             opacity: 0.9,
                           },
                         }}
@@ -266,11 +258,11 @@ export default async function DashboardPage() {
                     variant="outlined"
                     sx={{
                       borderRadius: "16px",
-                      backgroundColor: APPLE_COLORS.background,
-                      borderColor: APPLE_COLORS.border,
+                      backgroundColor: "background.paper",
+                      borderColor: "divider",
                       boxShadow: "0 8px 24px rgba(0,0,0,0.1)",
                       "&:hover": {
-                        backgroundColor: "rgba(255, 255, 255, 0.06)",
+                        backgroundColor: "action.hover",
                         transform: "translateY(-2px)",
                         borderColor: "rgba(10,132,255,0.35)",
                       },
@@ -302,14 +294,15 @@ export default async function DashboardPage() {
                                 src={org.logoUrl ?? undefined}
                                 alt={org.name}
                                 sx={{
-                                  background: "rgba(255,255,255,0.06)",
-                                  color: APPLE_COLORS.textPrimary,
+                                  background: "action.hover",
+                                  color: "text.primary",
                                   width: 52,
                                   height: 52,
                                   borderRadius: "12px",
                                   fontWeight: 600,
                                   fontSize: "1.2rem",
-                                  border: `1px solid ${APPLE_COLORS.border}`,
+                                  border: 1,
+                                  borderColor: "divider",
                                 }}
                               >
                                 {org.name.trim().slice(0, 1).toUpperCase()}
@@ -317,14 +310,14 @@ export default async function DashboardPage() {
                               <Box sx={{ minWidth: 0 }}>
                                 <Typography
                                   variant="body1"
-                                  sx={{ fontWeight: 600, color: APPLE_COLORS.textPrimary }}
+                                  sx={{ fontWeight: 600, color: "text.primary" }}
                                   noWrap
                                 >
                                   {org.name}
                                 </Typography>
                                 <Typography
                                   variant="body2"
-                                  sx={{ color: APPLE_COLORS.textSecondary, mt: 0.25 }}
+                                  sx={{ color: "text.secondary", mt: 0.25 }}
                                   noWrap
                                 >
                                   /{org.slug}
@@ -332,7 +325,7 @@ export default async function DashboardPage() {
                                 {org.description ? (
                                   <Typography
                                     variant="caption"
-                                    sx={{ color: "rgba(255,255,255,0.52)", display: "block", mt: 0.75 }}
+                                    sx={{ color: "text.secondary", display: "block", mt: 0.75 }}
                                     noWrap
                                   >
                                     {org.description}
@@ -350,13 +343,14 @@ export default async function DashboardPage() {
                                 width: { xs: "100%", sm: "auto" },
                                 justifyContent: { xs: "space-between", sm: "flex-end" },
                                 pt: { xs: 2, sm: 0 },
-                                borderTop: { xs: `1px solid ${APPLE_COLORS.border}`, sm: "none" },
+                                borderTop: { xs: 1, sm: "none" },
+                                borderColor: { xs: "divider", sm: "transparent" },
                               }}
                             >
-                              <Typography variant="body2" sx={{ color: APPLE_COLORS.textSecondary, fontWeight: 600 }}>
+                              <Typography variant="body2" sx={{ color: "text.secondary", fontWeight: 600 }}>
                                 Open workspace
                               </Typography>
-                              <ArrowForwardIcon sx={{ color: APPLE_COLORS.textSecondary, fontSize: 18 }} />
+                              <ArrowForwardIcon sx={{ color: "text.secondary", fontSize: 18 }} />
                             </Stack>
                           </Stack>
                         </CardContent>
@@ -377,10 +371,12 @@ export default async function DashboardPage() {
               sx={{
                 p: 3,
                 borderRadius: "16px",
-                backgroundColor: APPLE_COLORS.background,
-                borderColor: APPLE_COLORS.border,
-                background: "linear-gradient(145deg, rgba(10,132,255,0.2), rgba(28,28,30,0.96) 68%)",
-                boxShadow: "0 14px 30px rgba(10,132,255,0.08)",
+                backgroundColor: "background.paper",
+                borderColor: "divider",
+                background: (theme) => theme.palette.mode === "dark"
+                  ? "linear-gradient(145deg, rgba(10,132,255,0.2), rgba(28,28,30,0.96) 68%)"
+                  : "linear-gradient(145deg, rgba(0,122,255,0.14), rgba(255,255,255,0.98) 68%)",
+                boxShadow: (theme) => theme.palette.mode === "dark" ? "0 14px 30px rgba(10,132,255,0.08)" : "0 14px 30px rgba(0,122,255,0.1)",
               }}
             >
               <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -388,7 +384,7 @@ export default async function DashboardPage() {
                   <Typography
                     variant="body2"
                     sx={{
-                      color: APPLE_COLORS.textSecondary,
+                      color: "text.secondary",
                       fontWeight: 600,
                       fontSize: "0.8rem",
                       textTransform: "uppercase",
@@ -399,7 +395,7 @@ export default async function DashboardPage() {
                   </Typography>
                   <Typography
                     variant="h3"
-                    sx={{ fontWeight: 700, color: APPLE_COLORS.textPrimary, letterSpacing: "-1px" }}
+                    sx={{ fontWeight: 700, color: "text.primary", letterSpacing: "-1px" }}
                   >
                     {totalEventsCount}
                   </Typography>
@@ -418,7 +414,7 @@ export default async function DashboardPage() {
                   <EventIcon sx={{ fontSize: 24 }} />
                 </Box>
               </Stack>
-              <Typography variant="caption" sx={{ display: "block", mt: 2, color: "rgba(255,255,255,0.62)" }}>
+              <Typography variant="caption" sx={{ display: "block", mt: 2, color: "text.secondary" }}>
                 Published across your workspaces
               </Typography>
             </Paper>
@@ -427,7 +423,7 @@ export default async function DashboardPage() {
               variant="h6"
               sx={{
                 fontWeight: 700,
-                color: APPLE_COLORS.textPrimary,
+                color: "text.primary",
                 letterSpacing: "-0.3px",
               }}
             >
@@ -439,15 +435,15 @@ export default async function DashboardPage() {
               sx={{
                 p: 3,
                 borderRadius: "16px",
-                backgroundColor: APPLE_COLORS.background,
-                borderColor: APPLE_COLORS.border,
+                backgroundColor: "background.paper",
+                borderColor: "divider",
                 boxShadow: "0 8px 24px rgba(0,0,0,0.1)",
               }}
             >
               {recentRsvps.length === 0 ? (
                 <Typography
                   variant="body2"
-                  sx={{ color: APPLE_COLORS.textSecondary, textAlign: "center", py: 4 }}
+                  sx={{ color: "text.secondary", textAlign: "center", py: 4 }}
                 >
                   No recent registrations.
                 </Typography>
@@ -461,28 +457,28 @@ export default async function DashboardPage() {
 
                     return (
                       <Stack key={rsvp.id} spacing={1.5}>
-                        {idx > 0 && <Divider sx={{ borderColor: APPLE_COLORS.border }} />}
+                        {idx > 0 && <Divider />}
                         <Stack spacing={0.5}>
                           <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "baseline" }}>
                             <Typography
                               variant="body2"
-                              sx={{ fontWeight: 600, color: APPLE_COLORS.textPrimary }}
+                              sx={{ fontWeight: 600, color: "text.primary" }}
                             >
                               {attendeeName}
                             </Typography>
                             <Typography
                               variant="caption"
-                              sx={{ color: APPLE_COLORS.textSecondary, fontSize: "0.7rem" }}
+                              sx={{ color: "text.secondary", fontSize: "0.7rem" }}
                             >
                               {getTimeAgo(rsvp.createdAt)}
                             </Typography>
                           </Stack>
                           <Typography
                             variant="caption"
-                            sx={{ color: APPLE_COLORS.textSecondary, lineHeight: 1.4 }}
+                            sx={{ color: "text.secondary", lineHeight: 1.4 }}
                           >
                             {isConfirmed ? "Registered for" : "Waitlisted for"}{" "}
-                            <span style={{ color: APPLE_COLORS.textPrimary }}>{eventTitle}</span> ({orgName})
+                            <Box component="span" sx={{ color: "text.primary" }}>{eventTitle}</Box> ({orgName})
                           </Typography>
                         </Stack>
                       </Stack>

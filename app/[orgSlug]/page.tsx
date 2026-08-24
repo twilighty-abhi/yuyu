@@ -13,7 +13,6 @@ import { prisma } from "@/lib/db";
 import { getMembership } from "@/lib/permissions";
 import { OrgEventsContainer } from "@/components/org/OrgEventsContainer";
 import { EventStatus } from "@prisma/client";
-import EventIcon from "@mui/icons-material/Event";
 
 import type { Metadata } from "next";
 
@@ -206,7 +205,6 @@ export default async function OrganisationPage({ params }: Props) {
           >
             {merged.length > 0 && (
               <Chip
-                icon={<EventIcon />}
                 label={`${merged.length} total event${merged.length === 1 ? "" : "s"}`}
                 variant="outlined"
                 sx={{ bgcolor: "background.paper" }}

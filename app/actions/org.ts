@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db";
 import { createOrganisationSchema, updateOrganisationSchema } from "@/lib/validators";
 import { flattenZodErrors } from "./utils";
 import { recordAuditEvent } from "@/lib/audit";
+import { isActionRateLimited } from "@/lib/actionRateLimit";
 
 export type ActionResult<T = void> =
   | { ok: true; data?: T }
@@ -23,6 +24,9 @@ export async function createOrganisation(
   const session = await auth();
   if (!session?.user?.id) {
     return { ok: false, error: "You must be signed in." };
+  }
+  if (await isActionRateLimited("create", session.user.id)) {
+    return { ok: false, error: "Too many creation attempts. Please try again later." };
   }
 
   const parsed = createOrganisationSchema.safeParse(input);

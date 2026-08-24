@@ -3,6 +3,8 @@ import Redis from "ioredis";
 
 export type Bucket =
   | "global"
+  | "action"
+  | "create"
   | "auth"
   | "signup"
   | "passwordReset"
@@ -15,6 +17,8 @@ export type Bucket =
 
 const limits: Record<Bucket, { max: number; windowMs: number }> = {
   global: { max: 300, windowMs: 60_000 },
+  action: { max: 180, windowMs: 60_000 },
+  create: { max: 20, windowMs: 60 * 60_000 },
   auth: { max: 10, windowMs: 60_000 },
   signup: { max: 5, windowMs: 60 * 60_000 },
   passwordReset: { max: 5, windowMs: 60 * 60_000 },
@@ -33,11 +37,19 @@ const memoryStore = new Map<string, Entry>();
 let redisClient: Redis | null = null;
 let isRedisDisabled = false;
 
+function allowTestMemoryFallback() {
+  return process.env.CI === "true" && process.env.ALLOW_INSECURE_PRODUCTION_TESTS === "1";
+}
+
 function getRedisClient(): Redis | null {
   if (isRedisDisabled) return null;
   if (redisClient) return redisClient;
 
   const redisUrl = process.env.REDIS_URL;
+  if (redisUrl === "memory://" && allowTestMemoryFallback()) {
+    isRedisDisabled = true;
+    return null;
+  }
   if (!redisUrl) {
     isRedisDisabled = true;
     return null;
@@ -113,7 +125,7 @@ export async function checkRateLimitById(bucket: Bucket, id: string): Promise<bo
   const redis = getRedisClient();
   
   if (!redis) {
-    if (process.env.NODE_ENV === "production") return false;
+    if (process.env.NODE_ENV === "production" && !allowTestMemoryFallback()) return false;
     return checkRateLimitMemory(bucket, id);
   }
 
@@ -132,7 +144,7 @@ export async function checkRateLimitById(bucket: Bucket, id: string): Promise<bo
     return Number(count) <= max;
   } catch (e) {
     console.warn("[rateLimit] Redis check failed:", e);
-    if (process.env.NODE_ENV === "production") return false;
+    if (process.env.NODE_ENV === "production" && !allowTestMemoryFallback()) return false;
     return checkRateLimitMemory(bucket, id);
   }
 }

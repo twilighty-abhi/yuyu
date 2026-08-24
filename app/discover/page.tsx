@@ -13,7 +13,7 @@ import FilterListIcon from "@mui/icons-material/FilterList";
 import ClearIcon from "@mui/icons-material/Clear";
 import NavigateBeforeIcon from "@mui/icons-material/NavigateBefore";
 import NavigateNextIcon from "@mui/icons-material/NavigateNext";
-import { EventPrivacyType, EventStatus } from "@prisma/client";
+import { EventPrivacyType, EventStatus, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { DiscoverEventCard } from "@/components/event/DiscoverEventCard";
 import { InstanceCard } from "@/components/event/InstanceCard";
@@ -26,6 +26,8 @@ export const metadata: Metadata = {
 };
 
 const PAGE_SIZE = 12;
+const MAX_DISCOVERY_PAGES = 100;
+const MAX_QUERY_LENGTH = 120;
 
 type SearchParams = Promise<{
   sort?: string;
@@ -51,8 +53,8 @@ export default async function DiscoverPage({
 }) {
   const sp = await searchParams;
   const sort = sp.sort === "popular" ? "popular" : "upcoming";
-  const q = sp.q?.trim() || "";
-  const page = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
+  const q = (sp.q?.trim() || "").slice(0, MAX_QUERY_LENGTH);
+  const page = Math.min(MAX_DISCOVERY_PAGES, Math.max(1, parseInt(sp.page ?? "1", 10) || 1));
 
   const fromDate = sp.from ? new Date(sp.from) : null;
   const toDate = sp.to ? new Date(sp.to) : null;
@@ -60,6 +62,7 @@ export default async function DiscoverPage({
   const eventWhere = {
     status: EventStatus.PUBLISHED,
     privacyType: EventPrivacyType.PUBLIC,
+    endDateTime: { gte: new Date() },
     ...(q
       ? {
           OR: [
@@ -89,6 +92,7 @@ export default async function DiscoverPage({
           }
         : {}),
     },
+    endDateTime: { gte: new Date() },
     ...((fromDate || toDate) && {
       startDateTime: {
         ...(fromDate && !Number.isNaN(fromDate.getTime()) ? { gte: fromDate } : {}),
@@ -103,102 +107,69 @@ export default async function DiscoverPage({
     prisma.eventInstance.count({ where: instanceWhere }),
   ]);
   const totalItems = eventCount + instanceCount;
-  const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
+  const totalPages = Math.min(MAX_DISCOVERY_PAGES, Math.max(1, Math.ceil(totalItems / PAGE_SIZE)));
   const safePage = Math.min(page, totalPages);
-
-  // Each source must contribute enough rows to cover the requested merged
-  // page. A fixed cap made valid pages beyond the first 200 results empty.
-  const fetchLimit = Math.min(totalItems, safePage * PAGE_SIZE);
-
-  const [events, instances] = await Promise.all([
-    prisma.event.findMany({
-      where: eventWhere,
-      include: {
-        organisation: { select: { slug: true, name: true } },
-        _count: {
-          select: {
-            rsvps: {
-              where: { status: "CONFIRMED" },
-            },
-          },
-        },
-      },
-      orderBy:
-        sort === "popular"
-          ? { rsvps: { _count: "desc" } }
-          : { startDateTime: "asc" },
-      take: fetchLimit,
-    }),
-    prisma.eventInstance.findMany({
-      where: instanceWhere,
-      include: {
-        series: {
-          include: {
-            organisation: { select: { slug: true, name: true } },
-          },
-        },
-        _count: {
-          select: {
-            rsvps: {
-              where: { status: "CONFIRMED" },
-            },
-          },
-        },
-      },
-      orderBy:
-        sort === "popular"
-          ? { rsvps: { _count: "desc" } }
-          : { startDateTime: "asc" },
-      take: fetchLimit,
-    }),
-  ]);
-
-  type Row =
-    | {
-        kind: "event";
-        id: string;
-        sortKey: number;
-        popular: number;
-        orgSlug: string;
-        event: (typeof events)[0];
-      }
-    | {
-        kind: "instance";
-        id: string;
-        sortKey: number;
-        popular: number;
-        orgSlug: string;
-        instance: (typeof instances)[0];
-      };
-
-  const merged: Row[] = [
-    ...events.map((event) => ({
-      kind: "event" as const,
-      id: `e-${event.id}`,
-      sortKey: event.startDateTime.getTime(),
-      popular: event._count.rsvps,
-      orgSlug: event.organisation.slug,
-      event,
-    })),
-    ...instances.map((instance) => ({
-      kind: "instance" as const,
-      id: `i-${instance.id}`,
-      sortKey: instance.startDateTime.getTime(),
-      popular: instance._count.rsvps,
-      orgSlug: instance.series.organisation.slug,
-      instance,
-    })),
-  ];
-
-  merged.sort((a, b) =>
-    sort === "popular"
-      ? b.popular - a.popular || a.sortKey - b.sortKey
-      : a.sortKey - b.sortKey,
-  );
-
-  // Apply pagination to the merged list
   const startIdx = (safePage - 1) * PAGE_SIZE;
-  const pageItems = merged.slice(startIdx, startIdx + PAGE_SIZE);
+  const validFrom = fromDate && !Number.isNaN(fromDate.getTime()) ? fromDate : null;
+  const validTo = toDate && !Number.isNaN(toDate.getTime()) ? toDate : null;
+  const searchPattern = `%${q}%`;
+  const eventFilters = [
+    Prisma.sql`e."status" = ${EventStatus.PUBLISHED}::"EventStatus"`,
+    Prisma.sql`e."privacyType" = ${EventPrivacyType.PUBLIC}::"EventPrivacyType"`,
+    Prisma.sql`e."endDateTime" >= NOW()`,
+    ...(q ? [Prisma.sql`(e."title" ILIKE ${searchPattern} OR e."description" ILIKE ${searchPattern})`] : []),
+    ...(validFrom ? [Prisma.sql`e."startDateTime" >= ${validFrom}`] : []),
+    ...(validTo ? [Prisma.sql`e."startDateTime" <= ${validTo}`] : []),
+  ];
+  const instanceFilters = [
+    Prisma.sql`s."status" = ${EventStatus.PUBLISHED}::"EventStatus"`,
+    Prisma.sql`s."privacyType" = ${EventPrivacyType.PUBLIC}::"EventPrivacyType"`,
+    Prisma.sql`i."endDateTime" >= NOW()`,
+    ...(q ? [Prisma.sql`(s."title" ILIKE ${searchPattern} OR s."description" ILIKE ${searchPattern})`] : []),
+    ...(validFrom ? [Prisma.sql`i."startDateTime" >= ${validFrom}`] : []),
+    ...(validTo ? [Prisma.sql`i."startDateTime" <= ${validTo}`] : []),
+  ];
+  const ordering = sort === "popular"
+    ? Prisma.sql`"popularity" DESC, "startDateTime" ASC, "id" ASC`
+    : Prisma.sql`"startDateTime" ASC, "id" ASC`;
+  const indexRows = await prisma.$queryRaw<Array<{ kind: "event" | "instance"; id: string }>>(Prisma.sql`
+    WITH candidates AS (
+      SELECT 'event'::text AS "kind", e."id", e."startDateTime",
+        (SELECT COUNT(*)::int FROM "RSVP" r WHERE r."eventId" = e."id" AND r."status" = 'CONFIRMED'::"RsvpStatus") AS "popularity"
+      FROM "Event" e
+      WHERE ${Prisma.join(eventFilters, " AND ")}
+      UNION ALL
+      SELECT 'instance'::text AS "kind", i."id", i."startDateTime",
+        (SELECT COUNT(*)::int FROM "RSVP" r WHERE r."eventInstanceId" = i."id" AND r."status" = 'CONFIRMED'::"RsvpStatus") AS "popularity"
+      FROM "EventInstance" i
+      INNER JOIN "EventSeries" s ON s."id" = i."eventSeriesId"
+      WHERE ${Prisma.join(instanceFilters, " AND ")}
+    )
+    SELECT "kind", "id" FROM candidates
+    ORDER BY ${ordering}
+    LIMIT ${PAGE_SIZE} OFFSET ${startIdx}
+  `);
+  const eventIds = indexRows.filter((row) => row.kind === "event").map((row) => row.id);
+  const instanceIds = indexRows.filter((row) => row.kind === "instance").map((row) => row.id);
+  const [events, instances] = await Promise.all([
+    prisma.event.findMany({ where: { id: { in: eventIds } }, include: { organisation: { select: { slug: true, name: true } } } }),
+    prisma.eventInstance.findMany({ where: { id: { in: instanceIds } }, include: { series: { include: { organisation: { select: { slug: true, name: true } } } } } }),
+  ]);
+  const eventsById = new Map(events.map((event) => [event.id, event]));
+  const instancesById = new Map(instances.map((instance) => [instance.id, instance]));
+  type PageItem =
+    | { kind: "event"; id: string; orgSlug: string; event: (typeof events)[number] }
+    | { kind: "instance"; id: string; orgSlug: string; instance: (typeof instances)[number] };
+  const pageItems: PageItem[] = [];
+  for (const row of indexRows) {
+    if (row.kind === "event") {
+      const event = eventsById.get(row.id);
+      if (event) pageItems.push({ kind: "event", id: `e-${event.id}`, orgSlug: event.organisation.slug, event });
+      continue;
+    }
+    const instance = instancesById.get(row.id);
+    if (instance) pageItems.push({ kind: "instance", id: `i-${instance.id}`, orgSlug: instance.series.organisation.slug, instance });
+  }
 
   const hasActiveFilters = q || sp.from || sp.to || sort !== "upcoming";
 

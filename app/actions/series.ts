@@ -15,6 +15,7 @@ import {
 import type { ActionResult } from "./org";
 import { flattenZodErrors } from "./utils";
 import { recordAuditEvent } from "@/lib/audit";
+import { isActionRateLimited } from "@/lib/actionRateLimit";
 
 function revalidateAllSeriesPaths(
   orgSlug: string,
@@ -35,6 +36,9 @@ export async function createEventSeries(
   const session = await auth();
   if (!session?.user?.id) {
     return { ok: false, error: "You must be signed in." };
+  }
+  if (await isActionRateLimited("create", session.user.id)) {
+    return { ok: false, error: "Too many creation attempts. Please try again later." };
   }
 
   const parsed = createSeriesSchema.safeParse(input);

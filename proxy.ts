@@ -20,6 +20,16 @@ function tooManyText() {
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // Server Actions post to page URLs, not /api. Apply one distributed ceiling
+  // before any action-specific subject/IP limits run in the action itself.
+  if (request.method === "POST" && request.headers.has("next-action")) {
+    if (!(await checkRateLimit(request, "action"))) return tooMany();
+  }
+
+  if (pathname === "/discover") {
+    if (!(await checkRateLimit(request, "search"))) return tooManyText();
+  }
+
   // Liveness must not depend on Redis. Readiness remains protected because a
   // failed distributed limiter means the application is not fully ready.
   if (pathname.startsWith("/api") && pathname !== "/api/health") {

@@ -13,6 +13,7 @@ import {
 import type { ActionResult } from "./org";
 import { flattenZodErrors } from "./utils";
 import { recordAuditEvent } from "@/lib/audit";
+import { isActionRateLimited } from "@/lib/actionRateLimit";
 
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
@@ -22,6 +23,9 @@ export async function addEventInvite(input: unknown): Promise<ActionResult> {
   const session = await auth();
   if (!session?.user?.id) {
     return { ok: false, error: "You must be signed in." };
+  }
+  if (await isActionRateLimited("invite", session.user.id)) {
+    return { ok: false, error: "Too many invite changes. Please try again later." };
   }
 
   const parsed = addEventInviteSchema.safeParse(input);
@@ -119,6 +123,9 @@ export async function addSeriesInvite(input: unknown): Promise<ActionResult> {
   const session = await auth();
   if (!session?.user?.id) {
     return { ok: false, error: "You must be signed in." };
+  }
+  if (await isActionRateLimited("invite", session.user.id)) {
+    return { ok: false, error: "Too many invite changes. Please try again later." };
   }
 
   const parsed = addSeriesInviteSchema.safeParse(input);

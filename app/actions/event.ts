@@ -23,6 +23,7 @@ import { getPublicUrl, uploadFile } from "@/lib/storage";
 import { isActionRateLimited } from "@/lib/actionRateLimit";
 import { validateEventCoverImage } from "@/lib/imageValidation";
 import { recordAuditEvent } from "@/lib/audit";
+import sharp from "sharp";
 
 const MAX_COVER_IMAGE_BYTES = 5 * 1024 * 1024;
 
@@ -54,11 +55,16 @@ export async function uploadEventCoverImage(
   }
 
   try {
-    const key = `organisations/${org.id}/event-covers/${crypto.randomUUID()}.${inspectedImage.extension}`;
+    const safeDerivative = await sharp(Buffer.from(await file.arrayBuffer()))
+      .rotate()
+      .resize({ width: 2400, height: 2400, fit: "inside", withoutEnlargement: true })
+      .webp({ quality: 86, effort: 5 })
+      .toBuffer();
+    const key = `organisations/${org.id}/event-covers/${crypto.randomUUID()}.webp`;
     await uploadFile({
       key,
-      body: file,
-      contentType: inspectedImage.contentType,
+      body: safeDerivative,
+      contentType: "image/webp",
       organisationId: org.id,
     });
     return { ok: true, data: { url: getPublicUrl(key) } };
@@ -79,6 +85,9 @@ export async function createEvent(input: unknown): Promise<ActionResult<{ id: st
   const session = await auth();
   if (!session?.user?.id) {
     return { ok: false, error: "You must be signed in." };
+  }
+  if (await isActionRateLimited("create", session.user.id)) {
+    return { ok: false, error: "Too many creation attempts. Please try again later." };
   }
 
   const parsed = createEventSchema.safeParse(input);

@@ -109,8 +109,8 @@ export function AppBarNav() {
                 <Button component={Link} href="/dashboard" color="inherit" sx={{ minHeight: 44 }}>
                 Dashboard
                 </Button>
-                <Button component={Link} href="/dashboard/security" color="inherit" sx={{ minHeight: 44 }}>
-                  Security
+                <Button component={Link} href="/account" color="inherit" sx={{ minHeight: 44 }}>
+                  Account
                 </Button>
                 <Button
                   variant="outlined"
@@ -167,8 +167,8 @@ export function AppBarNav() {
           </MenuItem>
         ) : null}
         {status === "authenticated" ? (
-          <MenuItem component={Link} href="/dashboard/security" onClick={closeMobileMenu} selected={pathname === "/dashboard/security"} sx={{ minHeight: 48 }}>
-            Security
+          <MenuItem component={Link} href="/account" onClick={closeMobileMenu} selected={pathname?.startsWith("/account")} sx={{ minHeight: 48 }}>
+            Account
           </MenuItem>
         ) : null}
         <Divider />

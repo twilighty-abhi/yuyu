@@ -18,6 +18,7 @@ import Stack from "@mui/material/Stack";
 import InputAdornment from "@mui/material/InputAdornment";
 import Select from "@mui/material/Select";
 import Link from "next/link";
+import type { RsvpStatus } from "@prisma/client";
 import type { RegistrationFieldDefinition } from "@/components/rsvp/registrationTypes";
 
 const phoneCountries = [
@@ -51,12 +52,12 @@ async function postRsvp(body: unknown) {
     credentials: "include",
     body: JSON.stringify(body),
   });
-  let data: { ok?: boolean; error?: string; data?: { ticketToken?: string } } = {};
+  let data: { ok?: boolean; error?: string; data?: { ticketToken?: string; status?: RsvpStatus } } = {};
   try {
     data = (await res.json()) as {
       ok?: boolean;
       error?: string;
-      data?: { ticketToken?: string };
+      data?: { ticketToken?: string; status?: RsvpStatus };
     };
   } catch {
     /* empty */
@@ -74,7 +75,11 @@ async function postRsvp(body: unknown) {
     };
   }
   if (data.ok) {
-    return { ok: true as const, ticketToken: data.data?.ticketToken ?? "" };
+    return {
+      ok: true as const,
+      ticketToken: data.data?.ticketToken ?? "",
+      status: data.data?.status ?? null,
+    };
   }
   return {
     ok: false as const,
@@ -116,6 +121,7 @@ export function RsvpForm(props: {
   const [answers, setAnswers] = useState<Record<string, unknown>>({});
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const [rsvpStatus, setRsvpStatus] = useState<RsvpStatus | null>(null);
   const [ticketToken, setTicketToken] = useState(() => {
     if (typeof window === "undefined") return "";
     const saved = safeJsonParse<{ ticketToken?: string }>(
@@ -138,20 +144,32 @@ export function RsvpForm(props: {
 
   if (done) {
     const href = ticketToken ? `/ticket/${ticketToken}` : null;
+    const ticketDownloadUrl = ticketToken
+      ? `/api/ticket/${ticketToken}/download`
+      : null;
+    const isConfirmed = rsvpStatus === "CONFIRMED";
     return (
       <Alert severity="success">
         <Stack spacing={1} sx={{ alignItems: "flex-start" }}>
           <Typography variant="body2">
-            You&apos;re on the list. See you at the event.
+            {isConfirmed
+              ? "Registration confirmed. Download and save your ticket now — you’ll need it for check-in."
+              : "Registration received. We’ll let you know when its status changes."}
           </Typography>
-          {href ? (
+          {isConfirmed && ticketDownloadUrl ? (
             <Button
-              component={Link}
-              href={href}
-              variant="outlined"
+              component="a"
+              href={ticketDownloadUrl}
+              download
+              variant="contained"
               size="small"
               sx={{ borderRadius: 999 }}
             >
+              Download and save ticket
+            </Button>
+          ) : null}
+          {isConfirmed && href ? (
+            <Button component={Link} href={href} variant="outlined" size="small" sx={{ borderRadius: 999 }}>
               View ticket
             </Button>
           ) : null}
@@ -399,6 +417,7 @@ export function RsvpForm(props: {
               if (!res.ok) setError(res.error);
               else {
                 setTicketToken(res.ticketToken ?? "");
+                setRsvpStatus(res.status);
                 if (typeof window !== "undefined" && res.ticketToken) {
                   window.localStorage.setItem(
                     lsKey,
@@ -413,7 +432,7 @@ export function RsvpForm(props: {
             });
           }}
         >
-          RSVP
+          Register
         </Button>
       </Box>
     );
@@ -438,6 +457,7 @@ export function RsvpForm(props: {
           if (!res.ok) setError(res.error);
           else {
             setTicketToken(res.ticketToken ?? "");
+            setRsvpStatus(res.status);
             if (typeof window !== "undefined" && res.ticketToken) {
               window.localStorage.setItem(
                 lsKey,
@@ -458,7 +478,7 @@ export function RsvpForm(props: {
         </Alert>
       ) : null}
       <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-        RSVP with your email
+        Register with your email
       </Typography>
       <TextField
         name="name"
@@ -686,7 +706,7 @@ export function RsvpForm(props: {
         </Stack>
       ) : null}
       <Button variant="contained" size="large" disabled={pending} type="submit">
-        RSVP
+        Register
       </Button>
     </Box>
   );

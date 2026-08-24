@@ -188,6 +188,7 @@ model Event {
   rsvps            RSVP[]
   invites          EventInvite[]
   registrationForm EventRegistrationForm?
+  feedbackForm     EventFeedbackForm?
 
   @@unique([organisationId, slug])
   @@index([organisationId])
@@ -274,6 +275,7 @@ model RSVP {
   eventInstance EventInstance? @relation(fields: [eventInstanceId], references: [id], onDelete: Cascade)
   user          User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
   answers       RsvpAnswer[]
+  feedbackResponses EventFeedbackResponse[]
   checkInEvents CheckInEvent[]
 
   @@index([eventId])
@@ -349,6 +351,76 @@ model RsvpAnswer {
   @@index([rsvpId])
   @@index([fieldId])
   @@index([rsvpId, fieldId])
+}
+
+/// A public, opt-in feedback form. It is deliberately separate from the
+/// registration form so changing questions never alters RSVP data.
+model EventFeedbackForm {
+  id                 String   @id @default(cuid())
+  eventId            String   @unique
+  isOpen             Boolean  @default(false)
+  title              String   @default("Event feedback")
+  thankYouMessage    String   @default("Thanks for sharing your feedback.")
+  certificateEnabled Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  event     Event                   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  fields    EventFeedbackField[]
+  responses EventFeedbackResponse[]
+
+  @@index([eventId])
+}
+
+model EventFeedbackField {
+  id        String                @id @default(cuid())
+  formId    String
+  key       String
+  label     String
+  type      RegistrationFieldType
+  required  Boolean               @default(false)
+  sortOrder Int                   @default(0)
+  options   Json?
+  createdAt DateTime              @default(now())
+  updatedAt DateTime              @updatedAt
+
+  form    EventFeedbackForm @relation(fields: [formId], references: [id], onDelete: Cascade)
+  answers EventFeedbackAnswer[]
+
+  @@unique([formId, key])
+  @@index([formId, sortOrder])
+}
+
+model EventFeedbackResponse {
+  id               String   @id @default(cuid())
+  formId           String
+  rsvpId           String
+  certificateToken String   @unique @default(cuid())
+  submittedAt      DateTime @default(now())
+
+  form    EventFeedbackForm     @relation(fields: [formId], references: [id], onDelete: Cascade)
+  rsvp    RSVP                  @relation(fields: [rsvpId], references: [id], onDelete: Cascade)
+  answers EventFeedbackAnswer[]
+
+  @@unique([formId, rsvpId])
+  @@index([rsvpId])
+}
+
+model EventFeedbackAnswer {
+  id          String   @id @default(cuid())
+  responseId  String
+  fieldId     String
+  valueText   String?
+  valueBool   Boolean?
+  valueNumber Float?
+  valueDate   DateTime?
+  createdAt   DateTime @default(now())
+
+  response EventFeedbackResponse @relation(fields: [responseId], references: [id], onDelete: Cascade)
+  field    EventFeedbackField    @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+
+  @@index([responseId])
+  @@index([fieldId])
 }
 
 /// Append-only security and business-event audit trail. Metadata must never

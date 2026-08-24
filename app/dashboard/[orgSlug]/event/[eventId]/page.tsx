@@ -130,6 +130,17 @@ export default async function EventManagePage({ params }: Props) {
       ? f.options.filter((x): x is string => typeof x === "string")
       : [],
   }));
+  const feedbackFormRecord = await prisma.eventFeedbackForm.findUnique({
+    where: { eventId: event.id },
+    include: { fields: { orderBy: { sortOrder: "asc" } } },
+  });
+  const feedbackForm = feedbackFormRecord
+    ? { isOpen: feedbackFormRecord.isOpen, title: feedbackFormRecord.title, thankYouMessage: feedbackFormRecord.thankYouMessage, certificateEnabled: feedbackFormRecord.certificateEnabled }
+    : null;
+  const feedbackFields = (feedbackFormRecord?.fields ?? []).map((field) => ({
+    id: field.id, key: field.key, label: field.label, type: field.type, required: field.required, sortOrder: field.sortOrder,
+    options: Array.isArray(field.options) ? field.options.filter((value): value is string => typeof value === "string") : [],
+  }));
 
   return (
     <Stack spacing={3}>
@@ -178,6 +189,9 @@ export default async function EventManagePage({ params }: Props) {
         organisationSlug={organisation.slug}
         event={event}
         attendees={attendees}
+        feedbackUrl={`${origin}/${organisation.slug}/${event.slug}/feedback`}
+        feedbackForm={feedbackForm}
+        feedbackFields={feedbackFields}
         invites={invites.map((i) => ({
           ...i,
           createdAt: i.createdAt.toISOString(),

@@ -8,6 +8,7 @@ const suffix = randomUUID().replace(/-/g, "");
 let organisationId: string;
 let ticketToken: string;
 let waitlistedToken: string;
+let feedbackEmail: string;
 
 test.beforeAll(async () => {
   const organisation = await prisma.organisation.create({
@@ -37,6 +38,20 @@ test.beforeAll(async () => {
     },
   });
   ticketToken = rsvp.checkInToken;
+  feedbackEmail = rsvp.guestEmail!;
+  const feedbackForm = await prisma.eventFeedbackForm.create({
+    data: { eventId: event.id, isOpen: true, title: "Tell us what you thought" },
+  });
+  await prisma.eventFeedbackField.create({
+    data: {
+      formId: feedbackForm.id,
+      key: "comment",
+      label: "Your feedback",
+      type: "TEXTAREA",
+      required: true,
+      sortOrder: 1,
+    },
+  });
   const waitlisted = await prisma.rSVP.create({
     data: {
       eventId: event.id,
@@ -131,4 +146,22 @@ test("a waitlisted attendee cannot obtain a scannable ticket", async ({ page, re
   await expect(page.getByText("available after this registration is confirmed")).toBeVisible();
   await expect(page.getByRole("link", { name: "Download ticket" })).toHaveCount(0);
   expect((await request.get(`/api/ticket/${waitlistedToken}/download`)).status()).toBe(404);
+});
+
+test("a confirmed attendee can submit feedback and download a white JPEG certificate", async ({ page, request }) => {
+  await page.goto(`/e2e-test-${suffix}/download-ticket-${suffix}/feedback`);
+  await expect(page.getByRole("heading", { name: "Tell us what you thought" })).toBeVisible();
+  await page.getByLabel("Registered email").fill(feedbackEmail);
+  await page.getByLabel("Your feedback").fill("Very useful event.");
+  await page.getByRole("button", { name: "Submit feedback & get certificate" }).click();
+  const certificate = page.getByRole("link", { name: "Download certificate (JPG)" });
+  await expect(certificate).toBeVisible();
+  const href = await certificate.getAttribute("href");
+  expect(href).toMatch(/^\/api\/feedback\/certificate\//);
+  const response = await request.get(href!);
+  expect(response.headers()["content-type"]).toBe("image/jpeg");
+  const bytes = await response.body();
+  expect(Array.from(bytes.subarray(0, 3))).toEqual([0xff, 0xd8, 0xff]);
+  const { data: pixels } = await sharp(bytes).raw().toBuffer({ resolveWithObject: true });
+  expect([...pixels.subarray(0, 3)].every((channel) => channel >= 250)).toBe(true);
 });

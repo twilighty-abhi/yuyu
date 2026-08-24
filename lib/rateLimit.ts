@@ -7,6 +7,7 @@ export type Bucket =
   | "signup"
   | "passwordReset"
   | "rsvp"
+  | "feedback"
   | "upload"
   | "invite"
   | "checkin"
@@ -18,6 +19,7 @@ const limits: Record<Bucket, { max: number; windowMs: number }> = {
   signup: { max: 5, windowMs: 60 * 60_000 },
   passwordReset: { max: 5, windowMs: 60 * 60_000 },
   rsvp: { max: 10, windowMs: 60_000 },
+  feedback: { max: 8, windowMs: 60_000 },
   upload: { max: 12, windowMs: 60 * 60_000 },
   invite: { max: 30, windowMs: 60 * 60_000 },
   checkin: { max: 180, windowMs: 60_000 },

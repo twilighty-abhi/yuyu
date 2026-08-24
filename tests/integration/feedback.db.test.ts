@@ -1,0 +1,34 @@
+import { randomUUID } from "node:crypto";
+import { EventPrivacyType, EventStatus, RsvpStatus } from "@prisma/client";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { prisma } from "@/lib/db";
+import { submitFeedback } from "@/lib/feedback";
+
+const suffix = randomUUID().replace(/-/g, "");
+let organisationId: string;
+let orgSlug: string;
+let eventSlug: string;
+
+describe.sequential("event feedback integration", () => {
+  beforeAll(async () => {
+    orgSlug = `feedback-test-${suffix}`;
+    eventSlug = `event-${suffix}`;
+    const organisation = await prisma.organisation.create({ data: { name: "Feedback test", slug: orgSlug } });
+    organisationId = organisation.id;
+    const event = await prisma.event.create({ data: { organisationId, title: "Feedback event", slug: eventSlug, startDateTime: new Date("2030-01-01T10:00:00Z"), endDateTime: new Date("2030-01-01T11:00:00Z"), timezone: "UTC", status: EventStatus.PUBLISHED, privacyType: EventPrivacyType.PUBLIC } });
+    const form = await prisma.eventFeedbackForm.create({ data: { eventId: event.id, isOpen: true } });
+    await prisma.eventFeedbackField.create({ data: { formId: form.id, key: "comment", label: "Your feedback", type: "TEXTAREA", required: true, sortOrder: 1 } });
+    await prisma.rSVP.create({ data: { eventId: event.id, attendeeKey: `feedback:${suffix}`, guestEmail: `attendee-${suffix}@example.test`, guestName: "Feedback attendee", status: RsvpStatus.CONFIRMED } });
+    await prisma.rSVP.create({ data: { eventId: event.id, attendeeKey: `feedback-wait:${suffix}`, guestEmail: `wait-${suffix}@example.test`, guestName: "Waitlisted attendee", status: RsvpStatus.WAITLISTED } });
+  });
+  afterAll(async () => { if (organisationId) await prisma.organisation.delete({ where: { id: organisationId } }); await prisma.$disconnect(); });
+  it("accepts one completed feedback response and creates a certificate token", async () => {
+    const result = await submitFeedback({ orgSlug, eventSlug, email: `ATTENDEE-${suffix}@example.test`, answers: { comment: "Great event" } });
+    expect(result).toMatchObject({ ok: true, data: { certificateToken: expect.any(String) } });
+    await expect(prisma.eventFeedbackResponse.count()).resolves.toBeGreaterThan(0);
+  });
+  it("prevents duplicate submissions and excludes waitlisted registrations", async () => {
+    await expect(submitFeedback({ orgSlug, eventSlug, email: `attendee-${suffix}@example.test`, answers: { comment: "Again" } })).resolves.toMatchObject({ ok: false, error: "Feedback has already been submitted for this registration." });
+    await expect(submitFeedback({ orgSlug, eventSlug, email: `wait-${suffix}@example.test`, answers: { comment: "Please" } })).resolves.toMatchObject({ ok: false, error: "No confirmed registration was found for that email." });
+  });
+});

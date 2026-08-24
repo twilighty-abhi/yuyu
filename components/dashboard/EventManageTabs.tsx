@@ -13,6 +13,7 @@ import { EventInvitePanel } from "@/components/invites/EventInvitePanel";
 import { EventManageOverview } from "@/components/dashboard/EventManageOverview";
 import { EventAnalyticsPanel } from "@/components/dashboard/EventAnalyticsPanel";
 import { EventManageMore } from "@/components/dashboard/EventManageMore";
+import { FeedbackFormEditor } from "@/components/feedback/FeedbackFormEditor";
 import {
   EventRegistrationFormEditor,
   type RegistrationFieldRow,
@@ -30,6 +31,9 @@ export function EventManageTabs(props: {
   attendees: AttendeeRow[];
   invites: InviteRow[];
   registrationFields: RegistrationFieldRow[];
+  feedbackUrl: string;
+  feedbackForm: { isOpen: boolean; title: string; thankYouMessage: string; certificateEnabled: boolean } | null;
+  feedbackFields: RegistrationFieldRow[];
   analytics: {
     total: number;
     confirmed: number;
@@ -39,7 +43,7 @@ export function EventManageTabs(props: {
     checkedIn: number;
   };
 }) {
-  const { organisationSlug, event, attendees, invites, analytics, registrationFields } = props;
+  const { organisationSlug, event, attendees, invites, analytics, registrationFields, feedbackUrl, feedbackForm, feedbackFields } = props;
   const [tab, setTab] = useState(0);
 
   return (
@@ -57,6 +61,7 @@ export function EventManageTabs(props: {
         <Tab label="Analytics" />
         <Tab label="Invites" />
         <Tab label="Registration form" />
+        <Tab label="Feedback" />
         <Tab label="Check-in" />
         <Tab label="More" />
       </Tabs>
@@ -104,6 +109,9 @@ export function EventManageTabs(props: {
         />
       ) : null}
       {tab === 6 ? (
+        <FeedbackFormEditor organisationSlug={organisationSlug} eventId={event.id} feedbackUrl={feedbackUrl} form={feedbackForm} fields={feedbackFields} />
+      ) : null}
+      {tab === 7 ? (
         <Stack spacing={2}>
           <Paper variant="outlined" sx={{ p: 3 }}>
             <Stack spacing={2} sx={{ alignItems: "flex-start" }}>
@@ -128,7 +136,7 @@ export function EventManageTabs(props: {
           </Paper>
         </Stack>
       ) : null}
-      {tab === 7 ? (
+      {tab === 8 ? (
         <EventManageMore organisationSlug={organisationSlug} event={event} />
       ) : null}
     </>

@@ -69,6 +69,23 @@ test("Auth.js session polling is not treated as repeated sign-in attempts", asyn
   );
 });
 
+test("mobile navigation uses a touch-friendly drawer", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 800 });
+  await page.goto("/");
+
+  const menuButton = page.getByRole("button", { name: "Open navigation menu" });
+  await expect(menuButton).toBeVisible();
+  const bounds = await menuButton.boundingBox();
+  expect(bounds?.width).toBeGreaterThanOrEqual(44);
+  expect(bounds?.height).toBeGreaterThanOrEqual(44);
+
+  await menuButton.click();
+  await expect(page.getByRole("link", { name: "Discover" })).toBeVisible();
+  await page.getByRole("link", { name: "Discover" }).click();
+  await expect(page).toHaveURL(/\/discover$/);
+  await expect(page.getByRole("button", { name: "Open navigation menu" })).toHaveAttribute("aria-expanded", "false");
+});
+
 test("login and crawler controls render", async ({ page }) => {
   const browserErrors: string[] = [];
   page.on("console", (message) => {

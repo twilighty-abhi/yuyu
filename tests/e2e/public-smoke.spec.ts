@@ -92,9 +92,13 @@ test("a confirmed attendee can download a QR ticket", async ({ page }) => {
   await page.goto(`/ticket/${ticketToken}`);
   await expect(page.getByRole("heading", { name: "Downloadable ticket test" })).toBeVisible();
 
+  const ticketResponse = await page.request.get(`/api/ticket/${ticketToken}/download`);
+  expect(ticketResponse.headers()["content-type"]).toBe("image/jpeg");
+  expect(Array.from((await ticketResponse.body()).subarray(0, 3))).toEqual([0xff, 0xd8, 0xff]);
+
   const download = page.waitForEvent("download");
   await page.getByRole("link", { name: "Download ticket" }).click();
-  expect((await download).suggestedFilename()).toBe("downloadable-ticket-test-ticket.svg");
+  expect((await download).suggestedFilename()).toBe("downloadable-ticket-test-ticket.jpg");
   expect(browserErrors, browserErrors.join("\n")).toEqual([]);
 });
 

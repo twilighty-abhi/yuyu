@@ -15,7 +15,7 @@ const isProduction = process.env.NODE_ENV === "production";
 
 const nextConfig: NextConfig = {
   /** Prisma must not be bundled by Turbopack or model delegates (e.g. `eventSeries`) can be missing at runtime. */
-  serverExternalPackages: ["@prisma/client"],
+  serverExternalPackages: ["@prisma/client", "sharp"],
   output: "standalone",
   poweredByHeader: false,
   allowedDevOrigins,

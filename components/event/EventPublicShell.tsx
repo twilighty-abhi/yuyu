@@ -96,35 +96,29 @@ export function EventPublicShell(props: Props) {
   const feedbackKey = `yuyu:feedback:${orgSlug}:e:${event.slug}`;
 
   const [mounted, setMounted] = useState(false);
+  const [localTicketToken, setLocalTicketToken] = useState("");
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setMounted(true);
-  }, []);
+    const timer = window.setTimeout(() => {
+      setMounted(true);
+      try {
+        const saved = window.localStorage.getItem(lsKey);
+        const parsed = saved ? (JSON.parse(saved) as { ticketToken?: string }) : null;
+        const ticketToken = parsed?.ticketToken ?? "";
+        setLocalTicketToken(ticketToken);
+
+        const alreadySubmittedFeedback = Boolean(window.localStorage.getItem(feedbackKey));
+        setFeedbackOpen(isPast && !alreadySubmittedFeedback && Boolean(ticketToken));
+      } catch {
+        setLocalTicketToken("");
+        setFeedbackOpen(false);
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [feedbackKey, isPast, lsKey]);
 
   const [registerOpen, setRegisterOpen] = useState(false);
-  const [localTicketToken] = useState<string>(() => {
-    if (typeof window === "undefined") return "";
-    try {
-      const saved = window.localStorage.getItem(lsKey);
-      const parsed = saved ? (JSON.parse(saved) as { ticketToken?: string }) : null;
-      return parsed?.ticketToken ?? "";
-    } catch {
-      return "";
-    }
-  });
-  const [feedbackOpen, setFeedbackOpen] = useState(() => {
-    if (typeof window === "undefined") return false;
-    try {
-      const fb = window.localStorage.getItem(feedbackKey);
-      const already = Boolean(fb);
-      if (!isPast || already) return false;
-      const saved = window.localStorage.getItem(lsKey);
-      const parsed = saved ? (JSON.parse(saved) as { ticketToken?: string }) : null;
-      return Boolean(parsed?.ticketToken);
-    } catch {
-      return false;
-    }
-  });
   const [stars, setStars] = useState<number | null>(null);
   const [feedbackText, setFeedbackText] = useState("");
   const [feedbackSaved, setFeedbackSaved] = useState(false);

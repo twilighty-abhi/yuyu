@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useSession } from "next-auth/react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -122,13 +122,17 @@ export function RsvpForm(props: {
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const [rsvpStatus, setRsvpStatus] = useState<RsvpStatus | null>(null);
-  const [ticketToken, setTicketToken] = useState(() => {
-    if (typeof window === "undefined") return "";
-    const saved = safeJsonParse<{ ticketToken?: string }>(
-      window.localStorage.getItem(lsKey),
-    );
-    return saved?.ticketToken ?? "";
-  });
+  const [ticketToken, setTicketToken] = useState("");
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const saved = safeJsonParse<{ ticketToken?: string }>(
+        window.localStorage.getItem(lsKey),
+      );
+      setTicketToken(saved?.ticketToken ?? "");
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [lsKey]);
   const [pending, startTransition] = useTransition();
 
   const fields = registrationFields ?? [];

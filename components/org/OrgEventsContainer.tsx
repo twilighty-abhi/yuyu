@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Box from "@mui/material/Box";
 import Stack from "@mui/material/Stack";
 import Grid from "@mui/material/Grid";
@@ -44,18 +44,31 @@ type MergedItem =
 type OrgEventsContainerProps = {
   orgSlug: string;
   organisationName: string;
+  initialNow: string;
   items: MergedItem[];
 };
 
-export function OrgEventsContainer({ orgSlug, organisationName, items }: OrgEventsContainerProps) {
+export function OrgEventsContainer({ orgSlug, organisationName, initialNow, items }: OrgEventsContainerProps) {
   const [activeTab, setActiveTab] = useState<"upcoming" | "past">("upcoming");
   const [viewMode, setViewMode] = useState<"grid" | "calendar">("grid");
 
-  // State for Calendar Month/Year
-  const now = new Date();
+  // Use the server snapshot for the initial render so event grouping hydrates
+  // consistently, then adopt the browser's clock after hydration.
+  const [now, setNow] = useState(() => new Date(initialNow));
   const [currentMonth, setCurrentMonth] = useState(now.getMonth());
   const [currentYear, setCurrentYear] = useState(now.getFullYear());
   const [selectedDay, setSelectedDay] = useState<number | null>(now.getDate());
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const localNow = new Date();
+      setNow(localNow);
+      setCurrentMonth(localNow.getMonth());
+      setCurrentYear(localNow.getFullYear());
+      setSelectedDay(localNow.getDate());
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   // Filter items by time status
   const filteredItems = items.filter((item) => {

@@ -8,7 +8,7 @@ import Typography from "@mui/material/Typography";
 import Link from "next/link";
 
 function formatStart(start: Date, timeZone: string) {
-  return start.toLocaleString(undefined, {
+  return start.toLocaleString("en-US", {
     dateStyle: "medium",
     timeStyle: "short",
     timeZone,

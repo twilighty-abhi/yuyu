@@ -264,6 +264,7 @@ export default async function OrganisationPage({ params }: Props) {
           <OrgEventsContainer
             orgSlug={org.slug}
             organisationName={org.name}
+            initialNow={now.toISOString()}
             items={merged}
           />
         )}

@@ -12,7 +12,7 @@ function formatRange(start: Date, end: Date, timeZone: string) {
     timeStyle: "short",
     timeZone,
   };
-  return `${start.toLocaleString(undefined, opts)} – ${end.toLocaleString(undefined, { timeStyle: "short", timeZone })}`;
+  return `${start.toLocaleString("en-US", opts)} – ${end.toLocaleString("en-US", { timeStyle: "short", timeZone })}`;
 }
 
 export function InstanceCard(props: {

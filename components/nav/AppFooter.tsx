@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Box from "@mui/material/Box";
 import Container from "@mui/material/Container";
 import Stack from "@mui/material/Stack";
@@ -15,6 +16,12 @@ const footerLinks = [
 
 export function AppFooter() {
   const pathname = usePathname();
+  const [year, setYear] = useState<number | null>(null);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setYear(new Date().getFullYear()), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   // Hide footer on login page
   if (pathname === "/login") return null;
@@ -51,7 +58,7 @@ export function AppFooter() {
               Yuyu
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              © {new Date().getFullYear()}
+              © {year ?? ""}
             </Typography>
           </Stack>
 

@@ -5,6 +5,9 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -19,11 +22,26 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U yuyu -d yuyu_ci"
           --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
     env:
       DATABASE_URL: postgresql://yuyu:yuyu_ci@localhost:5432/yuyu_ci
       AUTH_SECRET: ci-only-not-a-production-secret-0123456789
       AUTH_URL: http://localhost:3000
+      NEXT_PUBLIC_BASE_URL: http://localhost:3000
+      REDIS_URL: redis://localhost:6379
+      CRON_SECRET: ci-cron-secret-not-for-production-0123456789
+      HEALTHCHECK_SECRET: ci-health-secret-not-for-production-012345
       NEXT_SERVER_ACTIONS_ENCRYPTION_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+      MFA_ENCRYPTION_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+      EMAIL_FROM: Yuyu CI <noreply@example.test>
+      SMTP_SERVICE: test
+      SMTP_ALLOW_UNAUTHENTICATED: "1"
+      TRUSTED_PROXY_IP_HEADER: x-forwarded-for
+      S3_BUCKET: yuyu-ci
+      S3_REGION: us-east-1
+      ALLOW_INSECURE_PRODUCTION_TESTS: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -40,5 +58,16 @@ jobs:
       - run: npm run test:integration
       - run: npm run build
       - run: docker build --build-arg NEXT_SERVER_ACTIONS_ENCRYPTION_KEY="$NEXT_SERVER_ACTIONS_ENCRYPTION_KEY" -t yuyu:ci .
+      - name: Smoke-test standalone container
+        run: |
+          docker run -d --name yuyu-ci --network host \
+            -e CI=true -e ALLOW_INSECURE_PRODUCTION_TESTS=1 \
+            -e DATABASE_URL -e AUTH_SECRET -e AUTH_URL -e NEXT_PUBLIC_BASE_URL \
+            -e REDIS_URL -e CRON_SECRET -e HEALTHCHECK_SECRET \
+            -e NEXT_SERVER_ACTIONS_ENCRYPTION_KEY -e MFA_ENCRYPTION_KEY \
+            -e EMAIL_FROM -e SMTP_SERVICE -e SMTP_ALLOW_UNAUTHENTICATED \
+            -e TRUSTED_PROXY_IP_HEADER -e S3_BUCKET -e S3_REGION yuyu:ci
+          curl --fail --retry 15 --retry-delay 2 http://127.0.0.1:3000/api/health
+          docker rm -f yuyu-ci
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e
+      - run: npm run test:e2e:production

@@ -16,7 +16,8 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "html"],
-      include: ["lib/validators.ts", "lib/rsvpCapacity.ts"],
+      include: ["lib/**/*.ts", "app/actions/**/*.ts"],
+      exclude: ["**/*.client.ts"],
     },
   },
 });

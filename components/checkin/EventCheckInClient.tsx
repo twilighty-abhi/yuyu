@@ -137,11 +137,13 @@ export function EventCheckInClient(props: {
   }, [refreshOfflineState]);
 
   useEffect(() => {
-    if ("serviceWorker" in navigator) {
-      void navigator.serviceWorker.register("/sw.js", { scope: "/dashboard/", updateViaCache: "none" }).catch(() => {
-        // Offline data remains available even if the browser disallows service workers.
-      });
-    }
+    // Turbopack's development chunks are replaced frequently and must never be
+    // controlled by the offline worker. The worker is only an event-day
+    // production feature for the check-in dashboard.
+    if (process.env.NODE_ENV !== "production" || !("serviceWorker" in navigator)) return;
+    void navigator.serviceWorker.register("/sw.js", { scope: "/dashboard/", updateViaCache: "none" }).catch(() => {
+      // Offline data remains available even if the browser disallows service workers.
+    });
   }, []);
 
   const downloadOfflineRoster = useCallback(() => {

@@ -1,4 +1,4 @@
-const CACHE_NAME = "yuyu-checkin-static-v3";
+const CACHE_NAME = "yuyu-checkin-static-v4";
 
 self.addEventListener("install", () => {
   self.skipWaiting();

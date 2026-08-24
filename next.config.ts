@@ -30,6 +30,12 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
+        // A service worker controls its own update lifecycle. Never let a CDN
+        // serve an old worker after a deployment with new application chunks.
+        source: "/sw.js",
+        headers: [{ key: "Cache-Control", value: "no-cache, no-store, must-revalidate" }],
+      },
+      {
         source: "/:path*",
         headers: [
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },

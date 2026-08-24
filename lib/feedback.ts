@@ -8,7 +8,7 @@ import { prisma } from "@/lib/db";
 const submissionSchema = z.object({
   orgSlug: z.string().trim().min(1).max(120),
   eventSlug: z.string().trim().min(1).max(160),
-  email: z.string().trim().email().max(320),
+  email: z.string().trim().email().max(320).optional(),
   answers: z.record(z.string(), z.unknown()).default({}),
 });
 
@@ -72,11 +72,10 @@ function validateAnswers(fields: Array<{ id: string; key: string; label: string;
   return { rows };
 }
 
-/** Submit anonymous feedback only for a confirmed RSVP matched by email. */
+/** Submit repeatable anonymous feedback, optionally verifying an attendee for a certificate. */
 export async function submitFeedback(input: unknown): Promise<ActionResult<{ certificateToken: string | null }>> {
   const parsed = submissionSchema.safeParse(input);
-  if (!parsed.success) return { ok: false, error: "Enter a valid registered email and complete the form." };
-  const email = parsed.data.email.trim().toLowerCase();
+  if (!parsed.success) return { ok: false, error: "Complete the feedback form and try again." };
   const event = await prisma.event.findFirst({
     where: { organisation: { slug: parsed.data.orgSlug }, slug: parsed.data.eventSlug, status: EventStatus.PUBLISHED },
     include: { feedbackForm: { include: { fields: { orderBy: { sortOrder: "asc" } } } } },
@@ -84,32 +83,36 @@ export async function submitFeedback(input: unknown): Promise<ActionResult<{ cer
   if (!event?.feedbackForm?.isOpen) return { ok: false, error: "Feedback is not open for this event." };
   const normalized = validateAnswers(event.feedbackForm.fields, parsed.data.answers);
   if ("error" in normalized) return { ok: false, error: normalized.error };
-  const rsvp = await prisma.rSVP.findFirst({
-    where: {
-      eventId: event.id,
-      status: RsvpStatus.CONFIRMED,
-      OR: [
-        { guestEmail: { equals: email, mode: "insensitive" } },
-        { user: { is: { email: { equals: email, mode: "insensitive" } } } },
-      ],
-    },
-    select: { id: true },
-  });
-  if (!rsvp) return { ok: false, error: "No confirmed registration was found for that email." };
+  let rsvpId: string | null = null;
+  if (event.feedbackForm.certificateEnabled) {
+    const email = parsed.data.email?.trim().toLowerCase();
+    if (!email) return { ok: false, error: "Enter the email used for your confirmed registration." };
+    const rsvp = await prisma.rSVP.findFirst({
+      where: {
+        eventId: event.id,
+        status: RsvpStatus.CONFIRMED,
+        OR: [
+          { guestEmail: { equals: email, mode: "insensitive" } },
+          { user: { is: { email: { equals: email, mode: "insensitive" } } } },
+        ],
+      },
+      select: { id: true },
+    });
+    if (!rsvp) return { ok: false, error: "Certificate verification failed." };
+    rsvpId = rsvp.id;
+  }
   try {
     const response = await prisma.eventFeedbackResponse.create({
       data: {
         formId: event.feedbackForm.id,
-        rsvpId: rsvp.id,
+        rsvpId,
+        certificateToken: event.feedbackForm.certificateEnabled ? undefined : null,
         answers: { create: normalized.rows.map((row) => ({ ...row })) },
       },
       select: { certificateToken: true },
     });
     return { ok: true, data: { certificateToken: event.feedbackForm.certificateEnabled ? response.certificateToken : null } };
   } catch (error: unknown) {
-    if (typeof error === "object" && error !== null && "code" in error && (error as { code: string }).code === "P2002") {
-      return { ok: false, error: "Feedback has already been submitted for this registration." };
-    }
     console.error("Could not submit feedback", error);
     return { ok: false, error: "Could not submit feedback. Please try again." };
   }

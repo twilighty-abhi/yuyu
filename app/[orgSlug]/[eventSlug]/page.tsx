@@ -135,7 +135,6 @@ export default async function EventPage({ params }: Props) {
   const isPast = event.endDateTime <= new Date();
   const showRsvp = event.status === EventStatus.PUBLISHED && !isPast;
   const confirmedCount = await countConfirmedForEvent(event.id);
-  const totalRsvps = await prisma.rSVP.count({ where: { eventId: event.id } });
   const spotsLeft =
     event.capacity != null
       ? Math.max(0, event.capacity - confirmedCount)
@@ -145,7 +144,7 @@ export default async function EventPage({ params }: Props) {
   // Attendance is private by default. Public pages expose only the aggregate
   // count when the organiser has enabled it, never attendee names or images.
   const avatars: never[] = [];
-  const attendeeSummary = confirmedCount > 0 ? `${confirmedCount} going` : "";
+  const attendeeSummary = event.showRegistrationCount && confirmedCount > 0 ? `${confirmedCount} going` : "";
   const timeZone = safeTimeZone(event.timezone);
   const datePrimary = formatDateHeading(event.startDateTime, timeZone);
   const timeRange = formatTimeRange(
@@ -178,8 +177,7 @@ export default async function EventPage({ params }: Props) {
           (event as typeof event & { showRegistrationCount?: boolean })
             .showRegistrationCount ?? true,
       }}
-      confirmedCount={confirmedCount}
-      totalRsvps={totalRsvps}
+      confirmedCount={event.showRegistrationCount ? confirmedCount : null}
       showRsvp={showRsvp}
       full={full}
       canManage={canManage}

@@ -51,8 +51,7 @@ type Props = {
     capacity: number | null;
     showRegistrationCount: boolean;
   };
-  confirmedCount: number;
-  totalRsvps: number;
+  confirmedCount: number | null;
   showRsvp: boolean;
   full: boolean;
   canManage: boolean;
@@ -131,6 +130,7 @@ export function EventPublicShell(props: Props) {
   const [feedbackSaved, setFeedbackSaved] = useState(false);
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
 
+  const publicConfirmedCount = confirmedCount ?? 0;
   const goingLabel = isPast ? "went" : "going";
   const hasLocalTicket = mounted && Boolean(localTicketToken);
 
@@ -256,7 +256,7 @@ export function EventPublicShell(props: Props) {
                 sx={{ p: 2.5, borderRadius: 2, bgcolor: "background.paper" }}
               >
                 <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>
-                  {confirmedCount} {goingLabel}
+                  {publicConfirmedCount} {goingLabel}
                 </Typography>
                 {avatars.length > 0 ? (
                   <Stack spacing={1.5}>
@@ -285,7 +285,7 @@ export function EventPublicShell(props: Props) {
                       ))}
                     </AvatarGroup>
                     {attendeeSummary &&
-                    attendeeSummary !== `${confirmedCount} ${goingLabel}` ? (
+                    attendeeSummary !== `${publicConfirmedCount} ${goingLabel}` ? (
                       <Typography variant="body2" color="text.secondary">
                         {attendeeSummary}
                       </Typography>
@@ -293,7 +293,7 @@ export function EventPublicShell(props: Props) {
                   </Stack>
                 ) : (
                   <Typography variant="body2" color="text.secondary">
-                    {confirmedCount > 0 ? "Attendee details are private." : "Be the first to RSVP."}
+                    {publicConfirmedCount > 0 ? "Attendee details are private." : "Be the first to RSVP."}
                   </Typography>
                 )}
               </Paper>

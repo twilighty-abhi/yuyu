@@ -28,15 +28,14 @@ export function PublicFeedbackForm(props: { orgSlug: string; eventSlug: string; 
   if (done) return <Alert severity="success"><Stack spacing={1} sx={{ alignItems: "flex-start" }}><Typography>{props.thankYouMessage}</Typography>{certificateToken ? <Button component="a" href={`/api/feedback/certificate/${certificateToken}`} variant="contained">Download certificate (JPG)</Button> : null}</Stack></Alert>;
 
   return <Box component="form" onSubmit={(event) => { event.preventDefault(); setError(null); startTransition(async () => {
-    const response = await fetch("/api/feedback", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orgSlug: props.orgSlug, eventSlug: props.eventSlug, email, answers }) });
+    const response = await fetch("/api/feedback", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orgSlug: props.orgSlug, eventSlug: props.eventSlug, ...(props.certificateEnabled ? { email } : {}), answers }) });
     const result = await response.json().catch(() => ({})) as { ok?: boolean; error?: string; data?: { certificateToken?: string | null } };
     if (!response.ok || !result.ok) { setError(result.error ?? "Could not submit feedback."); return; }
     setCertificateToken(result.data?.certificateToken ?? null); setDone(true);
   }); }}>
     <Stack spacing={2.25}>
       {error ? <Alert severity="error">{error}</Alert> : null}
-      <Typography variant="body2" color="text.secondary">Use the same email address you used to register. Feedback can be submitted once.</Typography>
-      <TextField label="Registered email" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required fullWidth />
+      {props.certificateEnabled ? <><Typography variant="body2" color="text.secondary">Use the email address from your confirmed registration to personalize the certificate.</Typography><TextField label="Registered email" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required fullWidth /></> : <Typography variant="body2" color="text.secondary">This feedback is anonymous. No email address or attendee identity is collected.</Typography>}
       {props.fields.map((field) => {
         const value = answers[field.key];
         if (field.type === "TEXTAREA") return <TextField key={field.key} label={field.label} multiline minRows={4} required={field.required} fullWidth value={typeof value === "string" ? value : ""} onChange={(event) => setAnswer(field.key, event.target.value)} />;

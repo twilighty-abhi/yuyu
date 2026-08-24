@@ -91,6 +91,7 @@ export async function requireSuperAdmin(): Promise<
 export type OrgAccessContext = {
   organisation: { id: string; slug: string; name: string };
   membership: Membership;
+  userId: string;
 };
 
 export async function requireOrgRole(
@@ -112,6 +113,7 @@ export async function requireOrgRole(
   return {
     organisation: { id: org.id, slug: org.slug, name: org.name },
     membership,
+    userId: session.user.id,
   };
 }
 

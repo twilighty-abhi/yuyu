@@ -2,7 +2,8 @@ import "server-only";
 
 import { OutboxStatus, Prisma, RsvpStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { sendRSVPConfirmation } from "@/lib/email";
+import { sendApprovalNotification, sendRSVPConfirmation } from "@/lib/email";
+import { sendPasswordResetEmail } from "@/lib/email/passwordReset";
 
 type OutboxClient = Prisma.TransactionClient | typeof prisma;
 
@@ -13,6 +14,19 @@ type RsvpConfirmationPayload = {
   checkInToken: string;
 };
 
+type RsvpStatusPayload = {
+  to: string;
+  eventTitle: string;
+  approved: boolean;
+  checkInToken?: string;
+};
+
+type PasswordResetPayload = {
+  to: string;
+  resetUrl: string;
+  expiresAt: string;
+};
+
 export async function enqueueRsvpConfirmation(
   client: OutboxClient,
   payload: RsvpConfirmationPayload,
@@ -20,6 +34,30 @@ export async function enqueueRsvpConfirmation(
   return client.outboxMessage.create({
     data: {
       kind: "rsvp-confirmation",
+      payload: payload as Prisma.InputJsonValue,
+    },
+  });
+}
+
+export async function enqueueRsvpStatusNotification(
+  client: OutboxClient,
+  payload: RsvpStatusPayload,
+) {
+  return client.outboxMessage.create({
+    data: {
+      kind: "rsvp-status",
+      payload: payload as Prisma.InputJsonValue,
+    },
+  });
+}
+
+export async function enqueuePasswordReset(
+  client: OutboxClient,
+  payload: PasswordResetPayload,
+) {
+  return client.outboxMessage.create({
+    data: {
+      kind: "password-reset",
       payload: payload as Prisma.InputJsonValue,
     },
   });
@@ -37,6 +75,30 @@ function asRsvpConfirmationPayload(value: Prisma.JsonValue): RsvpConfirmationPay
     return null;
   }
   return payload as RsvpConfirmationPayload;
+}
+
+function asRsvpStatusPayload(value: Prisma.JsonValue): RsvpStatusPayload | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const payload = value as Record<string, unknown>;
+  if (
+    typeof payload.to !== "string" ||
+    typeof payload.eventTitle !== "string" ||
+    typeof payload.approved !== "boolean" ||
+    (payload.checkInToken !== undefined && typeof payload.checkInToken !== "string")
+  ) return null;
+  return payload as RsvpStatusPayload;
+}
+
+function asPasswordResetPayload(value: Prisma.JsonValue): PasswordResetPayload | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const payload = value as Record<string, unknown>;
+  if (
+    typeof payload.to !== "string" ||
+    typeof payload.resetUrl !== "string" ||
+    typeof payload.expiresAt !== "string" ||
+    Number.isNaN(Date.parse(payload.expiresAt))
+  ) return null;
+  return payload as PasswordResetPayload;
 }
 
 /** Deliver a small batch. Run this from a protected scheduler, never a request path. */
@@ -67,27 +129,63 @@ export async function deliverOutboxBatch(limit = 20) {
     if (claim.count !== 1) continue;
 
     try {
-      const payload = asRsvpConfirmationPayload(message.payload);
-      if (!payload || message.kind !== "rsvp-confirmation") {
-        throw new Error("Unsupported outbox message");
+      let removeAfterDelivery = false;
+      if (message.kind === "rsvp-confirmation") {
+        const payload = asRsvpConfirmationPayload(message.payload);
+        if (!payload) throw new Error("Invalid RSVP confirmation payload");
+        await sendRSVPConfirmation(payload);
+      } else if (message.kind === "rsvp-status") {
+        const payload = asRsvpStatusPayload(message.payload);
+        if (!payload) throw new Error("Invalid RSVP status payload");
+        if (payload.approved) {
+          await sendRSVPConfirmation({
+            to: payload.to,
+            eventTitle: payload.eventTitle,
+            status: RsvpStatus.CONFIRMED,
+            checkInToken: payload.checkInToken,
+          });
+        } else {
+          await sendApprovalNotification(payload);
+        }
+      } else if (message.kind === "password-reset") {
+        const payload = asPasswordResetPayload(message.payload);
+        if (!payload) throw new Error("Invalid password reset payload");
+        if (new Date(payload.expiresAt) <= new Date()) {
+          await prisma.outboxMessage.delete({ where: { id: message.id } });
+          failed += 1;
+          continue;
+        }
+        await sendPasswordResetEmail(payload);
+        // Reset URLs are bearer secrets. Remove them immediately after sending
+        // rather than retaining them with ordinary delivery history.
+        removeAfterDelivery = true;
+      } else {
+        throw new Error("Unsupported outbox message kind");
       }
-      await sendRSVPConfirmation(payload);
-      await prisma.outboxMessage.update({
-        where: { id: message.id },
-        data: { status: OutboxStatus.SENT, sentAt: new Date(), lastError: null },
-      });
+      if (removeAfterDelivery) {
+        await prisma.outboxMessage.delete({ where: { id: message.id } });
+      } else {
+        await prisma.outboxMessage.update({
+          where: { id: message.id },
+          data: { status: OutboxStatus.SENT, sentAt: new Date(), lastError: null },
+        });
+      }
       sent += 1;
     } catch (error) {
       const attempts = message.attempts + 1;
       const retryAt = new Date(Date.now() + Math.min(60 * 60_000, 2 ** attempts * 60_000));
-      await prisma.outboxMessage.update({
-        where: { id: message.id },
-        data: {
-          status: attempts >= 8 ? OutboxStatus.FAILED : OutboxStatus.PENDING,
-          availableAt: retryAt,
-          lastError: error instanceof Error ? error.message.slice(0, 500) : "Delivery failed",
-        },
-      });
+      if (message.kind === "password-reset" && attempts >= 8) {
+        await prisma.outboxMessage.delete({ where: { id: message.id } });
+      } else {
+        await prisma.outboxMessage.update({
+          where: { id: message.id },
+          data: {
+            status: attempts >= 8 ? OutboxStatus.FAILED : OutboxStatus.PENDING,
+            availableAt: retryAt,
+            lastError: error instanceof Error ? error.message.slice(0, 500) : "Delivery failed",
+          },
+        });
+      }
       failed += 1;
     }
   }

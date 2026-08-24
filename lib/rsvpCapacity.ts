@@ -1,5 +1,6 @@
 import { Prisma, RsvpStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { enqueueRsvpStatusNotification } from "@/lib/outbox";
 
 export async function countConfirmedForEvent(eventId: string): Promise<number> {
   return prisma.rSVP.count({
@@ -22,6 +23,7 @@ export async function confirmRsvpWithinCapacity(params: {
   eventInstanceId?: string;
   capacity: number | null;
   expectedStatuses: RsvpStatus[];
+  notification?: { to: string; eventTitle: string; checkInToken: string };
 }): Promise<"confirmed" | "full" | "changed"> {
   const target = params.eventId ? { eventId: params.eventId } : { eventInstanceId: params.eventInstanceId! };
   return prisma.$transaction(async (tx) => {
@@ -36,6 +38,12 @@ export async function confirmRsvpWithinCapacity(params: {
       where: { id: params.rsvpId, ...target, status: { in: params.expectedStatuses } },
       data: { status: RsvpStatus.CONFIRMED },
     });
+    if (updated.count === 1 && params.notification) {
+      await enqueueRsvpStatusNotification(tx, {
+        ...params.notification,
+        approved: true,
+      });
+    }
     return updated.count === 1 ? "confirmed" : "changed";
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }

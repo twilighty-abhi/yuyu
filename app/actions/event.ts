@@ -22,6 +22,7 @@ import { flattenZodErrors } from "./utils";
 import { getPublicUrl, uploadFile } from "@/lib/storage";
 import { isActionRateLimited } from "@/lib/actionRateLimit";
 import { validateEventCoverImage } from "@/lib/imageValidation";
+import { recordAuditEvent } from "@/lib/audit";
 
 const MAX_COVER_IMAGE_BYTES = 5 * 1024 * 1024;
 
@@ -154,6 +155,15 @@ export async function createEvent(input: unknown): Promise<ActionResult<{ id: st
       },
     });
 
+    await recordAuditEvent({
+      action: "EVENT_CREATED",
+      actorUserId: session.user.id,
+      organisationId: org.id,
+      targetType: "Event",
+      targetId: created.id,
+      metadata: { status: created.status },
+    });
+
     revalidateEventPaths(org.slug, slug, created.id);
     return { ok: true, data: { id: created.id, slug: created.slug } };
   } catch (e) {
@@ -224,6 +234,15 @@ export async function updateEvent(input: unknown): Promise<ActionResult> {
       },
     });
 
+    await recordAuditEvent({
+      action: "EVENT_UPDATED",
+      actorUserId: session.user.id,
+      organisationId: org.id,
+      targetType: "Event",
+      targetId: event.id,
+      metadata: { status: data.status },
+    });
+
     revalidateEventPaths(org.slug, event.slug, event.id);
     return { ok: true };
   } catch (e) {
@@ -266,6 +285,13 @@ export async function deleteEvent(input: unknown): Promise<ActionResult> {
   const slug = event.slug;
   try {
     await prisma.event.delete({ where: { id: event.id } });
+    await recordAuditEvent({
+      action: "EVENT_DELETED",
+      actorUserId: session.user.id,
+      organisationId: org.id,
+      targetType: "Event",
+      targetId: event.id,
+    });
     revalidatePath(`/${org.slug}`);
     revalidatePath(`/${org.slug}/${slug}`);
     revalidatePath(`/dashboard/${org.slug}`);
@@ -329,6 +355,13 @@ export async function updateEventSlug(
 
   try {
     await prisma.event.update({ where: { id: event.id }, data: { slug } });
+    await recordAuditEvent({
+      action: "EVENT_SLUG_UPDATED",
+      actorUserId: session.user.id,
+      organisationId: org.id,
+      targetType: "Event",
+      targetId: event.id,
+    });
     // Revalidate both old and new public URLs + dashboard.
     revalidateEventPaths(org.slug, event.slug, event.id);
     revalidateEventPaths(org.slug, slug, event.id);
@@ -411,6 +444,15 @@ export async function cloneEvent(
       },
     });
 
+    await recordAuditEvent({
+      action: "EVENT_CLONED",
+      actorUserId: session.user.id,
+      organisationId: org.id,
+      targetType: "Event",
+      targetId: created.id,
+      metadata: { sourceEventId: source.id },
+    });
+
     revalidateEventPaths(org.slug, created.slug, created.id);
     return { ok: true, data: { eventId: created.id } };
   } catch (e) {
@@ -451,6 +493,14 @@ export async function publishEvent(input: {
   await prisma.event.update({
     where: { id: event.id },
     data: { status: EventStatus.PUBLISHED },
+  });
+
+  await recordAuditEvent({
+    action: "EVENT_PUBLISHED",
+    actorUserId: session.user.id,
+    organisationId: org.id,
+    targetType: "Event",
+    targetId: event.id,
   });
 
   revalidateEventPaths(org.slug, event.slug, event.id);

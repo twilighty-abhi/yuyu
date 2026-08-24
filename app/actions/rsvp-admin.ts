@@ -9,6 +9,7 @@ import { canManageEvents, getMembership } from "@/lib/permissions";
 import { deleteRsvpSchema, restoreRsvpSchema } from "@/lib/validators";
 import type { ActionResult } from "./org";
 import { flattenZodErrors } from "./utils";
+import { recordAuditEvent } from "@/lib/audit";
 
 const UNDO_TTL_MS = 5 * 60_000;
 
@@ -109,6 +110,8 @@ export async function deleteRsvp(input: unknown): Promise<ActionResult<{ undoId:
     return created;
   });
 
+  await recordAuditEvent({ action: "RSVP_DELETED", actorUserId: session.user.id, organisationId: org.id, targetType: "RSVP", targetId: rsvp.id });
+
   revalidateRsvpPaths(org.slug, { eventId: rsvp.eventId, eventInstanceId: rsvp.eventInstanceId, eventSlug: rsvp.event?.slug });
   return { ok: true, data: { undoId: undo.id } };
 }
@@ -142,9 +145,10 @@ export async function restoreRsvp(input: unknown): Promise<ActionResult> {
     : await prisma.eventInstance.findFirst({ where: { id: snapshot.data.eventInstanceId!, series: { organisationId: org.id } }, select: { id: true } });
   if (!targetExists) return { ok: false, error: "The original event no longer exists." };
 
+  let restoredId: string;
   try {
-    await prisma.$transaction(async (tx) => {
-      await tx.rSVP.create({
+    const restored = await prisma.$transaction(async (tx) => {
+      const created = await tx.rSVP.create({
         data: {
           eventId: snapshot.data.eventId,
           eventInstanceId: snapshot.data.eventInstanceId,
@@ -166,7 +170,9 @@ export async function restoreRsvp(input: unknown): Promise<ActionResult> {
         },
       });
       await tx.rsvpDeletionUndo.delete({ where: { id: undo.id } });
+      return created;
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    restoredId = restored.id;
   } catch (error) {
     if (typeof error === "object" && error !== null && "code" in error && (error as { code?: string }).code === "P2002") {
       return { ok: false, error: "This RSVP can no longer be restored because a conflicting registration exists." };
@@ -183,5 +189,6 @@ export async function restoreRsvp(input: unknown): Promise<ActionResult> {
     eventInstanceId: snapshot.data.eventInstanceId,
     eventSlug,
   });
+  await recordAuditEvent({ action: "RSVP_RESTORED", actorUserId: session.user.id, organisationId: org.id, targetType: "RSVP", targetId: restoredId });
   return { ok: true };
 }

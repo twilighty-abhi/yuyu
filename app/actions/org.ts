@@ -5,6 +5,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { createOrganisationSchema, updateOrganisationSchema } from "@/lib/validators";
 import { flattenZodErrors } from "./utils";
+import { recordAuditEvent } from "@/lib/audit";
 
 export type ActionResult<T = void> =
   | { ok: true; data?: T }
@@ -54,6 +55,8 @@ export async function createOrganisation(
       });
       return created;
     });
+
+    await recordAuditEvent({ action: "ORGANISATION_CREATED", actorUserId: session.user.id, organisationId: org.id, targetType: "Organisation", targetId: org.id });
 
     revalidatePath("/dashboard");
     revalidatePath(`/${org.slug}`);
@@ -118,6 +121,7 @@ export async function updateOrganisation(input: unknown): Promise<ActionResult> 
         logoUrl: logoUrl || null,
       },
     });
+    await recordAuditEvent({ action: "ORGANISATION_UPDATED", actorUserId: session.user.id, organisationId: org.id, targetType: "Organisation", targetId: org.id });
     revalidatePath(`/dashboard/${org.slug}`);
     revalidatePath(`/dashboard/${org.slug}/members`);
     revalidatePath(`/${org.slug}`);
@@ -165,4 +169,3 @@ export async function checkSlugAvailability(slug: string): Promise<boolean> {
 
   return count === 0;
 }
-

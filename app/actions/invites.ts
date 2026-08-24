@@ -12,6 +12,7 @@ import {
 } from "@/lib/validators";
 import type { ActionResult } from "./org";
 import { flattenZodErrors } from "./utils";
+import { recordAuditEvent } from "@/lib/audit";
 
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
@@ -49,12 +50,13 @@ export async function addEventInvite(input: unknown): Promise<ActionResult> {
   if (!event) return { ok: false, error: "Event not found." };
 
   try {
-    await prisma.eventInvite.create({
+    const invite = await prisma.eventInvite.create({
       data: {
         eventId: event.id,
         email: normalizeEmail(email),
       },
     });
+    await recordAuditEvent({ action: "EVENT_INVITE_ADDED", actorUserId: session.user.id, organisationId: org.id, targetType: "EventInvite", targetId: invite.id });
     revalidatePath(`/dashboard/${org.slug}/event/${event.id}`);
     return { ok: true };
   } catch (e: unknown) {
@@ -108,6 +110,7 @@ export async function removeEventInvite(input: unknown): Promise<ActionResult> {
   if (!invite) return { ok: false, error: "Invite not found." };
 
   await prisma.eventInvite.delete({ where: { id: invite.id } });
+  await recordAuditEvent({ action: "EVENT_INVITE_REMOVED", actorUserId: session.user.id, organisationId: org.id, targetType: "EventInvite", targetId: invite.id });
   revalidatePath(`/dashboard/${org.slug}/event/${event.id}`);
   return { ok: true };
 }
@@ -144,12 +147,13 @@ export async function addSeriesInvite(input: unknown): Promise<ActionResult> {
   if (!series) return { ok: false, error: "Series not found." };
 
   try {
-    await prisma.seriesInvite.create({
+    const invite = await prisma.seriesInvite.create({
       data: {
         eventSeriesId: series.id,
         email: normalizeEmail(email),
       },
     });
+    await recordAuditEvent({ action: "SERIES_INVITE_ADDED", actorUserId: session.user.id, organisationId: org.id, targetType: "SeriesInvite", targetId: invite.id });
     revalidatePath(`/dashboard/${org.slug}/series/${series.id}`);
     return { ok: true };
   } catch (e: unknown) {
@@ -203,6 +207,7 @@ export async function removeSeriesInvite(input: unknown): Promise<ActionResult> 
   if (!invite) return { ok: false, error: "Invite not found." };
 
   await prisma.seriesInvite.delete({ where: { id: invite.id } });
+  await recordAuditEvent({ action: "SERIES_INVITE_REMOVED", actorUserId: session.user.id, organisationId: org.id, targetType: "SeriesInvite", targetId: invite.id });
   revalidatePath(`/dashboard/${org.slug}/series/${series.id}`);
   return { ok: true };
 }

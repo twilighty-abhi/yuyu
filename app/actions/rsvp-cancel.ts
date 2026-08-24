@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { enqueueRsvpStatusNotification } from "@/lib/outbox";
+import { recordAuditEvent } from "@/lib/audit";
 import type { ActionResult } from "./org";
 
 /**
@@ -28,14 +30,15 @@ export async function cancelRsvp(input: {
         select: {
           id: true,
           slug: true,
-          organisation: { select: { slug: true } },
+          title: true,
+          organisation: { select: { id: true, slug: true } },
         },
       },
       eventInstance: {
         select: {
           id: true,
           series: {
-            select: { organisation: { select: { slug: true } } },
+            select: { title: true, organisation: { select: { id: true, slug: true } } },
           },
         },
       },
@@ -72,17 +75,35 @@ export async function cancelRsvp(input: {
       const nextWaitlisted = await tx.rSVP.findFirst({
         where: { ...target, status: "WAITLISTED" },
         orderBy: { createdAt: "asc" },
+        include: { user: { select: { email: true } } },
       });
       if (nextWaitlisted) {
-        await tx.rSVP.updateMany({
+        const promoted = await tx.rSVP.updateMany({
           where: { id: nextWaitlisted.id, status: "WAITLISTED" },
           data: { status: "CONFIRMED" },
         });
+        const to = nextWaitlisted.user?.email?.trim() || nextWaitlisted.guestEmail;
+        if (promoted.count === 1 && to) {
+          await enqueueRsvpStatusNotification(tx, {
+            to,
+            eventTitle: rsvp.event?.title ?? rsvp.eventInstance!.series.title,
+            approved: true,
+            checkInToken: nextWaitlisted.checkInToken,
+          });
+        }
       }
     }
     return { error: null };
   });
   if (cancellation.error) return { ok: false, error: cancellation.error };
+
+  await recordAuditEvent({
+    action: "RSVP_CANCELLED",
+    actorUserId: session?.user?.id ?? null,
+    organisationId: rsvp.event?.organisation.id ?? rsvp.eventInstance?.series.organisation.id,
+    targetType: "RSVP",
+    targetId: rsvp.id,
+  });
 
   // Revalidate public pages
   const orgSlug =

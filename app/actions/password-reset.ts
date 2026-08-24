@@ -7,6 +7,7 @@ import { prisma } from "@/lib/db";
 import type { ActionResult } from "./org";
 import { flattenZodErrors } from "./utils";
 import { isActionRateLimited } from "@/lib/actionRateLimit";
+import { enqueuePasswordReset } from "@/lib/outbox";
 
 const TOKEN_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
 
@@ -56,33 +57,22 @@ export async function requestPasswordReset(
   const tokenHash = hashToken(rawToken);
   const expires = new Date(Date.now() + TOKEN_EXPIRY_MS);
 
-  // Delete any existing reset tokens for this email
-  await prisma.verificationToken.deleteMany({
-    where: { identifier: `reset:${email}` },
-  });
-
-  // Store the token
-  await prisma.verificationToken.create({
-    data: {
-      identifier: `reset:${email}`,
-      token: tokenHash,
-      expires,
-    },
-  });
-
-  // Send the reset email
   const baseUrl = (
     process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"
   ).replace(/\/$/, "");
   const resetUrl = `${baseUrl}/reset-password?token=${rawToken}&email=${encodeURIComponent(email)}`;
 
-  try {
-    const { sendPasswordResetEmail } = await import("@/lib/email/passwordReset");
-    await sendPasswordResetEmail({ to: email, resetUrl });
-  } catch (err) {
-    console.error("[PASSWORD RESET] Failed to send email:", err);
-    // Still return success — don't expose errors to the client
-  }
+  // Replace the token and queue its email atomically. SMTP outages can then be
+  // retried by the worker without losing an otherwise-valid reset request.
+  await prisma.$transaction(async (tx) => {
+    await tx.verificationToken.deleteMany({
+      where: { identifier: `reset:${email}` },
+    });
+    await tx.verificationToken.create({
+      data: { identifier: `reset:${email}`, token: tokenHash, expires },
+    });
+    await enqueuePasswordReset(tx, { to: email, resetUrl, expiresAt: expires.toISOString() });
+  });
 
   return { ok: true, data: { sent: true } };
 }

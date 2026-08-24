@@ -4,12 +4,13 @@ import { RsvpStatus } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { sendApprovalNotification } from "@/lib/email";
+import { enqueueRsvpStatusNotification } from "@/lib/outbox";
 import { canManageEvents, getMembership } from "@/lib/permissions";
 import { confirmRsvpWithinCapacity } from "@/lib/rsvpCapacity";
 import { rsvpTransitionSchema } from "@/lib/validators";
 import type { ActionResult } from "./org";
 import { flattenZodErrors } from "./utils";
+import { recordAuditEvent } from "@/lib/audit";
 
 function revalidateRsvpPaths(params: {
   orgSlug: string;
@@ -53,6 +54,7 @@ async function loadRsvpContext(
     if (!event) return { error: "Event not found." as const };
     const rsvp = await prisma.rSVP.findFirst({
       where: { id: rsvpId, eventId: event.id },
+      include: { user: { select: { email: true } } },
     });
     if (!rsvp) return { error: "RSVP not found." as const };
     return { org, event, rsvp, instance: null as null };
@@ -69,6 +71,7 @@ async function loadRsvpContext(
     if (!instance) return { error: "Instance not found." as const };
     const rsvp = await prisma.rSVP.findFirst({
       where: { id: rsvpId, eventInstanceId: instance.id },
+      include: { user: { select: { email: true } } },
     });
     if (!rsvp) return { error: "RSVP not found." as const };
     return { org, event: null, instance, rsvp };
@@ -116,11 +119,13 @@ export async function approveRsvp(input: unknown): Promise<ActionResult> {
   }
 
   if (ctx.event) {
+    const to = attendeeEmail(rsvp);
     const result = await confirmRsvpWithinCapacity({
       rsvpId: rsvp.id,
       eventId: ctx.event.id,
       capacity: ctx.event.capacity,
       expectedStatuses: [RsvpStatus.PENDING_APPROVAL],
+      ...(to ? { notification: { to, eventTitle: ctx.event.title, checkInToken: rsvp.checkInToken } } : {}),
     });
     if (result === "full") {
       return {
@@ -129,19 +134,7 @@ export async function approveRsvp(input: unknown): Promise<ActionResult> {
       };
     }
     if (result !== "confirmed") return { ok: false, error: "This RSVP was changed by another organiser." };
-    const to = attendeeEmail(
-      await prisma.rSVP.findUniqueOrThrow({
-        where: { id: rsvp.id },
-        include: { user: { select: { email: true } } },
-      }),
-    );
-    if (to) {
-      await sendApprovalNotification({
-        to,
-        eventTitle: ctx.event.title,
-        approved: true,
-      });
-    }
+    await recordAuditEvent({ action: "RSVP_APPROVED", actorUserId: session.user.id, organisationId: org.id, targetType: "RSVP", targetId: rsvp.id });
     revalidateRsvpPaths({
       orgSlug: org.slug,
       eventSlug: ctx.event.slug,
@@ -152,11 +145,13 @@ export async function approveRsvp(input: unknown): Promise<ActionResult> {
 
   const instance = ctx.instance!;
   const series = instance.series;
+  const to = attendeeEmail(rsvp);
   const result = await confirmRsvpWithinCapacity({
     rsvpId: rsvp.id,
     eventInstanceId: instance.id,
     capacity: series.capacity,
     expectedStatuses: [RsvpStatus.PENDING_APPROVAL],
+    ...(to ? { notification: { to, eventTitle: series.title, checkInToken: rsvp.checkInToken } } : {}),
   });
   if (result === "full") {
     return {
@@ -165,18 +160,7 @@ export async function approveRsvp(input: unknown): Promise<ActionResult> {
     };
   }
   if (result !== "confirmed") return { ok: false, error: "This RSVP was changed by another organiser." };
-  const row = await prisma.rSVP.findUniqueOrThrow({
-    where: { id: rsvp.id },
-    include: { user: { select: { email: true } } },
-  });
-  const to = attendeeEmail(row);
-  if (to) {
-    await sendApprovalNotification({
-      to,
-      eventTitle: series.title,
-      approved: true,
-    });
-  }
+  await recordAuditEvent({ action: "RSVP_APPROVED", actorUserId: session.user.id, organisationId: org.id, targetType: "RSVP", targetId: rsvp.id });
   revalidateRsvpPaths({
     orgSlug: org.slug,
     eventInstanceId: instance.id,
@@ -218,26 +202,26 @@ export async function rejectRsvp(input: unknown): Promise<ActionResult> {
     return { ok: false, error: "This RSVP cannot be rejected." };
   }
 
-  const rejected = await prisma.rSVP.updateMany({
-    where: { id: rsvp.id, status: { in: [RsvpStatus.PENDING_APPROVAL, RsvpStatus.WAITLISTED] } },
-    data: { status: RsvpStatus.REJECTED },
-  });
-  if (rejected.count !== 1) return { ok: false, error: "This RSVP was changed by another organiser." };
-
-  if (ctx.event) {
-    const to = attendeeEmail(
-      await prisma.rSVP.findUniqueOrThrow({
-        where: { id: rsvp.id },
-        include: { user: { select: { email: true } } },
-      }),
-    );
-    if (to) {
-      await sendApprovalNotification({
+  const to = attendeeEmail(rsvp);
+  const rejected = await prisma.$transaction(async (tx) => {
+    const result = await tx.rSVP.updateMany({
+      where: { id: rsvp.id, status: { in: [RsvpStatus.PENDING_APPROVAL, RsvpStatus.WAITLISTED] } },
+      data: { status: RsvpStatus.REJECTED },
+    });
+    if (result.count === 1 && to) {
+      await enqueueRsvpStatusNotification(tx, {
         to,
-        eventTitle: ctx.event.title,
+        eventTitle: ctx.event?.title ?? ctx.instance!.series.title,
         approved: false,
       });
     }
+    return result;
+  });
+  if (rejected.count !== 1) return { ok: false, error: "This RSVP was changed by another organiser." };
+
+  await recordAuditEvent({ action: "RSVP_REJECTED", actorUserId: session.user.id, organisationId: org.id, targetType: "RSVP", targetId: rsvp.id });
+
+  if (ctx.event) {
     revalidateRsvpPaths({
       orgSlug: org.slug,
       eventSlug: ctx.event.slug,
@@ -247,19 +231,6 @@ export async function rejectRsvp(input: unknown): Promise<ActionResult> {
   }
 
   const instance = ctx.instance!;
-  const to = attendeeEmail(
-    await prisma.rSVP.findUniqueOrThrow({
-      where: { id: rsvp.id },
-      include: { user: { select: { email: true } } },
-    }),
-  );
-  if (to) {
-    await sendApprovalNotification({
-      to,
-      eventTitle: instance.series.title,
-      approved: false,
-    });
-  }
   revalidateRsvpPaths({
     orgSlug: org.slug,
     eventInstanceId: instance.id,
@@ -299,16 +270,19 @@ export async function promoteFromWaitlist(input: unknown): Promise<ActionResult>
   }
 
   if (ctx.event) {
+    const to = attendeeEmail(rsvp);
     const result = await confirmRsvpWithinCapacity({
       rsvpId: rsvp.id,
       eventId: ctx.event.id,
       capacity: ctx.event.capacity,
       expectedStatuses: [RsvpStatus.WAITLISTED],
+      ...(to ? { notification: { to, eventTitle: ctx.event.title, checkInToken: rsvp.checkInToken } } : {}),
     });
     if (result === "full") {
       return { ok: false, error: "Event is still at capacity." };
     }
     if (result !== "confirmed") return { ok: false, error: "This RSVP was changed by another organiser." };
+    await recordAuditEvent({ action: "RSVP_WAITLIST_PROMOTED", actorUserId: session.user.id, organisationId: org.id, targetType: "RSVP", targetId: rsvp.id });
     revalidateRsvpPaths({
       orgSlug: org.slug,
       eventSlug: ctx.event.slug,
@@ -319,16 +293,19 @@ export async function promoteFromWaitlist(input: unknown): Promise<ActionResult>
 
   const instance = ctx.instance!;
   const series = instance.series;
+  const to = attendeeEmail(rsvp);
   const result = await confirmRsvpWithinCapacity({
     rsvpId: rsvp.id,
     eventInstanceId: instance.id,
     capacity: series.capacity,
     expectedStatuses: [RsvpStatus.WAITLISTED],
+    ...(to ? { notification: { to, eventTitle: series.title, checkInToken: rsvp.checkInToken } } : {}),
   });
   if (result === "full") {
     return { ok: false, error: "This occurrence is still at capacity." };
   }
   if (result !== "confirmed") return { ok: false, error: "This RSVP was changed by another organiser." };
+  await recordAuditEvent({ action: "RSVP_WAITLIST_PROMOTED", actorUserId: session.user.id, organisationId: org.id, targetType: "RSVP", targetId: rsvp.id });
   revalidateRsvpPaths({
     orgSlug: org.slug,
     eventInstanceId: instance.id,

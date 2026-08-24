@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { NextResponse } from "next/server";
 import { deliverOutboxBatch } from "@/lib/outbox";
+import { purgeExpiredOperationalData } from "@/lib/retention";
 
 export async function POST(request: Request) {
   const configuredSecret = process.env.CRON_SECRET;
@@ -10,5 +11,6 @@ export async function POST(request: Request) {
   }
 
   const result = await deliverOutboxBatch();
-  return NextResponse.json({ ok: true, ...result });
+  const purged = await purgeExpiredOperationalData();
+  return NextResponse.json({ ok: true, ...result, purged });
 }

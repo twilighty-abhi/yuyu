@@ -9,6 +9,7 @@ import { createOrgInviteSchema, revokeOrgInviteSchema } from "@/lib/validators";
 import type { ActionResult } from "./org";
 import { flattenZodErrors } from "./utils";
 import { isActionRateLimited } from "@/lib/actionRateLimit";
+import { recordAuditEvent } from "@/lib/audit";
 
 function randomToken(): string {
   // 32 chars of base64url-ish entropy, no padding.
@@ -63,6 +64,7 @@ export async function createOrgInvite(input: unknown): Promise<
         },
         select: { id: true, token: true },
       });
+      await recordAuditEvent({ action: "ORGANISATION_INVITE_CREATED", actorUserId: session.user.id, organisationId: org.id, targetType: "OrganisationInvite", targetId: invite.id });
       revalidatePath(`/dashboard/${org.slug}/members`);
       return { ok: true, data: { token: invite.token, inviteId: invite.id } };
     } catch (e: unknown) {
@@ -119,6 +121,7 @@ export async function revokeOrgInvite(input: unknown): Promise<ActionResult> {
   if (invite.usedAt) return { ok: false, error: "Invite is already used." };
 
   await prisma.organisationInvite.delete({ where: { id: invite.id } });
+  await recordAuditEvent({ action: "ORGANISATION_INVITE_REVOKED", actorUserId: session.user.id, organisationId: org.id, targetType: "OrganisationInvite", targetId: invite.id });
   revalidatePath(`/dashboard/${org.slug}/members`);
   return { ok: true };
 }

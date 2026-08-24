@@ -14,6 +14,7 @@ import {
 } from "@/lib/validators";
 import type { ActionResult } from "./org";
 import { flattenZodErrors } from "./utils";
+import { recordAuditEvent } from "@/lib/audit";
 
 function revalidateAllSeriesPaths(
   orgSlug: string,
@@ -119,6 +120,14 @@ export async function createEventSeries(
       where: { eventSeriesId: series.id },
       select: { id: true },
     });
+    await recordAuditEvent({
+      action: "EVENT_SERIES_CREATED",
+      actorUserId: session.user.id,
+      organisationId: org.id,
+      targetType: "EventSeries",
+      targetId: series.id,
+      metadata: { instances: instances.length, status: series.status },
+    });
     revalidateAllSeriesPaths(
       org.slug,
       series.id,
@@ -176,6 +185,15 @@ export async function updateEventSeriesMeta(
     },
   });
 
+  await recordAuditEvent({
+    action: "EVENT_SERIES_UPDATED",
+    actorUserId: session.user.id,
+    organisationId: org.id,
+    targetType: "EventSeries",
+    targetId: series.id,
+    metadata: { status: data.status },
+  });
+
   const instances = await prisma.eventInstance.findMany({
     where: { eventSeriesId: series.id },
     select: { id: true },
@@ -225,6 +243,14 @@ export async function deleteEventSeries(input: unknown): Promise<ActionResult> {
   });
 
   await prisma.eventSeries.delete({ where: { id: series.id } });
+
+  await recordAuditEvent({
+    action: "EVENT_SERIES_DELETED",
+    actorUserId: session.user.id,
+    organisationId: org.id,
+    targetType: "EventSeries",
+    targetId: series.id,
+  });
 
   revalidatePath(`/dashboard/${org.slug}`);
   revalidatePath(`/${org.slug}`);

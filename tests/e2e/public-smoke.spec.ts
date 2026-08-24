@@ -40,7 +40,7 @@ test.beforeAll(async () => {
   ticketToken = rsvp.checkInToken;
   feedbackEmail = rsvp.guestEmail!;
   const feedbackForm = await prisma.eventFeedbackForm.create({
-    data: { eventId: event.id, isOpen: true, title: "Tell us what you thought" },
+    data: { eventId: event.id, isOpen: true, title: "Tell us what you thought", certificateEnabled: true },
   });
   await prisma.eventFeedbackField.create({
     data: {

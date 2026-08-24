@@ -16,7 +16,7 @@ describe.sequential("event feedback integration", () => {
     const organisation = await prisma.organisation.create({ data: { name: "Feedback test", slug: orgSlug } });
     organisationId = organisation.id;
     const event = await prisma.event.create({ data: { organisationId, title: "Feedback event", slug: eventSlug, startDateTime: new Date("2030-01-01T10:00:00Z"), endDateTime: new Date("2030-01-01T11:00:00Z"), timezone: "UTC", status: EventStatus.PUBLISHED, privacyType: EventPrivacyType.PUBLIC } });
-    const form = await prisma.eventFeedbackForm.create({ data: { eventId: event.id, isOpen: true } });
+    const form = await prisma.eventFeedbackForm.create({ data: { eventId: event.id, isOpen: true, certificateEnabled: true } });
     await prisma.eventFeedbackField.create({ data: { formId: form.id, key: "comment", label: "Your feedback", type: "TEXTAREA", required: true, sortOrder: 1 } });
     await prisma.rSVP.create({ data: { eventId: event.id, attendeeKey: `feedback:${suffix}`, guestEmail: `attendee-${suffix}@example.test`, guestName: "Feedback attendee", status: RsvpStatus.CONFIRMED } });
     await prisma.rSVP.create({ data: { eventId: event.id, attendeeKey: `feedback-wait:${suffix}`, guestEmail: `wait-${suffix}@example.test`, guestName: "Waitlisted attendee", status: RsvpStatus.WAITLISTED } });

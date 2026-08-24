@@ -361,7 +361,7 @@ model EventFeedbackForm {
   isOpen             Boolean  @default(false)
   title              String   @default("Event feedback")
   thankYouMessage    String   @default("Thanks for sharing your feedback.")
-  certificateEnabled Boolean  @default(true)
+  certificateEnabled Boolean  @default(false)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 

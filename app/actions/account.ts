@@ -13,6 +13,16 @@ import type { ActionResult } from "./org";
 
 const updateProfileSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(120, "Name must be at most 120 characters"),
+  profileImageUrl: z
+    .string()
+    .trim()
+    .max(2048, "Profile image URL must be at most 2048 characters")
+    .url("Enter a valid image URL")
+    .refine((value) => {
+      const protocol = new URL(value).protocol;
+      return protocol === "http:" || protocol === "https:";
+    }, "Only HTTP and HTTPS image URLs are allowed")
+    .or(z.literal("")),
 });
 
 const updatePasswordSchema = z
@@ -29,7 +39,7 @@ const updatePasswordSchema = z
     path: ["confirmPassword"],
   });
 
-export async function updateAccountProfile(input: unknown): Promise<ActionResult<{ name: string }>> {
+export async function updateAccountProfile(input: unknown): Promise<ActionResult<{ name: string; profileImageUrl: string | null }>> {
   const session = await requireAuth();
   if (await isActionRateLimited("action", session.user.id)) {
     return { ok: false, error: "Too many updates. Please try again later." };
@@ -44,8 +54,12 @@ export async function updateAccountProfile(input: unknown): Promise<ActionResult
     };
   }
 
-  const { name } = parsed.data;
-  await prisma.user.update({ where: { id: session.user.id }, data: { name } });
+  const { name, profileImageUrl } = parsed.data;
+  const savedProfileImageUrl = profileImageUrl || null;
+  await prisma.user.update({
+    where: { id: session.user.id },
+    data: { name, profileImageUrl: savedProfileImageUrl },
+  });
   await recordAuditEvent({
     action: "ACCOUNT_PROFILE_UPDATED",
     actorUserId: session.user.id,
@@ -54,7 +68,7 @@ export async function updateAccountProfile(input: unknown): Promise<ActionResult
   });
   revalidatePath("/account");
 
-  return { ok: true, data: { name } };
+  return { ok: true, data: { name, profileImageUrl: savedProfileImageUrl } };
 }
 
 export async function updateAccountPassword(input: unknown): Promise<ActionResult<{ passwordSet: true }>> {

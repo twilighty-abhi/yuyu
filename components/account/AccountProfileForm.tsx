@@ -16,15 +16,17 @@ export function AccountProfileForm(props: {
   initialName: string;
   email: string | null;
   image: string | null;
+  profileImageUrl: string | null;
   gravatarUrl: string | null;
   createdAtLabel: string;
 }) {
-  const { email, image, gravatarUrl, createdAtLabel } = props;
+  const { email, image, profileImageUrl: initialProfileImageUrl, gravatarUrl, createdAtLabel } = props;
   const [name, setName] = useState(props.initialName);
+  const [profileImageUrl, setProfileImageUrl] = useState(initialProfileImageUrl ?? "");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const { showToast } = useToast();
-  const avatarSource = image ?? gravatarUrl ?? undefined;
+  const avatarSource = profileImageUrl.trim() || image || gravatarUrl || undefined;
   const initials = name.trim().slice(0, 1).toUpperCase() || "U";
 
   return (
@@ -35,13 +37,14 @@ export function AccountProfileForm(props: {
         event.preventDefault();
         setError(null);
         startTransition(async () => {
-          const result = await updateAccountProfile({ name });
+          const result = await updateAccountProfile({ name, profileImageUrl });
           if (!result.ok) {
             setError(result.error);
             showToast(result.error, "error");
             return;
           }
           setName(result.data?.name ?? name.trim());
+          setProfileImageUrl(result.data?.profileImageUrl ?? "");
           showToast("Profile saved", "success");
         });
       }}
@@ -57,7 +60,11 @@ export function AccountProfileForm(props: {
               <Typography variant="h6" sx={{ fontWeight: 700 }}>{name || "Your profile"}</Typography>
               <Typography variant="body2" color="text.secondary" noWrap>{email ?? "No email address"}</Typography>
               <Typography variant="caption" color="text.secondary">
-                {image ? "Profile image from your sign-in provider." : "Uses your Gravatar when available, otherwise your initials."}
+                {profileImageUrl.trim()
+                  ? "Custom profile image."
+                  : image
+                    ? "Profile image from your sign-in provider."
+                    : "Uses your Gravatar when available, otherwise your initials."}
               </Typography>
             </Stack>
           </Stack>
@@ -70,6 +77,16 @@ export function AccountProfileForm(props: {
             required
             fullWidth
             slotProps={{ htmlInput: { maxLength: 120 } }}
+          />
+          <TextField
+            label="Profile image URL"
+            value={profileImageUrl}
+            onChange={(event) => setProfileImageUrl(event.target.value)}
+            type="url"
+            autoComplete="url"
+            fullWidth
+            helperText="Optional. Use an HTTP or HTTPS image URL. Leave blank to use your provider image or Gravatar."
+            slotProps={{ htmlInput: { maxLength: 2048 } }}
           />
           <TextField label="Email address" value={email ?? ""} fullWidth disabled helperText="Email changes will be available in a future update." />
           <Typography variant="caption" color="text.secondary">

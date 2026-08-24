@@ -59,6 +59,8 @@ model User {
   email              String?   @unique
   emailVerified      DateTime?
   image              String?
+  /// User-selected profile image. Provider images remain in `image` as a fallback.
+  profileImageUrl    String?
   /// Bcrypt hash for email + password credential logins. Null for OAuth-only users.
   passwordHash       String?
   /// Incremented to invalidate all issued JWT sessions after account recovery.

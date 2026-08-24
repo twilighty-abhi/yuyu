@@ -1,4 +1,4 @@
-import NextAuth from "next-auth";
+import NextAuth, { CredentialsSignin } from "next-auth";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import Google from "next-auth/providers/google";
 import Credentials from "next-auth/providers/credentials";
@@ -17,6 +17,15 @@ const credentialsSchema = z.object({
   password: z.string().min(1),
   totp: z.string().trim().max(32).optional(),
 });
+
+/**
+ * This code is returned only after the supplied password is valid. It lets the
+ * sign-in screen show the second factor as a distinct step without exposing
+ * whether an arbitrary email address has MFA enabled.
+ */
+class MfaRequiredError extends CredentialsSignin {
+  code = "mfa_required";
+}
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
@@ -77,7 +86,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         if (user.mfaSecretEncrypted) {
           const code = parsed.data.totp ?? "";
-          if (!user.email || !code) return null;
+          if (!user.email) return null;
+          if (!code) throw new MfaRequiredError();
           const validTotp = verifyMfaCode(decryptMfaSecret(user.mfaSecretEncrypted), user.email, code);
           const recoveryHash = hashRecoveryCode(code);
           const validRecovery = user.recoveryCodeHashes.includes(recoveryHash);

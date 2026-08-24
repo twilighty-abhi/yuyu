@@ -94,6 +94,7 @@ export function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [totp, setTotp] = useState("");
+  const [mfaRequired, setMfaRequired] = useState(false);
   const [name, setName] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -104,6 +105,11 @@ export function LoginForm() {
     setError(null);
     setMessage(null);
     setFieldErrors({});
+  }
+
+  function resetMfaChallenge() {
+    setMfaRequired(false);
+    setTotp("");
   }
 
   async function handleSignIn(e: React.FormEvent) {
@@ -129,7 +135,12 @@ export function LoginForm() {
       return;
     }
     if (r.error) {
-      setError("Invalid email or password.");
+      if (r.code === "mfa_required") {
+        setMfaRequired(true);
+        setMessage("Enter the code from your authenticator app to finish signing in.");
+        return;
+      }
+      setError(mfaRequired ? "Invalid authenticator or recovery code." : "Invalid email or password.");
       return;
     }
     router.push(callbackUrl);
@@ -172,6 +183,7 @@ export function LoginForm() {
         onChange={(_, v: Mode) => {
           setMode(v);
           resetStatus();
+          resetMfaChallenge();
         }}
         variant="fullWidth"
         sx={{
@@ -267,7 +279,10 @@ export function LoginForm() {
           required
           fullWidth
           value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          onChange={(e) => {
+            setEmail(e.target.value);
+            resetMfaChallenge();
+          }}
           autoComplete="email"
           error={!!fieldErrors.email}
           helperText={fieldErrors.email?.[0]}
@@ -279,7 +294,10 @@ export function LoginForm() {
           required
           fullWidth
           value={password}
-          onChange={(e) => setPassword(e.target.value)}
+          onChange={(e) => {
+            setPassword(e.target.value);
+            resetMfaChallenge();
+          }}
           autoComplete={isSignUp ? "new-password" : "current-password"}
           error={!!fieldErrors.password}
           helperText={
@@ -288,14 +306,15 @@ export function LoginForm() {
           }
           sx={inputSx}
         />
-        {!isSignUp ? (
+        {!isSignUp && mfaRequired ? (
           <TextField
             label="Authenticator or recovery code"
+            required
             fullWidth
             value={totp}
             onChange={(e) => setTotp(e.target.value)}
             autoComplete="one-time-code"
-            helperText="Required only when MFA is enabled."
+            helperText="Use a six-digit authenticator code or a recovery code."
             sx={inputSx}
           />
         ) : null}
@@ -313,7 +332,9 @@ export function LoginForm() {
               : "Create account"
             : loading === "credentials"
               ? "Signing in…"
-              : "Sign in"}
+              : mfaRequired
+                ? "Verify and sign in"
+                : "Sign in"}
         </Button>
       </Stack>
 
@@ -342,6 +363,7 @@ export function LoginForm() {
           onClick={() => {
             setMode(isSignUp ? "signin" : "signup");
             resetStatus();
+            resetMfaChallenge();
           }}
           sx={{
             color: "rgba(255,255,255,0.7)",

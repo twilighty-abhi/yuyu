@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { EventPrivacyType, EventStatus, PrismaClient, RsvpStatus } from "@prisma/client";
 import { expect, test } from "@playwright/test";
+import sharp from "sharp";
 
 const prisma = new PrismaClient();
 const suffix = randomUUID().replace(/-/g, "");
@@ -94,7 +95,10 @@ test("a confirmed attendee can download a QR ticket", async ({ page }) => {
 
   const ticketResponse = await page.request.get(`/api/ticket/${ticketToken}/download`);
   expect(ticketResponse.headers()["content-type"]).toBe("image/jpeg");
-  expect(Array.from((await ticketResponse.body()).subarray(0, 3))).toEqual([0xff, 0xd8, 0xff]);
+  const ticketBytes = await ticketResponse.body();
+  expect(Array.from(ticketBytes.subarray(0, 3))).toEqual([0xff, 0xd8, 0xff]);
+  const { data: pixels } = await sharp(ticketBytes).raw().toBuffer({ resolveWithObject: true });
+  expect([...pixels.subarray(0, 3)].every((channel) => channel >= 250)).toBe(true);
 
   const download = page.waitForEvent("download");
   await page.getByRole("link", { name: "Download ticket" }).click();

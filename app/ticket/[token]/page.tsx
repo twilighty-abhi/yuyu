@@ -176,12 +176,7 @@ export default async function TicketPage({ params }: Props) {
 
       {rsvp.status !== "REJECTED" ? (
         <TicketDownloadButton
-          attendeeName={displayName(rsvp)}
-          eventTitle={title}
-          organisationName={orgName}
-          when={when}
-          location={locationLine.replace(/^ · /, "") || undefined}
-          ticketUrl={`${origin}/ticket/${rsvp.checkInToken}`}
+          downloadUrl={`/api/ticket/${rsvp.checkInToken}/download`}
         />
       ) : null}
 

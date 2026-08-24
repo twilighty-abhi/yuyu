@@ -1,0 +1,67 @@
+import { randomUUID } from "node:crypto";
+import { EventPrivacyType, EventStatus, PrismaClient, RsvpStatus } from "@prisma/client";
+import { expect, test } from "@playwright/test";
+
+const prisma = new PrismaClient();
+const suffix = randomUUID().replace(/-/g, "");
+let organisationId: string;
+let ticketToken: string;
+
+test.beforeAll(async () => {
+  const organisation = await prisma.organisation.create({
+    data: { name: `E2E Test ${suffix}`, slug: `e2e-test-${suffix}` },
+  });
+  organisationId = organisation.id;
+  const event = await prisma.event.create({
+    data: {
+      organisationId,
+      title: "Downloadable ticket test",
+      slug: `download-ticket-${suffix}`,
+      startDateTime: new Date("2030-01-01T10:00:00.000Z"),
+      endDateTime: new Date("2030-01-01T11:00:00.000Z"),
+      timezone: "UTC",
+      location: "Test venue",
+      status: EventStatus.PUBLISHED,
+      privacyType: EventPrivacyType.PUBLIC,
+    },
+  });
+  const rsvp = await prisma.rSVP.create({
+    data: {
+      eventId: event.id,
+      attendeeKey: `e2e:${suffix}`,
+      guestEmail: `ticket-${suffix}@example.test`,
+      guestName: "Ticket Download Test",
+      status: RsvpStatus.CONFIRMED,
+    },
+  });
+  ticketToken = rsvp.checkInToken;
+});
+
+test.afterAll(async () => {
+  if (organisationId) await prisma.organisation.delete({ where: { id: organisationId } });
+  await prisma.$disconnect();
+});
+
+test("public health endpoint is available", async ({ request }) => {
+  const response = await request.get("/api/health");
+  await expect(response).toBeOK();
+  await expect(response.json()).resolves.toMatchObject({ ok: true });
+});
+
+test("login and crawler controls render", async ({ page }) => {
+  await page.goto("/login");
+  await expect(page.getByRole("heading", { name: "Get started now" })).toBeVisible();
+
+  const robots = await page.request.get("/robots.txt");
+  await expect(robots).toBeOK();
+  await expect(robots.text()).resolves.toContain("Disallow: /ticket/");
+});
+
+test("a confirmed attendee can download a QR ticket", async ({ page }) => {
+  await page.goto(`/ticket/${ticketToken}`);
+  await expect(page.getByRole("heading", { name: "Downloadable ticket test" })).toBeVisible();
+
+  const download = page.waitForEvent("download");
+  await page.getByRole("link", { name: "Download ticket" }).click();
+  expect((await download).suggestedFilename()).toBe("downloadable-ticket-test-ticket.svg");
+});

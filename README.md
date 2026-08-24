@@ -106,6 +106,33 @@ npm run dev
 
 Open `http://localhost:3000`.
 
+### Testing
+
+Run the fast unit suite while developing:
+
+```bash
+npm run test:unit
+```
+
+Run the browser smoke suite (the first run downloads Chromium):
+
+```bash
+npx playwright install chromium
+npm run test:e2e
+```
+
+Run the PostgreSQL-backed integration suite after starting the local database:
+
+```bash
+npm run test:integration
+```
+
+For focused coverage of RSVP validation and capacity controls:
+
+```bash
+npm run test:coverage
+```
+
 ## Authentication
 
 ### Email and password

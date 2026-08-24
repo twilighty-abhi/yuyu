@@ -180,7 +180,7 @@ export function LandingPageClient(props: { getStartedHref: string }) {
                     mb: 4,
                   }}
                 >
-                  Yuyu is a fully open-source, self-hosted developer-first platform. Set up in seconds to manage mixers, meetups, or hackathons with complete data ownership.
+                  Everything you need to bring people together. Create and manage your events in seconds—no tech setup, no tracking, just seamless hosting.
                 </Typography>
               </motion.div>
 

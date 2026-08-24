@@ -69,7 +69,7 @@ test("Auth.js session polling is not treated as repeated sign-in attempts", asyn
   );
 });
 
-test("mobile navigation uses a touch-friendly drawer", async ({ page }) => {
+test("mobile navigation uses a compact touch-friendly menu", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 800 });
   await page.goto("/");
 
@@ -80,8 +80,11 @@ test("mobile navigation uses a touch-friendly drawer", async ({ page }) => {
   expect(bounds?.height).toBeGreaterThanOrEqual(44);
 
   await menuButton.click();
-  await expect(page.getByRole("link", { name: "Discover" })).toBeVisible();
-  await page.getByRole("link", { name: "Discover" }).click();
+  const menu = page.getByRole("menu");
+  await expect(menu).toBeVisible();
+  const menuBounds = await menu.boundingBox();
+  expect(menuBounds?.height).toBeLessThan(280);
+  await page.getByRole("menuitem", { name: "Discover" }).click();
   await expect(page).toHaveURL(/\/discover$/);
   await expect(page.getByRole("button", { name: "Open navigation menu" })).toHaveAttribute("aria-expanded", "false");
 });

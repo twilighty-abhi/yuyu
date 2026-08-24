@@ -12,15 +12,12 @@ import { alpha, useTheme } from "@mui/material/styles";
 import { usePathname } from "next/navigation";
 import IconButton from "@mui/material/IconButton";
 import Tooltip from "@mui/material/Tooltip";
-import Drawer from "@mui/material/Drawer";
 import Divider from "@mui/material/Divider";
-import List from "@mui/material/List";
-import ListItemButton from "@mui/material/ListItemButton";
-import ListItemText from "@mui/material/ListItemText";
+import Menu from "@mui/material/Menu";
+import MenuItem from "@mui/material/MenuItem";
 import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
 import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
 import MenuIcon from "@mui/icons-material/Menu";
-import CloseIcon from "@mui/icons-material/Close";
 import { useAppColorMode } from "@/components/providers";
 
 export function AppBarNav() {
@@ -28,7 +25,9 @@ export function AppBarNav() {
   const theme = useTheme();
   const pathname = usePathname();
   const { mode, toggleColorMode } = useAppColorMode();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mobileMenuAnchor, setMobileMenuAnchor] = useState<HTMLElement | null>(null);
+  const mobileMenuOpen = Boolean(mobileMenuAnchor);
+  const closeMobileMenu = () => setMobileMenuAnchor(null);
 
   if (pathname === "/login") return null;
   const bg =
@@ -126,48 +125,55 @@ export function AppBarNav() {
             )}
           </Box>
           <IconButton
-            aria-label={mobileMenuOpen ? "Close navigation menu" : "Open navigation menu"}
+            aria-label="Open navigation menu"
             aria-controls="mobile-navigation"
             aria-expanded={mobileMenuOpen}
-            onClick={() => setMobileMenuOpen((open) => !open)}
+            onClick={(event) => setMobileMenuAnchor(mobileMenuOpen ? null : event.currentTarget)}
             sx={{ display: { xs: "inline-flex", sm: "none" }, width: 44, height: 44 }}
           >
-            {mobileMenuOpen ? <CloseIcon /> : <MenuIcon />}
+            <MenuIcon />
           </IconButton>
         </Box>
       </Toolbar>
-      <Drawer
-        anchor="right"
+      <Menu
+        id="mobile-navigation"
+        anchorEl={mobileMenuAnchor}
         open={mobileMenuOpen}
-        onClose={() => setMobileMenuOpen(false)}
-        slotProps={{ paper: { id: "mobile-navigation", sx: { width: "min(320px, 88vw)", pt: 1 } } }}
+        onClose={closeMobileMenu}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+        transformOrigin={{ vertical: "top", horizontal: "right" }}
+        slotProps={{
+          paper: {
+            sx: {
+              width: "min(240px, calc(100vw - 24px))",
+              mt: 0.75,
+              border: "1px solid",
+              borderColor: "divider",
+              borderRadius: 2.5,
+              overflow: "hidden",
+            },
+          },
+        }}
       >
-        <Box sx={{ px: 2, pb: 1 }}>
-          <Typography variant="overline" color="text.secondary">Navigation</Typography>
-        </Box>
-        <List sx={{ px: 1, py: 0 }}>
-          <ListItemButton component={Link} href="/discover" onClick={() => setMobileMenuOpen(false)} selected={pathname === "/discover"} sx={{ minHeight: 52, borderRadius: 2 }}>
-            <ListItemText primary="Discover" />
-          </ListItemButton>
-          {status === "authenticated" ? (
-            <ListItemButton component={Link} href="/dashboard" onClick={() => setMobileMenuOpen(false)} selected={pathname?.startsWith("/dashboard")} sx={{ minHeight: 52, borderRadius: 2 }}>
-              <ListItemText primary="Dashboard" />
-            </ListItemButton>
-          ) : null}
-        </List>
-        <Divider sx={{ my: 1 }} />
-        <Box sx={{ p: 2 }}>
-          {status === "authenticated" ? (
-            <Button fullWidth variant="outlined" onClick={() => { setMobileMenuOpen(false); void signOut({ callbackUrl: "/" }); }} sx={{ minHeight: 48 }}>
-              Sign out
-            </Button>
-          ) : (
-            <Button component={Link} href="/login" onClick={() => setMobileMenuOpen(false)} fullWidth variant="contained" sx={{ minHeight: 48 }}>
-              Sign in
-            </Button>
-          )}
-        </Box>
-      </Drawer>
+        <MenuItem component={Link} href="/discover" onClick={closeMobileMenu} selected={pathname === "/discover"} sx={{ minHeight: 48 }}>
+          Discover
+        </MenuItem>
+        {status === "authenticated" ? (
+          <MenuItem component={Link} href="/dashboard" onClick={closeMobileMenu} selected={pathname?.startsWith("/dashboard")} sx={{ minHeight: 48 }}>
+            Dashboard
+          </MenuItem>
+        ) : null}
+        <Divider />
+        {status === "authenticated" ? (
+          <MenuItem onClick={() => { closeMobileMenu(); void signOut({ callbackUrl: "/" }); }} sx={{ minHeight: 48 }}>
+            Sign out
+          </MenuItem>
+        ) : (
+          <MenuItem component={Link} href="/login" onClick={closeMobileMenu} sx={{ minHeight: 48 }}>
+            Sign in
+          </MenuItem>
+        )}
+      </Menu>
     </AppBar>
   );
 }

@@ -6,6 +6,7 @@ const prisma = new PrismaClient();
 const suffix = randomUUID().replace(/-/g, "");
 let organisationId: string;
 let ticketToken: string;
+let waitlistedToken: string;
 
 test.beforeAll(async () => {
   const organisation = await prisma.organisation.create({
@@ -35,6 +36,16 @@ test.beforeAll(async () => {
     },
   });
   ticketToken = rsvp.checkInToken;
+  const waitlisted = await prisma.rSVP.create({
+    data: {
+      eventId: event.id,
+      attendeeKey: `e2e-waitlisted:${suffix}`,
+      guestEmail: `waitlisted-${suffix}@example.test`,
+      guestName: "Waitlisted Test",
+      status: RsvpStatus.WAITLISTED,
+    },
+  });
+  waitlistedToken = waitlisted.checkInToken;
 });
 
 test.afterAll(async () => {
@@ -49,19 +60,38 @@ test("public health endpoint is available", async ({ request }) => {
 });
 
 test("login and crawler controls render", async ({ page }) => {
+  const browserErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") browserErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => browserErrors.push(error.message));
   await page.goto("/login");
   await expect(page.getByRole("heading", { name: "Get started now" })).toBeVisible();
 
   const robots = await page.request.get("/robots.txt");
   await expect(robots).toBeOK();
   await expect(robots.text()).resolves.toContain("Disallow: /ticket/");
+  expect(browserErrors, browserErrors.join("\n")).toEqual([]);
 });
 
 test("a confirmed attendee can download a QR ticket", async ({ page }) => {
+  const browserErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") browserErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => browserErrors.push(error.message));
   await page.goto(`/ticket/${ticketToken}`);
   await expect(page.getByRole("heading", { name: "Downloadable ticket test" })).toBeVisible();
 
   const download = page.waitForEvent("download");
   await page.getByRole("link", { name: "Download ticket" }).click();
   expect((await download).suggestedFilename()).toBe("downloadable-ticket-test-ticket.svg");
+  expect(browserErrors, browserErrors.join("\n")).toEqual([]);
+});
+
+test("a waitlisted attendee cannot obtain a scannable ticket", async ({ page, request }) => {
+  await page.goto(`/ticket/${waitlistedToken}`);
+  await expect(page.getByText("available after this registration is confirmed")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Download ticket" })).toHaveCount(0);
+  expect((await request.get(`/api/ticket/${waitlistedToken}/download`)).status()).toBe(404);
 });

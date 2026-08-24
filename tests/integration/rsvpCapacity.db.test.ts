@@ -70,15 +70,27 @@ describe.sequential("RSVP capacity integration", () => {
 
   it("promotes a waiter when capacity remains", async () => {
     const { event, second } = await createCapacityScenario(2, RsvpStatus.CONFIRMED, RsvpStatus.WAITLISTED);
+    const queuedAfter = new Date();
 
     await expect(confirmRsvpWithinCapacity({
       rsvpId: second.id,
       eventId: event.id,
       capacity: event.capacity,
       expectedStatuses: [RsvpStatus.WAITLISTED],
+      notification: {
+        to: second.guestEmail!,
+        eventTitle: event.title,
+        checkInToken: second.checkInToken,
+      },
     })).resolves.toBe("confirmed");
 
     await expect(prisma.rSVP.count({ where: { eventId: event.id, status: RsvpStatus.CONFIRMED } })).resolves.toBe(2);
+    const message = await prisma.outboxMessage.findFirstOrThrow({
+      where: { kind: "rsvp-status", createdAt: { gte: queuedAfter } },
+      orderBy: { createdAt: "desc" },
+    });
+    expect(message.payload).toMatchObject({ approved: true, checkInToken: second.checkInToken });
+    await prisma.outboxMessage.delete({ where: { id: message.id } });
   });
 
   it("does not overwrite an RSVP that changed status before promotion", async () => {

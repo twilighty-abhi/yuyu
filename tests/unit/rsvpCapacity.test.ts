@@ -6,6 +6,7 @@ const prismaMock = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/db", () => ({ prisma: prismaMock }));
+vi.mock("@/lib/outbox", () => ({ enqueueRsvpStatusNotification: vi.fn() }));
 
 import { confirmRsvpWithinCapacity } from "@/lib/rsvpCapacity";
 

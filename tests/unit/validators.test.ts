@@ -4,6 +4,7 @@ import {
   deleteRsvpSchema,
   restoreRsvpSchema,
   rsvpGuestSchema,
+  createOrganisationSchema,
 } from "@/lib/validators";
 
 describe("RSVP validation", () => {
@@ -50,5 +51,18 @@ describe("event validation", () => {
   it("deduplicates and normalizes event tags", () => {
     const result = createEventSchema.parse({ ...baseEvent, tags: " Design, design\nCommunity " });
     expect(result.tags).toEqual(["design", "community"]);
+  });
+
+  it("accepts IANA timezones and rejects invalid timezone identifiers", () => {
+    expect(createEventSchema.safeParse({ ...baseEvent, timezone: "Asia/Kolkata" }).success).toBe(true);
+    expect(createEventSchema.safeParse({ ...baseEvent, timezone: "Definitely/Not_A_Zone" }).success).toBe(false);
+  });
+
+  it("allows only HTTP(S) external URLs and local uploaded covers", () => {
+    expect(createEventSchema.safeParse({ ...baseEvent, mapLinkUrl: "https://maps.example.test/place" }).success).toBe(true);
+    expect(createEventSchema.safeParse({ ...baseEvent, coverImageUrl: "/api/uploads/image-id" }).success).toBe(true);
+    expect(createEventSchema.safeParse({ ...baseEvent, mapLinkUrl: "javascript:alert(1)" }).success).toBe(false);
+    expect(createEventSchema.safeParse({ ...baseEvent, coverImageUrl: "data:text/html,unsafe" }).success).toBe(false);
+    expect(createOrganisationSchema.safeParse({ name: "Demo", slug: "demo", logoUrl: "javascript:alert(1)" }).success).toBe(false);
   });
 });

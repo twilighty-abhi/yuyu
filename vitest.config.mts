@@ -5,7 +5,10 @@ const rootDir = fileURLToPath(new URL(".", import.meta.url));
 
 export default defineConfig({
   resolve: {
-    alias: { "@": rootDir },
+    alias: {
+      "@": rootDir,
+      "server-only": `${rootDir}tests/helpers/server-only.ts`,
+    },
   },
   test: {
     environment: "node",

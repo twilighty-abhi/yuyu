@@ -7,6 +7,8 @@ export default defineConfig({
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 2 : 0,
   use: {
+    // Use IPv4 explicitly: on this workstation localhost/::1 is served by a
+    // separate development app while Yuyu is bound on 127.0.0.1.
     baseURL: "http://127.0.0.1:3000",
     trace: "on-first-retry",
   },

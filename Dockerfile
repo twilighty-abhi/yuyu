@@ -41,6 +41,10 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
+# Sharp renders ticket and certificate SVGs on the server. Alpine has no
+# system fonts by default, which otherwise turns every text glyph into a box.
+RUN apk add --no-cache font-dejavu && fc-cache -f
+
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 

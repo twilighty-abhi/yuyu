@@ -18,10 +18,6 @@ import Box from "@mui/material/Box";
 import Divider from "@mui/material/Divider";
 import Grid from "@mui/material/Grid";
 import Chip from "@mui/material/Chip";
-import Dialog from "@mui/material/Dialog";
-import DialogTitle from "@mui/material/DialogTitle";
-import DialogContent from "@mui/material/DialogContent";
-import DialogActions from "@mui/material/DialogActions";
 import Typography from "@mui/material/Typography";
 import Link from "next/link";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
@@ -29,7 +25,7 @@ import ImageOutlinedIcon from "@mui/icons-material/ImageOutlined";
 import AccessTimeOutlinedIcon from "@mui/icons-material/AccessTimeOutlined";
 import PlaceOutlinedIcon from "@mui/icons-material/PlaceOutlined";
 import PublicOutlinedIcon from "@mui/icons-material/PublicOutlined";
-import { updateEvent, deleteEvent, uploadEventCoverImage } from "@/app/actions/event";
+import { updateEvent, uploadEventCoverImage } from "@/app/actions/event";
 import { CoverImagePicker } from "@/components/event/CoverImagePicker";
 import { useToast } from "@/components/feedback/ToastProvider";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
@@ -62,7 +58,6 @@ export function EditEventForm(props: {
   const { showToast } = useToast();
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-  const [deleteOpen, setDeleteOpen] = useState(false);
   const [coverPreviewUrl, setCoverPreviewUrl] = useState(event.coverImageUrl ?? "");
   const [coverImageFile, setCoverImageFile] = useState<File | null>(null);
   const [isOnlinePreview, setIsOnlinePreview] = useState(event.isOnline);
@@ -152,21 +147,6 @@ export function EditEventForm(props: {
       }
       showToast("Event saved", "success");
       router.refresh();
-    });
-  }
-
-  function onDelete() {
-    startTransition(async () => {
-      const res = await deleteEvent({
-        organisationSlug,
-        eventId: event.id,
-      });
-      if (!res.ok) {
-        showToast(res.error, "error");
-        return;
-      }
-      showToast("Event deleted", "success");
-      router.push(`/dashboard/${organisationSlug}`);
     });
   }
 
@@ -572,54 +552,15 @@ export function EditEventForm(props: {
                   </Paper>
                 </Grid>
               </Grid>
-              <Stack
-                direction={{ xs: "column", sm: "row" }}
-                spacing={1.5}
-                useFlexGap
-                sx={{ justifyContent: "space-between", pt: 0.5 }}
-              >
+              <Stack sx={{ alignItems: "flex-start", pt: 0.5 }}>
                 <Button type="submit" variant="contained" disabled={pending}>
                   Save changes
-                </Button>
-                <Button
-                  type="button"
-                  color="error"
-                  variant="outlined"
-                  disabled={pending}
-                  onClick={() => setDeleteOpen(true)}
-                >
-                  Delete event
                 </Button>
               </Stack>
             </Stack>
           </Paper>
         </Stack>
       </form>
-
-      <Dialog open={deleteOpen} onClose={() => !pending && setDeleteOpen(false)}>
-        <DialogTitle>Delete this event?</DialogTitle>
-        <DialogContent>
-          <Typography variant="body2" color="text.secondary">
-            This removes the event and all RSVPs. This cannot be undone.
-          </Typography>
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setDeleteOpen(false)} disabled={pending}>
-            Cancel
-          </Button>
-          <Button
-            color="error"
-            variant="contained"
-            disabled={pending}
-            onClick={() => {
-              setDeleteOpen(false);
-              onDelete();
-            }}
-          >
-            Delete
-          </Button>
-        </DialogActions>
-      </Dialog>
     </>
   );
 }

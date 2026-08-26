@@ -517,6 +517,51 @@ export async function lookupAttendeesForCheckIn(
   return { ok: true, data: { rows } };
 }
 
+/**
+ * Loads the same door details used by QR preview before a staff member confirms
+ * a check-in selected from attendee search.
+ */
+export async function previewCheckInByRsvpId(
+  input: unknown,
+): Promise<ActionResult<CheckInPreviewData>> {
+  const parsed = checkInByRsvpIdSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: "Invalid input.",
+      fieldErrors: flattenZodErrors(parsed.error),
+    };
+  }
+
+  const { organisationSlug, eventId, rsvpId, force } = parsed.data;
+  const ctx = await requireOrgMemberForEvent(organisationSlug, eventId);
+  if (!ctx.ok) return { ok: false, error: ctx.error };
+
+  const rsvp = await prisma.rSVP.findFirst({
+    where: { id: rsvpId, eventId: ctx.event.id },
+    include: {
+      user: { select: { name: true, email: true } },
+      answers: { include: { field: { select: { key: true, label: true } } } },
+    },
+  });
+  if (!rsvp) return { ok: false, error: "RSVP not found." };
+
+  return {
+    ok: true,
+    data: {
+      rsvpId: rsvp.id,
+      displayName: attendeeLabel(rsvp),
+      email: rsvp.user?.email ?? rsvp.guestEmail,
+      status: rsvp.status,
+      alreadyCheckedIn: Boolean(rsvp.checkedInAt),
+      checkedInAt: rsvp.checkedInAt?.toISOString() ?? null,
+      checkInDetails: getCheckInDetails(rsvp.answers),
+      registrationDetails: getRegistrationDetails(rsvp.answers),
+      gate: gateCheckInForStatus(rsvp.status, Boolean(force)),
+    },
+  };
+}
+
 export async function checkInByRsvpId(
   input: unknown,
 ): Promise<ActionResult<CheckInResultData>> {

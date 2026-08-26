@@ -33,6 +33,7 @@ import {
   checkInByRsvpId,
   downloadOfflineCheckInRoster,
   lookupAttendeesForCheckIn,
+  previewCheckInByRsvpId,
   previewCheckInByToken,
   syncOfflineCheckIns,
   undoCheckIn,
@@ -389,6 +390,11 @@ export function EventCheckInClient(props: {
         playSuccessFeedback();
       }
       showIdCard(d);
+      setLookupRows((rows) => rows.map((row) => (
+        row.rsvpId === d.rsvpId
+          ? { ...row, checkedInAt: d.checkedInAt }
+          : row
+      )));
       setScanOpen(false);
       setScanPreview(null);
       setManual("");
@@ -461,13 +467,24 @@ export function EventCheckInClient(props: {
           showToast(`${attendee.displayName} was already checked in.`, "info");
           return;
         }
-        await queueLocalCheckIn(attendee);
-        void runLookup();
+        setScanPreview({
+          rsvpId: attendee.rsvpId,
+          displayName: attendee.displayName,
+          email: attendee.email,
+          status: attendee.status,
+          alreadyCheckedIn: false,
+          checkedInAt: null,
+          checkInDetails: attendee.checkInDetails ?? [],
+          registrationDetails: attendee.registrationDetails ?? [],
+          gate,
+        });
+        setScanIsOffline(true);
+        setScanOpen(true);
       })();
       return;
     }
     startTransition(async () => {
-      const res = await checkInByRsvpId({
+      const res = await previewCheckInByRsvpId({
         organisationSlug,
         eventId,
         rsvpId: row.rsvpId,
@@ -481,17 +498,9 @@ export function EventCheckInClient(props: {
         }
         return;
       }
-      const d = res.data!;
-      if (d.alreadyCheckedIn) {
-        showToast(`${d.displayName} was already checked in.`, "info");
-      } else {
-        showToast(`Checked in: ${d.displayName}`, "success");
-        playSuccessFeedback();
-      }
-      setLastResult({ ...d, kind: d.alreadyCheckedIn ? "already" : "success" });
-      showIdCard(d);
-      router.refresh();
-      void runLookup();
+      setScanPreview(res.data!);
+      setScanIsOffline(false);
+      setScanOpen(true);
     });
   };
 

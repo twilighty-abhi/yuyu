@@ -116,7 +116,19 @@ export function EventCard(props: {
                 <Chip key={t} label={t} size="small" variant="outlined" />
               ))}
             </Stack>
-            <Typography variant={compact ? "subtitle1" : "h6"} component="h3" sx={{ fontWeight: 700, letterSpacing: "-0.25px", mb: 0.35, lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: compact ? "nowrap" : "normal" }}>
+            <Typography
+              variant={compact ? "subtitle1" : "h6"}
+              component="h3"
+              sx={{
+                color: "text.primary",
+                fontWeight: 700,
+                letterSpacing: "-0.25px",
+                mb: 0.35,
+                lineHeight: 1.2,
+                overflowWrap: "anywhere",
+                wordBreak: "break-word",
+              }}
+            >
               {event.title}
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: compact ? 0.75 : 1.25 }}>

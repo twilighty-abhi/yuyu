@@ -281,7 +281,7 @@ export function EventManageMore(props: {
           <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
             <DeleteOutlineOutlinedIcon color="error" />
             <Typography variant="h6" component="h2">
-              Cancel event
+              Delete event
             </Typography>
           </Stack>
           <Typography variant="body2" color="text.secondary">
@@ -307,7 +307,7 @@ export function EventManageMore(props: {
               disabled={pending || confirmText.trim() !== event.slug}
               sx={{ flexShrink: 0 }}
             >
-              Cancel event
+              Delete event
             </Button>
           </Stack>
         </Stack>
@@ -315,4 +315,3 @@ export function EventManageMore(props: {
     </Stack>
   );
 }
-

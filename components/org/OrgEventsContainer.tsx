@@ -107,7 +107,7 @@ export function OrgEventsContainer({ orgSlug, organisationName, initialNow, item
 
   // Get events starting on a specific day in the currently displayed month
   const getEventsForDay = (dayNum: number) => {
-    return items.filter((item) => {
+    return filteredItems.filter((item) => {
       const d = new Date(item.startDateTime);
       return (
         d.getFullYear() === currentYear &&

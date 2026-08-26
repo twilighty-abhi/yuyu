@@ -63,7 +63,7 @@ export function EventManageTabs(props: {
         <Tab label="Registration form" />
         <Tab label="Feedback" />
         <Tab label="Check-in" />
-        <Tab label="More" />
+        <Tab label="More & delete" />
       </Tabs>
       {tab === 0 ? (
         <EventManageOverview
@@ -98,6 +98,7 @@ export function EventManageTabs(props: {
         <EventInvitePanel
           organisationSlug={organisationSlug}
           eventId={event.id}
+          eventHasEnded={event.endDateTime <= new Date()}
           invites={invites}
         />
       ) : null}

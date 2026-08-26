@@ -16,6 +16,7 @@ import {
 import type { ActionResult } from "./org";
 import { flattenZodErrors } from "./utils";
 import { isActionRateLimited } from "@/lib/actionRateLimit";
+import { getCheckInDetails, type CheckInDetail } from "@/lib/checkInDetails";
 
 export type CheckInResultData = {
   rsvpId: string;
@@ -24,6 +25,7 @@ export type CheckInResultData = {
   status: string;
   alreadyCheckedIn: boolean;
   checkedInAt: string | null;
+  checkInDetails: CheckInDetail[];
 };
 
 export type CheckInPreviewData = CheckInResultData & {
@@ -153,6 +155,7 @@ async function resolveRsvpForToken(
     where: { checkInToken: token },
     include: {
       user: { select: { name: true, email: true } },
+      answers: { include: { field: { select: { key: true, label: true } } } },
       event: { select: { id: true, organisationId: true, slug: true } },
       eventInstance: {
         include: { series: { select: { organisationId: true } } },
@@ -208,6 +211,7 @@ export async function previewCheckInByToken(
       status: rsvp.status,
       alreadyCheckedIn: Boolean(rsvp.checkedInAt),
       checkedInAt: rsvp.checkedInAt?.toISOString() ?? null,
+      checkInDetails: getCheckInDetails(rsvp.answers),
       gate,
     },
   };
@@ -255,6 +259,7 @@ export async function checkInByToken(
         status: rsvp.status,
         alreadyCheckedIn: true,
         checkedInAt: rsvp.checkedInAt.toISOString(),
+        checkInDetails: getCheckInDetails(rsvp.answers),
       },
     };
   }
@@ -277,6 +282,7 @@ export async function checkInByToken(
         status: rsvp.status,
         alreadyCheckedIn: true,
         checkedInAt: current?.checkedInAt?.toISOString() ?? now.toISOString(),
+        checkInDetails: getCheckInDetails(rsvp.answers),
       },
     };
   }
@@ -296,6 +302,7 @@ export async function checkInByToken(
       status: rsvp.status,
       alreadyCheckedIn: false,
       checkedInAt: now.toISOString(),
+      checkInDetails: getCheckInDetails(rsvp.answers),
     },
   };
 }
@@ -356,6 +363,7 @@ export type LookupRow = {
 
 export type OfflineCheckInRosterRow = LookupRow & {
   ticketToken: string;
+  checkInDetails: CheckInDetail[];
 };
 
 export async function downloadOfflineCheckInRoster(
@@ -372,7 +380,10 @@ export async function downloadOfflineCheckInRoster(
 
   const rsvps = await prisma.rSVP.findMany({
     where: { eventId: ctx.event.id },
-    include: { user: { select: { name: true, email: true } } },
+    include: {
+      user: { select: { name: true, email: true } },
+      answers: { include: { field: { select: { key: true, label: true } } } },
+    },
     orderBy: { createdAt: "desc" },
   });
 
@@ -387,6 +398,7 @@ export async function downloadOfflineCheckInRoster(
         email: r.user?.email ?? r.guestEmail,
         status: r.status,
         checkedInAt: r.checkedInAt?.toISOString() ?? null,
+        checkInDetails: getCheckInDetails(r.answers),
       })),
     },
   };
@@ -514,6 +526,7 @@ export async function checkInByRsvpId(
     where: { id: rsvpId, eventId: ctx.event.id },
     include: {
       user: { select: { name: true, email: true } },
+      answers: { include: { field: { select: { key: true, label: true } } } },
       event: { select: { slug: true } },
       eventInstance: { select: { id: true } },
     },
@@ -542,6 +555,7 @@ export async function checkInByRsvpId(
         status: rsvp.status,
         alreadyCheckedIn: true,
         checkedInAt: rsvp.checkedInAt.toISOString(),
+        checkInDetails: getCheckInDetails(rsvp.answers),
       },
     };
   }
@@ -564,6 +578,7 @@ export async function checkInByRsvpId(
         status: rsvp.status,
         alreadyCheckedIn: true,
         checkedInAt: current?.checkedInAt?.toISOString() ?? now.toISOString(),
+        checkInDetails: getCheckInDetails(rsvp.answers),
       },
     };
   }
@@ -583,6 +598,7 @@ export async function checkInByRsvpId(
       status: rsvp.status,
       alreadyCheckedIn: false,
       checkedInAt: now.toISOString(),
+      checkInDetails: getCheckInDetails(rsvp.answers),
     },
   };
 }

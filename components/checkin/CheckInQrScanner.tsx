@@ -25,9 +25,14 @@ export function CheckInQrScanner(props: {
   const reactId = useId();
   const regionId = `checkin-qr-${reactId.replace(/:/g, "")}`;
   const scannerRef = useRef<Html5QrcodeLike | null>(null);
+  const onScanRef = useRef(onScan);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const lastRef = useRef<{ text: string; at: number }>({ text: "", at: 0 });
+
+  useEffect(() => {
+    onScanRef.current = onScan;
+  }, [onScan]);
 
   const stop = useCallback(async () => {
     const s = scannerRef.current;
@@ -73,7 +78,7 @@ export function CheckInQrScanner(props: {
             return;
           }
           lastRef.current = { text: decoded, at: now };
-          onScan(decoded);
+          onScanRef.current(decoded);
         },
         () => {},
       );
@@ -87,7 +92,7 @@ export function CheckInQrScanner(props: {
       scannerRef.current = null;
       setRunning(false);
     }
-  }, [onScan, regionId, stop]);
+  }, [regionId, stop]);
 
   useEffect(() => {
     return () => {

@@ -28,6 +28,7 @@ import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
 import CloudDoneOutlinedIcon from "@mui/icons-material/CloudDoneOutlined";
 import CloudOffOutlinedIcon from "@mui/icons-material/CloudOffOutlined";
 import SyncOutlinedIcon from "@mui/icons-material/SyncOutlined";
+import PrintOutlinedIcon from "@mui/icons-material/PrintOutlined";
 import {
   checkInByRsvpId,
   downloadOfflineCheckInRoster,
@@ -51,6 +52,7 @@ import {
 } from "@/lib/offline-checkin.client";
 import { useToast } from "@/components/feedback/ToastProvider";
 import { CheckInQrScanner } from "@/components/checkin/CheckInQrScanner";
+import { IdCardPrintDialog } from "@/components/checkin/IdCardPrintDialog";
 
 export type CheckInRecentRow = {
   rsvpId: string;
@@ -58,6 +60,20 @@ export type CheckInRecentRow = {
   email: string | null;
   checkedInAt: string;
 };
+
+function CheckInDetailsList({ details }: { details: CheckInResultData["checkInDetails"] }) {
+  if (details.length === 0) return null;
+  return (
+    <Stack component="dl" spacing={0.25} sx={{ m: 0, pt: 0.5 }}>
+      {details.map((detail) => (
+        <Stack component="div" direction="row" spacing={0.75} key={detail.label} sx={{ alignItems: "baseline" }}>
+          <Typography component="dt" variant="body2" color="text.secondary">{detail.label}:</Typography>
+          <Typography component="dd" variant="body2" sx={{ m: 0, fontWeight: 600 }}>{detail.value}</Typography>
+        </Stack>
+      ))}
+    </Stack>
+  );
+}
 
 function playSuccessFeedback() {
   if (typeof window === "undefined") return;
@@ -108,7 +124,14 @@ export function EventCheckInClient(props: {
   const [offlineRoster, setOfflineRoster] = useState<OfflineRoster | null>(null);
   const [queuedCount, setQueuedCount] = useState(0);
   const [isOnline, setIsOnline] = useState(true);
+  const [idCardOpen, setIdCardOpen] = useState(false);
+  const [idCardAttendee, setIdCardAttendee] = useState<CheckInResultData | null>(null);
   const confirmRef = useRef<HTMLButtonElement | null>(null);
+
+  const showIdCard = useCallback((attendee: CheckInResultData) => {
+    setIdCardAttendee(attendee);
+    setIdCardOpen(true);
+  }, []);
 
   const refreshOfflineState = useCallback(async () => {
     const [roster, pendingCheckIns] = await Promise.all([
@@ -233,12 +256,22 @@ export function EventCheckInClient(props: {
       status: attendee.status,
       alreadyCheckedIn: false,
       checkedInAt,
+      checkInDetails: attendee.checkInDetails ?? [],
       kind: "success",
+    });
+    showIdCard({
+      rsvpId: attendee.rsvpId,
+      displayName: attendee.displayName,
+      email: attendee.email,
+      status: attendee.status,
+      alreadyCheckedIn: false,
+      checkedInAt,
+      checkInDetails: attendee.checkInDetails ?? [],
     });
     playSuccessFeedback();
     await refreshOfflineState();
     showToast(`Checked in offline: ${attendee.displayName}`, "success");
-  }, [eventId, override, refreshOfflineState, showToast]);
+  }, [eventId, override, refreshOfflineState, showIdCard, showToast]);
 
   const openPreviewForScan = useCallback(
     (text: string) => {
@@ -263,6 +296,7 @@ export function EventCheckInClient(props: {
             status: attendee.status,
             alreadyCheckedIn: Boolean(attendee.checkedInAt),
             checkedInAt: attendee.checkedInAt,
+            checkInDetails: attendee.checkInDetails ?? [],
             gate,
           });
           setScanIsOffline(true);
@@ -293,9 +327,12 @@ export function EventCheckInClient(props: {
 
   const onScan = useCallback(
     (text: string) => {
+      // Keep a scanned ticket from being replaced while staff confirm or print
+      // the attendee currently at the desk.
+      if (scanOpen || idCardOpen) return;
       openPreviewForScan(text);
     },
-    [openPreviewForScan],
+    [idCardOpen, openPreviewForScan, scanOpen],
   );
 
   const confirmScan = useCallback(() => {
@@ -345,12 +382,13 @@ export function EventCheckInClient(props: {
         showToast(`Checked in: ${d.displayName}`, "success");
         playSuccessFeedback();
       }
+      showIdCard(d);
       setScanOpen(false);
       setScanPreview(null);
       setManual("");
       router.refresh();
     });
-  }, [eventId, organisationSlug, override, queueLocalCheckIn, router, scanIsOffline, scanPreview, showToast]);
+  }, [eventId, organisationSlug, override, queueLocalCheckIn, router, scanIsOffline, scanPreview, showIdCard, showToast]);
 
   useEffect(() => {
     if (!scanOpen) return;
@@ -444,6 +482,8 @@ export function EventCheckInClient(props: {
         showToast(`Checked in: ${d.displayName}`, "success");
         playSuccessFeedback();
       }
+      setLastResult({ ...d, kind: d.alreadyCheckedIn ? "already" : "success" });
+      showIdCard(d);
       router.refresh();
       void runLookup();
     });
@@ -575,6 +615,18 @@ export function EventCheckInClient(props: {
         label="Override (waitlist / pending approval)"
       />
 
+      <Paper variant="outlined" sx={{ p: 2 }}>
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} sx={{ alignItems: { sm: "center" }, justifyContent: "space-between" }}>
+          <Box>
+            <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>ID card printing</Typography>
+            <Typography variant="body2" color="text.secondary">A6 portrait is ready by default. Set a custom size and card text for this check-in device.</Typography>
+          </Box>
+          <Button variant="outlined" startIcon={<PrintOutlinedIcon />} onClick={() => { setIdCardAttendee(null); setIdCardOpen(true); }}>
+            Set up cards
+          </Button>
+        </Stack>
+      </Paper>
+
       <Stack direction={{ xs: "column", lg: "row" }} spacing={3} useFlexGap>
         <Paper variant="outlined" sx={{ p: 2, flex: 1 }}>
           <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
@@ -661,6 +713,7 @@ export function EventCheckInClient(props: {
               <Typography variant="caption" color="text.secondary">
                 Press Enter to confirm.
               </Typography>
+              <CheckInDetailsList details={scanPreview.checkInDetails} />
             </Stack>
           ) : null}
         </DialogContent>
@@ -702,13 +755,25 @@ export function EventCheckInClient(props: {
             {lastResult.displayName}
             {lastResult.email ? ` · ${lastResult.email}` : ""}
           </Typography>
+          <CheckInDetailsList details={lastResult.checkInDetails} />
           {lastResult.checkedInAt ? (
             <Typography variant="caption" color="text.secondary">
               {new Date(lastResult.checkedInAt).toLocaleString()}
             </Typography>
           ) : null}
+          <Button size="small" startIcon={<PrintOutlinedIcon />} onClick={() => showIdCard(lastResult)} sx={{ mt: 0.75 }}>
+            Print ID card
+          </Button>
         </Alert>
       ) : null}
+
+      <IdCardPrintDialog
+        open={idCardOpen}
+        onClose={() => setIdCardOpen(false)}
+        eventId={eventId}
+        eventTitle={eventTitle}
+        attendee={idCardAttendee ? { displayName: idCardAttendee.displayName, email: idCardAttendee.email } : null}
+      />
 
       <Divider />
 

@@ -4,6 +4,8 @@ export type IdCardPrintSettings = {
   heading: string;
   badgeLabel: string;
   showEmail: boolean;
+  /** Printer-specific monochrome layout and ink/heat usage. */
+  printerProfile: "laser" | "thermal";
   template: "classic" | "bold" | "minimal";
   accentColor: string;
   footerText: string;
@@ -18,6 +20,8 @@ export const ORGANISATION_NAME_CARD_FIELD = "system:organisation-name";
 
 export const A6_PORTRAIT = { widthMm: 105, heightMm: 148 };
 export const A6_LANDSCAPE = { widthMm: 148, heightMm: 105 };
+/** Common 4 × 6 in direct-thermal label stock. */
+export const THERMAL_4X6 = { widthMm: 101.6, heightMm: 152.4 };
 
 const MIN_DIMENSION_MM = 40;
 const MAX_DIMENSION_MM = 300;
@@ -67,6 +71,7 @@ export function defaultIdCardPrintSettings(eventTitle: string, organisationName 
     heading: eventTitle.trim().slice(0, 120) || "Event attendee",
     badgeLabel: "ATTENDEE",
     showEmail: true,
+    printerProfile: "laser",
     template: "classic",
     accentColor: "#2563EB",
     footerText: organisationName.trim().slice(0, 80) || "Event check-in",
@@ -91,6 +96,9 @@ export function normalizeIdCardPrintSettings(
     heading: boundedText(input.heading, fallback.heading, 120),
     badgeLabel: boundedText(input.badgeLabel, fallback.badgeLabel, 40),
     showEmail: typeof input.showEmail === "boolean" ? input.showEmail : fallback.showEmail,
+    printerProfile: input.printerProfile === "thermal" || input.printerProfile === "laser"
+      ? input.printerProfile
+      : fallback.printerProfile,
     template: input.template === "bold" || input.template === "minimal" || input.template === "classic"
       ? input.template
       : fallback.template,

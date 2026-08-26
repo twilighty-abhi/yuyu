@@ -55,7 +55,7 @@ Google OAuth users rely on the Google account's MFA policy; the application TOTP
 - Opaque ticket/check-in tokens with QR and manual entry flows.
 - Printable/downloadable attendee ticket.
 - Organiser attendee lookup, direct check-in, and check-in undo.
-- In-venue attendee ID-card preview and browser printing after a QR, manual, or lookup check-in; A6 portrait is the default, with per-device paper size, templates, accent colour, organisation branding, card text, and selectable registration fields (including role) with custom printed labels.
+- In-venue attendee ID-card preview and browser printing after a QR, manual, or lookup check-in; A6 portrait is the default, with laser black-and-white and thermal printer profiles, a 4 × 6 thermal-stock preset, organisation branding, card text, and selectable registration fields (including role) with custom printed labels.
 - Offline roster storage in the browser and later synchronization.
 - Immutable check-in event history for online and offline actions.
 

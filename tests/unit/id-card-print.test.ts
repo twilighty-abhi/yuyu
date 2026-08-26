@@ -13,6 +13,7 @@ describe("ID card print settings", () => {
       heading: "Open House",
       badgeLabel: "ATTENDEE",
       showEmail: true,
+      printerProfile: "laser",
       template: "classic",
       accentColor: "#2563EB",
       footerText: "Event check-in",
@@ -28,6 +29,7 @@ describe("ID card print settings", () => {
       heading: "  Welcome  ",
       badgeLabel: "Speaker",
       showEmail: false,
+      printerProfile: "thermal",
       template: "bold",
       accentColor: "#ff00aa",
       footerText: "Door team",
@@ -39,6 +41,7 @@ describe("ID card print settings", () => {
       heading: "Welcome",
       badgeLabel: "Speaker",
       showEmail: false,
+      printerProfile: "thermal",
       template: "bold",
       accentColor: "#FF00AA",
       footerText: "Door team",
@@ -49,6 +52,9 @@ describe("ID card print settings", () => {
     expect(normalizeIdCardPrintSettings({ widthMm: 2, heightMm: 1000 }, "Open House")).toMatchObject({
       widthMm: 40,
       heightMm: 300,
+    });
+    expect(normalizeIdCardPrintSettings({ printerProfile: "colour" }, "Open House")).toMatchObject({
+      printerProfile: "laser",
     });
   });
 });

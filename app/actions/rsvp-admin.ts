@@ -6,12 +6,50 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { canManageEvents, getMembership } from "@/lib/permissions";
-import { deleteRsvpSchema, restoreRsvpSchema } from "@/lib/validators";
+import { deleteRsvpSchema, manualRsvpSchema, restoreRsvpSchema } from "@/lib/validators";
 import type { ActionResult } from "./org";
 import { flattenZodErrors } from "./utils";
 import { recordAuditEvent } from "@/lib/audit";
+import { submitManualGuestRsvpCore } from "@/lib/rsvpCore";
+import { isActionRateLimited } from "@/lib/actionRateLimit";
 
 const UNDO_TTL_MS = 5 * 60_000;
+
+export async function addManualRsvp(
+  input: unknown,
+): Promise<ActionResult<{ count: number; status: RsvpStatus }>> {
+  const session = await auth();
+  if (!session?.user?.id) return { ok: false, error: "You must be signed in." };
+  if (await isActionRateLimited("rsvp", session.user.id)) {
+    return { ok: false, error: "Too many attendee additions. Please try again shortly." };
+  }
+  const parsed = manualRsvpSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: "Invalid input.", fieldErrors: flattenZodErrors(parsed.error) };
+  }
+
+  const org = await prisma.organisation.findUnique({ where: { slug: parsed.data.organisationSlug } });
+  if (!org) return { ok: false, error: "Organisation not found." };
+  const membership = await getMembership(session.user.id, org.id);
+  if (!canManageEvents(membership)) {
+    return { ok: false, error: "You do not have permission to add attendees." };
+  }
+
+  const result = await submitManualGuestRsvpCore(parsed.data, { organisationId: org.id });
+  if (!result.ok || !result.data) return result;
+
+  await recordAuditEvent({
+    action: "MANUAL_RSVP_CREATED",
+    actorUserId: session.user.id,
+    organisationId: org.id,
+    targetType: "RSVP",
+    targetId: result.data.rsvpId,
+    metadata: { eventId: parsed.data.eventId, status: result.data.status },
+  });
+  revalidateRsvpPaths(org.slug, { eventId: parsed.data.eventId, eventInstanceId: null });
+  revalidatePath(`/dashboard/${org.slug}/event/${parsed.data.eventId}/check-in`);
+  return { ok: true, data: { count: result.data.count, status: result.data.status } };
+}
 
 const snapshotSchema = z.object({
   eventId: z.string().min(1).nullable(),

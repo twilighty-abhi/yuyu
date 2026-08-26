@@ -163,6 +163,15 @@ export const rsvpLoggedInSchema = rsvpTargetBase.extend({
   answers: z.record(z.string(), z.unknown()).optional().default({}),
 });
 
+/** An organisation admin adding a guest RSVP from the attendee dashboard. */
+export const manualRsvpSchema = z.object({
+  organisationSlug: z.string().trim().min(1),
+  eventId: z.string().trim().min(1),
+  guestEmail: z.string().trim().email("Valid email required"),
+  name: attendeeNameSchema,
+  answers: z.record(z.string(), z.unknown()).optional().default({}),
+});
+
 export const updateEventSchema = z
   .object({
     organisationSlug: z.string().trim().min(1),

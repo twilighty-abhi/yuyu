@@ -22,6 +22,9 @@ import Typography from "@mui/material/Typography";
 import Stack from "@mui/material/Stack";
 import Paper from "@mui/material/Paper";
 import QrCodeScannerOutlinedIcon from "@mui/icons-material/QrCodeScannerOutlined";
+import PersonAddOutlinedIcon from "@mui/icons-material/PersonAddOutlined";
+import { ManualRsvpDialog } from "@/components/attendees/ManualRsvpDialog";
+import { useRouter } from "next/navigation";
 
 type InviteRow = { id: string; email: string; createdAt: string };
 
@@ -34,6 +37,7 @@ export function EventManageTabs(props: {
   feedbackUrl: string;
   feedbackForm: { isOpen: boolean; title: string; thankYouMessage: string; certificateEnabled: boolean } | null;
   feedbackFields: RegistrationFieldRow[];
+  referenceTime: string;
   analytics: {
     total: number;
     confirmed: number;
@@ -43,8 +47,10 @@ export function EventManageTabs(props: {
     checkedIn: number;
   };
 }) {
-  const { organisationSlug, event, attendees, invites, analytics, registrationFields, feedbackUrl, feedbackForm, feedbackFields } = props;
+  const { organisationSlug, event, attendees, invites, analytics, registrationFields, feedbackUrl, feedbackForm, feedbackFields, referenceTime } = props;
   const [tab, setTab] = useState(0);
+  const [manualRsvpOpen, setManualRsvpOpen] = useState(false);
+  const router = useRouter();
 
   return (
     <>
@@ -72,6 +78,7 @@ export function EventManageTabs(props: {
           analytics={analytics}
           invites={invites}
           recentRegistrations={attendees.slice(0, 5)}
+          referenceTime={referenceTime}
           onOpenTab={setTab}
         />
       ) : null}
@@ -80,9 +87,21 @@ export function EventManageTabs(props: {
       ) : null}
       {tab === 2 ? (
         <Stack spacing={2}>
-          <Stack direction="row" sx={{ justifyContent: "flex-end" }}>
+          <Stack direction="row" spacing={1} useFlexGap sx={{ justifyContent: "flex-end", flexWrap: "wrap" }}>
+            <Button variant="contained" startIcon={<PersonAddOutlinedIcon />} onClick={() => setManualRsvpOpen(true)}>
+              Add attendee
+            </Button>
             <ExportCsvButton eventTitle={event.title} attendees={attendees} />
           </Stack>
+          {manualRsvpOpen ? (
+            <ManualRsvpDialog
+              organisationSlug={organisationSlug}
+              eventId={event.id}
+              fields={registrationFields}
+              onClose={() => setManualRsvpOpen(false)}
+              onAdded={() => router.refresh()}
+            />
+          ) : null}
           <AttendeeTable
             organisationSlug={organisationSlug}
             eventId={event.id}

@@ -6,7 +6,7 @@ import {
   RsvpStatus,
 } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { rsvpGuestSchema, rsvpLoggedInSchema } from "@/lib/validators";
+import { manualRsvpSchema, rsvpGuestSchema, rsvpLoggedInSchema } from "@/lib/validators";
 import type { ActionResult } from "@/app/actions/org";
 import { flattenZodErrors } from "@/app/actions/utils";
 import { enqueueRsvpConfirmation } from "@/lib/outbox";
@@ -556,6 +556,97 @@ export async function submitRsvpCore(
     }
     console.error(e);
     return { ok: false, error: "Could not save your RSVP." };
+  }
+}
+
+/**
+ * Creates a guest RSVP on behalf of an authorised event administrator. Unlike
+ * the public flow, this can register someone for a draft, ended, or invite-only
+ * event; capacity, waitlist, approval, duplicate, form-answer, and ticket
+ * rules remain owned by the same RSVP service.
+ */
+export async function submitManualGuestRsvpCore(
+  input: unknown,
+  opts: { organisationId: string },
+): Promise<ActionResult<{ count: number; status: RsvpStatus; rsvpId: string }>> {
+  const parsed = manualRsvpSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: "Invalid input.",
+      fieldErrors: flattenZodErrors(parsed.error),
+    };
+  }
+
+  const event = await prisma.event.findFirst({
+    where: { id: parsed.data.eventId, organisationId: opts.organisationId },
+  });
+  if (!event) return { ok: false, error: "Event not found." };
+
+  const email = normalizeGuestEmail(parsed.data.guestEmail);
+  const form = await prisma.eventRegistrationForm.findUnique({
+    where: { eventId: event.id },
+    include: { fields: { orderBy: { sortOrder: "asc" } } },
+  });
+  const validated = validateAndNormalizeAnswers({
+    fields: (form?.fields ?? []).map((field) => ({
+      id: field.id,
+      key: field.key,
+      label: field.label,
+      type: field.type,
+      required: field.required,
+      options: field.options,
+    })),
+    answers: parsed.data.answers as Record<string, unknown>,
+  });
+  if ("error" in validated) return { ok: false, error: validated.error };
+
+  try {
+    const reservation = await reserveRsvp({
+      target: { eventId: event.id },
+      capacity: event.capacity,
+      privacyType: event.privacyType,
+      notification: { to: email, eventTitle: event.title },
+      data: {
+        eventId: event.id,
+        userId: null,
+        guestEmail: email,
+        guestName: parsed.data.name.trim(),
+        attendeeKey: `guest:${email}`,
+      },
+      afterCreate: async (tx, rsvpId) => {
+        if (validated.rows.length === 0) return;
+        await tx.rsvpAnswer.createMany({
+          data: validated.rows.map((row) => ({
+            rsvpId,
+            fieldId: row.fieldId,
+            valueText: row.valueText ?? null,
+            valueBool: row.valueBool ?? null,
+            valueNumber: row.valueNumber ?? null,
+            valueDate: row.valueDate ?? null,
+          })),
+        });
+      },
+    });
+    return {
+      ok: true,
+      data: {
+        count: reservation.count,
+        status: reservation.status,
+        rsvpId: reservation.id,
+      },
+    };
+  } catch (error: unknown) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      (error as { code: string }).code === "P2002"
+    ) {
+      return { ok: false, error: "This email is already registered for this event." };
+    }
+    console.error(error);
+    return { ok: false, error: "Could not save the attendee RSVP." };
   }
 }
 

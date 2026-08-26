@@ -5,6 +5,7 @@ import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import ButtonGroup from "@mui/material/ButtonGroup";
+import Checkbox from "@mui/material/Checkbox";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
@@ -21,6 +22,7 @@ import {
   A6_PORTRAIT,
   defaultIdCardPrintSettings,
   normalizeIdCardPrintSettings,
+  ORGANISATION_NAME_CARD_FIELD,
   type IdCardPrintSettings,
 } from "@/lib/idCardPrint";
 
@@ -28,11 +30,16 @@ type Attendee = {
   displayName: string;
   email: string | null;
   checkInDetails: Array<{ label: string; value: string }>;
+  registrationDetails: Array<{ key: string; label: string; value: string }>;
 };
+
+type RegistrationField = { key: string; label: string };
+type PrintableField = { key: string; label: string; value: string };
 
 const storageKey = (eventId: string) => `yuyu:checkin:id-card:${eventId}`;
 const settingsChangedEvent = "yuyu:id-card-print-settings-changed";
 const sessionSettings = new Map<string, IdCardPrintSettings>();
+const registrationFieldKey = (key: string) => `registration:${key}`;
 
 function readSettings(eventId: string, eventTitle: string, organisationName: string) {
   const cached = sessionSettings.get(eventId);
@@ -73,15 +80,31 @@ function safeLogoUrl(value: string | null) {
   }
 }
 
-function printableDetails(settings: IdCardPrintSettings, attendee: Attendee) {
-  if (!settings.showCheckInDetails || attendee.checkInDetails.length === 0) return "";
-  return `<dl class="details">${attendee.checkInDetails.map((detail) => (
-    `<div><dt>${escapePrintHtml(detail.label)}</dt><dd>${escapePrintHtml(detail.value)}</dd></div>`
+function printableFields(
+  settings: IdCardPrintSettings,
+  attendee: Attendee,
+  organisationName: string,
+): PrintableField[] {
+  const registrationDetails = new Map(attendee.registrationDetails.map((detail) => [detail.key, detail]));
+  return settings.printFieldKeys.flatMap((key) => {
+    if (key === ORGANISATION_NAME_CARD_FIELD) {
+      const value = organisationName.trim();
+      return value ? [{ key, label: "Organisation", value }] : [];
+    }
+    const detail = registrationDetails.get(key.startsWith("registration:") ? key.slice("registration:".length) : key);
+    return detail ? [{ key, label: detail.label, value: detail.value }] : [];
+  });
+}
+
+function printableDetails(fields: PrintableField[], settings: IdCardPrintSettings) {
+  if (fields.length === 0) return "";
+  return `<dl class="details">${fields.map((detail) => (
+    `<div><dt>${escapePrintHtml(settings.printFieldLabels[detail.key] ?? detail.label)}</dt><dd>${escapePrintHtml(detail.value)}</dd></div>`
   )).join("")}</dl>`;
 }
 
-function printCard(params: { settings: IdCardPrintSettings; attendee: Attendee; organisationLogoUrl: string | null }) {
-  const { settings, attendee, organisationLogoUrl } = params;
+function printCard(params: { settings: IdCardPrintSettings; attendee: Attendee; organisationLogoUrl: string | null; organisationName: string }) {
+  const { settings, attendee, organisationLogoUrl, organisationName } = params;
   const printWindow = window.open("", "_blank");
   if (!printWindow) return false;
 
@@ -92,7 +115,7 @@ function printCard(params: { settings: IdCardPrintSettings; attendee: Attendee; 
   const emailLine = settings.showEmail && email ? `<p class="email">${email}</p>` : "";
   const logoUrl = settings.showLogo ? safeLogoUrl(organisationLogoUrl) : null;
   const logo = logoUrl ? `<img id="badge-logo" class="logo" src="${escapePrintHtml(logoUrl)}" alt="">` : "";
-  const details = printableDetails(settings, attendee);
+  const details = printableDetails(printableFields(settings, attendee, organisationName), settings);
 
   printWindow.document.write(`<!doctype html>
 <html><head><meta charset="utf-8"><title>${name} ID card</title><style>
@@ -146,8 +169,9 @@ export function IdCardPrintDialog(props: {
   organisationName: string;
   organisationLogoUrl: string | null;
   attendee: Attendee | null;
+  registrationFields: RegistrationField[];
 }) {
-  const { open, onClose, eventId, eventTitle, organisationName, organisationLogoUrl, attendee } = props;
+  const { open, onClose, eventId, eventTitle, organisationName, organisationLogoUrl, attendee, registrationFields } = props;
   const defaultSettings = useMemo(() => defaultIdCardPrintSettings(eventTitle, organisationName), [eventTitle, organisationName]);
   const subscribe = useCallback((onStoreChange: () => void) => {
     const onStorage = (event: StorageEvent) => {
@@ -171,7 +195,21 @@ export function IdCardPrintDialog(props: {
     displayName: "Attendee name",
     email: "attendee@example.com",
     checkInDetails: [{ label: "Food preference", value: "Vegetarian" }],
+    registrationDetails: registrationFields.map((field) => ({
+      key: field.key,
+      label: field.label,
+      value: /role/i.test(`${field.key} ${field.label}`) ? "Speaker" : "Example answer",
+    })),
   };
+  const fieldOptions = useMemo(() => [
+    { key: ORGANISATION_NAME_CARD_FIELD, label: "Organisation name", detail: "Always available" },
+    ...registrationFields.map((field) => ({
+      key: registrationFieldKey(field.key),
+      label: field.label,
+      detail: /role/i.test(`${field.key} ${field.label}`) ? "Role field" : "Registration field",
+    })),
+  ], [registrationFields]);
+  const previewFields = printableFields(settings, sampleAttendee, organisationName);
   const ratio = `${settings.widthMm} / ${settings.heightMm}`;
   const paperDescription = `${settings.widthMm} × ${settings.heightMm} mm`;
   const isA6Portrait = settings.widthMm === A6_PORTRAIT.widthMm && settings.heightMm === A6_PORTRAIT.heightMm;
@@ -188,6 +226,20 @@ export function IdCardPrintDialog(props: {
       // Keep the settings only for this browser session when storage is unavailable.
     }
     window.dispatchEvent(new Event(settingsChangedEvent));
+  };
+
+  const togglePrintField = (key: string, checked: boolean) => {
+    const printFieldKeys = checked
+      ? [...settings.printFieldKeys, key]
+      : settings.printFieldKeys.filter((fieldKey) => fieldKey !== key);
+    update({ printFieldKeys });
+  };
+
+  const updatePrintFieldLabel = (key: string, label: string) => {
+    const printFieldLabels = { ...settings.printFieldLabels };
+    if (label.trim()) printFieldLabels[key] = label;
+    else delete printFieldLabels[key];
+    update({ printFieldLabels });
   };
 
   const previewBg = settings.template === "bold" ? settings.accentColor : "background.paper";
@@ -229,7 +281,37 @@ export function IdCardPrintDialog(props: {
             <Divider />
             <FormControlLabel control={<Switch checked={settings.showLogo} onChange={(_, checked) => update({ showLogo: checked })} />} label="Include organisation logo" />
             <FormControlLabel control={<Switch checked={settings.showEmail} onChange={(_, checked) => update({ showEmail: checked })} />} label="Include attendee email" />
-            <FormControlLabel control={<Switch checked={settings.showCheckInDetails} onChange={(_, checked) => update({ showCheckInDetails: checked })} />} label="Include food preference / T-shirt size when available" />
+            <Divider />
+            <Box>
+              <Typography variant="subtitle2">Card fields</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                Choose any registration answer to print. Organisation name is available by default; add a Role registration field to print each attendee&apos;s role.
+              </Typography>
+              <Stack spacing={0.75}>
+                {fieldOptions.map((field) => {
+                  const selected = settings.printFieldKeys.includes(field.key);
+                  return (
+                    <Box key={field.key} sx={{ pl: 0.25 }}>
+                      <FormControlLabel
+                        control={<Checkbox checked={selected} onChange={(_, checked) => togglePrintField(field.key, checked)} />}
+                        label={<Box><Typography variant="body2">{field.label}</Typography><Typography variant="caption" color="text.secondary">{field.detail}</Typography></Box>}
+                      />
+                      {selected ? (
+                        <TextField
+                          label="Printed label"
+                          value={settings.printFieldLabels[field.key] ?? field.label}
+                          onChange={(event) => updatePrintFieldLabel(field.key, event.target.value)}
+                          slotProps={{ htmlInput: { maxLength: 60 } }}
+                          size="small"
+                          fullWidth
+                          sx={{ mb: 0.5, ml: 4.5, width: "calc(100% - 36px)" }}
+                        />
+                      ) : null}
+                    </Box>
+                  );
+                })}
+              </Stack>
+            </Box>
           </Stack>
           <Stack spacing={1} sx={{ flex: 1, minWidth: 0, alignItems: "center" }}>
             <Typography variant="subtitle2" color="text.secondary">Live preview · {paperDescription}</Typography>
@@ -244,9 +326,9 @@ export function IdCardPrintDialog(props: {
               <Box sx={{ height: settings.template === "minimal" ? 1 : 3, bgcolor: settings.template === "bold" ? "#fff" : settings.accentColor, my: 2 }} />
               <Typography sx={{ fontSize: `${previewNameSize}px`, fontWeight: 800, lineHeight: 1.05, letterSpacing: "-0.03em", overflowWrap: "anywhere" }}>{sampleAttendee.displayName}</Typography>
               {settings.showEmail && sampleAttendee.email ? <Typography variant="body2" sx={{ mt: 1, opacity: 0.75, overflowWrap: "anywhere" }}>{sampleAttendee.email}</Typography> : null}
-              {settings.showCheckInDetails && sampleAttendee.checkInDetails.length > 0 ? (
+              {previewFields.length > 0 ? (
                 <Stack spacing={0.4} sx={{ borderTop: "1px solid", borderColor: settings.template === "bold" ? "rgba(255,255,255,0.35)" : "divider", mt: 1.5, pt: 1 }}>
-                  {sampleAttendee.checkInDetails.map((detail) => <Stack direction="row" key={detail.label} sx={{ justifyContent: "space-between", gap: 1 }}><Typography variant="caption" sx={{ opacity: 0.72 }}>{detail.label}</Typography><Typography variant="caption" sx={{ fontWeight: 700, textAlign: "right" }}>{detail.value}</Typography></Stack>)}
+                  {previewFields.map((detail) => <Stack direction="row" key={detail.key} sx={{ justifyContent: "space-between", gap: 1 }}><Typography variant="caption" sx={{ opacity: 0.72 }}>{settings.printFieldLabels[detail.key] ?? detail.label}</Typography><Typography variant="caption" sx={{ fontWeight: 700, textAlign: "right" }}>{detail.value}</Typography></Stack>)}
                 </Stack>
               ) : null}
               <Typography variant="caption" sx={{ mt: "auto", opacity: 0.68 }}>{settings.footerText}</Typography>
@@ -257,7 +339,7 @@ export function IdCardPrintDialog(props: {
       <DialogActions>
         <Button onClick={onClose} color="inherit">Close</Button>
         <Button variant="contained" startIcon={<PrintOutlinedIcon />} disabled={!attendee} onClick={() => {
-          if (!attendee || printCard({ settings, attendee, organisationLogoUrl })) return;
+          if (!attendee || printCard({ settings, attendee, organisationLogoUrl, organisationName })) return;
           window.alert("The print window was blocked. Allow pop-ups for this check-in station and try again.");
         }}>Print ID card</Button>
       </DialogActions>

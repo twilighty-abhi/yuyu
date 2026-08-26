@@ -3,6 +3,7 @@ import {
   A6_LANDSCAPE,
   A6_PORTRAIT,
   normalizeIdCardPrintSettings,
+  ORGANISATION_NAME_CARD_FIELD,
 } from "@/lib/idCardPrint";
 
 describe("ID card print settings", () => {
@@ -16,7 +17,8 @@ describe("ID card print settings", () => {
       accentColor: "#2563EB",
       footerText: "Event check-in",
       showLogo: true,
-      showCheckInDetails: false,
+      printFieldKeys: [ORGANISATION_NAME_CARD_FIELD],
+      printFieldLabels: {},
     });
   });
 
@@ -30,7 +32,8 @@ describe("ID card print settings", () => {
       accentColor: "#ff00aa",
       footerText: "Door team",
       showLogo: false,
-      showCheckInDetails: true,
+      printFieldKeys: ["registration:role", "registration:food"],
+      printFieldLabels: { "registration:role": "Event role" },
     }, "Open House")).toMatchObject({
       ...A6_LANDSCAPE,
       heading: "Welcome",
@@ -40,7 +43,8 @@ describe("ID card print settings", () => {
       accentColor: "#FF00AA",
       footerText: "Door team",
       showLogo: false,
-      showCheckInDetails: true,
+      printFieldKeys: ["registration:role", "registration:food"],
+      printFieldLabels: { "registration:role": "Event role" },
     });
     expect(normalizeIdCardPrintSettings({ widthMm: 2, heightMm: 1000 }, "Open House")).toMatchObject({
       widthMm: 40,

@@ -16,7 +16,12 @@ import {
 import type { ActionResult } from "./org";
 import { flattenZodErrors } from "./utils";
 import { isActionRateLimited } from "@/lib/actionRateLimit";
-import { getCheckInDetails, type CheckInDetail } from "@/lib/checkInDetails";
+import {
+  getCheckInDetails,
+  getRegistrationDetails,
+  type CheckInDetail,
+  type RegistrationDetail,
+} from "@/lib/checkInDetails";
 
 export type CheckInResultData = {
   rsvpId: string;
@@ -26,6 +31,7 @@ export type CheckInResultData = {
   alreadyCheckedIn: boolean;
   checkedInAt: string | null;
   checkInDetails: CheckInDetail[];
+  registrationDetails: RegistrationDetail[];
 };
 
 export type CheckInPreviewData = CheckInResultData & {
@@ -212,6 +218,7 @@ export async function previewCheckInByToken(
       alreadyCheckedIn: Boolean(rsvp.checkedInAt),
       checkedInAt: rsvp.checkedInAt?.toISOString() ?? null,
       checkInDetails: getCheckInDetails(rsvp.answers),
+      registrationDetails: getRegistrationDetails(rsvp.answers),
       gate,
     },
   };
@@ -260,6 +267,7 @@ export async function checkInByToken(
         alreadyCheckedIn: true,
         checkedInAt: rsvp.checkedInAt.toISOString(),
         checkInDetails: getCheckInDetails(rsvp.answers),
+        registrationDetails: getRegistrationDetails(rsvp.answers),
       },
     };
   }
@@ -283,6 +291,7 @@ export async function checkInByToken(
         alreadyCheckedIn: true,
         checkedInAt: current?.checkedInAt?.toISOString() ?? now.toISOString(),
         checkInDetails: getCheckInDetails(rsvp.answers),
+        registrationDetails: getRegistrationDetails(rsvp.answers),
       },
     };
   }
@@ -303,6 +312,7 @@ export async function checkInByToken(
       alreadyCheckedIn: false,
       checkedInAt: now.toISOString(),
       checkInDetails: getCheckInDetails(rsvp.answers),
+      registrationDetails: getRegistrationDetails(rsvp.answers),
     },
   };
 }
@@ -364,6 +374,7 @@ export type LookupRow = {
 export type OfflineCheckInRosterRow = LookupRow & {
   ticketToken: string;
   checkInDetails: CheckInDetail[];
+  registrationDetails: RegistrationDetail[];
 };
 
 export async function downloadOfflineCheckInRoster(
@@ -399,6 +410,7 @@ export async function downloadOfflineCheckInRoster(
         status: r.status,
         checkedInAt: r.checkedInAt?.toISOString() ?? null,
         checkInDetails: getCheckInDetails(r.answers),
+        registrationDetails: getRegistrationDetails(r.answers),
       })),
     },
   };
@@ -556,6 +568,7 @@ export async function checkInByRsvpId(
         alreadyCheckedIn: true,
         checkedInAt: rsvp.checkedInAt.toISOString(),
         checkInDetails: getCheckInDetails(rsvp.answers),
+        registrationDetails: getRegistrationDetails(rsvp.answers),
       },
     };
   }
@@ -579,6 +592,7 @@ export async function checkInByRsvpId(
         alreadyCheckedIn: true,
         checkedInAt: current?.checkedInAt?.toISOString() ?? now.toISOString(),
         checkInDetails: getCheckInDetails(rsvp.answers),
+        registrationDetails: getRegistrationDetails(rsvp.answers),
       },
     };
   }
@@ -599,6 +613,7 @@ export async function checkInByRsvpId(
       alreadyCheckedIn: false,
       checkedInAt: now.toISOString(),
       checkInDetails: getCheckInDetails(rsvp.answers),
+      registrationDetails: getRegistrationDetails(rsvp.answers),
     },
   };
 }

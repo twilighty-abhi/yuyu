@@ -44,7 +44,7 @@ export default async function EventCheckInPage({ params }: Props) {
   ]);
   if (!event) notFound();
 
-  const [confirmed, checkedInCount, recentRsvps] = await Promise.all([
+  const [confirmed, checkedInCount, recentRsvps, registrationForm] = await Promise.all([
     prisma.rSVP.count({
       where: { eventId: event.id, status: "CONFIRMED" },
     }),
@@ -56,6 +56,15 @@ export default async function EventCheckInPage({ params }: Props) {
       orderBy: { checkedInAt: "desc" },
       take: 200,
       include: { user: { select: { name: true, email: true } } },
+    }),
+    prisma.eventRegistrationForm.findUnique({
+      where: { eventId: event.id },
+      select: {
+        fields: {
+          select: { key: true, label: true },
+          orderBy: { sortOrder: "asc" },
+        },
+      },
     }),
   ]);
 
@@ -77,6 +86,7 @@ export default async function EventCheckInPage({ params }: Props) {
         organisationLogoUrl={organisationBrand?.logoUrl ?? null}
         eventId={event.id}
         eventTitle={event.title}
+        registrationFields={registrationForm?.fields ?? []}
         stats={{ confirmed, checkedIn: checkedInCount }}
         recent={recent}
       />

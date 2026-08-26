@@ -104,10 +104,11 @@ export function EventCheckInClient(props: {
   organisationLogoUrl: string | null;
   eventId: string;
   eventTitle: string;
+  registrationFields: Array<{ key: string; label: string }>;
   stats: { confirmed: number; checkedIn: number };
   recent: CheckInRecentRow[];
 }) {
-  const { organisationSlug, organisationName, organisationLogoUrl, eventId, eventTitle, stats, recent } = props;
+  const { organisationSlug, organisationName, organisationLogoUrl, eventId, eventTitle, registrationFields, stats, recent } = props;
   const router = useRouter();
   const { showToast } = useToast();
   const [pending, startTransition] = useTransition();
@@ -259,6 +260,7 @@ export function EventCheckInClient(props: {
       alreadyCheckedIn: false,
       checkedInAt,
       checkInDetails: attendee.checkInDetails ?? [],
+      registrationDetails: attendee.registrationDetails ?? [],
       kind: "success",
     });
     showIdCard({
@@ -269,6 +271,7 @@ export function EventCheckInClient(props: {
       alreadyCheckedIn: false,
       checkedInAt,
       checkInDetails: attendee.checkInDetails ?? [],
+      registrationDetails: attendee.registrationDetails ?? [],
     });
     playSuccessFeedback();
     await refreshOfflineState();
@@ -299,6 +302,7 @@ export function EventCheckInClient(props: {
             alreadyCheckedIn: Boolean(attendee.checkedInAt),
             checkedInAt: attendee.checkedInAt,
             checkInDetails: attendee.checkInDetails ?? [],
+            registrationDetails: attendee.registrationDetails ?? [],
             gate,
           });
           setScanIsOffline(true);
@@ -780,7 +784,9 @@ export function EventCheckInClient(props: {
           displayName: idCardAttendee.displayName,
           email: idCardAttendee.email,
           checkInDetails: idCardAttendee.checkInDetails,
+          registrationDetails: idCardAttendee.registrationDetails,
         } : null}
+        registrationFields={registrationFields}
       />
 
       <Divider />

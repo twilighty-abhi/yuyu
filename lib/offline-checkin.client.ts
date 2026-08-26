@@ -7,6 +7,7 @@ export type OfflineAttendee = {
   checkedInAt: string | null;
   // Older rosters stored on a shared device do not have these fields yet.
   checkInDetails?: Array<{ label: string; value: string }>;
+  registrationDetails?: Array<{ key: string; label: string; value: string }>;
 };
 
 export type OfflineRoster = {

@@ -3,6 +3,11 @@ export type CheckInDetail = {
   value: string;
 };
 
+/** A normalized answer available to the authenticated check-in desk. */
+export type RegistrationDetail = CheckInDetail & {
+  key: string;
+};
+
 type RegistrationAnswer = {
   valueText: string | null;
   valueBool: boolean | null;
@@ -33,18 +38,27 @@ function displayAnswerValue(answer: RegistrationAnswer) {
  * Returns only the operational registration answers staff need at the door.
  * Multi-select fields have one row per answer, so values are joined by label.
  */
-export function getCheckInDetails(answers: RegistrationAnswer[]): CheckInDetail[] {
-  const valuesByLabel = new Map<string, string[]>();
+export function getRegistrationDetails(answers: RegistrationAnswer[]): RegistrationDetail[] {
+  const valuesByField = new Map<string, RegistrationDetail>();
   for (const answer of answers) {
-    if (!isDoorDetailField(answer.field)) continue;
     const value = displayAnswerValue(answer);
     if (!value) continue;
-    const existing = valuesByLabel.get(answer.field.label) ?? [];
-    existing.push(value);
-    valuesByLabel.set(answer.field.label, existing);
+    const existing = valuesByField.get(answer.field.key);
+    if (existing) {
+      existing.value = `${existing.value}, ${value}`;
+    } else {
+      valuesByField.set(answer.field.key, {
+        key: answer.field.key,
+        label: answer.field.label,
+        value,
+      });
+    }
   }
-  return Array.from(valuesByLabel, ([label, values]) => ({
-    label,
-    value: values.join(", "),
-  }));
+  return Array.from(valuesByField.values());
+}
+
+export function getCheckInDetails(answers: RegistrationAnswer[]): CheckInDetail[] {
+  return getRegistrationDetails(answers)
+    .filter((detail) => isDoorDetailField(detail))
+    .map(({ label, value }) => ({ label, value }));
 }

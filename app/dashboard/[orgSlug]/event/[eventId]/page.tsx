@@ -197,6 +197,7 @@ export default async function EventManagePage({ params }: Props) {
           createdAt: i.createdAt.toISOString(),
         }))}
         registrationFields={registrationFields}
+        referenceTime={new Date().toISOString()}
         analytics={{
           total,
           confirmed,

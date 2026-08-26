@@ -32,8 +32,29 @@ function asDate(value: Event["startDateTime"]): Date {
   return value instanceof Date ? value : new Date(value as string);
 }
 
+// This client component is pre-rendered on the server. Keep the locale and
+// timezone explicit so browser locale settings cannot change its first render.
+const DASHBOARD_DATE_LOCALE = "en-GB";
+
+function formatDashboardDate(date: Date, options: Intl.DateTimeFormatOptions) {
+  return date.toLocaleString(DASHBOARD_DATE_LOCALE, options);
+}
+
+function calendarDayKey(date: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat(DASHBOARD_DATE_LOCALE, {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  return parts
+    .filter((part) => part.type !== "literal")
+    .map((part) => part.value)
+    .join("-");
+}
+
 function formatRecapWhen(start: Date, end: Date, timeZone: string) {
-  const primary = start.toLocaleString(undefined, {
+  const primary = formatDashboardDate(start, {
     weekday: "long",
     month: "long",
     day: "numeric",
@@ -44,13 +65,13 @@ function formatRecapWhen(start: Date, end: Date, timeZone: string) {
     timeZoneName: "short",
   });
   const endT =
-    start.toDateString() === end.toDateString()
-      ? end.toLocaleTimeString(undefined, {
+    calendarDayKey(start, timeZone) === calendarDayKey(end, timeZone)
+      ? formatDashboardDate(end, {
           hour: "numeric",
           minute: "2-digit",
           timeZone,
         })
-      : end.toLocaleString(undefined, {
+      : formatDashboardDate(end, {
           month: "short",
           day: "numeric",
           hour: "numeric",
@@ -122,13 +143,14 @@ export function EventManageOverview(props: {
   };
   invites: InviteRow[];
   recentRegistrations: AttendeeRow[];
+  referenceTime: string;
   onOpenTab: (index: number) => void;
 }) {
-  const { organisationSlug, event, analytics, invites, recentRegistrations, onOpenTab } =
+  const { organisationSlug, event, analytics, invites, recentRegistrations, referenceTime, onOpenTab } =
     props;
   const start = asDate(event.startDateTime);
   const end = asDate(event.endDateTime);
-  const now = new Date();
+  const now = new Date(referenceTime);
   const hasEnded = end < now;
   const isDraft = event.status === "DRAFT";
 
@@ -447,10 +469,11 @@ export function EventManageOverview(props: {
                     {inv.email}
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
-                    {new Date(inv.createdAt).toLocaleDateString(undefined, {
+                    {formatDashboardDate(new Date(inv.createdAt), {
                       month: "short",
                       day: "numeric",
                       year: "numeric",
+                      timeZone: event.timezone,
                     })}
                   </Typography>
                 </Stack>
@@ -524,10 +547,11 @@ export function EventManageOverview(props: {
                     color="text.secondary"
                     sx={{ display: { xs: "none", md: "block" }, flexShrink: 0 }}
                   >
-                    {new Date(row.createdAt).toLocaleDateString(undefined, {
+                    {formatDashboardDate(new Date(row.createdAt), {
                       month: "short",
                       day: "numeric",
                       year: "numeric",
+                      timeZone: event.timezone,
                     })}
                   </Typography>
                 </Stack>

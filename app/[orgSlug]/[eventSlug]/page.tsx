@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { EventStatus } from "@prisma/client";
+import { EventPrivacyType, EventStatus } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { canManageEvents, getMembership } from "@/lib/permissions";
@@ -27,6 +27,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const noindex = { index: false, follow: false } as const;
 
   if (event.status === EventStatus.DRAFT) {
+    return { title: "Event", robots: noindex };
+  }
+
+  if (event.privacyType === EventPrivacyType.INVITE_ONLY) {
     return { title: "Event", robots: noindex };
   }
 
@@ -109,6 +113,24 @@ export default async function EventPage({ params }: Props) {
   });
   if (!event) notFound();
 
+  const session = await auth();
+  const membership = session?.user?.id
+    ? await getMembership(session.user.id, org.id)
+    : null;
+  const canPreviewDraft = canManageEvents(membership);
+  const canManage = canManageEvents(membership);
+
+  if (event.status === EventStatus.DRAFT && !canPreviewDraft) notFound();
+  if (event.privacyType === EventPrivacyType.INVITE_ONLY && !canManage) {
+    const email = session?.user?.email?.trim().toLowerCase();
+    if (!email) notFound();
+    const invite = await prisma.eventInvite.findUnique({
+      where: { eventId_email: { eventId: event.id, email } },
+      select: { id: true },
+    });
+    if (!invite) notFound();
+  }
+
   const registrationForm = await prisma.eventRegistrationForm.findUnique({
     where: { eventId: event.id },
     include: { fields: { orderBy: { sortOrder: "asc" } } },
@@ -122,15 +144,6 @@ export default async function EventPage({ params }: Props) {
       ? f.options.filter((x): x is string => typeof x === "string")
       : [],
   }));
-
-  const session = await auth();
-  const membership = session?.user?.id
-    ? await getMembership(session.user.id, org.id)
-    : null;
-  const canPreviewDraft = canManageEvents(membership);
-  const canManage = canManageEvents(membership);
-
-  if (event.status === EventStatus.DRAFT && !canPreviewDraft) notFound();
 
   const isPast = event.endDateTime <= new Date();
   const showRsvp = event.status === EventStatus.PUBLISHED && !isPast;

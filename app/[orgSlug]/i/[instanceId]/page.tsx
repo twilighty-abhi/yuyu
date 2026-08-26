@@ -35,6 +35,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   if (series.status === EventStatus.DRAFT) {
     return { title: "Event", robots: noindex };
   }
+  if (series.privacyType === EventPrivacyType.INVITE_ONLY) {
+    return { title: "Event", robots: noindex };
+  }
   if (!shouldIndexPublicEvent(series.status, series.privacyType)) {
     return {
       title: series.title,
@@ -91,8 +94,18 @@ export default async function InstanceEventPage({ params }: Props) {
     ? await getMembership(session.user.id, org.id)
     : null;
   const canPreviewDraft = canManageEvents(membership);
+  const canManage = canManageEvents(membership);
 
   if (series.status === EventStatus.DRAFT && !canPreviewDraft) notFound();
+  if (series.privacyType === EventPrivacyType.INVITE_ONLY && !canManage) {
+    const email = session?.user?.email?.trim().toLowerCase();
+    if (!email) notFound();
+    const invite = await prisma.seriesInvite.findUnique({
+      where: { eventSeriesId_email: { eventSeriesId: series.id, email } },
+      select: { id: true },
+    });
+    if (!invite) notFound();
+  }
 
   const isPast = instance.endDateTime <= new Date();
   const showRsvp = series.status === EventStatus.PUBLISHED && !isPast;

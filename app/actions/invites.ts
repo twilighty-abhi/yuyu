@@ -32,10 +32,11 @@ export async function addEventInvite(input: unknown): Promise<ActionResult> {
 
   const parsed = addEventInviteSchema.safeParse(input);
   if (!parsed.success) {
+    const fieldErrors = flattenZodErrors(parsed.error);
     return {
       ok: false,
-      error: "Invalid input.",
-      fieldErrors: flattenZodErrors(parsed.error),
+      error: fieldErrors.email?.[0] ?? "Invalid input.",
+      fieldErrors,
     };
   }
 
@@ -54,6 +55,9 @@ export async function addEventInvite(input: unknown): Promise<ActionResult> {
     where: { id: eventId, organisationId: org.id },
   });
   if (!event) return { ok: false, error: "Event not found." };
+  if (event.endDateTime <= new Date()) {
+    return { ok: false, error: "Invites can’t be sent after an event has ended." };
+  }
 
   try {
     const invite = await prisma.$transaction(async (tx) => {
@@ -145,10 +149,11 @@ export async function addSeriesInvite(input: unknown): Promise<ActionResult> {
 
   const parsed = addSeriesInviteSchema.safeParse(input);
   if (!parsed.success) {
+    const fieldErrors = flattenZodErrors(parsed.error);
     return {
       ok: false,
-      error: "Invalid input.",
-      fieldErrors: flattenZodErrors(parsed.error),
+      error: fieldErrors.email?.[0] ?? "Invalid input.",
+      fieldErrors,
     };
   }
 

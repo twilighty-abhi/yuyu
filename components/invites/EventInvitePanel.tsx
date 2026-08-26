@@ -18,9 +18,10 @@ import { useToast } from "@/components/feedback/ToastProvider";
 export function EventInvitePanel(props: {
   organisationSlug: string;
   eventId: string;
+  eventHasEnded: boolean;
   invites: { id: string; email: string; createdAt: string }[];
 }) {
-  const { organisationSlug, eventId, invites } = props;
+  const { organisationSlug, eventId, eventHasEnded, invites } = props;
   const router = useRouter();
   const { showToast } = useToast();
   const [email, setEmail] = useState("");
@@ -29,7 +30,9 @@ export function EventInvitePanel(props: {
   return (
     <Stack spacing={2}>
       <Typography variant="body2" color="text.secondary">
-        Required for invite-only events. Emails are matched case-insensitively.
+        {eventHasEnded
+          ? "This event has ended, so no new invites can be sent."
+          : "Required for invite-only events. Emails are matched case-insensitively."}
       </Typography>
       <Stack direction={{ xs: "column", sm: "row" }} spacing={2} component="form"
         onSubmit={(e) => {
@@ -56,10 +59,11 @@ export function EventInvitePanel(props: {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
+          disabled={eventHasEnded || pending}
           fullWidth
           size="small"
         />
-        <Button type="submit" variant="contained" disabled={pending}>
+        <Button type="submit" variant="contained" disabled={eventHasEnded || pending}>
           Add
         </Button>
       </Stack>

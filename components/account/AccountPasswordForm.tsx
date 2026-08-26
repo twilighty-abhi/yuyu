@@ -64,6 +64,7 @@ export function AccountPasswordForm({ hasPassword }: { hasPassword: boolean }) {
           onChange={(event) => setNewPassword(event.target.value)}
           autoComplete="new-password"
           helperText="At least 8 characters."
+          slotProps={{ htmlInput: { minLength: 8, maxLength: 128 } }}
           required
           fullWidth
         />

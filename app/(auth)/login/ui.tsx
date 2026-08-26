@@ -63,6 +63,11 @@ const inputSx = {
     "&.Mui-focused fieldset": {
       borderColor: "rgba(124, 245, 182, 0.65)",
     },
+    "& input:-webkit-autofill": {
+      WebkitTextFillColor: "rgba(255,255,255,0.92)",
+      WebkitBoxShadow: "0 0 0 100px #1c1c1e inset",
+      caretColor: "rgba(255,255,255,0.92)",
+    },
   },
 };
 
@@ -352,6 +357,7 @@ export function LoginForm() {
             resetMfaChallenge();
           }}
           autoComplete={isSignUp ? "new-password" : "current-password"}
+          slotProps={{ htmlInput: { minLength: isSignUp ? 8 : undefined, maxLength: 128 } }}
           error={!!fieldErrors.password}
           helperText={
             fieldErrors.password?.[0] ??

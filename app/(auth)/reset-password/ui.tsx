@@ -187,6 +187,7 @@ export function ResetPasswordForm(props: { token: string; email: string }) {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     autoComplete="new-password"
+                    slotProps={{ htmlInput: { minLength: 8, maxLength: 128 } }}
                     error={!!fieldErrors.password}
                     helperText={
                       fieldErrors.password?.[0] ?? "At least 8 characters."

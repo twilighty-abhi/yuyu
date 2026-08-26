@@ -100,7 +100,7 @@ const FIELD_PRESETS = [
     optionsCsv: "",
   },
   {
-    label: "Dietary Restrictions",
+    label: "Food Preference",
     type: "MULTI_SELECT" as RegistrationFieldType,
     required: false,
     optionsCsv: "None, Vegetarian, Vegan, Gluten Free, Dairy Free, Halal, Kosher",
@@ -551,7 +551,7 @@ export function EventRegistrationFormEditor(props: {
                 }
               }}
               fullWidth
-              placeholder="e.g. Phone Number, Dietary Restrictions"
+              placeholder="e.g. Phone Number, Food Preference"
             />
             <TextField
               label="Field Key (System Identifier)"

@@ -54,13 +54,14 @@ export default async function OrganisationPage({ params }: Props) {
     ? await getMembership(session.user.id, org.id)
     : null;
 
-  // Fetch all published events (both past and upcoming)
+  // Fetch all published events (both past and upcoming). The public list is
+  // ordered by publication creation, with the newest addition shown first.
   const events = await prisma.event.findMany({
     where: {
       organisationId: org.id,
       status: EventStatus.PUBLISHED,
     },
-    orderBy: { startDateTime: "asc" },
+    orderBy: { createdAt: "desc" },
   });
 
   // Fetch all instances of published series (both past and upcoming)
@@ -75,11 +76,14 @@ export default async function OrganisationPage({ params }: Props) {
     orderBy: { startDateTime: "asc" },
   });
 
-  // Merge events and instances into a unified timeline
+  // Merge events and instances into one newest-created-first list. A recurring
+  // occurrence represents its series for ordering purposes, not the time its
+  // materialized instance row happened to be generated.
   const merged = [
     ...events.map((event) => ({
       kind: "event" as const,
       id: `e-${event.id}`,
+      createdAt: event.createdAt,
       startDateTime: event.startDateTime,
       endDateTime: event.endDateTime,
       title: event.title,
@@ -89,6 +93,7 @@ export default async function OrganisationPage({ params }: Props) {
     ...instances.map((instance) => ({
       kind: "instance" as const,
       id: `i-${instance.id}`,
+      createdAt: instance.series.createdAt,
       startDateTime: instance.startDateTime,
       endDateTime: instance.endDateTime,
       title: instance.series.title,
@@ -97,7 +102,7 @@ export default async function OrganisationPage({ params }: Props) {
     })),
   ];
 
-  merged.sort((a, b) => a.startDateTime.getTime() - b.startDateTime.getTime());
+  merged.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 
   // Count upcoming occurrences
   const now = new Date();

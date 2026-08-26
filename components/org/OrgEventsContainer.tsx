@@ -23,6 +23,7 @@ type MergedItem =
   | {
       kind: "event";
       id: string;
+      createdAt: Date;
       startDateTime: Date;
       endDateTime: Date;
       title: string;
@@ -33,6 +34,7 @@ type MergedItem =
   | {
       kind: "instance";
       id: string;
+      createdAt: Date;
       startDateTime: Date;
       endDateTime: Date;
       title: string;

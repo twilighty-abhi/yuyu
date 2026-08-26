@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { EventPrivacyType, EventStatus } from "@prisma/client";
 import Button from "@mui/material/Button";
@@ -57,6 +57,7 @@ export function CreateEventDialog(props: {
   const [tagsPreview, setTagsPreview] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
   const [coverImageFile, setCoverImageFile] = useState<File | null>(null);
+  const formRef = useRef<HTMLFormElement | null>(null);
 
   // Wizard States
   const [activeStep, setActiveStep] = useState(0);
@@ -64,6 +65,10 @@ export function CreateEventDialog(props: {
 
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    // The wizard uses one form for all four steps. Pressing Enter in a map-link
+    // field can otherwise submit the form before staff reach the final Create
+    // step, making the cover-image settings flash just before navigation.
+    if (activeStep !== 3) return;
     setError(null);
     if (!start || start < new Date()) {
       setError("Start time must be now or in the future.");
@@ -168,7 +173,7 @@ export function CreateEventDialog(props: {
         fullWidth
         maxWidth="sm"
       >
-        <form onSubmit={onSubmit}>
+        <form ref={formRef} onSubmit={onSubmit}>
           <DialogTitle sx={{ pb: 1 }}>
             {activeStep === 0 && "Create Event: Basics"}
             {activeStep === 1 && "Create Event: Schedule"}
@@ -446,7 +451,7 @@ export function CreateEventDialog(props: {
                   onClick={() => {
                     setError(null);
                     if (activeStep === 0) {
-                      const titleInput = document.querySelector('input[name="title"]') as HTMLInputElement;
+                      const titleInput = formRef.current?.elements.namedItem("title") as HTMLInputElement | null;
                       if (!titleInput?.value.trim()) {
                         titleInput?.focus();
                         titleInput?.reportValidity();
@@ -468,10 +473,16 @@ export function CreateEventDialog(props: {
                       }
                     }
                     if (activeStep === 2) {
-                      const locInput = document.querySelector('input[name="location"]') as HTMLInputElement;
+                      const locInput = formRef.current?.elements.namedItem("location") as HTMLInputElement | null;
                       if (!locInput?.value.trim()) {
                         locInput?.focus();
                         locInput?.reportValidity();
+                        return;
+                      }
+                      const mapLinkInput = formRef.current?.elements.namedItem("mapLinkUrl") as HTMLInputElement | null;
+                      if (mapLinkInput?.value && !mapLinkInput.checkValidity()) {
+                        mapLinkInput.focus();
+                        mapLinkInput.reportValidity();
                         return;
                       }
                     }

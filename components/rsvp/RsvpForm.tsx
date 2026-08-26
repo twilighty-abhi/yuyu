@@ -199,6 +199,7 @@ export function RsvpForm(props: {
             value={name}
             placeholder={session.user.name ?? ""}
             onChange={(e) => setName(e.target.value)}
+            slotProps={{ htmlInput: { maxLength: 200 } }}
           />
           {fields.map((f) => {
             switch (f.type) {
@@ -211,6 +212,7 @@ export function RsvpForm(props: {
                     fullWidth
                     value={(answers[f.key] as string | undefined) ?? ""}
                     onChange={(e) => setAnswer(f.key, e.target.value)}
+                    slotProps={{ htmlInput: { maxLength: 200 } }}
                   />
                 );
               case "EMAIL":
@@ -244,6 +246,7 @@ export function RsvpForm(props: {
                     inputMode="tel"
                     placeholder="Phone number"
                     slotProps={{
+                      htmlInput: { inputMode: "numeric", pattern: "[0-9]*", maxLength: 14 },
                       input: {
                         startAdornment: (
                           <InputAdornment position="start">
@@ -290,6 +293,7 @@ export function RsvpForm(props: {
                     minRows={3}
                     value={(answers[f.key] as string | undefined) ?? ""}
                     onChange={(e) => setAnswer(f.key, e.target.value)}
+                    slotProps={{ htmlInput: { maxLength: 5000 } }}
                   />
                 );
               case "NUMBER":
@@ -491,6 +495,7 @@ export function RsvpForm(props: {
         fullWidth
         value={name}
         onChange={(e) => setName(e.target.value)}
+        slotProps={{ htmlInput: { maxLength: 200 } }}
         sx={{ mb: 2 }}
       />
       <TextField
@@ -516,6 +521,7 @@ export function RsvpForm(props: {
                     fullWidth
                     value={(answers[f.key] as string | undefined) ?? ""}
                     onChange={(e) => setAnswer(f.key, e.target.value)}
+                    slotProps={{ htmlInput: { maxLength: 200 } }}
                   />
                 );
               case "EMAIL":
@@ -549,6 +555,7 @@ export function RsvpForm(props: {
                     inputMode="tel"
                     placeholder="Phone number"
                     slotProps={{
+                      htmlInput: { inputMode: "numeric", pattern: "[0-9]*", maxLength: 14 },
                       input: {
                         startAdornment: (
                           <InputAdornment position="start">
@@ -595,6 +602,7 @@ export function RsvpForm(props: {
                     minRows={3}
                     value={(answers[f.key] as string | undefined) ?? ""}
                     onChange={(e) => setAnswer(f.key, e.target.value)}
+                    slotProps={{ htmlInput: { maxLength: 5000 } }}
                   />
                 );
               case "NUMBER":

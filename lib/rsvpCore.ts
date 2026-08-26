@@ -132,6 +132,10 @@ function isBasicE164(v: string) {
   return /^\+\d{8,15}$/.test(v);
 }
 
+function isValidAttendeeName(v: string) {
+  return v.length <= 200 && /\p{L}/u.test(v);
+}
+
 function coerceFiniteNumber(v: unknown): number | null {
   if (typeof v === "number") return Number.isFinite(v) ? v : null;
   if (typeof v === "string") {
@@ -184,10 +188,17 @@ function validateAndNormalizeAnswers(params: {
     const hasValue = raw !== undefined && raw !== null;
 
     switch (f.type) {
-      case RegistrationFieldType.TEXT:
+      case RegistrationFieldType.TEXT: {
+        const s = typeof raw === "string" ? raw.trim() : "";
+        if (f.required && !s) return { error: `${f.label} is required.` };
+        if (s.length > 200) return { error: `${f.label} must be at most 200 characters.` };
+        if (s) rows.push({ fieldId: f.id, valueText: s });
+        break;
+      }
       case RegistrationFieldType.TEXTAREA: {
         const s = typeof raw === "string" ? raw.trim() : "";
         if (f.required && !s) return { error: `${f.label} is required.` };
+        if (s.length > 5_000) return { error: `${f.label} must be at most 5,000 characters.` };
         if (s) rows.push({ fieldId: f.id, valueText: s });
         break;
       }
@@ -356,6 +367,9 @@ export async function submitRsvpCore(
         typeof parsed.data.name === "string" ? parsed.data.name.trim() : "";
       if (!existingName && !submittedName) {
         return { ok: false, error: "Name is required." };
+      }
+      if (!isValidAttendeeName(submittedName || existingName)) {
+        return { ok: false, error: "Enter a valid name." };
       }
 
       const answers = parsed.data.answers ?? {};
@@ -615,6 +629,9 @@ async function submitInstanceRsvp(params: {
       if (!existingName && !submittedName) {
         return { ok: false, error: "Name is required." };
       }
+      if (!isValidAttendeeName(submittedName || existingName)) {
+        return { ok: false, error: "Enter a valid name." };
+      }
 
       reservation = await reserveRsvp({
         target: { eventInstanceId: instance.id },
@@ -639,6 +656,9 @@ async function submitInstanceRsvp(params: {
     } else {
       const guestName = params.guestName?.trim() ?? "";
       if (!guestName) return { ok: false, error: "Name is required." };
+      if (!isValidAttendeeName(guestName)) {
+        return { ok: false, error: "Enter a valid name." };
+      }
       reservation = await reserveRsvp({
         target: { eventInstanceId: instance.id },
         capacity: series.capacity,

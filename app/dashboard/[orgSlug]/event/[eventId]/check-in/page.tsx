@@ -33,9 +33,15 @@ export default async function EventCheckInPage({ params }: Props) {
   const { orgSlug, eventId } = await params;
   const { organisation } = await requireOrgRole(orgSlug, "MEMBER");
 
-  const event = await prisma.event.findFirst({
-    where: { id: eventId, organisationId: organisation.id },
-  });
+  const [event, organisationBrand] = await Promise.all([
+    prisma.event.findFirst({
+      where: { id: eventId, organisationId: organisation.id },
+    }),
+    prisma.organisation.findUnique({
+      where: { id: organisation.id },
+      select: { logoUrl: true },
+    }),
+  ]);
   if (!event) notFound();
 
   const [confirmed, checkedInCount, recentRsvps] = await Promise.all([
@@ -67,6 +73,8 @@ export default async function EventCheckInPage({ params }: Props) {
       </Typography>
       <EventCheckInClient
         organisationSlug={organisation.slug}
+        organisationName={organisation.name}
+        organisationLogoUrl={organisationBrand?.logoUrl ?? null}
         eventId={event.id}
         eventTitle={event.title}
         stats={{ confirmed, checkedIn: checkedInCount }}

@@ -100,12 +100,14 @@ function playSuccessFeedback() {
 
 export function EventCheckInClient(props: {
   organisationSlug: string;
+  organisationName: string;
+  organisationLogoUrl: string | null;
   eventId: string;
   eventTitle: string;
   stats: { confirmed: number; checkedIn: number };
   recent: CheckInRecentRow[];
 }) {
-  const { organisationSlug, eventId, eventTitle, stats, recent } = props;
+  const { organisationSlug, organisationName, organisationLogoUrl, eventId, eventTitle, stats, recent } = props;
   const router = useRouter();
   const { showToast } = useToast();
   const [pending, startTransition] = useTransition();
@@ -772,7 +774,13 @@ export function EventCheckInClient(props: {
         onClose={() => setIdCardOpen(false)}
         eventId={eventId}
         eventTitle={eventTitle}
-        attendee={idCardAttendee ? { displayName: idCardAttendee.displayName, email: idCardAttendee.email } : null}
+        organisationName={organisationName}
+        organisationLogoUrl={organisationLogoUrl}
+        attendee={idCardAttendee ? {
+          displayName: idCardAttendee.displayName,
+          email: idCardAttendee.email,
+          checkInDetails: idCardAttendee.checkInDetails,
+        } : null}
       />
 
       <Divider />

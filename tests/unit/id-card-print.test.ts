@@ -12,6 +12,11 @@ describe("ID card print settings", () => {
       heading: "Open House",
       badgeLabel: "ATTENDEE",
       showEmail: true,
+      template: "classic",
+      accentColor: "#2563EB",
+      footerText: "Event check-in",
+      showLogo: true,
+      showCheckInDetails: false,
     });
   });
 
@@ -21,11 +26,21 @@ describe("ID card print settings", () => {
       heading: "  Welcome  ",
       badgeLabel: "Speaker",
       showEmail: false,
+      template: "bold",
+      accentColor: "#ff00aa",
+      footerText: "Door team",
+      showLogo: false,
+      showCheckInDetails: true,
     }, "Open House")).toMatchObject({
       ...A6_LANDSCAPE,
       heading: "Welcome",
       badgeLabel: "Speaker",
       showEmail: false,
+      template: "bold",
+      accentColor: "#FF00AA",
+      footerText: "Door team",
+      showLogo: false,
+      showCheckInDetails: true,
     });
     expect(normalizeIdCardPrintSettings({ widthMm: 2, heightMm: 1000 }, "Open House")).toMatchObject({
       widthMm: 40,

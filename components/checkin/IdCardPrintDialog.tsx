@@ -5,13 +5,13 @@ import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import ButtonGroup from "@mui/material/ButtonGroup";
-import Checkbox from "@mui/material/Checkbox";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
 import Divider from "@mui/material/Divider";
 import FormControlLabel from "@mui/material/FormControlLabel";
+import MenuItem from "@mui/material/MenuItem";
 import Stack from "@mui/material/Stack";
 import Switch from "@mui/material/Switch";
 import TextField from "@mui/material/TextField";
@@ -220,6 +220,11 @@ export function IdCardPrintDialog(props: {
           : "Registration field",
     }))
   ), [registrationFields]);
+  const selectedFieldOptions = settings.printFieldKeys.flatMap((key) => {
+    const field = fieldOptions.find((option) => option.key === key);
+    return field ? [field] : [];
+  });
+  const availableFieldOptions = fieldOptions.filter((field) => !settings.printFieldKeys.includes(field.key));
   const previewFields = printableFields(settings, sampleAttendee);
   const ratio = `${settings.widthMm} / ${settings.heightMm}`;
   const paperDescription = `${settings.widthMm} × ${settings.heightMm} mm`;
@@ -305,32 +310,47 @@ export function IdCardPrintDialog(props: {
             <Box>
               <Typography variant="subtitle2">Card fields</Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                Choose any registration answer to print. Select the attendee&apos;s Organisation or Company field to print their organisation, and select Role to print their role.
+                Add the attendee details you want directly from this event&apos;s registration form—for example Organisation, Company, or Role.
               </Typography>
-              <Stack spacing={0.75}>
-                {fieldOptions.map((field) => {
-                  const selected = settings.printFieldKeys.includes(field.key);
-                  return (
-                    <Box key={field.key} sx={{ pl: 0.25 }}>
-                      <FormControlLabel
-                        control={<Checkbox checked={selected} onChange={(_, checked) => togglePrintField(field.key, checked)} />}
-                        label={<Box><Typography variant="body2">{field.label}</Typography><Typography variant="caption" color="text.secondary">{field.detail}</Typography></Box>}
+              {fieldOptions.length === 0 ? (
+                <Alert severity="warning">This event has no registration-form fields to add to the card yet.</Alert>
+              ) : (
+                <Stack spacing={1}>
+                  <TextField
+                    select
+                    label="Add registration field"
+                    value=""
+                    onChange={(event) => togglePrintField(event.target.value, true)}
+                    fullWidth
+                    disabled={availableFieldOptions.length === 0}
+                    helperText={availableFieldOptions.length === 0 ? "All registration fields are already on this card." : "Choose a field to add it to the card."}
+                  >
+                    <MenuItem value="" disabled>Select a registration field</MenuItem>
+                    {availableFieldOptions.map((field) => (
+                      <MenuItem key={field.key} value={field.key}>{field.label} · {field.detail}</MenuItem>
+                    ))}
+                  </TextField>
+                  {selectedFieldOptions.map((field) => (
+                    <Stack key={field.key} spacing={0.5} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 1, p: 1 }}>
+                      <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "space-between" }}>
+                        <Box>
+                          <Typography variant="body2" sx={{ fontWeight: 700 }}>{field.label}</Typography>
+                          <Typography variant="caption" color="text.secondary">{field.detail}</Typography>
+                        </Box>
+                        <Button size="small" color="inherit" onClick={() => togglePrintField(field.key, false)}>Remove</Button>
+                      </Stack>
+                      <TextField
+                        label="Printed label"
+                        value={settings.printFieldLabels[field.key] ?? field.label}
+                        onChange={(event) => updatePrintFieldLabel(field.key, event.target.value)}
+                        slotProps={{ htmlInput: { maxLength: 60 } }}
+                        size="small"
+                        fullWidth
                       />
-                      {selected ? (
-                        <TextField
-                          label="Printed label"
-                          value={settings.printFieldLabels[field.key] ?? field.label}
-                          onChange={(event) => updatePrintFieldLabel(field.key, event.target.value)}
-                          slotProps={{ htmlInput: { maxLength: 60 } }}
-                          size="small"
-                          fullWidth
-                          sx={{ mb: 0.5, ml: 4.5, width: "calc(100% - 36px)" }}
-                        />
-                      ) : null}
-                    </Box>
-                  );
-                })}
-              </Stack>
+                    </Stack>
+                  ))}
+                </Stack>
+              )}
             </Box>
           </Stack>
           <Stack spacing={1} sx={{ flex: 1, minWidth: 0, alignItems: "center" }}>

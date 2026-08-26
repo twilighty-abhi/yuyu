@@ -26,6 +26,53 @@ const coverImageUrlSchema = z
   ])
   .optional();
 
+const attendeeNameSchema = z
+  .string()
+  .trim()
+  .min(1, "Name is required")
+  .max(200, "Name must be at most 200 characters")
+  .refine((value) => /\p{L}/u.test(value), "Enter a valid name");
+
+function validateEventScheduleAndLocation(
+  data: {
+    startDateTime: Date;
+    endDateTime: Date;
+    isOnline: boolean;
+    location: string;
+  },
+  ctx: z.RefinementCtx,
+) {
+  if (data.startDateTime < new Date()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["startDateTime"],
+      message: "Start time must be now or in the future",
+    });
+  }
+  if (data.endDateTime <= data.startDateTime) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["endDateTime"],
+      message: "End must be after start",
+    });
+  }
+  if (data.isOnline) {
+    if (!httpUrlSchema.safeParse(data.location).success) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["location"],
+        message: "Enter a valid HTTP(S) online meeting URL",
+      });
+    }
+  } else if (data.location.trim().length < 3) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["location"],
+      message: "Enter a physical location of at least 3 characters",
+    });
+  }
+}
+
 export const createOrganisationSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(120),
   slug: z
@@ -90,10 +137,7 @@ export const createEventSchema = z
       .optional()
       .default(EventPrivacyType.PUBLIC),
   })
-  .refine((d) => d.endDateTime > d.startDateTime, {
-    message: "End must be after start",
-    path: ["endDateTime"],
-  });
+  .superRefine(validateEventScheduleAndLocation);
 
 const rsvpTargetBase = z
   .object({
@@ -110,12 +154,12 @@ const rsvpTargetBase = z
 
 export const rsvpGuestSchema = rsvpTargetBase.extend({
   guestEmail: z.string().trim().email("Valid email required"),
-  name: z.string().trim().min(1, "Name is required").max(200),
+  name: attendeeNameSchema,
   answers: z.record(z.string(), z.unknown()).optional().default({}),
 });
 
 export const rsvpLoggedInSchema = rsvpTargetBase.extend({
-  name: z.string().trim().max(200).optional(),
+  name: attendeeNameSchema.optional().or(z.literal("")),
   answers: z.record(z.string(), z.unknown()).optional().default({}),
 });
 
@@ -162,10 +206,7 @@ export const updateEventSchema = z
     status: z.nativeEnum(EventStatus),
     privacyType: z.nativeEnum(EventPrivacyType),
   })
-  .refine((d) => d.endDateTime > d.startDateTime, {
-    message: "End must be after start",
-    path: ["endDateTime"],
-  });
+  .superRefine(validateEventScheduleAndLocation);
 
 export const deleteEventSchema = z.object({
   organisationSlug: z.string().trim().min(1),

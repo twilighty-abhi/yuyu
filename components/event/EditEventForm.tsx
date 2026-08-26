@@ -97,6 +97,14 @@ export function EditEventForm(props: {
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
+    if (!start || start < new Date()) {
+      setError("Start time must be now or in the future.");
+      return;
+    }
+    if (!end || end <= start) {
+      setError("End time must be after start time.");
+      return;
+    }
     const form = e.currentTarget;
     const fd = new FormData(form);
     const capacityRaw = String(fd.get("capacity") ?? "").trim();
@@ -329,6 +337,7 @@ export function EditEventForm(props: {
                       label="Start"
                       value={start}
                       onChange={(v) => setStart(v)}
+                      minDateTime={new Date()}
                       slotProps={{
                         textField: {
                           required: true,
@@ -400,13 +409,14 @@ export function EditEventForm(props: {
                 <Grid size={{ xs: 12, md: 8 }}>
                   <TextField
                     name="location"
-                    label="Location"
+                    label={isOnlinePreview ? "Online meeting link" : "Location"}
                     fullWidth
+                    required
+                    type={isOnlinePreview ? "url" : "text"}
                     defaultValue={event.location}
-                    disabled={isOnlinePreview}
                     helperText={
                       isOnlinePreview
-                        ? "Turn off Online event to set a physical location."
+                        ? "Enter a valid HTTP(S) meeting URL."
                         : "Eg: Samagatha Foundation, Bengaluru"
                     }
                   />

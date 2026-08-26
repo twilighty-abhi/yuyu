@@ -65,6 +65,16 @@ export function CreateEventDialog(props: {
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
+    if (!start || start < new Date()) {
+      setError("Start time must be now or in the future.");
+      setActiveStep(1);
+      return;
+    }
+    if (!end || end <= start) {
+      setError("End time must be after start time.");
+      setActiveStep(1);
+      return;
+    }
     const form = e.currentTarget;
     const fd = new FormData(form);
     const capacityRaw = String(fd.get("capacity") ?? "").trim();
@@ -276,6 +286,7 @@ export function CreateEventDialog(props: {
                         setEnd(new Date(v.getTime() + 60 * 60 * 1000));
                       }
                     }}
+                    minDateTime={new Date()}
                     slotProps={{
                       textField: {
                         required: true,
@@ -332,10 +343,12 @@ export function CreateEventDialog(props: {
                 />
                 <TextField 
                   name="location" 
-                  label={isOnline ? "Online Link / Video Platform" : "Location"} 
+                  label={isOnline ? "Online meeting link" : "Location"}
                   required
                   fullWidth 
-                  placeholder={isOnline ? "e.g., Zoom Link, Google Meet URL" : "e.g., 123 Main St, San Francisco, CA"}
+                  type={isOnline ? "url" : "text"}
+                  placeholder={isOnline ? "https://meet.google.com/..." : "e.g., 123 Main St, San Francisco, CA"}
+                  helperText={isOnline ? "Enter a valid HTTP(S) meeting URL." : "Enter the venue or street address."}
                 />
                 {!isOnline && (
                   <TextField
@@ -443,6 +456,10 @@ export function CreateEventDialog(props: {
                     if (activeStep === 1) {
                       if (!start || !end) {
                         setError("Please select both start and end times.");
+                        return;
+                      }
+                      if (start < new Date()) {
+                        setError("Start time must be now or in the future.");
                         return;
                       }
                       if (end <= start) {

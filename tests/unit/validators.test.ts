@@ -42,10 +42,19 @@ describe("event validation", () => {
     endDateTime: "2026-10-01T20:00:00.000Z",
     timezone: "UTC",
     isOnline: false,
+    location: "Main auditorium",
   };
 
   it("rejects an event that ends before it begins", () => {
     expect(createEventSchema.safeParse({ ...baseEvent, endDateTime: "2026-10-01T17:00:00.000Z" }).success).toBe(false);
+  });
+
+  it("rejects past starts and invalid event locations", () => {
+    const past = new Date(Date.now() - 60_000).toISOString();
+    expect(createEventSchema.safeParse({ ...baseEvent, startDateTime: past }).success).toBe(false);
+    expect(createEventSchema.safeParse({ ...baseEvent, location: "x" }).success).toBe(false);
+    expect(createEventSchema.safeParse({ ...baseEvent, isOnline: true, location: "not a URL" }).success).toBe(false);
+    expect(createEventSchema.safeParse({ ...baseEvent, isOnline: true, location: "https://meet.example.test/demo" }).success).toBe(true);
   });
 
   it("deduplicates and normalizes event tags", () => {
@@ -64,5 +73,13 @@ describe("event validation", () => {
     expect(createEventSchema.safeParse({ ...baseEvent, mapLinkUrl: "javascript:alert(1)" }).success).toBe(false);
     expect(createEventSchema.safeParse({ ...baseEvent, coverImageUrl: "data:text/html,unsafe" }).success).toBe(false);
     expect(createOrganisationSchema.safeParse({ name: "Demo", slug: "demo", logoUrl: "javascript:alert(1)" }).success).toBe(false);
+  });
+});
+
+describe("attendee name validation", () => {
+  it("rejects numeric-only guest names and accepts names containing letters", () => {
+    const base = { orgSlug: "demo", eventSlug: "launch-night", guestEmail: "guest@example.com" };
+    expect(rsvpGuestSchema.safeParse({ ...base, name: "123456" }).success).toBe(false);
+    expect(rsvpGuestSchema.safeParse({ ...base, name: "Asha 123" }).success).toBe(true);
   });
 });

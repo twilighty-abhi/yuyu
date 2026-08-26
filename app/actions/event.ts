@@ -81,6 +81,12 @@ function revalidateEventPaths(orgSlug: string, eventSlug: string, eventId: strin
   revalidatePath(`/dashboard/${orgSlug}/event/${eventId}`);
 }
 
+function validationError(error: Parameters<typeof flattenZodErrors>[0]) {
+  const fieldErrors = flattenZodErrors(error);
+  const message = Object.values(fieldErrors).flat()[0] ?? "Invalid input.";
+  return { error: message, fieldErrors };
+}
+
 export async function createEvent(input: unknown): Promise<ActionResult<{ id: string; slug: string }>> {
   const session = await auth();
   if (!session?.user?.id) {
@@ -92,10 +98,10 @@ export async function createEvent(input: unknown): Promise<ActionResult<{ id: st
 
   const parsed = createEventSchema.safeParse(input);
   if (!parsed.success) {
+    const validation = validationError(parsed.error);
     return {
       ok: false,
-      error: "Invalid input.",
-      fieldErrors: flattenZodErrors(parsed.error),
+      ...validation,
     };
   }
 
@@ -189,10 +195,10 @@ export async function updateEvent(input: unknown): Promise<ActionResult> {
 
   const parsed = updateEventSchema.safeParse(input);
   if (!parsed.success) {
+    const validation = validationError(parsed.error);
     return {
       ok: false,
-      error: "Invalid input.",
-      fieldErrors: flattenZodErrors(parsed.error),
+      ...validation,
     };
   }
 

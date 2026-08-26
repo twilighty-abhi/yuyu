@@ -73,6 +73,15 @@ function stringAvatar(name: string) {
   return initials;
 }
 
+function isHttpUrl(value: string) {
+  try {
+    const protocol = new URL(value).protocol;
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 export function EventPublicShell(props: Props) {
   const {
     orgSlug,
@@ -369,9 +378,23 @@ export function EventPublicShell(props: Props) {
               ) : event.isOnline ? (
                 <Stack direction="row" spacing={2} sx={{ alignItems: "flex-start" }}>
                   <VideocamOutlinedIcon color="primary" sx={{ mt: 0.25 }} />
-                  <Typography variant="body2" color="text.secondary">
-                    Online event
-                  </Typography>
+                  <Stack spacing={0.5} sx={{ alignItems: "flex-start" }}>
+                    <Typography variant="body2" color="text.secondary">
+                      Online event
+                    </Typography>
+                    {isHttpUrl(event.location) ? (
+                      <Button
+                        component="a"
+                        href={event.location}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        size="small"
+                        variant="outlined"
+                      >
+                        Join online event
+                      </Button>
+                    ) : null}
+                  </Stack>
                 </Stack>
               ) : null}
             </Stack>

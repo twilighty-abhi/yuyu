@@ -16,8 +16,6 @@ export type IdCardPrintSettings = {
   printFieldLabels: Record<string, string>;
 };
 
-export const ORGANISATION_NAME_CARD_FIELD = "system:organisation-name";
-
 export const A6_PORTRAIT = { widthMm: 105, heightMm: 148 };
 export const A6_LANDSCAPE = { widthMm: 148, heightMm: 105 };
 /** Common 4 × 6 in direct-thermal label stock. */
@@ -48,7 +46,7 @@ function printableFieldKeys(value: unknown, fallback: string[]) {
   const keys = value
     .filter((item): item is string => typeof item === "string")
     .map((item) => item.trim())
-    .filter((item) => item.length > 0 && item.length <= 160)
+    .filter((item) => item.length > 0 && item.length <= 160 && !item.startsWith("system:"))
     .filter((item, index, all) => all.indexOf(item) === index)
     .slice(0, 16);
   return keys;
@@ -76,7 +74,7 @@ export function defaultIdCardPrintSettings(eventTitle: string, organisationName 
     accentColor: "#2563EB",
     footerText: organisationName.trim().slice(0, 80) || "Event check-in",
     showLogo: true,
-    printFieldKeys: [ORGANISATION_NAME_CARD_FIELD],
+    printFieldKeys: [],
     printFieldLabels: {},
   };
 }

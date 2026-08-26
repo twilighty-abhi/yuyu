@@ -3,7 +3,6 @@ import {
   A6_LANDSCAPE,
   A6_PORTRAIT,
   normalizeIdCardPrintSettings,
-  ORGANISATION_NAME_CARD_FIELD,
 } from "@/lib/idCardPrint";
 
 describe("ID card print settings", () => {
@@ -18,7 +17,7 @@ describe("ID card print settings", () => {
       accentColor: "#2563EB",
       footerText: "Event check-in",
       showLogo: true,
-      printFieldKeys: [ORGANISATION_NAME_CARD_FIELD],
+      printFieldKeys: [],
       printFieldLabels: {},
     });
   });
@@ -55,6 +54,9 @@ describe("ID card print settings", () => {
     });
     expect(normalizeIdCardPrintSettings({ printerProfile: "colour" }, "Open House")).toMatchObject({
       printerProfile: "laser",
+    });
+    expect(normalizeIdCardPrintSettings({ printFieldKeys: ["system:organisation-name"] }, "Open House")).toMatchObject({
+      printFieldKeys: [],
     });
   });
 });

@@ -22,7 +22,6 @@ import {
   A6_PORTRAIT,
   defaultIdCardPrintSettings,
   normalizeIdCardPrintSettings,
-  ORGANISATION_NAME_CARD_FIELD,
   THERMAL_4X6,
   type IdCardPrintSettings,
 } from "@/lib/idCardPrint";
@@ -84,14 +83,9 @@ function safeLogoUrl(value: string | null) {
 function printableFields(
   settings: IdCardPrintSettings,
   attendee: Attendee,
-  organisationName: string,
 ): PrintableField[] {
   const registrationDetails = new Map(attendee.registrationDetails.map((detail) => [detail.key, detail]));
   return settings.printFieldKeys.flatMap((key) => {
-    if (key === ORGANISATION_NAME_CARD_FIELD) {
-      const value = organisationName.trim();
-      return value ? [{ key, label: "Organisation", value }] : [];
-    }
     const detail = registrationDetails.get(key.startsWith("registration:") ? key.slice("registration:".length) : key);
     return detail ? [{ key, label: detail.label, value: detail.value }] : [];
   });
@@ -104,8 +98,8 @@ function printableDetails(fields: PrintableField[], settings: IdCardPrintSetting
   )).join("")}</dl>`;
 }
 
-function printCard(params: { settings: IdCardPrintSettings; attendee: Attendee; organisationLogoUrl: string | null; organisationName: string }) {
-  const { settings, attendee, organisationLogoUrl, organisationName } = params;
+function printCard(params: { settings: IdCardPrintSettings; attendee: Attendee; organisationLogoUrl: string | null }) {
+  const { settings, attendee, organisationLogoUrl } = params;
   const printWindow = window.open("", "_blank");
   if (!printWindow) return false;
 
@@ -116,7 +110,7 @@ function printCard(params: { settings: IdCardPrintSettings; attendee: Attendee; 
   const emailLine = settings.showEmail && email ? `<p class="email">${email}</p>` : "";
   const logoUrl = settings.showLogo && settings.printerProfile !== "thermal" ? safeLogoUrl(organisationLogoUrl) : null;
   const logo = logoUrl ? `<img id="badge-logo" class="logo" src="${escapePrintHtml(logoUrl)}" alt="">` : "";
-  const details = printableDetails(printableFields(settings, attendee, organisationName), settings);
+  const details = printableDetails(printableFields(settings, attendee), settings);
 
   printWindow.document.write(`<!doctype html>
 <html><head><meta charset="utf-8"><title>${name} ID card</title><style>
@@ -215,15 +209,18 @@ export function IdCardPrintDialog(props: {
       value: /role/i.test(`${field.key} ${field.label}`) ? "Speaker" : "Example answer",
     })),
   };
-  const fieldOptions = useMemo(() => [
-    { key: ORGANISATION_NAME_CARD_FIELD, label: "Organisation name", detail: "Always available" },
-    ...registrationFields.map((field) => ({
+  const fieldOptions = useMemo(() => (
+    registrationFields.map((field) => ({
       key: registrationFieldKey(field.key),
       label: field.label,
-      detail: /role/i.test(`${field.key} ${field.label}`) ? "Role field" : "Registration field",
-    })),
-  ], [registrationFields]);
-  const previewFields = printableFields(settings, sampleAttendee, organisationName);
+      detail: /organi[sz]ation|company/i.test(`${field.key} ${field.label}`)
+        ? "Participant organisation field"
+        : /role/i.test(`${field.key} ${field.label}`)
+          ? "Role field"
+          : "Registration field",
+    }))
+  ), [registrationFields]);
+  const previewFields = printableFields(settings, sampleAttendee);
   const ratio = `${settings.widthMm} / ${settings.heightMm}`;
   const paperDescription = `${settings.widthMm} × ${settings.heightMm} mm`;
   const isA6Portrait = settings.widthMm === A6_PORTRAIT.widthMm && settings.heightMm === A6_PORTRAIT.heightMm;
@@ -308,7 +305,7 @@ export function IdCardPrintDialog(props: {
             <Box>
               <Typography variant="subtitle2">Card fields</Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                Choose any registration answer to print. Organisation name is available by default; add a Role registration field to print each attendee&apos;s role.
+                Choose any registration answer to print. Select the attendee&apos;s Organisation or Company field to print their organisation, and select Role to print their role.
               </Typography>
               <Stack spacing={0.75}>
                 {fieldOptions.map((field) => {
@@ -362,7 +359,7 @@ export function IdCardPrintDialog(props: {
       <DialogActions>
         <Button onClick={onClose} color="inherit">Close</Button>
         <Button variant="contained" startIcon={<PrintOutlinedIcon />} disabled={!attendee} onClick={() => {
-          if (!attendee || printCard({ settings, attendee, organisationLogoUrl, organisationName })) return;
+          if (!attendee || printCard({ settings, attendee, organisationLogoUrl })) return;
           window.alert("The print window was blocked. Allow pop-ups for this check-in station and try again.");
         }}>Print ID card</Button>
       </DialogActions>

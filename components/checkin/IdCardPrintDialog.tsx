@@ -40,6 +40,11 @@ const storageKey = (eventId: string) => `yuyu:checkin:id-card:${eventId}`;
 const settingsChangedEvent = "yuyu:id-card-print-settings-changed";
 const sessionSettings = new Map<string, IdCardPrintSettings>();
 const registrationFieldKey = (key: string) => `registration:${key}`;
+const TEMPLATE_OPTIONS = [
+  { key: "classic", label: "Classic", description: "Framed and balanced" },
+  { key: "bold", label: "Bold", description: "Strong side-band identity" },
+  { key: "minimal", label: "Minimal", description: "Clean editorial layout" },
+] as const;
 
 function readSettings(eventId: string, eventTitle: string, organisationName: string) {
   const cached = sessionSettings.get(eventId);
@@ -119,7 +124,7 @@ function printCard(params: { settings: IdCardPrintSettings; attendee: Attendee; 
   * { box-sizing: border-box; -webkit-print-color-adjust: economy; print-color-adjust: economy; }
   html, body { width: ${settings.widthMm}mm; height: ${settings.heightMm}mm; margin: 0; }
   body { color: #0F172A; font-family: Inter, Arial, Helvetica, sans-serif; }
-  .card { width: 100%; height: 100%; padding: 9mm; display: flex; flex-direction: column; background: #fff; border: 0.6mm solid #0F172A; overflow: hidden; }
+  .card { width: 100%; height: 100%; padding: 9mm; display: flex; flex-direction: column; position: relative; background: #fff; border: 0.6mm solid #0F172A; overflow: hidden; }
   .top { display: flex; align-items: flex-start; justify-content: space-between; gap: 5mm; }
   .logo { width: 13mm; height: 13mm; border-radius: 3mm; object-fit: contain; background: #fff; padding: 1mm; }
   .label { margin: 0; color: var(--accent); font-size: 8pt; font-weight: 800; letter-spacing: 0.16em; }
@@ -131,16 +136,28 @@ function printCard(params: { settings: IdCardPrintSettings; attendee: Attendee; 
   .details div { display: flex; justify-content: space-between; gap: 4mm; margin-top: 1.5mm; font-size: 8.5pt; }
   .details dt { color: #64748B; } .details dd { margin: 0; font-weight: 700; text-align: right; }
   .footer { margin: auto 0 0; padding-top: 5mm; color: #64748B; font-size: 8pt; }
-  .card.bold { border: 0; } .bold .top { margin: -9mm -9mm 0; padding: 8mm 9mm 7mm; background: var(--accent); color: #fff; }
-  .bold .label, .bold .heading { color: #fff; } .bold .rule { height: 0.5mm; margin-top: 7mm; }
-  .bold .footer { color: #475569; } .bold .logo { box-shadow: 0 0 0 0.4mm rgba(255,255,255,.55); }
-  .card.minimal { border: 0.35mm solid #CBD5E1; } .minimal .rule { height: 0.35mm; } .minimal .label { color: #0F172A; }
+  /* Classic is a traditional framed event badge. */
+  .classic .top { padding-bottom: 2mm; border-bottom: 0.3mm solid #000; }
+  .classic .rule { width: 20mm; margin: 4mm 0 6mm; }
+  /* Bold uses a distinct side-band and uppercase name treatment. */
+  .card.bold { border: 1.2mm solid #000; padding-left: 16mm; }
+  .bold::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 6mm; background: #000; }
+  .bold .top, .bold .top > * { position: relative; z-index: 1; }
+  .bold .rule { width: 100%; height: 0.7mm; margin: 5mm 0; }
+  .bold .name { font-size: 30pt; text-transform: uppercase; letter-spacing: -0.04em; }
+  .bold .details { border-top-width: 0.6mm; } .bold .footer { font-weight: 700; }
+  /* Minimal removes the enclosing frame and uses whitespace and a hairline divider. */
+  .card.minimal { border: 0; padding: 12mm 10mm; }
+  .minimal .top { display: block; } .minimal .logo { position: absolute; top: 10mm; right: 10mm; }
+  .minimal .heading { margin-top: 1mm; font-weight: 500; font-size: 12pt; max-width: 72%; }
+  .minimal .rule { width: 100%; height: 0.3mm; margin: 7mm 0; }
+  .minimal .name { font-size: 26pt; font-weight: 700; letter-spacing: -0.04em; }
+  .minimal .details { margin-top: 6mm; border-top: 0; padding-top: 0; }
   /* Monochrome laser: avoid colour fills and preserve crisp, high-contrast text. */
   .card.laser { color: #000; border-color: #000; }
   .laser .label, .laser .heading, .laser .footer, .laser .email, .laser .details dt { color: #000; }
   .laser .rule { background: #000; } .laser .details { border-color: #000; }
-  .card.laser.bold { border: 0.6mm solid #000; } .laser.bold .top { margin: 0; padding: 0; background: #fff; color: #000; }
-  .laser.bold .label, .laser.bold .heading { color: #000; } .laser .logo { filter: grayscale(1) contrast(1.8); }
+  .laser .logo { filter: grayscale(1) contrast(1.8); }
   /* Thermal: no fills or logo rasterisation, bolder type, and a compact layout that conserves heat. */
   .card.thermal { padding: 6mm; color: #000; border: 0.4mm solid #000; font-family: Arial, Helvetica, sans-serif; }
   .thermal .logo { display: none; } .thermal .label, .thermal .heading, .thermal .footer, .thermal .email, .thermal .details dt { color: #000; }
@@ -148,6 +165,8 @@ function printCard(params: { settings: IdCardPrintSettings; attendee: Attendee; 
   .thermal .rule { height: 0.7mm; margin: 4mm 0; background: #000; } .thermal .name { font-size: 24pt; }
   .thermal .email { margin-top: 2.5mm; font-size: 9pt; } .thermal .details { margin-top: 3mm; padding-top: 2mm; border-color: #000; }
   .thermal .details div { margin-top: 1mm; font-size: 8pt; } .thermal .footer { padding-top: 3mm; font-size: 7.5pt; }
+  .card.thermal.bold { padding-left: 11mm; border-width: 0.6mm; } .thermal.bold::before { width: 3mm; background: #fff; border-right: 0.8mm solid #000; }
+  .thermal.bold .name { font-size: 25pt; } .card.thermal.minimal { padding: 8mm 7mm; }
 </style></head><body><main class="card ${settings.template} ${settings.printerProfile}"><div class="top"><div><p class="label">${badgeLabel}</p><h1 class="heading">${heading}</h1></div>${logo}</div><div class="rule"></div><p class="name">${name}</p>${emailLine}${details}<p class="footer">${escapePrintHtml(settings.footerText)}</p></main></body></html>`);
   printWindow.document.close();
   printWindow.focus();
@@ -263,6 +282,18 @@ export function IdCardPrintDialog(props: {
   const printerDescription = isThermal
     ? "Thermal uses compact spacing, bold type, and no logo or filled backgrounds to keep heat use low and text sharp."
     : "Laser uses a white background, solid black rules, and grayscale logos for reliable black-and-white output.";
+  const previewTemplateSx = settings.template === "bold"
+    ? {
+        border: "3px solid #000",
+        pl: isThermal ? 3.5 : 4.5,
+        "&::before": {
+          content: '""', position: "absolute", inset: 0, right: "auto", width: isThermal ? 8 : 15,
+          bgcolor: isThermal ? "#fff" : "#000", borderRight: isThermal ? "2px solid #000" : 0,
+        },
+      }
+    : settings.template === "minimal"
+      ? { border: 0, boxShadow: 1, p: isThermal ? 2 : 3, pt: isThermal ? 2.5 : 3.5 }
+      : {};
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
@@ -281,11 +312,21 @@ export function IdCardPrintDialog(props: {
             </Box>
             <Box>
               <Typography variant="subtitle2" gutterBottom>Template</Typography>
-              <ButtonGroup size="small" aria-label="ID card template">
-                {(["classic", "bold", "minimal"] as const).map((template) => (
-                  <Button key={template} variant={settings.template === template ? "contained" : "outlined"} onClick={() => update({ template })}>{template}</Button>
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={1} aria-label="ID card template">
+                {TEMPLATE_OPTIONS.map((template) => (
+                  <Button
+                    key={template.key}
+                    variant={settings.template === template.key ? "contained" : "outlined"}
+                    onClick={() => update({ template: template.key })}
+                    sx={{ flex: 1, minHeight: 64, alignItems: "flex-start", justifyContent: "flex-start", textAlign: "left", textTransform: "none" }}
+                  >
+                    <Box>
+                      <Typography variant="body2" sx={{ fontWeight: 800 }}>{template.label}</Typography>
+                      <Typography variant="caption" sx={{ display: "block", opacity: 0.8 }}>{template.description}</Typography>
+                    </Box>
+                  </Button>
                 ))}
-              </ButtonGroup>
+              </Stack>
             </Box>
             <Box>
               <Typography variant="subtitle2" gutterBottom>Paper size</Typography>
@@ -355,16 +396,16 @@ export function IdCardPrintDialog(props: {
           </Stack>
           <Stack spacing={1} sx={{ flex: 1, minWidth: 0, alignItems: "center" }}>
             <Typography variant="subtitle2" color="text.secondary">Live preview · {paperDescription}</Typography>
-            <Box sx={{ width: "min(100%, 340px)", aspectRatio: ratio, border: "2px solid", borderColor: "#000", bgcolor: "#fff", color: "#000", p: isThermal ? 1.75 : 2.5, display: "flex", flexDirection: "column", boxShadow: 3, overflow: "hidden", fontFamily: isThermal ? "Arial, Helvetica, sans-serif" : undefined }}>
-              <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+            <Box sx={{ width: "min(100%, 340px)", aspectRatio: ratio, position: "relative", border: "2px solid", borderColor: "#000", bgcolor: "#fff", color: "#000", p: isThermal ? 1.75 : 2.5, display: "flex", flexDirection: "column", boxShadow: 3, overflow: "hidden", fontFamily: isThermal ? "Arial, Helvetica, sans-serif" : undefined, ...previewTemplateSx }}>
+              <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "flex-start", position: "relative", zIndex: 1, ...(settings.template === "classic" ? { pb: 0.75, borderBottom: "1px solid #000" } : {}) }}>
                 <Box>
                   <Typography sx={{ fontSize: "0.62rem", letterSpacing: "0.14em", fontWeight: 800 }}>{settings.badgeLabel}</Typography>
-                  <Typography sx={{ mt: 0.75, fontSize: "1rem", fontWeight: 700, lineHeight: 1.2 }}>{settings.heading}</Typography>
+                  <Typography sx={{ mt: settings.template === "minimal" ? 0.25 : 0.75, fontSize: settings.template === "minimal" ? "0.9rem" : "1rem", fontWeight: settings.template === "minimal" ? 500 : 700, lineHeight: 1.2 }}>{settings.heading}</Typography>
                 </Box>
                 {logoUrl ? <Box component="img" src={logoUrl} alt="" sx={{ width: 34, height: 34, objectFit: "contain", borderRadius: 1, bgcolor: "#fff", p: 0.25 }} /> : null}
               </Stack>
-              <Box sx={{ height: isThermal ? 2 : settings.template === "minimal" ? 1 : 3, bgcolor: "#000", my: isThermal ? 1.25 : 2 }} />
-              <Typography sx={{ fontSize: `${previewNameSize}px`, fontWeight: 800, lineHeight: 1.05, letterSpacing: "-0.03em", overflowWrap: "anywhere" }}>{sampleAttendee.displayName}</Typography>
+              <Box sx={{ width: settings.template === "classic" ? "28%" : "100%", height: isThermal ? 2 : settings.template === "minimal" ? 1 : 3, bgcolor: "#000", my: settings.template === "minimal" ? 2.5 : isThermal ? 1.25 : 2 }} />
+              <Typography sx={{ fontSize: `${settings.template === "bold" ? previewNameSize + 2 : previewNameSize}px`, fontWeight: settings.template === "minimal" ? 700 : 800, lineHeight: 1.05, letterSpacing: "-0.03em", textTransform: settings.template === "bold" ? "uppercase" : "none", overflowWrap: "anywhere" }}>{sampleAttendee.displayName}</Typography>
               {settings.showEmail && sampleAttendee.email ? <Typography variant="body2" sx={{ mt: 1, opacity: 0.75, overflowWrap: "anywhere" }}>{sampleAttendee.email}</Typography> : null}
               {previewFields.length > 0 ? (
                 <Stack spacing={0.4} sx={{ borderTop: "1px solid", borderColor: "#000", mt: isThermal ? 1 : 1.5, pt: 1 }}>

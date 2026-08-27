@@ -181,8 +181,8 @@ async function printCard(params: { settings: IdCardPrintSettings; attendee: Atte
   .top { position: absolute; width: 58%; margin: 0; }
   .logo { position: absolute; width: 13mm; height: 13mm; border-radius: 3mm; object-fit: contain; background: #fff; padding: 1mm; }
   .label { margin: 0; color: var(--accent); font-size: 8pt; font-weight: 800; letter-spacing: 0.16em; }
-  .heading { margin: 2.5mm 0 0; font-size: 14pt; font-weight: 700; line-height: 1.2; }
-  .name { position: absolute; margin: 0; font-size: 28pt; font-weight: 800; line-height: 1.03; letter-spacing: -0.03em; overflow-wrap: anywhere; }
+  .heading { margin: 2.5mm 0 0; font-size: 26pt; font-weight: 700; line-height: 1.08; letter-spacing: -0.025em; overflow-wrap: anywhere; }
+  .name { position: absolute; margin: 0; font-size: 16pt; font-weight: 800; line-height: 1.12; letter-spacing: -0.015em; overflow-wrap: anywhere; }
   .email { position: absolute; margin: 0; color: #475569; font-size: 10pt; overflow-wrap: anywhere; }
   .details { position: absolute; margin: 0; padding: 3mm 0 0; border-top: 0.3mm solid #CBD5E1; }
   .details div { display: flex; justify-content: space-between; gap: 4mm; margin-top: 1.5mm; font-size: 8.5pt; }
@@ -197,13 +197,13 @@ async function printCard(params: { settings: IdCardPrintSettings; attendee: Atte
   .card.bold { border: 1.2mm solid #000; }
   .bold::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 6mm; background: #000; }
   .bold .top { padding-top: 4mm; border-top: 0.6mm solid #000; }
-  .bold .name { font-size: 30pt; text-transform: uppercase; letter-spacing: -0.04em; }
+  .bold .heading { font-size: 28pt; } .bold .name { font-size: 17pt; text-transform: uppercase; letter-spacing: -0.02em; }
   .bold .details { border-top-width: 0.6mm; } .bold .footer { font-weight: 700; }
   /* Minimal removes the enclosing frame and uses whitespace and a hairline divider. */
   .card.minimal { border: 0; }
   .minimal .top { display: block; padding: 4mm 0 0; border-top: 0.3mm solid #000; }
-  .minimal .heading { margin-top: 1mm; font-weight: 500; font-size: 12pt; }
-  .minimal .name { font-size: 26pt; font-weight: 700; letter-spacing: -0.04em; }
+  .minimal .heading { margin-top: 1mm; font-size: 24pt; line-height: 1.1; }
+  .minimal .name { font-size: 15pt; font-weight: 700; letter-spacing: -0.015em; }
   .minimal .details { border-top: 0; padding-top: 0; }
   /* One high-contrast output works well on both monochrome laser and thermal printers. */
   .card { color: #000; border-color: #000; } .label, .heading, .footer, .email, .details dt { color: #000; }
@@ -305,7 +305,8 @@ export function IdCardPrintDialog(props: {
   const previewPixelsPerMillimetre = previewWidthPx / settings.widthMm;
   const isA6Portrait = settings.widthMm === A6_PORTRAIT.widthMm && settings.heightMm === A6_PORTRAIT.heightMm;
   const isA6Landscape = settings.widthMm === A6_LANDSCAPE.widthMm && settings.heightMm === A6_LANDSCAPE.heightMm;
-  const previewNameSize = useMemo(() => Math.max(18, Math.min(34, settings.widthMm / 3.4)), [settings.widthMm]);
+  const previewHeadingSize = useMemo(() => Math.max(22, Math.min(30, settings.widthMm / 4.8)), [settings.widthMm]);
+  const previewNameSize = useMemo(() => Math.max(15, Math.min(22, settings.widthMm / 6)), [settings.widthMm]);
   const logoUrl = settings.showLogo ? safeLogoUrl(organisationLogoUrl) : null;
   const selectedElementIsText = selectedLayoutElement !== "qr" && selectedLayoutElement !== "logo";
   const previewPositionSx = (element: IdCardLayoutElement) => {
@@ -559,10 +560,10 @@ export function IdCardPrintDialog(props: {
             >
               <Box {...layoutItemProps("header")} sx={{ ...previewPositionSx("header"), width: previewItemWidth("header"), pb: 0.75, borderBottom: settings.template === "classic" ? "1px solid #000" : 0, borderTop: settings.template === "classic" ? 0 : "1px solid #000", pt: settings.template === "classic" ? 0 : 0.75 }}>
                 <Typography sx={{ fontSize: "0.62rem", letterSpacing: "0.14em", fontWeight: settings.elementBold.header ? 800 : 400 }}>{settings.badgeLabel}</Typography>
-                <Typography sx={{ mt: settings.template === "minimal" ? 0.25 : 0.75, fontSize: settings.template === "minimal" ? "0.9rem" : "1rem", fontWeight: settings.elementBold.header ? 700 : 400, lineHeight: 1.2, overflowWrap: "anywhere" }}>{settings.heading}</Typography>
+                <Typography sx={{ mt: settings.template === "minimal" ? 0.25 : 0.75, fontSize: `${settings.template === "bold" ? previewHeadingSize + 2 : previewHeadingSize}px`, fontWeight: settings.elementBold.header ? 700 : 400, lineHeight: 1.08, letterSpacing: "-0.025em", overflowWrap: "anywhere" }}>{settings.heading}</Typography>
               </Box>
               {logoUrl ? <Box component="img" {...layoutItemProps("logo")} src={logoUrl} alt="" sx={{ ...previewPositionSx("logo"), width: `${settings.elementSizes.logo * previewPixelsPerMillimetre}px`, height: `${settings.elementSizes.logo * previewPixelsPerMillimetre}px`, objectFit: "contain", borderRadius: 1, bgcolor: "#fff", p: 0.25 }} /> : null}
-              <Typography {...layoutItemProps("name")} sx={{ ...previewPositionSx("name"), width: previewItemWidth("name"), fontSize: `${settings.template === "bold" ? previewNameSize + 2 : previewNameSize}px`, fontWeight: settings.elementBold.name ? 800 : 400, lineHeight: 1.05, letterSpacing: "-0.03em", textTransform: settings.template === "bold" ? "uppercase" : "none", overflowWrap: "anywhere" }}>{sampleAttendee.displayName}</Typography>
+              <Typography {...layoutItemProps("name")} sx={{ ...previewPositionSx("name"), width: previewItemWidth("name"), fontSize: `${settings.template === "bold" ? previewNameSize + 1 : previewNameSize}px`, fontWeight: settings.elementBold.name ? 800 : 400, lineHeight: 1.12, letterSpacing: "-0.015em", textTransform: settings.template === "bold" ? "uppercase" : "none", overflowWrap: "anywhere" }}>{sampleAttendee.displayName}</Typography>
               {settings.showEmail && sampleAttendee.email ? <Typography {...layoutItemProps("email")} variant="body2" sx={{ ...previewPositionSx("email"), width: previewItemWidth("email"), fontWeight: settings.elementBold.email ? 700 : 400, opacity: 0.75, overflowWrap: "anywhere" }}>{sampleAttendee.email}</Typography> : null}
               <Box {...layoutItemProps("qr")} sx={{ ...previewPositionSx("qr"), bgcolor: "#fff", p: 0.5 }}>
                 <QRCode value={sampleAttendee.checkInQrToken} size={Math.round(settings.elementSizes.qr * previewPixelsPerMillimetre)} bgColor="#FFFFFF" fgColor="#000000" level="M" />

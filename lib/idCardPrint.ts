@@ -74,10 +74,10 @@ export function defaultIdCardElementPositions(
   const qrY = Math.max(4, heightMm - 32);
   if (template === "bold") {
     return {
-      header: { xMm: 16, yMm: Math.max(8, heightMm - 28) },
-      name: { xMm: 16, yMm: 9 },
-      email: { xMm: 16, yMm: 47 },
-      details: { xMm: 16, yMm: 59 },
+      header: { xMm: 16, yMm: 9 },
+      name: { xMm: 16, yMm: 45 },
+      email: { xMm: 16, yMm: 57 },
+      details: { xMm: 16, yMm: 68 },
       qr: { xMm: qrX, yMm: 8 },
       footer: { xMm: 16, yMm: Math.max(8, heightMm - 9) },
       logo: { xMm: Math.max(4, widthMm - 24), yMm: Math.max(4, heightMm - 28) },
@@ -85,10 +85,10 @@ export function defaultIdCardElementPositions(
   }
   if (template === "minimal") {
     return {
-      header: { xMm: 10, yMm: Math.max(8, heightMm - 27) },
-      name: { xMm: 10, yMm: 30 },
-      email: { xMm: 10, yMm: 52 },
-      details: { xMm: 10, yMm: 66 },
+      header: { xMm: 10, yMm: 10 },
+      name: { xMm: 10, yMm: 48 },
+      email: { xMm: 10, yMm: 60 },
+      details: { xMm: 10, yMm: 72 },
       qr: { xMm: qrX, yMm: qrY },
       footer: { xMm: 10, yMm: Math.max(8, heightMm - 12) },
       logo: { xMm: Math.max(4, widthMm - 23), yMm: 10 },
@@ -96,7 +96,7 @@ export function defaultIdCardElementPositions(
   }
   return {
     header: { xMm: 9, yMm: 9 },
-    name: { xMm: 9, yMm: 36 },
+    name: { xMm: 9, yMm: 47 },
     email: { xMm: 9, yMm: 59 },
     details: { xMm: 9, yMm: 73 },
     qr: { xMm: qrX, yMm: qrY },

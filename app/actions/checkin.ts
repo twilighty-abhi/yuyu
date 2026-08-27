@@ -30,6 +30,8 @@ export type CheckInResultData = {
   status: string;
   alreadyCheckedIn: boolean;
   checkedInAt: string | null;
+  /** Bearer QR token for the active, authorised print flow. Never persist or audit it. */
+  checkInQrToken: string;
   checkInDetails: CheckInDetail[];
   registrationDetails: RegistrationDetail[];
 };
@@ -217,6 +219,7 @@ export async function previewCheckInByToken(
       status: rsvp.status,
       alreadyCheckedIn: Boolean(rsvp.checkedInAt),
       checkedInAt: rsvp.checkedInAt?.toISOString() ?? null,
+      checkInQrToken: rsvp.checkInToken,
       checkInDetails: getCheckInDetails(rsvp.answers),
       registrationDetails: getRegistrationDetails(rsvp.answers),
       gate,
@@ -266,6 +269,7 @@ export async function checkInByToken(
         status: rsvp.status,
         alreadyCheckedIn: true,
         checkedInAt: rsvp.checkedInAt.toISOString(),
+        checkInQrToken: rsvp.checkInToken,
         checkInDetails: getCheckInDetails(rsvp.answers),
         registrationDetails: getRegistrationDetails(rsvp.answers),
       },
@@ -290,6 +294,7 @@ export async function checkInByToken(
         status: rsvp.status,
         alreadyCheckedIn: true,
         checkedInAt: current?.checkedInAt?.toISOString() ?? now.toISOString(),
+        checkInQrToken: rsvp.checkInToken,
         checkInDetails: getCheckInDetails(rsvp.answers),
         registrationDetails: getRegistrationDetails(rsvp.answers),
       },
@@ -311,6 +316,7 @@ export async function checkInByToken(
       status: rsvp.status,
       alreadyCheckedIn: false,
       checkedInAt: now.toISOString(),
+      checkInQrToken: rsvp.checkInToken,
       checkInDetails: getCheckInDetails(rsvp.answers),
       registrationDetails: getRegistrationDetails(rsvp.answers),
     },
@@ -555,6 +561,7 @@ export async function previewCheckInByRsvpId(
       status: rsvp.status,
       alreadyCheckedIn: Boolean(rsvp.checkedInAt),
       checkedInAt: rsvp.checkedInAt?.toISOString() ?? null,
+      checkInQrToken: rsvp.checkInToken,
       checkInDetails: getCheckInDetails(rsvp.answers),
       registrationDetails: getRegistrationDetails(rsvp.answers),
       gate: gateCheckInForStatus(rsvp.status, Boolean(force)),
@@ -612,6 +619,7 @@ export async function checkInByRsvpId(
         status: rsvp.status,
         alreadyCheckedIn: true,
         checkedInAt: rsvp.checkedInAt.toISOString(),
+        checkInQrToken: rsvp.checkInToken,
         checkInDetails: getCheckInDetails(rsvp.answers),
         registrationDetails: getRegistrationDetails(rsvp.answers),
       },
@@ -636,6 +644,7 @@ export async function checkInByRsvpId(
         status: rsvp.status,
         alreadyCheckedIn: true,
         checkedInAt: current?.checkedInAt?.toISOString() ?? now.toISOString(),
+        checkInQrToken: rsvp.checkInToken,
         checkInDetails: getCheckInDetails(rsvp.answers),
         registrationDetails: getRegistrationDetails(rsvp.answers),
       },
@@ -657,6 +666,7 @@ export async function checkInByRsvpId(
       status: rsvp.status,
       alreadyCheckedIn: false,
       checkedInAt: now.toISOString(),
+      checkInQrToken: rsvp.checkInToken,
       checkInDetails: getCheckInDetails(rsvp.answers),
       registrationDetails: getRegistrationDetails(rsvp.answers),
     },

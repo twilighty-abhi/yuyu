@@ -17,6 +17,7 @@ import Switch from "@mui/material/Switch";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import PrintOutlinedIcon from "@mui/icons-material/PrintOutlined";
+import QRCode from "react-qr-code";
 import {
   A6_LANDSCAPE,
   A6_PORTRAIT,
@@ -28,6 +29,8 @@ import {
 type Attendee = {
   displayName: string;
   email: string | null;
+  /** Active ticket bearer token used only for rendering this attendee's QR. */
+  checkInQrToken: string;
   checkInDetails: Array<{ label: string; value: string }>;
   registrationDetails: Array<{ key: string; label: string; value: string }>;
 };
@@ -102,10 +105,23 @@ function printableDetails(fields: PrintableField[], settings: IdCardPrintSetting
   )).join("")}</dl>`;
 }
 
-function printCard(params: { settings: IdCardPrintSettings; attendee: Attendee; organisationLogoUrl: string | null }) {
+async function printCard(params: { settings: IdCardPrintSettings; attendee: Attendee; organisationLogoUrl: string | null }) {
   const { settings, attendee, organisationLogoUrl } = params;
   const printWindow = window.open("", "_blank");
   if (!printWindow) return false;
+
+  let qrDataUrl: string;
+  try {
+    const QRCode = await import("qrcode");
+    qrDataUrl = await QRCode.toDataURL(attendee.checkInQrToken, {
+      width: 360,
+      margin: 0,
+      color: { dark: "#000000", light: "#FFFFFF" },
+    });
+  } catch {
+    printWindow.close();
+    return false;
+  }
 
   const heading = escapePrintHtml(settings.heading);
   const badgeLabel = escapePrintHtml(settings.badgeLabel);
@@ -134,17 +150,23 @@ function printCard(params: { settings: IdCardPrintSettings; attendee: Attendee; 
   .details { margin: 5mm 0 0; padding: 3mm 0 0; border-top: 0.3mm solid #CBD5E1; }
   .details div { display: flex; justify-content: space-between; gap: 4mm; margin-top: 1.5mm; font-size: 8.5pt; }
   .details dt { color: #64748B; } .details dd { margin: 0; font-weight: 700; text-align: right; }
+  .qr-block { display: flex; flex-direction: column; align-items: center; gap: 1mm; position: absolute; z-index: 2; background: #fff; padding: 1mm; }
+  .qr { width: 22mm; height: 22mm; display: block; image-rendering: pixelated; }
+  .qr-caption { font-size: 6.5pt; font-weight: 800; letter-spacing: 0.08em; }
   .footer { margin: auto 0 0; padding-top: 5mm; color: #64748B; font-size: 8pt; }
   /* Classic is a traditional framed event badge. */
   .classic .top { padding-bottom: 2mm; border-bottom: 0.3mm solid #000; }
   .classic .rule { width: 20mm; margin: 4mm 0 6mm; }
+  .classic .qr-block { right: 8mm; bottom: 8mm; }
+  .classic .footer { padding-right: 30mm; }
   /* Bold uses a distinct side-band and uppercase name treatment. */
   .card.bold { border: 1.2mm solid #000; padding-left: 16mm; }
   .bold::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 6mm; background: #000; }
   .bold .top { order: 4; margin-top: auto; padding-top: 4mm; border-top: 0.6mm solid #000; }
   .bold .rule { display: none; } .bold .name { order: 1; }
   .bold .email { order: 2; } .bold .details { order: 3; }
-  .bold .name { font-size: 30pt; text-transform: uppercase; letter-spacing: -0.04em; }
+  .bold .qr-block { top: 8mm; right: 8mm; }
+  .bold .name { padding-right: 30mm; font-size: 30pt; text-transform: uppercase; letter-spacing: -0.04em; }
   .bold .details { border-top-width: 0.6mm; } .bold .footer { order: 5; margin-top: 2mm; font-weight: 700; }
   /* Minimal removes the enclosing frame and uses whitespace and a hairline divider. */
   .card.minimal { border: 0; padding: 12mm 10mm; }
@@ -154,11 +176,12 @@ function printCard(params: { settings: IdCardPrintSettings; attendee: Attendee; 
   .minimal .rule { order: 0; width: 12mm; height: 0.8mm; margin: 1mm 0 0; }
   .minimal .name { order: 1; margin-top: 6mm; font-size: 26pt; font-weight: 700; letter-spacing: -0.04em; }
   .minimal .email { order: 2; } .minimal .details { order: 3; margin-top: 6mm; border-top: 0; padding-top: 0; }
+  .minimal .qr-block { position: absolute; top: 10mm; right: 10mm; }
   .minimal .footer { order: 5; margin-top: 2mm; }
   /* One high-contrast output works well on both monochrome laser and thermal printers. */
   .card { color: #000; border-color: #000; } .label, .heading, .footer, .email, .details dt { color: #000; }
   .rule { background: #000; } .details { border-color: #000; } .logo { filter: grayscale(1) contrast(1.8); }
-</style></head><body><main class="card ${settings.template}"><div class="top"><div><p class="label">${badgeLabel}</p><h1 class="heading">${heading}</h1></div>${logo}</div><div class="rule"></div><p class="name">${name}</p>${emailLine}${details}<p class="footer">${escapePrintHtml(settings.footerText)}</p></main></body></html>`);
+</style></head><body><main class="card ${settings.template}"><div class="top"><div><p class="label">${badgeLabel}</p><h1 class="heading">${heading}</h1></div>${logo}</div><div class="rule"></div><p class="name">${name}</p>${emailLine}${details}<div class="qr-block"><img id="badge-qr" class="qr" src="${escapePrintHtml(qrDataUrl)}" alt="Check-in QR code"><span class="qr-caption">CHECK-IN QR</span></div><p class="footer">${escapePrintHtml(settings.footerText)}</p></main></body></html>`);
   printWindow.document.close();
   printWindow.focus();
 
@@ -168,13 +191,22 @@ function printCard(params: { settings: IdCardPrintSettings; attendee: Attendee; 
     printed = true;
     printWindow.print();
   };
-  const logoElement = printWindow.document.getElementById("badge-logo") as HTMLImageElement | null;
-  if (logoElement) {
-    logoElement.addEventListener("load", triggerPrint, { once: true });
-    logoElement.addEventListener("error", triggerPrint, { once: true });
+  const images = ["badge-logo", "badge-qr"]
+    .map((id) => printWindow.document.getElementById(id) as HTMLImageElement | null)
+    .filter((image): image is HTMLImageElement => Boolean(image));
+  if (images.length === 0) window.setTimeout(triggerPrint, 100);
+  else {
+    let remaining = images.filter((image) => !image.complete).length;
+    if (remaining === 0) window.setTimeout(triggerPrint, 100);
+    else images.forEach((image) => {
+      const finish = () => {
+        remaining -= 1;
+        if (remaining === 0) triggerPrint();
+      };
+      image.addEventListener("load", finish, { once: true });
+      image.addEventListener("error", finish, { once: true });
+    });
     window.setTimeout(triggerPrint, 1500);
-  } else {
-    window.setTimeout(triggerPrint, 100);
   }
   return true;
 }
@@ -212,6 +244,7 @@ export function IdCardPrintDialog(props: {
   const sampleAttendee = attendee ?? {
     displayName: "Attendee name",
     email: "attendee@example.com",
+    checkInQrToken: "preview-check-in-token",
     checkInDetails: [{ label: "Food preference", value: "Vegetarian" }],
     registrationDetails: registrationFields.map((field) => ({
       key: field.key,
@@ -279,6 +312,9 @@ export function IdCardPrintDialog(props: {
     : settings.template === "minimal"
       ? { border: 0, boxShadow: 1, p: 3, pt: 3.5 }
       : {};
+  const previewQrSx = settings.template === "classic"
+    ? { position: "absolute" as const, right: 16, bottom: 16 }
+    : { position: "absolute" as const, top: 16, right: 16 };
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
@@ -383,6 +419,10 @@ export function IdCardPrintDialog(props: {
               <Box sx={{ order: 0, display: settings.template === "bold" ? "none" : "block", width: settings.template === "classic" ? "28%" : "16%", height: settings.template === "minimal" ? 2 : 3, bgcolor: "#000", my: settings.template === "minimal" ? 1 : 2 }} />
               <Typography sx={{ order: 1, mt: settings.template === "minimal" ? 2.5 : 0, fontSize: `${settings.template === "bold" ? previewNameSize + 2 : previewNameSize}px`, fontWeight: settings.template === "minimal" ? 700 : 800, lineHeight: 1.05, letterSpacing: "-0.03em", textTransform: settings.template === "bold" ? "uppercase" : "none", overflowWrap: "anywhere" }}>{sampleAttendee.displayName}</Typography>
               {settings.showEmail && sampleAttendee.email ? <Typography variant="body2" sx={{ order: 2, mt: 1, opacity: 0.75, overflowWrap: "anywhere" }}>{sampleAttendee.email}</Typography> : null}
+              <Stack spacing={0.25} sx={{ ...previewQrSx, alignItems: "center", bgcolor: "#fff", p: 0.5, zIndex: 1 }}>
+                <QRCode value={sampleAttendee.checkInQrToken} size={settings.template === "minimal" ? 54 : 62} bgColor="#FFFFFF" fgColor="#000000" level="M" />
+                <Typography variant="caption" sx={{ fontSize: "0.48rem", fontWeight: 800, letterSpacing: "0.06em" }}>CHECK-IN QR</Typography>
+              </Stack>
               {previewFields.length > 0 ? (
                 <Stack spacing={0.4} sx={{ order: 3, borderTop: settings.template === "minimal" ? 0 : "1px solid", borderColor: "#000", mt: 1.5, pt: settings.template === "minimal" ? 0 : 1 }}>
                   {previewFields.map((detail) => <Stack direction="row" key={detail.key} sx={{ justifyContent: "space-between", gap: 1 }}><Typography variant="caption" sx={{ opacity: 0.72 }}>{settings.printFieldLabels[detail.key] ?? detail.label}</Typography><Typography variant="caption" sx={{ fontWeight: 700, textAlign: "right" }}>{detail.value}</Typography></Stack>)}
@@ -396,8 +436,10 @@ export function IdCardPrintDialog(props: {
       <DialogActions>
         <Button onClick={onClose} color="inherit">Close</Button>
         <Button variant="contained" startIcon={<PrintOutlinedIcon />} disabled={!attendee} onClick={() => {
-          if (!attendee || printCard({ settings, attendee, organisationLogoUrl })) return;
-          window.alert("The print window was blocked. Allow pop-ups for this check-in station and try again.");
+          if (!attendee) return;
+          void printCard({ settings, attendee, organisationLogoUrl }).then((printed) => {
+            if (!printed) window.alert("The print window was blocked or the QR code could not be prepared. Allow pop-ups for this check-in station and try again.");
+          });
         }}>Print ID card</Button>
       </DialogActions>
     </Dialog>

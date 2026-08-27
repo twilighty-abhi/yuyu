@@ -260,6 +260,7 @@ export function EventCheckInClient(props: {
       status: attendee.status,
       alreadyCheckedIn: false,
       checkedInAt,
+      checkInQrToken: attendee.ticketToken,
       checkInDetails: attendee.checkInDetails ?? [],
       registrationDetails: attendee.registrationDetails ?? [],
       kind: "success",
@@ -271,6 +272,7 @@ export function EventCheckInClient(props: {
       status: attendee.status,
       alreadyCheckedIn: false,
       checkedInAt,
+      checkInQrToken: attendee.ticketToken,
       checkInDetails: attendee.checkInDetails ?? [],
       registrationDetails: attendee.registrationDetails ?? [],
     });
@@ -302,6 +304,7 @@ export function EventCheckInClient(props: {
             status: attendee.status,
             alreadyCheckedIn: Boolean(attendee.checkedInAt),
             checkedInAt: attendee.checkedInAt,
+            checkInQrToken: attendee.ticketToken,
             checkInDetails: attendee.checkInDetails ?? [],
             registrationDetails: attendee.registrationDetails ?? [],
             gate,
@@ -474,6 +477,7 @@ export function EventCheckInClient(props: {
           status: attendee.status,
           alreadyCheckedIn: false,
           checkedInAt: null,
+          checkInQrToken: attendee.ticketToken,
           checkInDetails: attendee.checkInDetails ?? [],
           registrationDetails: attendee.registrationDetails ?? [],
           gate,
@@ -792,6 +796,7 @@ export function EventCheckInClient(props: {
         attendee={idCardAttendee ? {
           displayName: idCardAttendee.displayName,
           email: idCardAttendee.email,
+          checkInQrToken: idCardAttendee.checkInQrToken,
           checkInDetails: idCardAttendee.checkInDetails,
           registrationDetails: idCardAttendee.registrationDetails,
         } : null}

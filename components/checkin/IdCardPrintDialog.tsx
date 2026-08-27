@@ -42,6 +42,9 @@ const storageKey = (eventId: string) => `yuyu:checkin:id-card:${eventId}`;
 const settingsChangedEvent = "yuyu:id-card-print-settings-changed";
 const sessionSettings = new Map<string, IdCardPrintSettings>();
 const registrationFieldKey = (key: string) => `registration:${key}`;
+// Keep the longest paper edge at a fixed preview length so orientation changes
+// do not inadvertently change the apparent scale of the card.
+const PREVIEW_LONG_EDGE_PX = 340;
 const TEMPLATE_OPTIONS = [
   { key: "classic", label: "Classic", description: "Framed and balanced" },
   { key: "bold", label: "Bold", description: "Strong side-band identity" },
@@ -273,6 +276,7 @@ export function IdCardPrintDialog(props: {
   const previewFields = printableFields(settings, sampleAttendee);
   const ratio = `${settings.widthMm} / ${settings.heightMm}`;
   const paperDescription = `${settings.widthMm} × ${settings.heightMm} mm`;
+  const previewWidthPx = PREVIEW_LONG_EDGE_PX * settings.widthMm / Math.max(settings.widthMm, settings.heightMm);
   const isA6Portrait = settings.widthMm === A6_PORTRAIT.widthMm && settings.heightMm === A6_PORTRAIT.heightMm;
   const isA6Landscape = settings.widthMm === A6_LANDSCAPE.widthMm && settings.heightMm === A6_LANDSCAPE.heightMm;
   const previewNameSize = useMemo(() => Math.max(18, Math.min(34, settings.widthMm / 3.4)), [settings.widthMm]);
@@ -411,7 +415,7 @@ export function IdCardPrintDialog(props: {
           </Stack>
           <Stack spacing={1} sx={{ flex: 1, minWidth: 0, alignItems: "center" }}>
             <Typography variant="subtitle2" color="text.secondary">Live preview · {paperDescription}</Typography>
-            <Box sx={{ width: "min(100%, 340px)", aspectRatio: ratio, position: "relative", border: "2px solid", borderColor: "#000", bgcolor: "#fff", color: "#000", p: 2.5, display: "flex", flexDirection: "column", boxShadow: 3, overflow: "hidden", ...previewTemplateSx }}>
+            <Box sx={{ width: `${previewWidthPx}px`, maxWidth: "100%", aspectRatio: ratio, position: "relative", border: "2px solid", borderColor: "#000", bgcolor: "#fff", color: "#000", p: 2.5, display: "flex", flexDirection: "column", boxShadow: 3, overflow: "hidden", ...previewTemplateSx }}>
               <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "flex-start", position: "relative", zIndex: 1, order: settings.template === "classic" ? 0 : 4, mt: settings.template === "classic" ? 0 : "auto", pt: settings.template === "classic" ? 0 : 1, ...(settings.template === "classic" ? { pb: 0.75, borderBottom: "1px solid #000" } : { borderTop: "1px solid #000" }) }}>
                 <Box>
                   <Typography sx={{ fontSize: "0.62rem", letterSpacing: "0.14em", fontWeight: 800 }}>{settings.badgeLabel}</Typography>

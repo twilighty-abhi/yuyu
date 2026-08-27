@@ -49,5 +49,8 @@ describe("ID card print settings", () => {
     expect(normalizeIdCardPrintSettings({ printFieldKeys: ["system:organisation-name"] }, "Open House")).toMatchObject({
       printFieldKeys: [],
     });
+    expect(normalizeIdCardPrintSettings({ printFieldLabels: { "registration:role": "   " } }, "Open House")).toMatchObject({
+      printFieldLabels: { "registration:role": "" },
+    });
   });
 });

@@ -47,7 +47,6 @@ function printableFieldLabels(value: unknown) {
     Object.entries(value)
       .filter(([key, label]) => key.length <= 160 && typeof label === "string")
       .map(([key, label]) => [key, label.trim().slice(0, 60)])
-      .filter(([, label]) => label.length > 0)
       .slice(0, 16),
   );
 }

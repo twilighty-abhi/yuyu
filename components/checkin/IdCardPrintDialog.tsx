@@ -100,9 +100,10 @@ function printableFields(
 
 function printableDetails(fields: PrintableField[], settings: IdCardPrintSettings) {
   if (fields.length === 0) return "";
-  return `<dl class="details">${fields.map((detail) => (
-    `<div><dt>${escapePrintHtml(settings.printFieldLabels[detail.key] ?? detail.label)}</dt><dd>${escapePrintHtml(detail.value)}</dd></div>`
-  )).join("")}</dl>`;
+  return `<dl class="details">${fields.map((detail) => {
+    const label = settings.printFieldLabels[detail.key] ?? detail.label;
+    return `<div${label ? "" : ' class="label-free"'}>${label ? `<dt>${escapePrintHtml(label)}</dt>` : ""}<dd>${escapePrintHtml(detail.value)}</dd></div>`;
+  }).join("")}</dl>`;
 }
 
 async function printCard(params: { settings: IdCardPrintSettings; attendee: Attendee; organisationLogoUrl: string | null }) {
@@ -149,6 +150,7 @@ async function printCard(params: { settings: IdCardPrintSettings; attendee: Atte
   .email { margin: 4mm 0 0; color: #475569; font-size: 10pt; overflow-wrap: anywhere; }
   .details { margin: 5mm 0 0; padding: 3mm 0 0; border-top: 0.3mm solid #CBD5E1; }
   .details div { display: flex; justify-content: space-between; gap: 4mm; margin-top: 1.5mm; font-size: 8.5pt; }
+  .details .label-free { justify-content: flex-start; }
   .details dt { color: #64748B; } .details dd { margin: 0; font-weight: 700; text-align: right; }
   .qr-block { display: flex; flex-direction: column; align-items: center; gap: 1mm; position: absolute; z-index: 2; background: #fff; padding: 1mm; }
   .qr { width: 22mm; height: 22mm; display: block; image-rendering: pixelated; }
@@ -296,8 +298,8 @@ export function IdCardPrintDialog(props: {
 
   const updatePrintFieldLabel = (key: string, label: string) => {
     const printFieldLabels = { ...settings.printFieldLabels };
-    if (label.trim()) printFieldLabels[key] = label;
-    else delete printFieldLabels[key];
+    // An explicit empty value is meaningful: print the answer without a label.
+    printFieldLabels[key] = label;
     update({ printFieldLabels });
   };
 
@@ -399,6 +401,7 @@ export function IdCardPrintDialog(props: {
                         slotProps={{ htmlInput: { maxLength: 60 } }}
                         size="small"
                         fullWidth
+                        helperText="Clear this to print the answer without a label."
                       />
                     </Stack>
                   ))}
@@ -425,7 +428,10 @@ export function IdCardPrintDialog(props: {
               </Stack>
               {previewFields.length > 0 ? (
                 <Stack spacing={0.4} sx={{ order: 3, borderTop: settings.template === "minimal" ? 0 : "1px solid", borderColor: "#000", mt: 1.5, pt: settings.template === "minimal" ? 0 : 1 }}>
-                  {previewFields.map((detail) => <Stack direction="row" key={detail.key} sx={{ justifyContent: "space-between", gap: 1 }}><Typography variant="caption" sx={{ opacity: 0.72 }}>{settings.printFieldLabels[detail.key] ?? detail.label}</Typography><Typography variant="caption" sx={{ fontWeight: 700, textAlign: "right" }}>{detail.value}</Typography></Stack>)}
+                  {previewFields.map((detail) => {
+                    const label = settings.printFieldLabels[detail.key] ?? detail.label;
+                    return <Stack direction="row" key={detail.key} sx={{ justifyContent: label ? "space-between" : "flex-start", gap: 1 }}>{label ? <Typography variant="caption" sx={{ opacity: 0.72 }}>{label}</Typography> : null}<Typography variant="caption" sx={{ fontWeight: 700, textAlign: "right" }}>{detail.value}</Typography></Stack>;
+                  })}
                 </Stack>
               ) : null}
               <Typography variant="caption" sx={{ order: 5, mt: settings.template === "classic" ? "auto" : 1, opacity: 0.68 }}>{settings.footerText}</Typography>

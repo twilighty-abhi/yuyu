@@ -21,12 +21,19 @@ function createPrismaClient() {
  */
 function getPrisma(): PrismaClient {
   const existing = globalForPrisma.prisma;
-  const delegateOk =
-    existing &&
-    typeof (existing as unknown as { eventSeries?: { findMany: unknown } })
-      .eventSeries?.findMany === "function";
+  const delegates = existing as unknown as {
+    eventSeries?: { findMany: unknown };
+    apiClient?: { findMany: unknown };
+    apiCredential?: { findMany: unknown };
+  } | undefined;
+  const delegateOk = Boolean(
+    delegates &&
+      typeof delegates.eventSeries?.findMany === "function" &&
+      typeof delegates.apiClient?.findMany === "function" &&
+      typeof delegates.apiCredential?.findMany === "function",
+  );
 
-  if (delegateOk) {
+  if (delegateOk && existing) {
     return existing;
   }
 

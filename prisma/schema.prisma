@@ -53,6 +53,11 @@ enum OutboxStatus {
   FAILED
 }
 
+enum ApiClientStatus {
+  ACTIVE
+  DISABLED
+}
+
 model User {
   id                 String    @id @default(cuid())
   name               String?
@@ -132,6 +137,53 @@ model Organisation {
   assets            Asset[]
   auditEvents       AuditEvent[]
   rsvpDeletionUndos RsvpDeletionUndo[]
+  apiClients        ApiClient[]
+}
+
+/// A tenant-bound machine identity. It never authenticates through Auth.js.
+model ApiClient {
+  id             String          @id @default(cuid())
+  organisationId String
+  name           String
+  status         ApiClientStatus @default(ACTIVE)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  organisation Organisation     @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  scopes       ApiClientScope[]
+  credentials  ApiCredential[]
+  auditEvents  AuditEvent[]     @relation("AuditActorApiClient")
+
+  @@index([organisationId, status])
+}
+
+/// Deliberate application capabilities. Unknown values grant no access.
+model ApiClientScope {
+  apiClientId String
+  scope       String
+  createdAt   DateTime @default(now())
+
+  apiClient ApiClient @relation(fields: [apiClientId], references: [id], onDelete: Cascade)
+
+  @@id([apiClientId, scope])
+  @@index([scope])
+}
+
+/// A rotatable bearer credential. Only a SHA-256 digest is persisted.
+model ApiCredential {
+  id          String    @id @default(cuid())
+  apiClientId String
+  name        String
+  secretHash  Bytes
+  createdAt   DateTime  @default(now())
+  expiresAt   DateTime?
+  revokedAt   DateTime?
+  lastUsedAt  DateTime?
+
+  apiClient ApiClient @relation(fields: [apiClientId], references: [id], onDelete: Cascade)
+
+  @@index([apiClientId, revokedAt])
+  @@index([expiresAt])
 }
 
 model OrganisationInvite {
@@ -431,20 +483,23 @@ model EventFeedbackAnswer {
 /// Append-only security and business-event audit trail. Metadata must never
 /// contain secrets, passwords, reset links, or ticket tokens.
 model AuditEvent {
-  id             String   @id @default(cuid())
-  action         String
-  actorUserId    String?
-  organisationId String?
-  targetType     String?
-  targetId       String?
-  metadata       Json?
-  createdAt      DateTime @default(now())
+  id               String   @id @default(cuid())
+  action           String
+  actorUserId      String?
+  actorApiClientId String?
+  organisationId   String?
+  targetType       String?
+  targetId         String?
+  metadata         Json?
+  createdAt        DateTime @default(now())
 
-  actor        User?         @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
-  organisation Organisation? @relation(fields: [organisationId], references: [id], onDelete: SetNull)
+  actor          User?         @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  actorApiClient ApiClient?    @relation("AuditActorApiClient", fields: [actorApiClientId], references: [id], onDelete: SetNull)
+  organisation   Organisation? @relation(fields: [organisationId], references: [id], onDelete: SetNull)
 
   @@index([organisationId, createdAt])
   @@index([actorUserId, createdAt])
+  @@index([actorApiClientId, createdAt])
   @@index([action, createdAt])
 }
 
@@ -487,13 +542,13 @@ model OutboxMessage {
 /// from the append-only human audit trail so frequent scheduler runs do not
 /// drown out meaningful application activity.
 model OperationalHeartbeat {
-  key             String   @id
+  key             String    @id
   lastStartedAt   DateTime?
   lastSucceededAt DateTime?
-  lastSent        Int      @default(0)
-  lastFailed      Int      @default(0)
+  lastSent        Int       @default(0)
+  lastFailed      Int       @default(0)
   lastError       String?
-  updatedAt       DateTime @updatedAt
+  updatedAt       DateTime  @updatedAt
 }
 
 /// Tracks stored files (S3/R2/MinIO/etc.) for per-org storage accounting.

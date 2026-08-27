@@ -41,6 +41,7 @@ describe("ID card print settings", () => {
       },
       elementSizes: { name: 70, qr: 30 },
       elementBold: { name: false },
+      elementTextSizes: { header: 55, name: 4, email: 11 },
     }, "Open House")).toMatchObject({
       ...A6_LANDSCAPE,
       heading: "Welcome",
@@ -57,6 +58,7 @@ describe("ID card print settings", () => {
       },
       elementSizes: { name: 70, qr: 30 },
       elementBold: { name: false },
+      elementTextSizes: { header: 48, name: 6, email: 11 },
     });
     expect(normalizeIdCardPrintSettings({ widthMm: 2, heightMm: 1000 }, "Open House")).toMatchObject({
       widthMm: 40,

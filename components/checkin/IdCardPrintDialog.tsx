@@ -281,7 +281,7 @@ export function IdCardPrintDialog(props: {
     registrationDetails: registrationFields.map((field) => ({
       key: field.key,
       label: field.label,
-      value: /role/i.test(`${field.key} ${field.label}`) ? "Speaker" : "Example answer",
+      value: `{{${field.label}}}`,
     })),
   };
   const fieldOptions = useMemo(() => (

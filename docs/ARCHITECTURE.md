@@ -48,6 +48,8 @@ Next.js proxy: rate limits + CSP nonce
 
 Server Actions are used for authenticated dashboard mutations. Public RSVP and feedback submissions use JSON route handlers. Authorization belongs on the server even when the UI hides an unavailable control.
 
+External applications authenticate under `/api/v1` with tenant-bound `ApiClient` credentials rather than Auth.js sessions. A route wrapper resolves the client organisation and scopes, then passes that context to explicit domain readers. Queries include the organisation predicate and responses are mapped through validated API DTOs rather than serialized Prisma models.
+
 ## Multi-tenancy and authorization
 
 `Organisation` is the tenant boundary. Events, series, invitations, assets, and audit events resolve through an organisation. `Membership` connects a user to a tenant with an owner, admin, or member role. Permission helpers and action-specific checks enforce access before mutation.
@@ -62,6 +64,7 @@ The super-admin boundary is separate: access requires an authenticated email mat
 - Registration: `RSVP`, registration forms, fields, and typed answers.
 - Feedback: feedback forms, fields, responses, typed answers, and optional certificate linkage.
 - Operations: `OutboxMessage`, `AuditEvent`, `CheckInEvent`, `RsvpDeletionUndo`, and `Asset`.
+- Machine access: `ApiClient`, `ApiClientScope`, and hashed, rotatable `ApiCredential` records.
 
 Refer to `prisma/schema.prisma` for the authoritative fields, constraints, indexes, and cascading behavior.
 

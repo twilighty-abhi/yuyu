@@ -12,6 +12,8 @@ npm run test:unit
 
 Fast Vitest tests cover validation and isolated domain/security behavior. Watch mode is available with `npm run test:unit:watch`.
 
+Machine API coverage includes bearer parsing and hashing, credential state, strict DTOs, cursor validation, scope behavior, and forbidden-field regression checks.
+
 ### PostgreSQL integration tests
 
 ```bash
@@ -20,6 +22,8 @@ npm run test:integration
 ```
 
 These tests exercise real constraints, transactions, audit triggers, RSVP capacity, and feedback persistence. Keep the local test database disposable and never point integration tests at production.
+
+The machine API integration suite additionally exercises persisted credential hashes, cross-tenant event access, participant privacy, and bounded collections.
 
 ### Coverage
 

@@ -28,6 +28,7 @@ This page contains only work that is not currently implemented. Current behavior
 - Organisation branding, custom domains, and configurable certificate templates.
 - More granular custom roles and per-action permissions.
 - Import/export tools for events and attendee rosters.
+- Extend the machine API only for concrete consumers: recurring series/instances, RSVP workflow data, separately scoped participant contact or registration answers, privacy-preserving feedback reads, and narrow idempotent writes.
 
 ## Scale and reliability
 

@@ -14,6 +14,7 @@ This page documents implemented controls and security boundaries. It is not a su
 - Sensitive account operations revoke existing sessions and write audit events.
 - The super-admin panel requires a second, fresh TOTP step-up verification even after a normal authenticated session. Its signed, HttpOnly proof lasts 10 minutes and is bound to the user/session version.
 - Google OAuth security, including MFA, is governed by the linked Google account.
+- External applications use high-entropy, tenant-bound API credentials under `/api/v1`; raw secrets are displayed once and only SHA-256 digests are stored.
 
 ## Authorization and tenancy
 
@@ -22,6 +23,7 @@ This page documents implemented controls and security boundaries. It is not a su
 - Hiding a control in the UI is never treated as authorization.
 - Super-admin access is checked server-side against `SUPER_ADMIN_EMAIL` and fails as not found.
 - Database foreign keys and uniqueness constraints provide a second integrity layer.
+- Machine clients resolve their organisation from the authenticated credential and require an explicit endpoint scope. Caller-supplied organisation identifiers never select the tenant.
 
 ## Input, output, and browser controls
 
@@ -42,6 +44,7 @@ This page documents implemented controls and security boundaries. It is not a su
 ## Abuse protection
 
 - Redis-backed limits cover APIs, authentication mutations, RSVP, feedback, search/discovery, uploads, Server Actions, object creation, and invitations.
+- Machine API traffic has an additional per-client limit so credential rotation cannot multiply request capacity.
 - Security-sensitive production traffic fails closed when Redis is unavailable.
 - Process-local fallback exists for development and an explicit CI-only production-build test mode.
 - Client IP attribution trusts only the configured header; the edge must overwrite that header and prevent direct-origin access.
@@ -52,6 +55,7 @@ This page documents implemented controls and security boundaries. It is not a su
 - Certificate-enabled feedback requires an email matching a confirmed RSVP, links the response for certificate generation, and allows repeat submissions.
 - Registration counts are omitted from public payloads when the organiser disables count display.
 - Audit metadata is designed to exclude email addresses, answers, passwords, and bearer tokens.
+- Machine participant responses intentionally exclude contact data, registration answers, user IDs, and ticket/check-in/certificate capabilities.
 - Asset buckets are private; safe derivatives are delivered through the application.
 - Retention cleanup covers expired verification tokens, undo snapshots, and old sent outbox records. Deployment operators must define broader legal retention and deletion procedures.
 

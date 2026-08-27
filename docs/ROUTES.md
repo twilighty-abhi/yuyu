@@ -53,6 +53,9 @@ Every super-admin page additionally requires a current TOTP verification. Users 
 | `GET /api/feedback/certificate/:token` | Opaque token | Download an eligible JPEG certificate |
 | `GET /api/uploads/:key` | Public application route | Stream a stored safe derivative with response controls |
 | `/api/auth/*` | Auth.js | Session, provider, callback, and credential endpoints |
+| `GET /api/v1/events` | Machine bearer credential + `events:read` | Paginated tenant event metadata |
+| `GET /api/v1/events/:eventId` | Machine bearer credential + `events:read` | Tenant-scoped event metadata |
+| `GET /api/v1/events/:eventId/participants` | Machine bearer credential + `participants:read` | Paginated minimal confirmed-participant roster |
 
 Opaque ticket and certificate URLs are bearer capabilities. Do not log them or place them in analytics payloads.
 
@@ -69,3 +72,5 @@ Self-hosted Node.js instances run the outbox worker every minute. The endpoint r
 ## Mutation endpoints
 
 Most authenticated dashboard mutations are Next.js Server Actions under `app/actions/`, not conventional REST routes. They still require server-side authentication, role checks, validation, rate limiting, and audit behavior.
+
+Organisation owners manage machine clients at `/dashboard/:orgSlug/settings/api`. This page requires a fresh human authentication before credential, scope, or client-state mutations.

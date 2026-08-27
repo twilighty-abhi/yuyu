@@ -85,3 +85,5 @@ Only eligible confirmed attendees receive a scannable ticket by default. Organis
 - Outbox delivery, retries, retention cleanup, scheduler-heartbeat monitoring, and safe failed-email diagnostics.
 - Private S3-compatible object storage with database asset accounting.
 - Application audit events plus database-triggered fallback audit records for important mutations.
+- Owner-managed, tenant-bound machine API clients with explicit scopes, one-time credentials, expiry, rotation, revocation, and disablement.
+- Versioned machine endpoints for standalone event metadata and minimal confirmed-participant rosters.

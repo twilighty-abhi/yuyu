@@ -170,14 +170,14 @@ async function printCard(params: { settings: IdCardPrintSettings; attendee: Atte
   .bold .details { border-top-width: 0.6mm; } .bold .footer { order: 5; margin-top: 2mm; font-weight: 700; }
   /* Minimal removes the enclosing frame and uses whitespace and a hairline divider. */
   .card.minimal { border: 0; padding: 12mm 10mm; }
-  .minimal .top { order: 4; display: block; margin-top: auto; padding-top: 4mm; border-top: 0.3mm solid #000; }
-  .minimal .logo { position: absolute; bottom: 10mm; right: 10mm; }
+  .minimal .top { order: 4; display: block; margin-top: auto; padding: 4mm 30mm 0 0; border-top: 0.3mm solid #000; }
+  .minimal .logo { position: absolute; top: 10mm; right: 10mm; }
   .minimal .heading { margin-top: 1mm; font-weight: 500; font-size: 12pt; max-width: 72%; }
   .minimal .rule { order: 0; width: 12mm; height: 0.8mm; margin: 1mm 0 0; }
   .minimal .name { order: 1; margin-top: 6mm; font-size: 26pt; font-weight: 700; letter-spacing: -0.04em; }
   .minimal .email { order: 2; } .minimal .details { order: 3; margin-top: 6mm; border-top: 0; padding-top: 0; }
-  .minimal .qr-block { position: absolute; top: 10mm; right: 10mm; }
-  .minimal .footer { order: 5; margin-top: 2mm; }
+  .minimal .qr-block { position: absolute; right: 8mm; bottom: 8mm; }
+  .minimal .footer { order: 5; margin-top: 2mm; padding-right: 30mm; }
   /* One high-contrast output works well on both monochrome laser and thermal printers. */
   .card { color: #000; border-color: #000; } .label, .heading, .footer, .email, .details dt { color: #000; }
   .rule { background: #000; } .details { border-color: #000; } .logo { filter: grayscale(1) contrast(1.8); }
@@ -312,7 +312,7 @@ export function IdCardPrintDialog(props: {
     : settings.template === "minimal"
       ? { border: 0, boxShadow: 1, p: 3, pt: 3.5 }
       : {};
-  const previewQrSx = settings.template === "classic"
+  const previewQrSx = settings.template !== "bold"
     ? { position: "absolute" as const, right: 16, bottom: 16 }
     : { position: "absolute" as const, top: 16, right: 16 };
 
@@ -414,7 +414,7 @@ export function IdCardPrintDialog(props: {
                   <Typography sx={{ fontSize: "0.62rem", letterSpacing: "0.14em", fontWeight: 800 }}>{settings.badgeLabel}</Typography>
                   <Typography sx={{ mt: settings.template === "minimal" ? 0.25 : 0.75, fontSize: settings.template === "minimal" ? "0.9rem" : "1rem", fontWeight: settings.template === "minimal" ? 500 : 700, lineHeight: 1.2 }}>{settings.heading}</Typography>
                 </Box>
-                {logoUrl ? <Box component="img" src={logoUrl} alt="" sx={{ width: 34, height: 34, objectFit: "contain", borderRadius: 1, bgcolor: "#fff", p: 0.25 }} /> : null}
+                {logoUrl ? <Box component="img" src={logoUrl} alt="" sx={{ width: 34, height: 34, objectFit: "contain", borderRadius: 1, bgcolor: "#fff", p: 0.25, ...(settings.template === "minimal" ? { position: "absolute", top: 16, right: 16 } : {}) }} /> : null}
               </Stack>
               <Box sx={{ order: 0, display: settings.template === "bold" ? "none" : "block", width: settings.template === "classic" ? "28%" : "16%", height: settings.template === "minimal" ? 2 : 3, bgcolor: "#000", my: settings.template === "minimal" ? 1 : 2 }} />
               <Typography sx={{ order: 1, mt: settings.template === "minimal" ? 2.5 : 0, fontSize: `${settings.template === "bold" ? previewNameSize + 2 : previewNameSize}px`, fontWeight: settings.template === "minimal" ? 700 : 800, lineHeight: 1.05, letterSpacing: "-0.03em", textTransform: settings.template === "bold" ? "uppercase" : "none", overflowWrap: "anywhere" }}>{sampleAttendee.displayName}</Typography>

@@ -3,6 +3,8 @@ import Typography from "@mui/material/Typography";
 import Paper from "@mui/material/Paper";
 import Grid from "@mui/material/Grid";
 import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { canDeleteOrg, requireOrgRole } from "@/lib/permissions";
 import { EditOrgForm } from "@/components/org/EditOrgForm";
@@ -82,6 +84,18 @@ export default async function OrgSettingsPage({ params }: Props) {
                 </Box>
               </Stack>
             </Paper>
+
+            {membership.role === "OWNER" ? (
+              <Paper variant="outlined" sx={{ p: 2.5, borderRadius: "16px", borderColor: "rgba(255,255,255,0.08)", backgroundColor: "rgba(255,255,255,0.025)" }}>
+                <Stack spacing={1.25}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>API access</Typography>
+                  <Typography variant="body2" color="text.secondary">Manage machine clients, scopes, and rotatable credentials.</Typography>
+                  <Link href={`/dashboard/${org.slug}/settings/api`} style={{ textDecoration: "none" }}>
+                    <Button variant="outlined" size="small">Manage API access</Button>
+                  </Link>
+                </Stack>
+              </Paper>
+            ) : null}
 
             {canDeleteOrg(membership) ? (
               <Paper variant="outlined" sx={{ p: 2.5, borderRadius: "16px", borderColor: "rgba(255,69,58,0.35)", backgroundColor: "rgba(255,69,58,0.06)" }}>

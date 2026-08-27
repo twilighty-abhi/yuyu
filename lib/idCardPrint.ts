@@ -6,6 +6,8 @@ export type IdCardElementPositions = Record<IdCardLayoutElement, IdCardElementPo
 export type IdCardElementSizes = Record<IdCardLayoutElement, number>;
 export type IdCardElementBold = Record<IdCardLayoutElement, boolean>;
 export type IdCardElementTextSizes = Record<IdCardLayoutElement, number>;
+export const ID_CARD_GRID_SIZES_MM = [1, 2, 5, 10] as const;
+export type IdCardGridSizeMm = (typeof ID_CARD_GRID_SIZES_MM)[number];
 
 export type IdCardPrintSettings = {
   widthMm: number;
@@ -28,6 +30,9 @@ export type IdCardPrintSettings = {
   elementBold: IdCardElementBold;
   /** Point size for each text element; QR and logo entries are unused. */
   elementTextSizes: IdCardElementTextSizes;
+  /** Design-surface preferences saved with this event's local card settings. */
+  gridSizeMm: IdCardGridSizeMm;
+  showGrid: boolean;
 };
 
 export const A6_PORTRAIT = { widthMm: 105, heightMm: 148 };
@@ -218,6 +223,11 @@ function elementTextSizes(value: unknown, template: IdCardPrintSettings["templat
   })) as IdCardElementTextSizes;
 }
 
+function gridSizeMm(value: unknown): IdCardGridSizeMm {
+  const numberValue = typeof value === "number" ? value : Number(value);
+  return ID_CARD_GRID_SIZES_MM.find((size) => size === numberValue) ?? 5;
+}
+
 export function defaultIdCardPrintSettings(eventTitle: string, organisationName = ""): IdCardPrintSettings {
   return {
     ...A6_PORTRAIT,
@@ -233,6 +243,8 @@ export function defaultIdCardPrintSettings(eventTitle: string, organisationName 
     elementSizes: defaultIdCardElementSizes("classic", A6_PORTRAIT.widthMm),
     elementBold: defaultIdCardElementBold(),
     elementTextSizes: defaultIdCardElementTextSizes("classic"),
+    gridSizeMm: 5,
+    showGrid: true,
   };
 }
 
@@ -267,5 +279,7 @@ export function normalizeIdCardPrintSettings(
     elementSizes: sizes,
     elementBold: elementBold(input.elementBold),
     elementTextSizes: elementTextSizes(input.elementTextSizes, template),
+    gridSizeMm: gridSizeMm(input.gridSizeMm),
+    showGrid: typeof input.showGrid === "boolean" ? input.showGrid : fallback.showGrid,
   };
 }

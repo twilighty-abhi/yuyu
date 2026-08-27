@@ -26,6 +26,7 @@ import {
   defaultIdCardElementSizes,
   defaultIdCardElementTextSizes,
   defaultIdCardPrintSettings,
+  ID_CARD_GRID_SIZES_MM,
   normalizeIdCardPrintSettings,
   type IdCardLayoutElement,
   type IdCardPrintSettings,
@@ -57,7 +58,7 @@ const registrationFieldKey = (key: string) => `registration:${key}`;
 // Keep the longest paper edge at a fixed preview length so orientation changes
 // do not inadvertently change the apparent scale of the card.
 const PREVIEW_LONG_EDGE_PX = 340;
-const SNAP_GRID_MM = 5;
+const SAFE_MARGIN_MM = 5;
 const TEMPLATE_OPTIONS = [
   { key: "classic", label: "Classic", description: "Framed and balanced" },
   { key: "bold", label: "Bold", description: "Strong side-band identity" },
@@ -73,8 +74,8 @@ const LAYOUT_ELEMENT_LABELS: Record<IdCardLayoutElement, string> = {
   logo: "Organisation logo",
 };
 
-function snapToGrid(value: number) {
-  return Math.round(value / SNAP_GRID_MM) * SNAP_GRID_MM;
+function snapToGrid(value: number, gridSizeMm: number) {
+  return Math.round(value / gridSizeMm) * gridSizeMm;
 }
 
 function readSettings(eventId: string, eventTitle: string, organisationName: string) {
@@ -343,8 +344,8 @@ export function IdCardPrintDialog(props: {
     const current = settings.elementPositions[element];
     const squareElement = element === "qr" || element === "logo";
     const next = {
-      xMm: Math.min(Math.max(0, settings.widthMm - settings.elementSizes[element] - 4), Math.max(0, snapToGrid(xMm))),
-      yMm: Math.min(Math.max(0, settings.heightMm - (squareElement ? settings.elementSizes[element] : 0) - 4), Math.max(0, snapToGrid(yMm))),
+      xMm: Math.min(Math.max(0, settings.widthMm - settings.elementSizes[element] - SAFE_MARGIN_MM), Math.max(0, snapToGrid(xMm, settings.gridSizeMm))),
+      yMm: Math.min(Math.max(0, settings.heightMm - (squareElement ? settings.elementSizes[element] : 0) - SAFE_MARGIN_MM), Math.max(0, snapToGrid(yMm, settings.gridSizeMm))),
     };
     if (current.xMm === next.xMm && current.yMm === next.yMm) return;
     update({ elementPositions: { ...settings.elementPositions, [element]: next } });
@@ -356,6 +357,24 @@ export function IdCardPrintDialog(props: {
 
   const updateElementTextSize = (element: IdCardLayoutElement, sizePt: number) => {
     update({ elementTextSizes: { ...settings.elementTextSizes, [element]: sizePt } });
+  };
+
+  const alignSelectedElement = (alignment: "left" | "center" | "right" | "top" | "middle" | "bottom") => {
+    const element = selectedLayoutElement;
+    const position = settings.elementPositions[element];
+    const squareElement = element === "qr" || element === "logo";
+    const elementSize = settings.elementSizes[element];
+    if (alignment === "left") return updateElementPosition(element, SAFE_MARGIN_MM, position.yMm);
+    if (alignment === "center") return updateElementPosition(element, (settings.widthMm - elementSize) / 2, position.yMm);
+    if (alignment === "right") return updateElementPosition(element, settings.widthMm - elementSize - SAFE_MARGIN_MM, position.yMm);
+    if (alignment === "top") return updateElementPosition(element, position.xMm, SAFE_MARGIN_MM);
+    if (alignment === "middle") return updateElementPosition(element, position.xMm, (settings.heightMm - (squareElement ? elementSize : 0)) / 2);
+    return updateElementPosition(element, position.xMm, settings.heightMm - (squareElement ? elementSize : 0) - SAFE_MARGIN_MM);
+  };
+
+  const resetSelectedElementPosition = () => {
+    const position = defaultIdCardElementPositions(settings.template, settings.widthMm, settings.heightMm)[selectedLayoutElement];
+    update({ elementPositions: { ...settings.elementPositions, [selectedLayoutElement]: position } });
   };
 
   const startLayoutDrag = (element: IdCardLayoutElement, event: ReactPointerEvent<HTMLElement>) => {
@@ -391,7 +410,7 @@ export function IdCardPrintDialog(props: {
   const layoutItemProps = (element: IdCardLayoutElement) => ({
     role: "button" as const,
     tabIndex: 0,
-    "aria-label": `${LAYOUT_ELEMENT_LABELS[element]}. Drag to move; arrow keys move by ${SNAP_GRID_MM} millimetres.`,
+    "aria-label": `${LAYOUT_ELEMENT_LABELS[element]}. Drag to move; arrow keys move by ${settings.gridSizeMm} millimetres.`,
     onPointerDown: (event: ReactPointerEvent<HTMLElement>) => startLayoutDrag(element, event),
     onPointerMove: moveLayoutDrag,
     onPointerUp: endLayoutDrag,
@@ -399,10 +418,10 @@ export function IdCardPrintDialog(props: {
     onFocus: () => setSelectedLayoutElement(element),
     onKeyDown: (event: ReactKeyboardEvent<HTMLElement>) => {
       const position = settings.elementPositions[element];
-      if (event.key === "ArrowLeft") updateElementPosition(element, position.xMm - SNAP_GRID_MM, position.yMm);
-      else if (event.key === "ArrowRight") updateElementPosition(element, position.xMm + SNAP_GRID_MM, position.yMm);
-      else if (event.key === "ArrowUp") updateElementPosition(element, position.xMm, position.yMm - SNAP_GRID_MM);
-      else if (event.key === "ArrowDown") updateElementPosition(element, position.xMm, position.yMm + SNAP_GRID_MM);
+      if (event.key === "ArrowLeft") updateElementPosition(element, position.xMm - settings.gridSizeMm, position.yMm);
+      else if (event.key === "ArrowRight") updateElementPosition(element, position.xMm + settings.gridSizeMm, position.yMm);
+      else if (event.key === "ArrowUp") updateElementPosition(element, position.xMm, position.yMm - settings.gridSizeMm);
+      else if (event.key === "ArrowDown") updateElementPosition(element, position.xMm, position.yMm + settings.gridSizeMm);
       else return;
       event.preventDefault();
     },
@@ -478,9 +497,18 @@ export function IdCardPrintDialog(props: {
             <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "space-between" }}>
               <Box>
                 <Typography variant="subtitle2">Layout</Typography>
-                <Typography variant="body2" color="text.secondary">Drag preview elements to a {SNAP_GRID_MM} mm grid. Their printed positions will match.</Typography>
+                <Typography variant="body2" color="text.secondary">Drag preview elements on a millimetre grid. Their printed positions will match.</Typography>
               </Box>
               <Button size="small" color="inherit" onClick={() => update({ elementPositions: defaultIdCardElementPositions(settings.template, settings.widthMm, settings.heightMm) })}>Reset layout</Button>
+            </Stack>
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ alignItems: { sm: "center" }, justifyContent: "space-between" }}>
+              <Box>
+                <Typography variant="body2" sx={{ fontWeight: 700 }}>Snap grid</Typography>
+                <ButtonGroup size="small" aria-label="ID card snap grid size">
+                  {ID_CARD_GRID_SIZES_MM.map((size) => <Button key={size} variant={settings.gridSizeMm === size ? "contained" : "outlined"} onClick={() => update({ gridSizeMm: size })}>{size} mm</Button>)}
+                </ButtonGroup>
+              </Box>
+              <FormControlLabel control={<Switch checked={settings.showGrid} onChange={(_, checked) => update({ showGrid: checked })} />} label="Show grid" />
             </Stack>
             <Box sx={{ border: "1px solid", borderColor: "divider", borderRadius: 1, p: 1.5 }}>
               <Typography variant="subtitle2" gutterBottom>Selected component</Typography>
@@ -494,8 +522,22 @@ export function IdCardPrintDialog(props: {
                   <TextField label="Square size (mm)" type="number" value={settings.elementSizes[selectedLayoutElement]} onChange={(event) => updateElementSize(selectedLayoutElement, Number(event.target.value))} slotProps={{ htmlInput: { min: 10, max: settings.widthMm - 4, step: 1 } }} fullWidth />
                 )}
                 {selectedElementIsText ? <FormControlLabel control={<Switch checked={settings.elementBold[selectedLayoutElement]} onChange={(_, checked) => update({ elementBold: { ...settings.elementBold, [selectedLayoutElement]: checked } })} />} label="Bold text" /> : null}
+                <Stack direction="row" spacing={1}>
+                  <TextField label="X position (mm)" type="number" value={settings.elementPositions[selectedLayoutElement].xMm} onChange={(event) => updateElementPosition(selectedLayoutElement, Number(event.target.value), settings.elementPositions[selectedLayoutElement].yMm)} slotProps={{ htmlInput: { min: 0, max: settings.widthMm, step: settings.gridSizeMm } }} fullWidth />
+                  <TextField label="Y position (mm)" type="number" value={settings.elementPositions[selectedLayoutElement].yMm} onChange={(event) => updateElementPosition(selectedLayoutElement, settings.elementPositions[selectedLayoutElement].xMm, Number(event.target.value))} slotProps={{ htmlInput: { min: 0, max: settings.heightMm, step: settings.gridSizeMm } }} fullWidth />
+                </Stack>
+                <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }} aria-label="Align selected component">
+                  <Button size="small" onClick={() => alignSelectedElement("left")}>Left</Button>
+                  <Button size="small" onClick={() => alignSelectedElement("center")}>Centre</Button>
+                  <Button size="small" onClick={() => alignSelectedElement("right")}>Right</Button>
+                  <Button size="small" onClick={() => alignSelectedElement("top")}>Top</Button>
+                  <Button size="small" onClick={() => alignSelectedElement("middle")}>Middle</Button>
+                  <Button size="small" onClick={() => alignSelectedElement("bottom")}>Bottom</Button>
+                  <Button size="small" color="inherit" onClick={resetSelectedElementPosition}>Reset component</Button>
+                </Box>
               </Stack>
             </Box>
+            {settings.elementSizes.qr < 20 ? <Alert severity="warning">Keep the QR code at least 20 mm square for reliable scanning after printing.</Alert> : null}
             <TextField label="Card heading" value={settings.heading} onChange={(event) => update({ heading: event.target.value })} slotProps={{ htmlInput: { maxLength: 120 } }} fullWidth />
             <TextField label="Badge label" value={settings.badgeLabel} onChange={(event) => update({ badgeLabel: event.target.value })} slotProps={{ htmlInput: { maxLength: 40 } }} fullWidth />
             <TextField label="Footer text" value={settings.footerText} onChange={(event) => update({ footerText: event.target.value })} slotProps={{ htmlInput: { maxLength: 80 } }} fullWidth />
@@ -556,11 +598,13 @@ export function IdCardPrintDialog(props: {
               data-id-card-preview
               sx={{
                 width: `${previewWidthPx}px`, maxWidth: "100%", aspectRatio: ratio, position: "relative", border: "2px solid", borderColor: "#000", bgcolor: "#fff", color: "#000", boxShadow: 3, overflow: "hidden",
-                backgroundImage: "linear-gradient(to right, rgb(0 0 0 / 8%) 1px, transparent 1px), linear-gradient(to bottom, rgb(0 0 0 / 8%) 1px, transparent 1px)",
-                backgroundSize: `${SNAP_GRID_MM * previewPixelsPerMillimetre}px ${SNAP_GRID_MM * previewPixelsPerMillimetre}px`,
+                backgroundImage: settings.showGrid ? "linear-gradient(to right, rgb(0 0 0 / 8%) 1px, transparent 1px), linear-gradient(to bottom, rgb(0 0 0 / 8%) 1px, transparent 1px)" : "none",
+                backgroundSize: `${settings.gridSizeMm * previewPixelsPerMillimetre}px ${settings.gridSizeMm * previewPixelsPerMillimetre}px`,
+                "&::after": { content: '""', position: "absolute", inset: `${SAFE_MARGIN_MM * previewPixelsPerMillimetre}px`, border: "1px dashed rgb(0 0 0 / 25%)", pointerEvents: "none", zIndex: 0 },
                 ...previewTemplateSx,
               }}
             >
+              <Box aria-hidden sx={{ position: "absolute", left: `${settings.elementPositions[selectedLayoutElement].xMm * previewPixelsPerMillimetre}px`, top: `${Math.max(0, settings.elementPositions[selectedLayoutElement].yMm * previewPixelsPerMillimetre - 19)}px`, zIndex: 4, pointerEvents: "none", bgcolor: "#1976d2", color: "#fff", borderRadius: 0.5, px: 0.5, py: 0.1, fontSize: "0.6rem", fontWeight: 700, whiteSpace: "nowrap" }}>{LAYOUT_ELEMENT_LABELS[selectedLayoutElement]} · {settings.elementPositions[selectedLayoutElement].xMm} × {settings.elementPositions[selectedLayoutElement].yMm} mm</Box>
               <Box {...layoutItemProps("header")} sx={{ ...previewPositionSx("header"), width: previewItemWidth("header"), pb: 0.75, borderBottom: settings.template === "classic" ? "1px solid #000" : 0, borderTop: settings.template === "classic" ? 0 : "1px solid #000", pt: settings.template === "classic" ? 0 : 0.75 }}>
                 <Typography sx={{ fontSize: "0.62rem", letterSpacing: "0.14em", fontWeight: settings.elementBold.header ? 800 : 400 }}>{settings.badgeLabel}</Typography>
                 <Typography sx={{ mt: settings.template === "minimal" ? 0.25 : 0.75, fontSize: previewTextSize("header"), fontWeight: settings.elementBold.header ? 700 : 400, lineHeight: 1.08, letterSpacing: "-0.025em", overflowWrap: "anywhere" }}>{settings.heading}</Typography>
@@ -581,7 +625,7 @@ export function IdCardPrintDialog(props: {
               ) : null}
               <Typography {...layoutItemProps("footer")} variant="caption" sx={{ ...previewPositionSx("footer"), width: previewItemWidth("footer"), fontSize: previewTextSize("footer"), fontWeight: settings.elementBold.footer ? 700 : 400, opacity: 0.68, overflowWrap: "anywhere" }}>{settings.footerText}</Typography>
             </Box>
-            <Typography variant="caption" color="text.secondary" sx={{ textAlign: "center" }}>Drag an outlined item, or focus it and use the arrow keys. Positions snap to {SNAP_GRID_MM} mm and print exactly from this layout.</Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ textAlign: "center" }}>Drag an outlined item, use the position controls, or focus it and use arrow keys. Positions snap to {settings.gridSizeMm} mm and print exactly from this layout.</Typography>
           </Stack>
         </Stack>
       </DialogContent>

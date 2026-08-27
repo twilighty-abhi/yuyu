@@ -17,6 +17,10 @@ describe("ID card print settings", () => {
       showLogo: true,
       printFieldKeys: [],
       printFieldLabels: {},
+      elementPositions: {
+        header: { xMm: 9, yMm: 9 },
+        qr: { xMm: 73, yMm: 116 },
+      },
     });
   });
 
@@ -31,6 +35,10 @@ describe("ID card print settings", () => {
       showLogo: false,
       printFieldKeys: ["registration:role", "registration:food"],
       printFieldLabels: { "registration:role": "Event role" },
+      elementPositions: {
+        name: { xMm: 15, yMm: 20 },
+        qr: { xMm: 999, yMm: -1 },
+      },
     }, "Open House")).toMatchObject({
       ...A6_LANDSCAPE,
       heading: "Welcome",
@@ -41,6 +49,10 @@ describe("ID card print settings", () => {
       showLogo: false,
       printFieldKeys: ["registration:role", "registration:food"],
       printFieldLabels: { "registration:role": "Event role" },
+      elementPositions: {
+        name: { xMm: 15, yMm: 20 },
+        qr: { xMm: 144, yMm: 0 },
+      },
     });
     expect(normalizeIdCardPrintSettings({ widthMm: 2, heightMm: 1000 }, "Open House")).toMatchObject({
       widthMm: 40,

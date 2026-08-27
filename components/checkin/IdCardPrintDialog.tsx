@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useSyncExternalStore } from "react";
+import { useCallback, useMemo, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -21,8 +21,10 @@ import QRCode from "react-qr-code";
 import {
   A6_LANDSCAPE,
   A6_PORTRAIT,
+  defaultIdCardElementPositions,
   defaultIdCardPrintSettings,
   normalizeIdCardPrintSettings,
+  type IdCardLayoutElement,
   type IdCardPrintSettings,
 } from "@/lib/idCardPrint";
 
@@ -37,6 +39,13 @@ type Attendee = {
 
 type RegistrationField = { key: string; label: string };
 type PrintableField = { key: string; label: string; value: string };
+type LayoutDrag = {
+  element: IdCardLayoutElement;
+  pointerX: number;
+  pointerY: number;
+  position: { xMm: number; yMm: number };
+  previewRect: DOMRect;
+};
 
 const storageKey = (eventId: string) => `yuyu:checkin:id-card:${eventId}`;
 const settingsChangedEvent = "yuyu:id-card-print-settings-changed";
@@ -45,11 +54,25 @@ const registrationFieldKey = (key: string) => `registration:${key}`;
 // Keep the longest paper edge at a fixed preview length so orientation changes
 // do not inadvertently change the apparent scale of the card.
 const PREVIEW_LONG_EDGE_PX = 340;
+const SNAP_GRID_MM = 5;
 const TEMPLATE_OPTIONS = [
   { key: "classic", label: "Classic", description: "Framed and balanced" },
   { key: "bold", label: "Bold", description: "Strong side-band identity" },
   { key: "minimal", label: "Minimal", description: "Clean editorial layout" },
 ] as const;
+const LAYOUT_ELEMENT_LABELS: Record<IdCardLayoutElement, string> = {
+  header: "Event heading",
+  name: "Attendee name",
+  email: "Email",
+  details: "Registration fields",
+  qr: "Check-in QR",
+  footer: "Footer",
+  logo: "Organisation logo",
+};
+
+function snapToGrid(value: number) {
+  return Math.round(value / SNAP_GRID_MM) * SNAP_GRID_MM;
+}
 
 function readSettings(eventId: string, eventTitle: string, organisationName: string) {
   const cached = sessionSettings.get(eventId);
@@ -101,12 +124,17 @@ function printableFields(
   });
 }
 
-function printableDetails(fields: PrintableField[], settings: IdCardPrintSettings) {
+function printableDetails(fields: PrintableField[], settings: IdCardPrintSettings, style = "") {
   if (fields.length === 0) return "";
-  return `<dl class="details">${fields.map((detail) => {
+  return `<dl class="details"${style ? ` style="${style}"` : ""}>${fields.map((detail) => {
     const label = settings.printFieldLabels[detail.key] ?? detail.label;
     return `<div${label ? "" : ' class="label-free"'}>${label ? `<dt>${escapePrintHtml(label)}</dt>` : ""}<dd>${escapePrintHtml(detail.value)}</dd></div>`;
   }).join("")}</dl>`;
+}
+
+function printPosition(settings: IdCardPrintSettings, element: IdCardLayoutElement) {
+  const position = settings.elementPositions[element];
+  return `left:${position.xMm}mm;top:${position.yMm}mm;`;
 }
 
 async function printCard(params: { settings: IdCardPrintSettings; attendee: Attendee; organisationLogoUrl: string | null }) {
@@ -133,8 +161,8 @@ async function printCard(params: { settings: IdCardPrintSettings; attendee: Atte
   const email = attendee.email ? escapePrintHtml(attendee.email) : "";
   const emailLine = settings.showEmail && email ? `<p class="email">${email}</p>` : "";
   const logoUrl = settings.showLogo ? safeLogoUrl(organisationLogoUrl) : null;
-  const logo = logoUrl ? `<img id="badge-logo" class="logo" src="${escapePrintHtml(logoUrl)}" alt="">` : "";
-  const details = printableDetails(printableFields(settings, attendee), settings);
+  const logo = logoUrl ? `<img id="badge-logo" class="logo" style="${printPosition(settings, "logo")}" src="${escapePrintHtml(logoUrl)}" alt="">` : "";
+  const details = printableDetails(printableFields(settings, attendee), settings, printPosition(settings, "details"));
 
   printWindow.document.write(`<!doctype html>
 <html><head><meta charset="utf-8"><title>${name} ID card</title><style>
@@ -143,50 +171,42 @@ async function printCard(params: { settings: IdCardPrintSettings; attendee: Atte
   * { box-sizing: border-box; -webkit-print-color-adjust: economy; print-color-adjust: economy; }
   html, body { width: ${settings.widthMm}mm; height: ${settings.heightMm}mm; margin: 0; }
   body { color: #0F172A; font-family: Inter, Arial, Helvetica, sans-serif; }
-  .card { width: 100%; height: 100%; padding: 9mm; display: flex; flex-direction: column; position: relative; background: #fff; border: 0.6mm solid #0F172A; overflow: hidden; }
-  .top { display: flex; align-items: flex-start; justify-content: space-between; gap: 5mm; }
-  .logo { width: 13mm; height: 13mm; border-radius: 3mm; object-fit: contain; background: #fff; padding: 1mm; }
+  .card { width: 100%; height: 100%; position: relative; background: #fff; border: 0.6mm solid #0F172A; overflow: hidden; }
+  .top { position: absolute; width: 58%; margin: 0; }
+  .logo { position: absolute; width: 13mm; height: 13mm; border-radius: 3mm; object-fit: contain; background: #fff; padding: 1mm; }
   .label { margin: 0; color: var(--accent); font-size: 8pt; font-weight: 800; letter-spacing: 0.16em; }
   .heading { margin: 2.5mm 0 0; font-size: 14pt; font-weight: 700; line-height: 1.2; }
-  .rule { width: 100%; height: 1.2mm; margin: 6mm 0; background: var(--accent); }
-  .name { margin: 0; font-size: 28pt; font-weight: 800; line-height: 1.03; letter-spacing: -0.03em; overflow-wrap: anywhere; }
-  .email { margin: 4mm 0 0; color: #475569; font-size: 10pt; overflow-wrap: anywhere; }
-  .details { margin: 5mm 0 0; padding: 3mm 0 0; border-top: 0.3mm solid #CBD5E1; }
+  .name { position: absolute; right: 9mm; margin: 0; font-size: 28pt; font-weight: 800; line-height: 1.03; letter-spacing: -0.03em; overflow-wrap: anywhere; }
+  .email { position: absolute; right: 9mm; margin: 0; color: #475569; font-size: 10pt; overflow-wrap: anywhere; }
+  .details { position: absolute; right: 9mm; margin: 0; padding: 3mm 0 0; border-top: 0.3mm solid #CBD5E1; }
   .details div { display: flex; justify-content: space-between; gap: 4mm; margin-top: 1.5mm; font-size: 8.5pt; }
   .details .label-free { justify-content: flex-start; }
   .details dt { color: #64748B; } .details dd { margin: 0; font-weight: 700; text-align: right; }
   .qr-block { position: absolute; z-index: 2; background: #fff; padding: 1mm; }
   .qr { width: 22mm; height: 22mm; display: block; image-rendering: pixelated; }
-  .footer { margin: auto 0 0; padding-top: 5mm; color: #64748B; font-size: 8pt; }
+  .footer { position: absolute; right: 9mm; margin: 0; color: #64748B; font-size: 8pt; }
   /* Classic is a traditional framed event badge. */
   .classic .top { padding-bottom: 2mm; border-bottom: 0.3mm solid #000; }
-  .classic .rule { width: 20mm; margin: 4mm 0 6mm; }
-  .classic .qr-block { right: 8mm; bottom: 8mm; }
-  .classic .details { max-width: calc(100% - 30mm); }
+  .classic .details { right: 40mm; }
   .classic .footer { padding-right: 30mm; }
   /* Bold uses a distinct side-band and uppercase name treatment. */
-  .card.bold { border: 1.2mm solid #000; padding-left: 16mm; }
+  .card.bold { border: 1.2mm solid #000; }
   .bold::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 6mm; background: #000; }
-  .bold .top { order: 4; margin-top: auto; padding-top: 4mm; border-top: 0.6mm solid #000; }
-  .bold .rule { display: none; } .bold .name { order: 1; }
-  .bold .email { order: 2; } .bold .details { order: 3; }
-  .bold .qr-block { top: 8mm; right: 8mm; }
+  .bold .top { padding-top: 4mm; border-top: 0.6mm solid #000; }
   .bold .name { padding-right: 30mm; font-size: 30pt; text-transform: uppercase; letter-spacing: -0.04em; }
-  .bold .details { border-top-width: 0.6mm; } .bold .footer { order: 5; margin-top: 2mm; font-weight: 700; }
+  .bold .email, .bold .details { right: 40mm; }
+  .bold .details { border-top-width: 0.6mm; } .bold .footer { font-weight: 700; }
   /* Minimal removes the enclosing frame and uses whitespace and a hairline divider. */
-  .card.minimal { border: 0; padding: 12mm 10mm; }
-  .minimal .top { order: 4; display: block; margin-top: auto; padding: 4mm 30mm 0 0; border-top: 0.3mm solid #000; }
-  .minimal .logo { position: absolute; top: 10mm; right: 10mm; }
+  .card.minimal { border: 0; }
+  .minimal .top { display: block; padding: 4mm 0 0; border-top: 0.3mm solid #000; }
   .minimal .heading { margin-top: 1mm; font-weight: 500; font-size: 12pt; max-width: 72%; }
-  .minimal .rule { order: 0; width: 12mm; height: 0.8mm; margin: 1mm 0 0; }
-  .minimal .name { order: 1; margin-top: 6mm; font-size: 26pt; font-weight: 700; letter-spacing: -0.04em; }
-  .minimal .email { order: 2; } .minimal .details { order: 3; margin-top: 6mm; border-top: 0; padding-top: 0; }
-  .minimal .qr-block { position: absolute; right: 8mm; bottom: 8mm; }
-  .minimal .footer { order: 5; margin-top: 2mm; padding-right: 30mm; }
+  .minimal .name { font-size: 26pt; font-weight: 700; letter-spacing: -0.04em; }
+  .minimal .details { border-top: 0; padding-top: 0; }
+  .minimal .footer { padding-right: 30mm; }
   /* One high-contrast output works well on both monochrome laser and thermal printers. */
   .card { color: #000; border-color: #000; } .label, .heading, .footer, .email, .details dt { color: #000; }
   .rule { background: #000; } .details { border-color: #000; } .logo { filter: grayscale(1) contrast(1.8); }
-</style></head><body><main class="card ${settings.template}"><div class="top"><div><p class="label">${badgeLabel}</p><h1 class="heading">${heading}</h1></div>${logo}</div><div class="rule"></div><p class="name">${name}</p>${emailLine}${details}<div class="qr-block"><img id="badge-qr" class="qr" src="${escapePrintHtml(qrDataUrl)}" alt="Check-in QR code"></div><p class="footer">${escapePrintHtml(settings.footerText)}</p></main></body></html>`);
+</style></head><body><main class="card ${settings.template}"><div class="top" style="${printPosition(settings, "header")}"><p class="label">${badgeLabel}</p><h1 class="heading">${heading}</h1></div>${logo}<p class="name" style="${printPosition(settings, "name")}">${name}</p>${emailLine ? emailLine.replace('<p class="email">', `<p class="email" style="${printPosition(settings, "email")}">`) : ""}${details}<div class="qr-block" style="${printPosition(settings, "qr")}"><img id="badge-qr" class="qr" src="${escapePrintHtml(qrDataUrl)}" alt="Check-in QR code"></div><p class="footer" style="${printPosition(settings, "footer")}">${escapePrintHtml(settings.footerText)}</p></main></body></html>`);
   printWindow.document.close();
   printWindow.focus();
 
@@ -227,6 +247,8 @@ export function IdCardPrintDialog(props: {
   registrationFields: RegistrationField[];
 }) {
   const { open, onClose, eventId, eventTitle, organisationName, organisationLogoUrl, attendee, registrationFields } = props;
+  const [layoutDrag, setLayoutDrag] = useState<LayoutDrag | null>(null);
+  const draggingElement = layoutDrag?.element ?? null;
   const defaultSettings = useMemo(() => defaultIdCardPrintSettings(eventTitle, organisationName), [eventTitle, organisationName]);
   const subscribe = useCallback((onStoreChange: () => void) => {
     const onStorage = (event: StorageEvent) => {
@@ -277,10 +299,31 @@ export function IdCardPrintDialog(props: {
   const ratio = `${settings.widthMm} / ${settings.heightMm}`;
   const paperDescription = `${settings.widthMm} × ${settings.heightMm} mm`;
   const previewWidthPx = PREVIEW_LONG_EDGE_PX * settings.widthMm / Math.max(settings.widthMm, settings.heightMm);
+  const previewPixelsPerMillimetre = previewWidthPx / settings.widthMm;
   const isA6Portrait = settings.widthMm === A6_PORTRAIT.widthMm && settings.heightMm === A6_PORTRAIT.heightMm;
   const isA6Landscape = settings.widthMm === A6_LANDSCAPE.widthMm && settings.heightMm === A6_LANDSCAPE.heightMm;
   const previewNameSize = useMemo(() => Math.max(18, Math.min(34, settings.widthMm / 3.4)), [settings.widthMm]);
   const logoUrl = settings.showLogo ? safeLogoUrl(organisationLogoUrl) : null;
+  const previewPositionSx = (element: IdCardLayoutElement) => {
+    const position = settings.elementPositions[element];
+    return {
+      position: "absolute" as const,
+      left: `${position.xMm * previewPixelsPerMillimetre}px`,
+      top: `${position.yMm * previewPixelsPerMillimetre}px`,
+      cursor: "grab",
+      touchAction: "none",
+      userSelect: "none",
+      zIndex: draggingElement === element ? 3 : 1,
+      outline: draggingElement === element ? "2px solid #1976d2" : "1px dashed transparent",
+      outlineOffset: 2,
+      "&:hover": { outlineColor: "#1976d2" },
+      "&:focus-visible": { outline: "2px solid #1976d2", outlineOffset: 2 },
+    };
+  };
+  const previewItemWidth = (element: IdCardLayoutElement, rightMm: number) => {
+    const availableMm = settings.widthMm - settings.elementPositions[element].xMm - rightMm;
+    return `${Math.max(48, availableMm * previewPixelsPerMillimetre)}px`;
+  };
 
   const update = (patch: Partial<IdCardPrintSettings>) => {
     const next = normalizeIdCardPrintSettings({ ...settings, ...patch }, eventTitle, organisationName);
@@ -292,6 +335,64 @@ export function IdCardPrintDialog(props: {
     }
     window.dispatchEvent(new Event(settingsChangedEvent));
   };
+
+  const updateElementPosition = (element: IdCardLayoutElement, xMm: number, yMm: number) => {
+    const current = settings.elementPositions[element];
+    const next = {
+      xMm: Math.min(settings.widthMm - 4, Math.max(0, snapToGrid(xMm))),
+      yMm: Math.min(settings.heightMm - 4, Math.max(0, snapToGrid(yMm))),
+    };
+    if (current.xMm === next.xMm && current.yMm === next.yMm) return;
+    update({ elementPositions: { ...settings.elementPositions, [element]: next } });
+  };
+
+  const startLayoutDrag = (element: IdCardLayoutElement, event: ReactPointerEvent<HTMLElement>) => {
+    const preview = event.currentTarget.closest<HTMLElement>("[data-id-card-preview]");
+    if (event.button !== 0 || !preview) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setLayoutDrag({
+      element,
+      pointerX: event.clientX,
+      pointerY: event.clientY,
+      position: settings.elementPositions[element],
+      previewRect: preview.getBoundingClientRect(),
+    });
+  };
+
+  const moveLayoutDrag = (event: ReactPointerEvent<HTMLElement>) => {
+    const drag = layoutDrag;
+    if (!drag) return;
+    updateElementPosition(
+      drag.element,
+      drag.position.xMm + ((event.clientX - drag.pointerX) * settings.widthMm / drag.previewRect.width),
+      drag.position.yMm + ((event.clientY - drag.pointerY) * settings.heightMm / drag.previewRect.height),
+    );
+  };
+
+  const endLayoutDrag = (event: ReactPointerEvent<HTMLElement>) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    setLayoutDrag(null);
+  };
+
+  const layoutItemProps = (element: IdCardLayoutElement) => ({
+    role: "button" as const,
+    tabIndex: 0,
+    "aria-label": `${LAYOUT_ELEMENT_LABELS[element]}. Drag to move; arrow keys move by ${SNAP_GRID_MM} millimetres.`,
+    onPointerDown: (event: ReactPointerEvent<HTMLElement>) => startLayoutDrag(element, event),
+    onPointerMove: moveLayoutDrag,
+    onPointerUp: endLayoutDrag,
+    onPointerCancel: endLayoutDrag,
+    onKeyDown: (event: ReactKeyboardEvent<HTMLElement>) => {
+      const position = settings.elementPositions[element];
+      if (event.key === "ArrowLeft") updateElementPosition(element, position.xMm - SNAP_GRID_MM, position.yMm);
+      else if (event.key === "ArrowRight") updateElementPosition(element, position.xMm + SNAP_GRID_MM, position.yMm);
+      else if (event.key === "ArrowUp") updateElementPosition(element, position.xMm, position.yMm - SNAP_GRID_MM);
+      else if (event.key === "ArrowDown") updateElementPosition(element, position.xMm, position.yMm + SNAP_GRID_MM);
+      else return;
+      event.preventDefault();
+    },
+  });
 
   const togglePrintField = (key: string, checked: boolean) => {
     const printFieldKeys = checked
@@ -310,18 +411,13 @@ export function IdCardPrintDialog(props: {
   const previewTemplateSx = settings.template === "bold"
     ? {
         border: "3px solid #000",
-        pl: 4.5,
         "&::before": {
           content: '""', position: "absolute", inset: 0, right: "auto", width: 15, bgcolor: "#000",
         },
       }
     : settings.template === "minimal"
-      ? { border: 0, boxShadow: 1, p: 3, pt: 3.5 }
+      ? { border: 0, boxShadow: 1 }
       : {};
-  const previewQrSx = settings.template !== "bold"
-    ? { position: "absolute" as const, right: 16, bottom: 16 }
-    : { position: "absolute" as const, top: 16, right: 16 };
-
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
       <DialogTitle>{attendee ? "Print attendee ID card" : "Set up attendee ID cards"}</DialogTitle>
@@ -336,7 +432,10 @@ export function IdCardPrintDialog(props: {
                   <Button
                     key={template.key}
                     variant={settings.template === template.key ? "contained" : "outlined"}
-                    onClick={() => update({ template: template.key })}
+                    onClick={() => update({
+                      template: template.key,
+                      elementPositions: defaultIdCardElementPositions(template.key, settings.widthMm, settings.heightMm),
+                    })}
                     sx={{ flex: 1, minHeight: 64, alignItems: "flex-start", justifyContent: "flex-start", textAlign: "left", textTransform: "none" }}
                   >
                     <Box>
@@ -359,6 +458,13 @@ export function IdCardPrintDialog(props: {
               <TextField label="Height (mm)" type="number" value={settings.heightMm} onChange={(event) => update({ heightMm: Number(event.target.value) })} slotProps={{ htmlInput: { min: 40, max: 300, step: 0.1 } }} fullWidth />
             </Stack>
             <Typography variant="body2" color="text.secondary">The card uses one high-contrast layout that prints cleanly on both monochrome laser and thermal printers.</Typography>
+            <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "space-between" }}>
+              <Box>
+                <Typography variant="subtitle2">Layout</Typography>
+                <Typography variant="body2" color="text.secondary">Drag preview elements to a {SNAP_GRID_MM} mm grid. Their printed positions will match.</Typography>
+              </Box>
+              <Button size="small" color="inherit" onClick={() => update({ elementPositions: defaultIdCardElementPositions(settings.template, settings.widthMm, settings.heightMm) })}>Reset layout</Button>
+            </Stack>
             <TextField label="Card heading" value={settings.heading} onChange={(event) => update({ heading: event.target.value })} slotProps={{ htmlInput: { maxLength: 120 } }} fullWidth />
             <TextField label="Badge label" value={settings.badgeLabel} onChange={(event) => update({ badgeLabel: event.target.value })} slotProps={{ htmlInput: { maxLength: 40 } }} fullWidth />
             <TextField label="Footer text" value={settings.footerText} onChange={(event) => update({ footerText: event.target.value })} slotProps={{ htmlInput: { maxLength: 80 } }} fullWidth />
@@ -415,30 +521,36 @@ export function IdCardPrintDialog(props: {
           </Stack>
           <Stack spacing={1} sx={{ flex: 1, minWidth: 0, alignItems: "center" }}>
             <Typography variant="subtitle2" color="text.secondary">Live preview · {paperDescription}</Typography>
-            <Box sx={{ width: `${previewWidthPx}px`, maxWidth: "100%", aspectRatio: ratio, position: "relative", border: "2px solid", borderColor: "#000", bgcolor: "#fff", color: "#000", p: 2.5, display: "flex", flexDirection: "column", boxShadow: 3, overflow: "hidden", ...previewTemplateSx }}>
-              <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "flex-start", position: "relative", zIndex: 1, order: settings.template === "classic" ? 0 : 4, mt: settings.template === "classic" ? 0 : "auto", pt: settings.template === "classic" ? 0 : 1, ...(settings.template === "classic" ? { pb: 0.75, borderBottom: "1px solid #000" } : { borderTop: "1px solid #000" }) }}>
-                <Box>
-                  <Typography sx={{ fontSize: "0.62rem", letterSpacing: "0.14em", fontWeight: 800 }}>{settings.badgeLabel}</Typography>
-                  <Typography sx={{ mt: settings.template === "minimal" ? 0.25 : 0.75, fontSize: settings.template === "minimal" ? "0.9rem" : "1rem", fontWeight: settings.template === "minimal" ? 500 : 700, lineHeight: 1.2 }}>{settings.heading}</Typography>
-                </Box>
-                {logoUrl ? <Box component="img" src={logoUrl} alt="" sx={{ width: 34, height: 34, objectFit: "contain", borderRadius: 1, bgcolor: "#fff", p: 0.25, ...(settings.template === "minimal" ? { position: "absolute", top: 16, right: 16 } : {}) }} /> : null}
-              </Stack>
-              <Box sx={{ order: 0, display: settings.template === "bold" ? "none" : "block", width: settings.template === "classic" ? "28%" : "16%", height: settings.template === "minimal" ? 2 : 3, bgcolor: "#000", my: settings.template === "minimal" ? 1 : 2 }} />
-              <Typography sx={{ order: 1, mt: settings.template === "minimal" ? 2.5 : 0, pr: settings.template === "bold" ? 11 : 0, fontSize: `${settings.template === "bold" ? previewNameSize + 2 : previewNameSize}px`, fontWeight: settings.template === "minimal" ? 700 : 800, lineHeight: 1.05, letterSpacing: "-0.03em", textTransform: settings.template === "bold" ? "uppercase" : "none", overflowWrap: "anywhere" }}>{sampleAttendee.displayName}</Typography>
-              {settings.showEmail && sampleAttendee.email ? <Typography variant="body2" sx={{ order: 2, mt: 1, opacity: 0.75, overflowWrap: "anywhere" }}>{sampleAttendee.email}</Typography> : null}
-              <Box sx={{ ...previewQrSx, bgcolor: "#fff", p: 0.5, zIndex: 1 }}>
-                <QRCode value={sampleAttendee.checkInQrToken} size={settings.template === "minimal" ? 54 : 62} bgColor="#FFFFFF" fgColor="#000000" level="M" />
+            <Box
+              data-id-card-preview
+              sx={{
+                width: `${previewWidthPx}px`, maxWidth: "100%", aspectRatio: ratio, position: "relative", border: "2px solid", borderColor: "#000", bgcolor: "#fff", color: "#000", boxShadow: 3, overflow: "hidden",
+                backgroundImage: "linear-gradient(to right, rgb(0 0 0 / 8%) 1px, transparent 1px), linear-gradient(to bottom, rgb(0 0 0 / 8%) 1px, transparent 1px)",
+                backgroundSize: `${SNAP_GRID_MM * previewPixelsPerMillimetre}px ${SNAP_GRID_MM * previewPixelsPerMillimetre}px`,
+                ...previewTemplateSx,
+              }}
+            >
+              <Box {...layoutItemProps("header")} sx={{ ...previewPositionSx("header"), width: previewItemWidth("header", logoUrl ? 30 : 9), pb: 0.75, borderBottom: settings.template === "classic" ? "1px solid #000" : 0, borderTop: settings.template === "classic" ? 0 : "1px solid #000", pt: settings.template === "classic" ? 0 : 0.75 }}>
+                <Typography sx={{ fontSize: "0.62rem", letterSpacing: "0.14em", fontWeight: 800 }}>{settings.badgeLabel}</Typography>
+                <Typography sx={{ mt: settings.template === "minimal" ? 0.25 : 0.75, fontSize: settings.template === "minimal" ? "0.9rem" : "1rem", fontWeight: settings.template === "minimal" ? 500 : 700, lineHeight: 1.2, overflowWrap: "anywhere" }}>{settings.heading}</Typography>
+              </Box>
+              {logoUrl ? <Box component="img" {...layoutItemProps("logo")} src={logoUrl} alt="" sx={{ ...previewPositionSx("logo"), width: 34, height: 34, objectFit: "contain", borderRadius: 1, bgcolor: "#fff", p: 0.25 }} /> : null}
+              <Typography {...layoutItemProps("name")} sx={{ ...previewPositionSx("name"), width: previewItemWidth("name", settings.template === "bold" ? 40 : 9), fontSize: `${settings.template === "bold" ? previewNameSize + 2 : previewNameSize}px`, fontWeight: settings.template === "minimal" ? 700 : 800, lineHeight: 1.05, letterSpacing: "-0.03em", textTransform: settings.template === "bold" ? "uppercase" : "none", overflowWrap: "anywhere" }}>{sampleAttendee.displayName}</Typography>
+              {settings.showEmail && sampleAttendee.email ? <Typography {...layoutItemProps("email")} variant="body2" sx={{ ...previewPositionSx("email"), width: previewItemWidth("email", settings.template === "bold" ? 40 : 9), opacity: 0.75, overflowWrap: "anywhere" }}>{sampleAttendee.email}</Typography> : null}
+              <Box {...layoutItemProps("qr")} sx={{ ...previewPositionSx("qr"), bgcolor: "#fff", p: 0.5 }}>
+                <QRCode value={sampleAttendee.checkInQrToken} size={Math.round(22 * previewPixelsPerMillimetre)} bgColor="#FFFFFF" fgColor="#000000" level="M" />
               </Box>
               {previewFields.length > 0 ? (
-                <Stack spacing={0.4} sx={{ order: 3, maxWidth: settings.template === "classic" ? "62%" : undefined, borderTop: settings.template === "minimal" ? 0 : "1px solid", borderColor: "#000", mt: 1.5, pt: settings.template === "minimal" ? 0 : 1 }}>
+                <Stack {...layoutItemProps("details")} spacing={0.4} sx={{ ...previewPositionSx("details"), width: previewItemWidth("details", settings.template === "minimal" ? 9 : 40), borderTop: settings.template === "minimal" ? 0 : "1px solid", borderColor: "#000", pt: settings.template === "minimal" ? 0 : 1 }}>
                   {previewFields.map((detail) => {
                     const label = settings.printFieldLabels[detail.key] ?? detail.label;
                     return <Stack direction="row" key={detail.key} sx={{ justifyContent: label ? "space-between" : "flex-start", gap: 1 }}>{label ? <Typography variant="caption" sx={{ opacity: 0.72 }}>{label}</Typography> : null}<Typography variant="caption" sx={{ fontWeight: 700, textAlign: "right" }}>{detail.value}</Typography></Stack>;
                   })}
                 </Stack>
               ) : null}
-              <Typography variant="caption" sx={{ order: 5, mt: settings.template === "classic" ? "auto" : 1, opacity: 0.68 }}>{settings.footerText}</Typography>
+              <Typography {...layoutItemProps("footer")} variant="caption" sx={{ ...previewPositionSx("footer"), width: previewItemWidth("footer", settings.template === "classic" || settings.template === "minimal" ? 40 : 9), opacity: 0.68, overflowWrap: "anywhere" }}>{settings.footerText}</Typography>
             </Box>
+            <Typography variant="caption" color="text.secondary" sx={{ textAlign: "center" }}>Drag an outlined item, or focus it and use the arrow keys. Positions snap to {SNAP_GRID_MM} mm and print exactly from this layout.</Typography>
           </Stack>
         </Stack>
       </DialogContent>

@@ -39,6 +39,8 @@ describe("ID card print settings", () => {
         name: { xMm: 15, yMm: 20 },
         qr: { xMm: 999, yMm: -1 },
       },
+      elementSizes: { name: 70, qr: 30 },
+      elementBold: { name: false },
     }, "Open House")).toMatchObject({
       ...A6_LANDSCAPE,
       heading: "Welcome",
@@ -51,8 +53,10 @@ describe("ID card print settings", () => {
       printFieldLabels: { "registration:role": "Event role" },
       elementPositions: {
         name: { xMm: 15, yMm: 20 },
-        qr: { xMm: 144, yMm: 0 },
+        qr: { xMm: 114, yMm: 0 },
       },
+      elementSizes: { name: 70, qr: 30 },
+      elementBold: { name: false },
     });
     expect(normalizeIdCardPrintSettings({ widthMm: 2, heightMm: 1000 }, "Open House")).toMatchObject({
       widthMm: 40,

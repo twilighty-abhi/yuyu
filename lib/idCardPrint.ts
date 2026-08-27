@@ -3,6 +3,8 @@ export const ID_CARD_LAYOUT_ELEMENTS = ["header", "name", "email", "details", "q
 export type IdCardLayoutElement = (typeof ID_CARD_LAYOUT_ELEMENTS)[number];
 export type IdCardElementPosition = { xMm: number; yMm: number };
 export type IdCardElementPositions = Record<IdCardLayoutElement, IdCardElementPosition>;
+export type IdCardElementSizes = Record<IdCardLayoutElement, number>;
+export type IdCardElementBold = Record<IdCardLayoutElement, boolean>;
 
 export type IdCardPrintSettings = {
   widthMm: number;
@@ -19,6 +21,10 @@ export type IdCardPrintSettings = {
   printFieldLabels: Record<string, string>;
   /** Upper-left positions used by the interactive, millimetre-based card layout. */
   elementPositions: IdCardElementPositions;
+  /** Width in millimetres for text elements and square size for QR/logo elements. */
+  elementSizes: IdCardElementSizes;
+  /** Whether each text element should use a heavier weight. */
+  elementBold: IdCardElementBold;
 };
 
 export const A6_PORTRAIT = { widthMm: 105, heightMm: 148 };
@@ -99,6 +105,33 @@ export function defaultIdCardElementPositions(
   };
 }
 
+export function defaultIdCardElementSizes(
+  template: IdCardPrintSettings["template"],
+  widthMm: number,
+): IdCardElementSizes {
+  const textWidth = (reservedMm: number) => Math.max(20, widthMm - reservedMm);
+  if (template === "bold") {
+    return {
+      header: textWidth(40), name: textWidth(56), email: textWidth(56), details: textWidth(56),
+      qr: 22, footer: textWidth(25), logo: 13,
+    };
+  }
+  if (template === "minimal") {
+    return {
+      header: textWidth(43), name: textWidth(19), email: textWidth(19), details: textWidth(19),
+      qr: 22, footer: textWidth(49), logo: 13,
+    };
+  }
+  return {
+    header: textWidth(33), name: textWidth(18), email: textWidth(18), details: textWidth(49),
+    qr: 22, footer: textWidth(49), logo: 13,
+  };
+}
+
+export function defaultIdCardElementBold(): IdCardElementBold {
+  return { header: true, name: true, email: false, details: false, qr: false, footer: false, logo: false };
+}
+
 function boundedPosition(value: unknown, fallback: IdCardElementPosition, widthMm: number, heightMm: number) {
   if (!value || typeof value !== "object") return fallback;
   const input = value as Partial<IdCardElementPosition>;
@@ -126,6 +159,44 @@ function elementPositions(
   ])) as IdCardElementPositions;
 }
 
+function elementSizes(value: unknown, template: IdCardPrintSettings["template"], widthMm: number) {
+  const fallback = defaultIdCardElementSizes(template, widthMm);
+  const input = value && typeof value === "object" && !Array.isArray(value)
+    ? value as Partial<Record<IdCardLayoutElement, unknown>>
+    : {};
+  return Object.fromEntries(ID_CARD_LAYOUT_ELEMENTS.map((element) => {
+    const size = typeof input[element] === "number" ? input[element] : Number(input[element]);
+    const minimum = element === "qr" || element === "logo" ? 10 : 20;
+    const maximum = Math.max(minimum, widthMm - 4);
+    return [element, Number.isFinite(size) ? Math.min(maximum, Math.max(minimum, Math.round(size * 10) / 10)) : fallback[element]];
+  })) as IdCardElementSizes;
+}
+
+function fitElementPositions(
+  positions: IdCardElementPositions,
+  sizes: IdCardElementSizes,
+  widthMm: number,
+  heightMm: number,
+) {
+  return Object.fromEntries(ID_CARD_LAYOUT_ELEMENTS.map((element) => {
+    const squareElement = element === "qr" || element === "logo";
+    return [element, {
+      xMm: Math.min(Math.max(0, widthMm - sizes[element] - 4), positions[element].xMm),
+      yMm: squareElement ? Math.min(Math.max(0, heightMm - sizes[element] - 4), positions[element].yMm) : positions[element].yMm,
+    }];
+  })) as IdCardElementPositions;
+}
+
+function elementBold(value: unknown) {
+  const fallback = defaultIdCardElementBold();
+  if (!value || typeof value !== "object" || Array.isArray(value)) return fallback;
+  const input = value as Partial<Record<IdCardLayoutElement, unknown>>;
+  return Object.fromEntries(ID_CARD_LAYOUT_ELEMENTS.map((element) => [
+    element,
+    typeof input[element] === "boolean" ? input[element] : fallback[element],
+  ])) as IdCardElementBold;
+}
+
 export function defaultIdCardPrintSettings(eventTitle: string, organisationName = ""): IdCardPrintSettings {
   return {
     ...A6_PORTRAIT,
@@ -138,6 +209,8 @@ export function defaultIdCardPrintSettings(eventTitle: string, organisationName 
     printFieldKeys: [],
     printFieldLabels: {},
     elementPositions: defaultIdCardElementPositions("classic", A6_PORTRAIT.widthMm, A6_PORTRAIT.heightMm),
+    elementSizes: defaultIdCardElementSizes("classic", A6_PORTRAIT.widthMm),
+    elementBold: defaultIdCardElementBold(),
   };
 }
 
@@ -155,6 +228,8 @@ export function normalizeIdCardPrintSettings(
   const template = input.template === "bold" || input.template === "minimal" || input.template === "classic"
     ? input.template
     : fallback.template;
+  const sizes = elementSizes(input.elementSizes, template, widthMm);
+  const positions = elementPositions(input.elementPositions, template, widthMm, heightMm);
   return {
     widthMm,
     heightMm,
@@ -166,6 +241,8 @@ export function normalizeIdCardPrintSettings(
     showLogo: typeof input.showLogo === "boolean" ? input.showLogo : fallback.showLogo,
     printFieldKeys: printableFieldKeys(input.printFieldKeys, fallback.printFieldKeys),
     printFieldLabels: printableFieldLabels(input.printFieldLabels),
-    elementPositions: elementPositions(input.elementPositions, template, widthMm, heightMm),
+    elementPositions: fitElementPositions(positions, sizes, widthMm, heightMm),
+    elementSizes: sizes,
+    elementBold: elementBold(input.elementBold),
   };
 }

@@ -152,9 +152,8 @@ async function printCard(params: { settings: IdCardPrintSettings; attendee: Atte
   .details div { display: flex; justify-content: space-between; gap: 4mm; margin-top: 1.5mm; font-size: 8.5pt; }
   .details .label-free { justify-content: flex-start; }
   .details dt { color: #64748B; } .details dd { margin: 0; font-weight: 700; text-align: right; }
-  .qr-block { display: flex; flex-direction: column; align-items: center; gap: 1mm; position: absolute; z-index: 2; background: #fff; padding: 1mm; }
+  .qr-block { position: absolute; z-index: 2; background: #fff; padding: 1mm; }
   .qr { width: 22mm; height: 22mm; display: block; image-rendering: pixelated; }
-  .qr-caption { font-size: 6.5pt; font-weight: 800; letter-spacing: 0.08em; }
   .footer { margin: auto 0 0; padding-top: 5mm; color: #64748B; font-size: 8pt; }
   /* Classic is a traditional framed event badge. */
   .classic .top { padding-bottom: 2mm; border-bottom: 0.3mm solid #000; }
@@ -184,7 +183,7 @@ async function printCard(params: { settings: IdCardPrintSettings; attendee: Atte
   /* One high-contrast output works well on both monochrome laser and thermal printers. */
   .card { color: #000; border-color: #000; } .label, .heading, .footer, .email, .details dt { color: #000; }
   .rule { background: #000; } .details { border-color: #000; } .logo { filter: grayscale(1) contrast(1.8); }
-</style></head><body><main class="card ${settings.template}"><div class="top"><div><p class="label">${badgeLabel}</p><h1 class="heading">${heading}</h1></div>${logo}</div><div class="rule"></div><p class="name">${name}</p>${emailLine}${details}<div class="qr-block"><img id="badge-qr" class="qr" src="${escapePrintHtml(qrDataUrl)}" alt="Check-in QR code"><span class="qr-caption">CHECK-IN QR</span></div><p class="footer">${escapePrintHtml(settings.footerText)}</p></main></body></html>`);
+</style></head><body><main class="card ${settings.template}"><div class="top"><div><p class="label">${badgeLabel}</p><h1 class="heading">${heading}</h1></div>${logo}</div><div class="rule"></div><p class="name">${name}</p>${emailLine}${details}<div class="qr-block"><img id="badge-qr" class="qr" src="${escapePrintHtml(qrDataUrl)}" alt="Check-in QR code"></div><p class="footer">${escapePrintHtml(settings.footerText)}</p></main></body></html>`);
   printWindow.document.close();
   printWindow.focus();
 
@@ -423,10 +422,9 @@ export function IdCardPrintDialog(props: {
               <Box sx={{ order: 0, display: settings.template === "bold" ? "none" : "block", width: settings.template === "classic" ? "28%" : "16%", height: settings.template === "minimal" ? 2 : 3, bgcolor: "#000", my: settings.template === "minimal" ? 1 : 2 }} />
               <Typography sx={{ order: 1, mt: settings.template === "minimal" ? 2.5 : 0, fontSize: `${settings.template === "bold" ? previewNameSize + 2 : previewNameSize}px`, fontWeight: settings.template === "minimal" ? 700 : 800, lineHeight: 1.05, letterSpacing: "-0.03em", textTransform: settings.template === "bold" ? "uppercase" : "none", overflowWrap: "anywhere" }}>{sampleAttendee.displayName}</Typography>
               {settings.showEmail && sampleAttendee.email ? <Typography variant="body2" sx={{ order: 2, mt: 1, opacity: 0.75, overflowWrap: "anywhere" }}>{sampleAttendee.email}</Typography> : null}
-              <Stack spacing={0.25} sx={{ ...previewQrSx, alignItems: "center", bgcolor: "#fff", p: 0.5, zIndex: 1 }}>
+              <Box sx={{ ...previewQrSx, bgcolor: "#fff", p: 0.5, zIndex: 1 }}>
                 <QRCode value={sampleAttendee.checkInQrToken} size={settings.template === "minimal" ? 54 : 62} bgColor="#FFFFFF" fgColor="#000000" level="M" />
-                <Typography variant="caption" sx={{ fontSize: "0.48rem", fontWeight: 800, letterSpacing: "0.06em" }}>CHECK-IN QR</Typography>
-              </Stack>
+              </Box>
               {previewFields.length > 0 ? (
                 <Stack spacing={0.4} sx={{ order: 3, maxWidth: settings.template === "classic" ? "62%" : undefined, borderTop: settings.template === "minimal" ? 0 : "1px solid", borderColor: "#000", mt: 1.5, pt: settings.template === "minimal" ? 0 : 1 }}>
                   {previewFields.map((detail) => {

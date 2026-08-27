@@ -3,9 +3,11 @@ import type { NextRequest } from "next/server";
 import crypto from "crypto";
 import { checkRateLimit } from "@/lib/rateLimit";
 
-function tooMany() {
+function tooMany(apiV1 = false) {
   return NextResponse.json(
-    { error: "Too many requests. Try again later." },
+    apiV1
+      ? { error: { code: "RATE_LIMITED", message: "Too many requests. Try again later." } }
+      : { error: "Too many requests. Try again later." },
     { status: 429, headers: { "Retry-After": "60", "Cache-Control": "no-store" } },
   );
 }
@@ -34,7 +36,7 @@ export async function proxy(request: NextRequest) {
   // failed distributed limiter means the application is not fully ready.
   if (pathname.startsWith("/api") && pathname !== "/api/health") {
     if (!(await checkRateLimit(request, "global"))) {
-      return tooMany();
+      return tooMany(pathname.startsWith("/api/v1"));
     }
   }
 

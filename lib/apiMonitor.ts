@@ -63,16 +63,16 @@ export function getApiMonitorSnapshot(): {
   };
 }
 
-export function withApiMonitoring(
+export function withApiMonitoring<TArgs extends unknown[]>(
   routeId: string,
-  handler: (request: Request) => Promise<Response>,
+  handler: (request: Request, ...args: TArgs) => Promise<Response>,
 ) {
-  return async (request: Request) => {
+  return async (request: Request, ...args: TArgs) => {
     const store = getStore();
     const s = getRoute(store, routeId);
     const t0 = performance.now();
     try {
-      const res = await handler(request);
+      const res = await handler(request, ...args);
       const dt = Math.max(0, Math.round(performance.now() - t0));
       s.total += 1;
       s.buckets[bucketKey(dt)] += 1;
@@ -83,19 +83,23 @@ export function withApiMonitoring(
         s.lastErrorMessage = `HTTP ${res.status}`;
       }
       return res;
-    } catch (e: unknown) {
+    } catch {
       const dt = Math.max(0, Math.round(performance.now() - t0));
       s.total += 1;
       s.buckets[bucketKey(dt)] += 1;
       s.errors += 1;
       s.lastSeenAt = new Date().toISOString();
       s.lastErrorAt = new Date().toISOString();
-      s.lastErrorMessage = e instanceof Error ? e.message : "Unknown error";
-      return NextResponse.json(
-        { ok: false, error: "Internal server error." },
-        { status: 500 },
-      );
+      // Monitoring must never retain exception text: upstream libraries can
+      // include SQL details, request data, or other sensitive values.
+      s.lastErrorMessage = "Unhandled exception";
+      if (routeId.includes("/api/v1/")) {
+        return NextResponse.json(
+          { error: { code: "INTERNAL_ERROR", message: "The request could not be completed." } },
+          { status: 500, headers: { "Cache-Control": "no-store" } },
+        );
+      }
+      return NextResponse.json({ ok: false, error: "Internal server error." }, { status: 500 });
     }
   };
 }
-

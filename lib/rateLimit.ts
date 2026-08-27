@@ -13,7 +13,9 @@ export type Bucket =
   | "upload"
   | "invite"
   | "checkin"
-  | "search";
+  | "search"
+  | "apiRead"
+  | "apiWrite";
 
 const limits: Record<Bucket, { max: number; windowMs: number }> = {
   global: { max: 300, windowMs: 60_000 },
@@ -28,6 +30,8 @@ const limits: Record<Bucket, { max: number; windowMs: number }> = {
   invite: { max: 30, windowMs: 60 * 60_000 },
   checkin: { max: 180, windowMs: 60_000 },
   search: { max: 60, windowMs: 60_000 },
+  apiRead: { max: 600, windowMs: 60_000 },
+  apiWrite: { max: 60, windowMs: 60_000 },
 };
 
 // Local fallback store

@@ -160,6 +160,7 @@ async function printCard(params: { settings: IdCardPrintSettings; attendee: Atte
   .classic .top { padding-bottom: 2mm; border-bottom: 0.3mm solid #000; }
   .classic .rule { width: 20mm; margin: 4mm 0 6mm; }
   .classic .qr-block { right: 8mm; bottom: 8mm; }
+  .classic .details { max-width: calc(100% - 30mm); }
   .classic .footer { padding-right: 30mm; }
   /* Bold uses a distinct side-band and uppercase name treatment. */
   .card.bold { border: 1.2mm solid #000; padding-left: 16mm; }
@@ -427,7 +428,7 @@ export function IdCardPrintDialog(props: {
                 <Typography variant="caption" sx={{ fontSize: "0.48rem", fontWeight: 800, letterSpacing: "0.06em" }}>CHECK-IN QR</Typography>
               </Stack>
               {previewFields.length > 0 ? (
-                <Stack spacing={0.4} sx={{ order: 3, borderTop: settings.template === "minimal" ? 0 : "1px solid", borderColor: "#000", mt: 1.5, pt: settings.template === "minimal" ? 0 : 1 }}>
+                <Stack spacing={0.4} sx={{ order: 3, maxWidth: settings.template === "classic" ? "62%" : undefined, borderTop: settings.template === "minimal" ? 0 : "1px solid", borderColor: "#000", mt: 1.5, pt: settings.template === "minimal" ? 0 : 1 }}>
                   {previewFields.map((detail) => {
                     const label = settings.printFieldLabels[detail.key] ?? detail.label;
                     return <Stack direction="row" key={detail.key} sx={{ justifyContent: label ? "space-between" : "flex-start", gap: 1 }}>{label ? <Typography variant="caption" sx={{ opacity: 0.72 }}>{label}</Typography> : null}<Typography variant="caption" sx={{ fontWeight: 700, textAlign: "right" }}>{detail.value}</Typography></Stack>;

@@ -227,56 +227,56 @@ export default async function OrgDashboardPage({ params, searchParams }: Props) 
 
           {totalPages > 1 ? (
             <Stack direction="row" spacing={1} sx={{ justifyContent: "center", pt: 1 }}>
-              <Button
-                component={Link}
-                href={`/dashboard/${organisation.slug}?page=${safePage - 1}`}
-                variant="outlined"
-                size="small"
-                disabled={safePage <= 1}
-                startIcon={<NavigateBeforeIcon />}
-                sx={{ borderRadius: 2 }}
-              >
-                Previous
-              </Button>
+              {safePage <= 1 ? (
+                <Button variant="outlined" size="small" disabled startIcon={<NavigateBeforeIcon />} sx={{ borderRadius: 2 }}>
+                  Previous
+                </Button>
+              ) : (
+                <Link href={`/dashboard/${organisation.slug}?page=${safePage - 1}`} style={{ textDecoration: "none" }}>
+                  <Button component="span" variant="outlined" size="small" startIcon={<NavigateBeforeIcon />} sx={{ borderRadius: 2 }}>
+                    Previous
+                  </Button>
+                </Link>
+              )}
               {(() => {
                 const pages = [];
                 for (let i = 1; i <= totalPages; i++) {
                   pages.push(i);
                 }
                 return pages.map((p) => (
-                  <Button
-                    key={p}
-                    component={Link}
-                    href={`/dashboard/${organisation.slug}?page=${p}`}
-                    variant={p === safePage ? "contained" : "text"}
-                    size="small"
-                    sx={{
-                      minWidth: 40,
-                      borderRadius: 2,
-                      ...(p === safePage
-                        ? {
-                            background: "linear-gradient(135deg, #7CF5B6 0%, #B9AEFF 100%)",
-                            color: "#061814",
-                            fontWeight: 750,
-                          }
-                        : {}),
-                    }}
-                  >
-                    {p}
-                  </Button>
+                  <Link key={p} href={`/dashboard/${organisation.slug}?page=${p}`} style={{ textDecoration: "none" }}>
+                    <Button
+                      component="span"
+                      variant={p === safePage ? "contained" : "text"}
+                      size="small"
+                      sx={{
+                        minWidth: 40,
+                        borderRadius: 2,
+                        ...(p === safePage
+                          ? {
+                              background: "linear-gradient(135deg, #7CF5B6 0%, #B9AEFF 100%)",
+                              color: "#061814",
+                              fontWeight: 750,
+                            }
+                          : {}),
+                      }}
+                    >
+                      {p}
+                    </Button>
+                  </Link>
                 ));
               })()}
-              <Button
-                component={Link}
-                href={`/dashboard/${organisation.slug}?page=${safePage + 1}`}
-                variant="outlined"
-                size="small"
-                disabled={safePage >= totalPages}
-                endIcon={<NavigateNextIcon />}
-                sx={{ borderRadius: 2 }}
-              >
-                Next
-              </Button>
+              {safePage >= totalPages ? (
+                <Button variant="outlined" size="small" disabled endIcon={<NavigateNextIcon />} sx={{ borderRadius: 2 }}>
+                  Next
+                </Button>
+              ) : (
+                <Link href={`/dashboard/${organisation.slug}?page=${safePage + 1}`} style={{ textDecoration: "none" }}>
+                  <Button component="span" variant="outlined" size="small" endIcon={<NavigateNextIcon />} sx={{ borderRadius: 2 }}>
+                    Next
+                  </Button>
+                </Link>
+              )}
             </Stack>
           ) : null}
         </Stack>

@@ -4,7 +4,7 @@ import { EventPrivacyType, EventStatus } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { canManageEvents, getMembership } from "@/lib/permissions";
-import { shouldIndexPublicEvent } from "@/lib/eventVisibility";
+import { isEventPublished, shouldIndexPublicEvent } from "@/lib/eventVisibility";
 import { countConfirmedForEvent } from "@/lib/rsvpCapacity";
 import { EventPublicShell } from "@/components/event/EventPublicShell";
 import { safeTimeZone } from "@/lib/timeZone";
@@ -26,7 +26,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   const noindex = { index: false, follow: false } as const;
 
-  if (event.status === EventStatus.DRAFT) {
+  if (!isEventPublished(event.status)) {
     return { title: "Event", robots: noindex };
   }
 
@@ -120,7 +120,7 @@ export default async function EventPage({ params }: Props) {
   const canPreviewDraft = canManageEvents(membership);
   const canManage = canManageEvents(membership);
 
-  if (event.status === EventStatus.DRAFT && !canPreviewDraft) notFound();
+  if (!isEventPublished(event.status) && !canPreviewDraft) notFound();
   if (event.privacyType === EventPrivacyType.INVITE_ONLY && !canManage) {
     const email = session?.user?.email?.trim().toLowerCase();
     if (!email) notFound();

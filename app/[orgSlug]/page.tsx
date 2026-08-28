@@ -12,7 +12,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getMembership } from "@/lib/permissions";
 import { OrgEventsContainer } from "@/components/org/OrgEventsContainer";
-import { EventStatus } from "@prisma/client";
+import { EventPrivacyType, EventStatus } from "@prisma/client";
 
 import type { Metadata } from "next";
 
@@ -54,22 +54,25 @@ export default async function OrganisationPage({ params }: Props) {
     ? await getMembership(session.user.id, org.id)
     : null;
 
-  // Fetch all published events (both past and upcoming). The public list is
-  // ordered by publication creation, with the newest addition shown first.
+  // Only fully public, published events belong on an organisation's public
+  // listing. Hidden-link, approval-required, and invite-only events remain
+  // reachable only through their intended access paths.
   const events = await prisma.event.findMany({
     where: {
       organisationId: org.id,
       status: EventStatus.PUBLISHED,
+      privacyType: EventPrivacyType.PUBLIC,
     },
     orderBy: { createdAt: "desc" },
   });
 
-  // Fetch all instances of published series (both past and upcoming)
+  // Apply the same visibility boundary to recurring-series instances.
   const instances = await prisma.eventInstance.findMany({
     where: {
       series: {
         organisationId: org.id,
         status: EventStatus.PUBLISHED,
+        privacyType: EventPrivacyType.PUBLIC,
       },
     },
     include: { series: true },

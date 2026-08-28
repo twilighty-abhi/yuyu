@@ -10,7 +10,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { canManageEvents, getMembership } from "@/lib/permissions";
 import { RsvpForm } from "@/components/rsvp/RsvpForm";
-import { shouldIndexPublicEvent } from "@/lib/eventVisibility";
+import { isEventPublished, shouldIndexPublicEvent } from "@/lib/eventVisibility";
 import { countConfirmedForInstance } from "@/lib/rsvpCapacity";
 import { safeTimeZone } from "@/lib/timeZone";
 
@@ -32,7 +32,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   if (!instance) return { title: "Event" };
   const series = instance.series;
   const noindex = { index: false, follow: false } as const;
-  if (series.status === EventStatus.DRAFT) {
+  if (!isEventPublished(series.status)) {
     return { title: "Event", robots: noindex };
   }
   if (series.privacyType === EventPrivacyType.INVITE_ONLY) {
@@ -96,7 +96,7 @@ export default async function InstanceEventPage({ params }: Props) {
   const canPreviewDraft = canManageEvents(membership);
   const canManage = canManageEvents(membership);
 
-  if (series.status === EventStatus.DRAFT && !canPreviewDraft) notFound();
+  if (!isEventPublished(series.status) && !canPreviewDraft) notFound();
   if (series.privacyType === EventPrivacyType.INVITE_ONLY && !canManage) {
     const email = session?.user?.email?.trim().toLowerCase();
     if (!email) notFound();

@@ -12,6 +12,8 @@ import { usePathname } from "next/navigation";
 const footerLinks = [
   { label: "Discover", href: "/discover" },
   { label: "Dashboard", href: "/dashboard" },
+  { label: "Privacy", href: "/privacy" },
+  { label: "Terms", href: "/terms" },
 ];
 
 export function AppFooter() {

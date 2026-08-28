@@ -20,6 +20,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx prisma validate
+        env:
+          # Prisma resolves datasource URLs while validating the schema, even
+          # though this command does not connect to the database.
+          DATABASE_URL: postgresql://build:build@localhost:5432/yuyu
       - run: npm run lint
       - run: npx tsc --noEmit
       - run: npm run test:unit

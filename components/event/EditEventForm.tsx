@@ -137,6 +137,8 @@ export function EditEventForm(props: {
         mapLinkUrl: String(fd.get("mapLinkUrl") ?? ""),
         isOnline: fd.get("isOnline") === "on",
         capacity: capacityRaw,
+        registrationClosesAt: String(fd.get("registrationClosesAt") ?? ""),
+        registrationLeadMinutes: String(fd.get("registrationLeadMinutes") ?? ""),
         status,
         privacyType,
       });
@@ -521,6 +523,12 @@ export function EditEventForm(props: {
                     defaultValue={event.capacity ?? ""}
                     helperText="Leave empty for unlimited RSVPs."
                   />
+                </Grid>
+                <Grid size={{ xs: 12, md: 4 }}>
+                  <TextField name="registrationClosesAt" label="Registration closes at" type="datetime-local" fullWidth defaultValue={(event as Event & { registrationClosesAt?: Date | null }).registrationClosesAt ? toDatetimeLocalValue(new Date((event as Event & { registrationClosesAt?: Date | null }).registrationClosesAt!)) : ""} slotProps={{ inputLabel: { shrink: true } }} helperText="Use this or a lead time, not both." />
+                </Grid>
+                <Grid size={{ xs: 12, md: 4 }}>
+                  <TextField name="registrationLeadMinutes" label="Close before start (minutes)" type="number" fullWidth slotProps={{ htmlInput: { min: 0 } }} defaultValue={(event as Event & { registrationLeadMinutes?: number | null }).registrationLeadMinutes ?? ""} helperText="Relative cutoff; updates when the start time changes." />
                 </Grid>
                 <Grid size={{ xs: 12 }}>
                   <Paper

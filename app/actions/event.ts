@@ -172,6 +172,8 @@ export async function createEvent(input: unknown): Promise<ActionResult<{ id: st
         capacity: data.capacity ?? null,
         status: data.status ?? EventStatus.DRAFT,
         privacyType: data.privacyType ?? EventPrivacyType.PUBLIC,
+        registrationClosesAt: data.registrationClosesAt ?? null,
+        registrationLeadMinutes: data.registrationLeadMinutes ?? null,
       },
     });
 
@@ -251,6 +253,8 @@ export async function updateEvent(input: unknown): Promise<ActionResult> {
         capacity: data.capacity ?? null,
         status: data.status,
         privacyType: data.privacyType,
+        registrationClosesAt: data.registrationClosesAt ?? null,
+        registrationLeadMinutes: data.registrationLeadMinutes ?? null,
       },
     });
 

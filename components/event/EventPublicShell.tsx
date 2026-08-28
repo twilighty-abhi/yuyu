@@ -62,6 +62,7 @@ type Props = {
   attendeeSummary: string;
   avatars: EventPublicAvatar[];
   registrationFields: RegistrationFieldDefinition[];
+  scheduleUrl?: string;
 };
 
 function stringAvatar(name: string) {
@@ -99,6 +100,7 @@ export function EventPublicShell(props: Props) {
     attendeeSummary,
     avatars,
     registrationFields,
+    scheduleUrl,
   } = props;
 
   const lsKey = `yuyu:rsvp:${orgSlug}:e:${event.slug}`;
@@ -158,6 +160,7 @@ export function EventPublicShell(props: Props) {
         spacing={{ xs: 2, md: 3 }}
         sx={{ alignItems: "flex-start", minWidth: 0, width: "100%" }}
       >
+        {scheduleUrl ? <Grid size={{ xs: 12 }}><Link href={scheduleUrl} style={{ textDecoration: "none" }}><Button variant="outlined">View live schedule</Button></Link></Grid> : null}
         <Grid size={{ xs: 12, md: 4 }} sx={{ minWidth: 0 }}>
           <Stack spacing={2.5} sx={{ position: { md: "sticky" }, top: { md: 88 }, minWidth: 0 }}>
             <Paper

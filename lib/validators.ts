@@ -33,6 +33,11 @@ const attendeeNameSchema = z
   .max(200, "Name must be at most 200 characters")
   .refine((value) => /\p{L}/u.test(value), "Enter a valid name");
 
+const registrationCutoffSchema = {
+  registrationClosesAt: z.preprocess((value) => value === "" || value == null ? undefined : value, z.coerce.date().optional()),
+  registrationLeadMinutes: z.preprocess((value) => value === "" || value == null ? undefined : Number(value), z.number().int().min(0).max(525_600).optional()),
+};
+
 function validateEventScheduleAndLocation(
   data: {
     startDateTime: Date;
@@ -136,8 +141,14 @@ export const createEventSchema = z
       .nativeEnum(EventPrivacyType)
       .optional()
       .default(EventPrivacyType.PUBLIC),
+    ...registrationCutoffSchema,
   })
-  .superRefine(validateEventScheduleAndLocation);
+  .superRefine((data, ctx) => {
+    validateEventScheduleAndLocation(data, ctx);
+    if (data.registrationClosesAt && data.registrationLeadMinutes != null) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["registrationClosesAt"], message: "Choose one registration cutoff mode." });
+    if (data.registrationClosesAt && data.registrationClosesAt > data.startDateTime) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["registrationClosesAt"], message: "Registration must close on or before the event starts." });
+    if (data.registrationLeadMinutes != null && data.registrationLeadMinutes * 60_000 > data.startDateTime.getTime() - Date.now()) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["registrationLeadMinutes"], message: "Registration cutoff cannot be before now." });
+  });
 
 const rsvpTargetBase = z
   .object({
@@ -230,8 +241,13 @@ export const updateEventSchema = z
     }, z.number().int().positive().optional()),
     status: z.nativeEnum(EventStatus),
     privacyType: z.nativeEnum(EventPrivacyType),
+    ...registrationCutoffSchema,
   })
-  .superRefine(validateEventScheduleAndLocation);
+  .superRefine((data, ctx) => {
+    validateEventScheduleAndLocation(data, ctx);
+    if (data.registrationClosesAt && data.registrationLeadMinutes != null) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["registrationClosesAt"], message: "Choose one registration cutoff mode." });
+    if (data.registrationClosesAt && data.registrationClosesAt > data.startDateTime) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["registrationClosesAt"], message: "Registration must close on or before the event starts." });
+  });
 
 export const deleteEventSchema = z.object({
   organisationSlug: z.string().trim().min(1),

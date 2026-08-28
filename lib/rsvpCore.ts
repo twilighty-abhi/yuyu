@@ -10,6 +10,7 @@ import { manualRsvpSchema, rsvpGuestSchema, rsvpLoggedInSchema } from "@/lib/val
 import type { ActionResult } from "@/app/actions/org";
 import { flattenZodErrors } from "@/app/actions/utils";
 import { enqueueRsvpConfirmation } from "@/lib/outbox";
+import { isRegistrationClosed } from "@/lib/registrationCutoff";
 
 function normalizeGuestEmail(email: string) {
   return email.trim().toLowerCase();
@@ -327,7 +328,8 @@ export async function submitRsvpCore(
     if (
       !event ||
       event.status !== EventStatus.PUBLISHED ||
-      event.endDateTime <= new Date()
+      event.endDateTime <= new Date() ||
+      isRegistrationClosed(event)
     ) {
       return { ok: false, error: "This event is not open for RSVP." };
     }
@@ -476,7 +478,8 @@ export async function submitRsvpCore(
   if (
     !event ||
     event.status !== EventStatus.PUBLISHED ||
-    event.endDateTime <= new Date()
+    event.endDateTime <= new Date() ||
+    isRegistrationClosed(event)
   ) {
     return { ok: false, error: "This event is not open for RSVP." };
   }

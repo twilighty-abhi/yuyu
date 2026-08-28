@@ -8,6 +8,7 @@ import { isEventPublished, shouldIndexPublicEvent } from "@/lib/eventVisibility"
 import { countConfirmedForEvent } from "@/lib/rsvpCapacity";
 import { EventPublicShell } from "@/components/event/EventPublicShell";
 import { safeTimeZone } from "@/lib/timeZone";
+import { isRegistrationClosed } from "@/lib/registrationCutoff";
 
 type Props = { params: Promise<{ orgSlug: string; eventSlug: string }> };
 
@@ -146,7 +147,7 @@ export default async function EventPage({ params }: Props) {
   }));
 
   const isPast = event.endDateTime <= new Date();
-  const showRsvp = event.status === EventStatus.PUBLISHED && !isPast;
+  const showRsvp = event.status === EventStatus.PUBLISHED && !isPast && !isRegistrationClosed(event);
   const confirmedCount = await countConfirmedForEvent(event.id);
   const spotsLeft =
     event.capacity != null
@@ -201,6 +202,7 @@ export default async function EventPage({ params }: Props) {
       attendeeSummary={attendeeSummary}
       avatars={avatars}
       registrationFields={registrationFields}
+      scheduleUrl={`/${org.slug}/${event.slug}/schedule`}
     />
   );
 }

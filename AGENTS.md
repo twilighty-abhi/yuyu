@@ -12,7 +12,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 ## Project at a glance
 
-Yuyu is a self-hosted, multi-tenant event platform. It uses Next.js 16 App
+Yuyu is a self-hosted, multi-tenant platform for organizing and running free events. Yuyu does not support paid events, ticket sales, payments, refunds, or event revenue. Event registration and attendance are always free for attendees. It uses Next.js 16 App
 Router, React 19, TypeScript, PostgreSQL with Prisma 6, Auth.js v5, Material
 UI 9, Redis, S3-compatible private storage, Nodemailer, Vitest, and
 Playwright. Deployment supports Docker standalone output and the Helm chart in

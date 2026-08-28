@@ -1,50 +1,10 @@
 import type { RsvpStatus } from "@prisma/client";
-import nodemailer from "nodemailer";
+import { getEmailTransport } from "./transporter";
 
 function escapeHtml(value: string) {
   return value.replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]!);
 }
 
-function getTransporter() {
-  const service = process.env.SMTP_SERVICE;
-  const host = process.env.SMTP_HOST;
-  const port = parseInt(process.env.SMTP_PORT || "587", 10);
-  const secure = process.env.SMTP_SECURE === "true";
-  const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASSWORD;
-  const tls = process.env.NODE_ENV === "production" ? { minVersion: "TLSv1.2" as const, rejectUnauthorized: true } : undefined;
-  const requireTLS = process.env.NODE_ENV === "production" && !secure;
-
-  if (service) {
-    return nodemailer.createTransport({
-      service,
-      auth: user && pass ? { user, pass } : undefined,
-      disableFileAccess: true,
-      disableUrlAccess: true,
-      requireTLS,
-      tls,
-    });
-  }
-
-  if (!host) {
-    return null;
-  }
-
-  return nodemailer.createTransport({
-    host,
-    port,
-    secure,
-    auth: user && pass ? { user, pass } : undefined,
-    disableFileAccess: true,
-    disableUrlAccess: true,
-    requireTLS,
-    tls,
-  });
-}
-
-function getFromAddress(): string {
-  return process.env.EMAIL_FROM || "Yuyu Events <noreply@localhost>";
-}
 
 function getBaseUrl(): string {
   return (process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000").replace(/\/$/, "");
@@ -56,8 +16,7 @@ export async function sendRSVPConfirmation(params: {
   status: RsvpStatus;
   checkInToken?: string;
 }): Promise<void> {
-  const transporter = getTransporter();
-  const from = getFromAddress();
+  const { transporter, from } = await getEmailTransport();
   const baseUrl = getBaseUrl();
 
   const ticketUrl = params.checkInToken ? `${baseUrl}/ticket/${params.checkInToken}` : null;
@@ -142,8 +101,7 @@ export async function sendApprovalNotification(params: {
   eventTitle: string;
   approved: boolean;
 }): Promise<void> {
-  const transporter = getTransporter();
-  const from = getFromAddress();
+  const { transporter, from } = await getEmailTransport();
 
   const statusText = params.approved ? "Approved" : "Declined";
   const safeTitle = escapeHtml(params.eventTitle);
@@ -206,8 +164,7 @@ export async function sendEventInvitation(params: {
   orgSlug: string;
   eventSlug: string;
 }): Promise<void> {
-  const transporter = getTransporter();
-  const from = getFromAddress();
+  const { transporter, from } = await getEmailTransport();
   const eventUrl = `${getBaseUrl()}/${encodeURIComponent(params.orgSlug)}/${encodeURIComponent(params.eventSlug)}`;
   const safeTitle = escapeHtml(params.eventTitle);
   const safeOrganisationName = escapeHtml(params.organisationName);
@@ -245,8 +202,7 @@ export async function sendReminder(params: {
   eventTitle: string;
   startsAtIso: string;
 }): Promise<void> {
-  const transporter = getTransporter();
-  const from = getFromAddress();
+  const { transporter, from } = await getEmailTransport();
 
   const formattedDate = new Date(params.startsAtIso).toLocaleString();
   const safeTitle = escapeHtml(params.eventTitle);

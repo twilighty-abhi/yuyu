@@ -79,12 +79,8 @@ function issueMessages(error: z.ZodError) {
 export function validateRuntimeEnvironment() {
   if (process.env.NODE_ENV !== "production") return;
   const parsed = envSchema.safeParse(process.env);
-  const missing = ["AUTH_URL", "NEXT_PUBLIC_BASE_URL", "REDIS_URL", "CRON_SECRET", "HEALTHCHECK_SECRET", "NEXT_SERVER_ACTIONS_ENCRYPTION_KEY", "MFA_ENCRYPTION_KEY", "EMAIL_FROM", "TRUSTED_PROXY_IP_HEADER", "S3_BUCKET", "S3_REGION"]
+  const missing = ["AUTH_URL", "NEXT_PUBLIC_BASE_URL", "REDIS_URL", "CRON_SECRET", "HEALTHCHECK_SECRET", "NEXT_SERVER_ACTIONS_ENCRYPTION_KEY", "MFA_ENCRYPTION_KEY", "TRUSTED_PROXY_IP_HEADER", "S3_BUCKET", "S3_REGION"]
     .filter((key) => !process.env[key]?.trim());
-  if (!(process.env.SMTP_SERVICE?.trim() || process.env.SMTP_HOST?.trim())) missing.push("SMTP_SERVICE or SMTP_HOST");
-  if ((process.env.SMTP_HOST || process.env.SMTP_SERVICE) && process.env.SMTP_ALLOW_UNAUTHENTICATED !== "1" && (!process.env.SMTP_USER || !process.env.SMTP_PASSWORD)) {
-    missing.push("SMTP_USER and SMTP_PASSWORD (or SMTP_ALLOW_UNAUTHENTICATED=1)");
-  }
   if (Boolean(process.env.S3_ACCESS_KEY_ID) !== Boolean(process.env.S3_SECRET_ACCESS_KEY)) {
     missing.push("both S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY, or neither when using an IAM role");
   }

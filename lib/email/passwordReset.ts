@@ -1,54 +1,15 @@
-import nodemailer from "nodemailer";
+import { getEmailTransport } from "./transporter";
 
 function escapeHtml(value: string) {
   return value.replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]!);
 }
 
-function getTransporter() {
-  const service = process.env.SMTP_SERVICE;
-  const host = process.env.SMTP_HOST;
-  const port = parseInt(process.env.SMTP_PORT || "587", 10);
-  const secure = process.env.SMTP_SECURE === "true";
-  const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASSWORD;
-  const tls = process.env.NODE_ENV === "production" ? { minVersion: "TLSv1.2" as const, rejectUnauthorized: true } : undefined;
-  const requireTLS = process.env.NODE_ENV === "production" && !secure;
-
-  if (service) {
-    return nodemailer.createTransport({
-      service,
-      auth: user && pass ? { user, pass } : undefined,
-      disableFileAccess: true,
-      disableUrlAccess: true,
-      requireTLS,
-      tls,
-    });
-  }
-
-  if (!host) return null;
-
-  return nodemailer.createTransport({
-    host,
-    port,
-    secure,
-    auth: user && pass ? { user, pass } : undefined,
-    disableFileAccess: true,
-    disableUrlAccess: true,
-    requireTLS,
-    tls,
-  });
-}
-
-function getFromAddress(): string {
-  return process.env.EMAIL_FROM || "Yuyu Events <noreply@localhost>";
-}
 
 export async function sendPasswordResetEmail(params: {
   to: string;
   resetUrl: string;
 }): Promise<void> {
-  const transporter = getTransporter();
-  const from = getFromAddress();
+  const { transporter, from } = await getEmailTransport();
   const safeResetUrl = escapeHtml(params.resetUrl);
 
   const html = `

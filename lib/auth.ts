@@ -8,10 +8,7 @@ import { prisma } from "@/lib/db";
 import { hasVerifiedGoogleEmail } from "@/lib/googleAuth";
 import { decryptMfaSecret, hashRecoveryCode, verifyMfaCode } from "@/lib/mfa";
 import { isNewUserRegistrationEnabled } from "@/lib/instanceSettings";
-
-const googleId = process.env.AUTH_GOOGLE_ID ?? process.env.GOOGLE_CLIENT_ID;
-const googleSecret =
-  process.env.AUTH_GOOGLE_SECRET ?? process.env.GOOGLE_CLIENT_SECRET;
+import { getGoogleSsoSettings } from "@/lib/instanceSettings";
 
 const credentialsSchema = z.object({
   email: z.string().trim().toLowerCase().email(),
@@ -32,7 +29,9 @@ class EmailVerificationRequiredError extends CredentialsSignin {
   code = "email_verification_required";
 }
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
+export const { handlers, auth, signIn, signOut } = NextAuth(async () => {
+  const google = await getGoogleSsoSettings();
+  return {
   adapter: PrismaAdapter(prisma),
   // Credentials requires JWT sessions; OAuth accounts are still persisted
   // via the adapter's `linkAccount` hook.
@@ -49,11 +48,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     error: "/login",
   },
   providers: [
-    ...(googleId && googleSecret
+    ...(google
       ? [
           Google({
-            clientId: googleId,
-            clientSecret: googleSecret,
+            clientId: google.clientId,
+            clientSecret: google.clientSecret,
             // Existing password users can use the same verified Google email.
             // This is deliberately scoped to Google, never arbitrary providers.
             allowDangerousEmailAccountLinking: true,
@@ -175,4 +174,5 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
     },
   },
+  };
 });

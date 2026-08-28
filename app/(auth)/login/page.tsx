@@ -6,13 +6,16 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import { connection } from "next/server";
 import { LoginForm } from "./ui";
-import { isNewUserRegistrationEnabled } from "@/lib/instanceSettings";
+import { getGoogleSsoSettings, isNewUserRegistrationEnabled } from "@/lib/instanceSettings";
 
 export default async function LoginPage() {
   // The public registration policy is an instance setting and must be read
   // only for a real request, never from a build-time database.
   await connection();
-  const accountCreationEnabled = await isNewUserRegistrationEnabled();
+  const [accountCreationEnabled, googleSsoConfigured] = await Promise.all([
+    isNewUserRegistrationEnabled(),
+    getGoogleSsoSettings().then(Boolean),
+  ]);
   return (
     <Box
       sx={{
@@ -82,7 +85,7 @@ export default async function LoginPage() {
                   }}
                 >
                   <Suspense fallback={<Typography color="text.secondary">Loading sign in…</Typography>}>
-                    <LoginForm accountCreationEnabled={accountCreationEnabled} />
+                    <LoginForm accountCreationEnabled={accountCreationEnabled} googleSsoConfigured={googleSsoConfigured} />
                   </Suspense>
                 </Box>
               </Stack>

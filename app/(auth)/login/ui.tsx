@@ -15,8 +15,6 @@ import Link from "@mui/material/Link";
 import Typography from "@mui/material/Typography";
 import { resendEmailVerification, signUpWithPassword } from "@/app/actions/auth";
 
-const showGoogle = process.env.NEXT_PUBLIC_AUTH_GOOGLE_CONFIGURED === "1";
-
 function GoogleMark(props: { size?: number }) {
   const size = props.size ?? 18;
   return (
@@ -88,7 +86,7 @@ const primaryButtonSx = {
 
 type Mode = "signin" | "signup";
 
-export function LoginForm({ accountCreationEnabled }: { accountCreationEnabled: boolean }) {
+export function LoginForm({ accountCreationEnabled, googleSsoConfigured }: { accountCreationEnabled: boolean; googleSsoConfigured: boolean }) {
   const router = useRouter();
   const sp = useSearchParams();
   const callbackUrl = useMemo(() => {
@@ -284,7 +282,7 @@ export function LoginForm({ accountCreationEnabled }: { accountCreationEnabled: 
         </Button>
       ) : null}
 
-      {showGoogle ? (
+      {googleSsoConfigured ? (
         <Button
           variant="contained"
           size="large"
@@ -315,9 +313,7 @@ export function LoginForm({ accountCreationEnabled }: { accountCreationEnabled: 
         </Button>
       ) : (
         <Alert severity="info" variant="outlined">
-          Set <code>AUTH_GOOGLE_ID</code>, <code>AUTH_GOOGLE_SECRET</code>, and{" "}
-          <code>NEXT_PUBLIC_AUTH_GOOGLE_CONFIGURED=1</code> in <code>.env</code>{" "}
-          to enable Google sign-in.
+          Google sign-in is not configured for this instance.
         </Alert>
       )}
 

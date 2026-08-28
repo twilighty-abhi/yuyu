@@ -7,9 +7,10 @@ import Button from "@mui/material/Button";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import { prisma } from "@/lib/db";
 import { getRequestOrigin } from "@/lib/publicUrl";
-import { requireOrgDashboardAccess } from "@/lib/permissions";
+import { isOrgAdmin, requireOrgDashboardAccess } from "@/lib/permissions";
 import { canViewEventDashboard } from "@/lib/eventAccess";
 import { EventManageTabs } from "@/components/dashboard/EventManageTabs";
+import { EventReportDownloadButton } from "@/components/reports/EventReportDownloadButton";
 
 type Props = {
   params: Promise<{ orgSlug: string; eventId: string }>;
@@ -179,6 +180,9 @@ export default async function EventManagePage({ params }: Props) {
               Check-in
             </Button>
           </Link>
+          {access.membership && isOrgAdmin(access.membership.role) && event.endDateTime < new Date() ? (
+            <EventReportDownloadButton href={`/api/reports/event/${event.id}`} />
+          ) : null}
           <Link
             href={`/${organisation.slug}/${event.slug}`}
             style={{ textDecoration: "none" }}

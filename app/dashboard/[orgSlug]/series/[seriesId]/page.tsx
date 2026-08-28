@@ -11,12 +11,13 @@ import TableContainer from "@mui/material/TableContainer";
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { getRequestOrigin } from "@/lib/publicUrl";
-import { requireOrgDashboardAccess } from "@/lib/permissions";
+import { isOrgAdmin, requireOrgDashboardAccess } from "@/lib/permissions";
 import { canViewEventDashboard } from "@/lib/eventAccess";
 import { EditSeriesForm } from "@/components/series/EditSeriesForm";
 import { SeriesInvitePanel } from "@/components/invites/SeriesInvitePanel";
 import { AttendeeTable } from "@/components/attendees/AttendeeTable";
 import { ScheduleManager } from "@/components/schedule/ScheduleManager";
+import { EventReportDownloadButton } from "@/components/reports/EventReportDownloadButton";
 
 type Props = { params: Promise<{ orgSlug: string; seriesId: string }> };
 
@@ -59,6 +60,9 @@ export default async function SeriesManagePage({ params }: Props) {
     : [];
 
   const origin = await getRequestOrigin();
+  const now = new Date();
+  const canDownloadReports = Boolean(access.membership && isOrgAdmin(access.membership.role));
+  const finishedInstances = series.instances.filter((instance) => instance.endDateTime < now);
   const attendees = rsvps.map((r) => ({
     id: r.id,
     status: r.status,
@@ -133,6 +137,32 @@ export default async function SeriesManagePage({ params }: Props) {
           </TableBody>
         </Table>
       </TableContainer>
+
+      {canDownloadReports ? (
+        <>
+          <Typography variant="h6" component="h2" sx={{ fontWeight: 700, letterSpacing: "-0.3px" }}>
+            Reports
+          </Typography>
+          <Paper variant="outlined" sx={{ p: { xs: 2, sm: 3 }, borderRadius: "18px", borderColor: "rgba(255,255,255,0.08)", backgroundColor: "rgba(255,255,255,0.025)" }}>
+            {finishedInstances.length ? (
+              <Stack spacing={1.25}>
+                {finishedInstances.map((instance) => (
+                  <Stack key={instance.id} direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ alignItems: { xs: "flex-start", sm: "center" }, justifyContent: "space-between" }}>
+                    <Typography variant="body2">
+                      {instance.startDateTime.toLocaleString(undefined, { timeZone: series.timezone })}
+                    </Typography>
+                    <EventReportDownloadButton href={`/api/reports/instance/${instance.id}`} />
+                  </Stack>
+                ))}
+              </Stack>
+            ) : (
+              <Typography variant="body2" color="text.secondary">
+                Reports become available after an occurrence has finished.
+              </Typography>
+            )}
+          </Paper>
+        </>
+      ) : null}
 
       {firstInstanceId ? (
         <>

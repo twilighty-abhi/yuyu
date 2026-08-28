@@ -11,6 +11,7 @@ import { env } from "@/lib/env";
 import { InstanceOperationsControls } from "@/components/super-admin/InstanceOperationsControls";
 import { OUTBOX_SCHEDULER_HEARTBEAT_KEY } from "@/lib/operationalHeartbeat";
 import { redactSensitiveText } from "@/lib/redactSensitiveText";
+import { INSTANCE_SETTINGS_ID } from "@/lib/instanceSettings";
 
 function StatusChip(props: { ok: boolean; ready: string; missing: string }) {
   return <Chip size="small" color={props.ok ? "success" : "warning"} variant="outlined" label={props.ok ? props.ready : props.missing} />;
@@ -34,7 +35,7 @@ export default async function SuperAdminOperationsPage() {
   const heartbeat = (prisma as unknown as {
     operationalHeartbeat?: Pick<typeof prisma.operationalHeartbeat, "findUnique">;
   }).operationalHeartbeat;
-  const [outboxGroups, expiredTokens, lastRestoreDrill, oldestPending, schedulerHeartbeat, failedMessages] = await Promise.all([
+  const [outboxGroups, expiredTokens, lastRestoreDrill, oldestPending, schedulerHeartbeat, failedMessages, instanceSettings] = await Promise.all([
     prisma.outboxMessage.groupBy({ by: ["status"], _count: { _all: true } }),
     prisma.verificationToken.count({ where: { expires: { lt: now } } }),
     prisma.auditEvent.findFirst({
@@ -65,9 +66,12 @@ export default async function SuperAdminOperationsPage() {
       take: 25,
       select: { id: true, kind: true, attempts: true, lastError: true, createdAt: true },
     }),
+    prisma.instanceSetting.findUnique({ where: { id: INSTANCE_SETTINGS_ID } }),
   ]);
   const outbox = new Map(outboxGroups.map((row) => [row.status, row._count._all]));
-  const reportedBackupAt = env?.BACKUP_LAST_SUCCESS_AT ? new Date(env.BACKUP_LAST_SUCCESS_AT) : null;
+  const backupProvider = instanceSettings?.backupProvider ?? env?.BACKUP_PROVIDER;
+  const backupRetentionDays = instanceSettings?.backupRetentionDays ?? env?.BACKUP_RETENTION_DAYS;
+  const reportedBackupAt = instanceSettings?.backupLastSuccessAt ?? (env?.BACKUP_LAST_SUCCESS_AT ? new Date(env.BACKUP_LAST_SUCCESS_AT) : null);
   const backupFresh = reportedBackupAt != null && now.getTime() - reportedBackupAt.getTime() < 26 * 3_600_000;
   const schedulerFresh = schedulerHeartbeat?.lastSucceededAt != null
     && now.getTime() - schedulerHeartbeat.lastSucceededAt.getTime() < 3 * 60_000;
@@ -85,13 +89,13 @@ export default async function SuperAdminOperationsPage() {
             <Stack spacing={1.5}>
               <Typography variant="h6" sx={{ fontWeight: 700 }}>Database backups</Typography>
               <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
-                <StatusChip ok={Boolean(env?.BACKUP_PROVIDER)} ready={`Provider: ${env?.BACKUP_PROVIDER}`} missing="Backup provider not configured" />
+                <StatusChip ok={Boolean(backupProvider)} ready={`Provider: ${backupProvider}`} missing="Backup provider not configured" />
                 <StatusChip ok={backupFresh} ready="Latest backup is fresh" missing="Backup status is stale or unknown" />
-                <StatusChip ok={Boolean(env?.BACKUP_RETENTION_DAYS)} ready={`${env?.BACKUP_RETENTION_DAYS} day retention`} missing="Retention not configured" />
+                <StatusChip ok={Boolean(backupRetentionDays)} ready={`${backupRetentionDays} day retention`} missing="Retention not configured" />
               </Stack>
               <Typography variant="body2" color="text.secondary">Last successful backup: {reportedBackupAt ? `${reportedBackupAt.toLocaleString()} (${ageLabel(reportedBackupAt)})` : "not reported by the backup job"}.</Typography>
               <Typography variant="body2" color="text.secondary">Last restore drill: {lastRestoreDrill ? `${lastRestoreDrill.createdAt.toLocaleString()} (${ageLabel(lastRestoreDrill.createdAt)})` : "not recorded"}.</Typography>
-              <Typography variant="caption" color="text.secondary">The backup system remains external; set the backup environment metadata from the managed database job, then record each successful restore drill here.</Typography>
+              <Typography variant="caption" color="text.secondary">Update backup posture in Instance settings; backup creation remains external to the application.</Typography>
             </Stack>
           </Paper>
         </Grid>
@@ -102,7 +106,7 @@ export default async function SuperAdminOperationsPage() {
               <StatusChip ok={Boolean(env?.REDIS_URL)} ready="Redis configured" missing="Redis missing — production writes will fail closed" />
               <StatusChip ok={Boolean(process.env.CRON_SECRET)} ready="Outbox scheduler secret configured" missing="Outbox scheduler secret missing" />
               <StatusChip ok={Boolean(process.env.HEALTHCHECK_SECRET)} ready="Readiness probe protected" missing="Readiness probe secret missing" />
-              <StatusChip ok={Boolean(env?.SMTP_HOST || env?.SMTP_SERVICE)} ready="Transactional email configured" missing="Transactional email not configured" />
+              <StatusChip ok={Boolean(instanceSettings?.smtpHost || instanceSettings?.smtpService || env?.SMTP_HOST || env?.SMTP_SERVICE)} ready="Transactional email configured" missing="Transactional email not configured" />
             </Stack>
           </Paper>
         </Grid>

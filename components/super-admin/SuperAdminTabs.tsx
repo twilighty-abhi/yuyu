@@ -14,6 +14,7 @@ const tabs = [
   { label: "Events", href: "/super-admin/events" },
   { label: "Users", href: "/super-admin/users" },
   { label: "Auth", href: "/super-admin/auth" },
+  { label: "Settings", href: "/super-admin/settings" },
   { label: "Invites", href: "/super-admin/invites" },
   { label: "Storage", href: "/super-admin/storage" },
 ] as const;

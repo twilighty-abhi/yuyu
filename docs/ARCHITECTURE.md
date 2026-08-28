@@ -63,7 +63,8 @@ The super-admin boundary is separate: access requires an authenticated email mat
 - Events: `Event`, `EventInvite`, `EventSeries`, `SeriesInvite`, and `EventInstance`.
 - Registration: `RSVP`, registration forms, fields, and typed answers.
 - Feedback: feedback forms, fields, responses, typed answers, and optional certificate linkage.
-- Operations: `OutboxMessage`, `AuditEvent`, `CheckInEvent`, `RsvpDeletionUndo`, and `Asset`.
+- Operations: `OutboxMessage`, `OperationalHeartbeat`, `AuditEvent`, `CheckInEvent`, `RsvpDeletionUndo`, and `Asset`.
+- Instance administration: the singleton `InstanceSetting` holds the new-account policy plus encrypted SMTP and Google SSO secrets and non-secret backup posture. It is readable and mutable only through the super-admin boundary.
 - Machine access: `ApiClient`, `ApiClientScope`, and hashed, rotatable `ApiCredential` records.
 
 Refer to `prisma/schema.prisma` for the authoritative fields, constraints, indexes, and cascading behavior.
@@ -71,6 +72,10 @@ Refer to `prisma/schema.prisma` for the authoritative fields, constraints, index
 ## Background and scheduled work
 
 Request handlers enqueue transactional messages in `OutboxMessage`; they do not wait for SMTP delivery. Every self-hosted Node.js instance starts a singleton one-minute worker that claims and sends a batch, retries failures, purges expired operational records, and updates a one-row `OperationalHeartbeat`. Queue row claims keep concurrent replicas safe. The protected `POST /api/internal/outbox` endpoint remains available as an external scheduler or recovery trigger.
+
+## Instance service configuration
+
+Super-admins with a current TOTP step-up can configure SMTP, Google SSO, and backup posture at `/super-admin/settings`. Instance-managed values take precedence over legacy environment fallbacks. SMTP and Google client secrets are encrypted at rest with an AES-GCM key domain-separated from `MFA_ENCRYPTION_KEY`; the application never renders stored secrets back to the browser. Backup posture is display-only—backup execution, encryption, retention enforcement, and restore access remain infrastructure responsibilities.
 
 ## Storage
 

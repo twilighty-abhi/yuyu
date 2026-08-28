@@ -18,6 +18,12 @@
 4. Verify the in-process outbox worker has recorded a fresh heartbeat after deployment. Optionally configure an independent scheduler to call `POST /api/internal/outbox` every minute with `Authorization: Bearer $CRON_SECRET`; also configure an authenticated readiness probe to call `GET /api/health/db` with `Authorization: Bearer $HEALTHCHECK_SECRET`.
 5. Verify readiness, error rate, email queue depth, database connections, and Redis health before shifting traffic.
 
+## Instance-managed services
+
+Use `/super-admin/settings` with a fresh super-admin TOTP proof to configure SMTP, Google SSO, and displayed backup posture. Stored SMTP and Google client secrets are write-only and encrypted at rest; retain a source-of-truth copy in the deployment secrets manager for disaster recovery. Environment values are legacy fallbacks, so migrate deliberately and verify sign-in and outbox delivery after changing their source.
+
+The backup fields do not run, retain, or restore backups. Keep those controls with the database provider and record successful backups and restore drills in the instance operations area.
+
 ## Backup and incident minimums
 
 - Test a point-in-time database restore every quarter and record the recovery time and data-loss window.

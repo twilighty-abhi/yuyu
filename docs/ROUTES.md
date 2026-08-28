@@ -20,13 +20,15 @@ Dynamic segments are shown as `:name` for readability.
 | `/login` | Password and Google sign-in/signup |
 | `/verify-email` | Consume a one-time email-verification link and activate a password account |
 | `/reset-password` | Password-reset request and completion |
+| `/account` | Authenticated account profile settings |
+| `/account/security` | Authenticated password, MFA, recovery-code, and session controls |
 
 ## User and organisation dashboard
 
 | Route | Purpose |
 | --- | --- |
 | `/dashboard` | User's organisations |
-| `/dashboard/security` | MFA and session controls |
+| `/dashboard/security` | Legacy redirect to `/account/security` |
 | `/dashboard/org/new` | Create an organisation |
 | `/dashboard/:orgSlug` | Organisation events and series |
 | `/dashboard/:orgSlug/settings` | Organisation settings |
@@ -39,9 +41,9 @@ Dashboard pages require authentication and enforce membership/role permissions o
 
 ## Super-admin pages
 
-The `/super-admin` area includes overview, audit log, auth, events, invites, monitoring, operations, organisations, storage, and users. The Auth page includes the instance-wide new-account creation control. Access requires the authenticated email configured in `SUPER_ADMIN_EMAIL`; other users receive a not-found response.
+The `/super-admin` area includes overview, audit log, auth, events, invites, monitoring, operations, organisations, settings, storage, and users. The Auth page includes the instance-wide new-account creation control. `/super-admin/settings` manages SMTP, Google SSO, and displayed backup posture; secrets entered there are write-only. Access requires the authenticated email configured in `SUPER_ADMIN_EMAIL`; other users receive a not-found response.
 
-Every super-admin page additionally requires a current TOTP verification. Users without a valid 10-minute step-up proof are sent to `/super-admin-mfa`; authenticator MFA must be enrolled first from `/dashboard/security`.
+Every super-admin page additionally requires a current TOTP verification. Users without a valid 10-minute step-up proof are sent to `/super-admin-mfa`; authenticator MFA must be enrolled first from `/account/security`.
 
 ## Public and application APIs
 

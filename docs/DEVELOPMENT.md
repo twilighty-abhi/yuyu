@@ -58,7 +58,8 @@ Next.js 16 behavior may differ from older versions. Before changing framework AP
 - Without Redis, local rate limiting uses a process-local in-memory fallback.
 - Without S3 configuration, local assets can remain as database blobs.
 - Email requires an SMTP service or host. Use a local mail catcher if you need to inspect messages.
-- Google login appears only when credentials are configured and `NEXT_PUBLIC_AUTH_GOOGLE_CONFIGURED=1` was present at build/start time.
+- Google login appears when Google SSO has both a client ID and secret, either from the super-admin instance settings or the legacy environment fallback. To use instance settings locally, first create the configured super-admin account and enroll TOTP from `/account/security`.
+- SMTP, Google SSO, and displayed backup posture can be configured at `/super-admin/settings`; legacy environment values remain useful for bootstrapping and unattended deployments.
 
 ## Before opening a pull request
 

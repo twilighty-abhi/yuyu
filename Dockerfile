@@ -21,12 +21,10 @@ CMD ["npx", "prisma", "migrate", "deploy"]
 FROM node:20-alpine AS builder
 WORKDIR /app
 ARG NEXT_SERVER_ACTIONS_ENCRYPTION_KEY
-ARG NEXT_PUBLIC_AUTH_GOOGLE_CONFIGURED=0
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV NEXT_PUBLIC_AUTH_GOOGLE_CONFIGURED=${NEXT_PUBLIC_AUTH_GOOGLE_CONFIGURED}
 
 RUN npx prisma generate
 # The key is consumed by Next.js while compiling Server Actions. Every image

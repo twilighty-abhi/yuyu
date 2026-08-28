@@ -23,6 +23,7 @@ The project handbook lives in [`docs/`](docs/README.md):
 - [Local development](docs/DEVELOPMENT.md)
 - [Configuration](docs/CONFIGURATION.md)
 - [Routes and HTTP endpoints](docs/ROUTES.md)
+- [Machine API v1](docs/API.md)
 - [Security model](docs/SECURITY.md)
 - [Testing and quality gates](docs/TESTING.md)
 - [Production release checklist](docs/PRODUCTION_RELEASE.md)

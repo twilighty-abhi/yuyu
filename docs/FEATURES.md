@@ -8,7 +8,7 @@
 - Optional Google OAuth.
 - Password-reset requests delivered through the transactional outbox.
 - Authenticator-app MFA for credential accounts, including recovery codes.
-- “Revoke all sessions” and MFA management at `/dashboard/security`.
+- Account profile image/name management, password management, “revoke all sessions,” and MFA management at `/account` and `/account/security`.
 - JWT session-version invalidation after sensitive account operations.
 
 Google OAuth users rely on the Google account's MFA policy; the application TOTP prompt applies to password authentication.
@@ -81,6 +81,7 @@ Only eligible confirmed attendees receive a scannable ticket by default. Organis
 
 - Instance-wide super-admin area restricted by `SUPER_ADMIN_EMAIL`.
 - Super-admin control to disable new password and Google account creation while preserving existing-user sign-in.
+- Super-admin instance settings for SMTP delivery, Google SSO, and display-only backup posture; instance-managed service secrets are encrypted at rest and never displayed after saving.
 - Separate TOTP step-up verification for super-admin access; verification lasts 10 minutes and requires an enrolled authenticator.
 - Organisation, user, event, invitation, authentication, monitoring, operations, storage, and searchable audit-log views.
 - Public liveness and secret-protected database readiness endpoints.

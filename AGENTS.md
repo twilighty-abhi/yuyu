@@ -21,7 +21,8 @@ Playwright. Deployment supports Docker standalone output and the Helm chart in
 The product currently includes organisations and member roles, public/private
 events and RRULE-based series, custom RSVP forms and waitlists, QR tickets and
 offline check-in, feedback/certificates, transactional email, and a separate
-super-admin operations area. Treat this as a production-oriented application:
+super-admin operations and instance-settings area, plus a tenant-bound machine
+API. Treat this as a production-oriented application:
 tenant isolation, privacy, and secure operations are core behaviour rather
 than optional polish.
 
@@ -77,7 +78,10 @@ field, constraint, or cascade from a component alone.
   `OWNER`/`ADMIN`/`MEMBER` permission. UI visibility is never authorization.
 - Super-admin access is distinct from organisation access. Keep its
   `SUPER_ADMIN_EMAIL` check, fresh TOTP step-up, generic not-found behaviour,
-  and audit coverage intact.
+  and audit coverage intact. Instance-managed SMTP/Google secrets are
+  write-only browser inputs, encrypted at rest through the domain-separated
+  `MFA_ENCRYPTION_KEY` material, and must never be placed in UI props, logs, or
+  audit metadata.
 - Server Actions need authentication, authorization, Zod validation, rate
   limiting where applicable, and audit behaviour before mutation. Public RSVP,
   feedback, and search endpoints use route handlers and need equivalent
@@ -112,6 +116,12 @@ field, constraint, or cascade from a component alone.
 - Email is queued in `OutboxMessage`; request paths must not wait for SMTP.
   Preserve safe concurrent claims, retry behaviour, retention cleanup, and the
   one-minute worker/`POST /api/internal/outbox` recovery path.
+- Instance settings override legacy environment fallbacks for SMTP, Google SSO,
+  and backup posture. Backup settings are display-only; do not imply that the
+  app creates, retains, or restores provider backups.
+- Machine API clients are tenant-bound bearer identities, not Auth.js users.
+  Require explicit scopes, resolve the tenant solely from the credential, use
+  explicit DTOs/selects, and never log or persist a raw credential.
 - Operational changes must preserve `/api/health` as dependency-free liveness
   and protect `/api/health/db` and `/api/internal/outbox` with their respective
   bearer secrets and generic unauthorized responses.
@@ -142,7 +152,8 @@ were not run and why.
   authenticated SMTP, stable build/runtime Server Action encryption keys, and
   matching HTTPS `AUTH_URL`/`NEXT_PUBLIC_BASE_URL` values.
 - Changes to public build-visible variables (including
-  `NEXT_PUBLIC_BASE_URL` and Google-login visibility) require a rebuild.
+  `NEXT_PUBLIC_BASE_URL`) require a rebuild. Google SSO is runtime
+  instance-managed; do not reintroduce a build-visible feature flag for it.
 - A hostname change also needs OAuth callback/origin, DNS/TLS/CDN, scheduler,
   monitoring, and trusted-host review; retain an HTTPS redirect for shared
   event, invitation, ticket, and certificate links.

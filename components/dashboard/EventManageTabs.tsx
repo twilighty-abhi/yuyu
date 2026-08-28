@@ -108,6 +108,7 @@ export function EventManageTabs(props: {
             attendees={attendees}
             canManage
             registrationFields={registrationFields}
+            eventTitle={event.title}
           />
         </Stack>
       ) : null}

@@ -35,6 +35,7 @@ import { useToast } from "@/components/feedback/ToastProvider";
 import { useRouter } from "next/navigation";
 import { EditRsvpDialog } from "@/components/attendees/EditRsvpDialog";
 import type { ManualRsvpField } from "@/components/attendees/ManualRsvpDialog";
+import { ExportEmailsButton } from "@/components/attendees/ExportEmailsButton";
 
 export type AttendeeRow = {
   id: string;
@@ -81,8 +82,9 @@ export function AttendeeTable(props: {
   attendees: AttendeeRow[];
   canManage: boolean;
   registrationFields?: ManualRsvpField[];
+  eventTitle?: string;
 }) {
-  const { organisationSlug, eventId, eventInstanceId, attendees, canManage, registrationFields = [] } =
+  const { organisationSlug, eventId, eventInstanceId, attendees, canManage, registrationFields = [], eventTitle } =
     props;
   const router = useRouter();
   const { showToast } = useToast();
@@ -125,7 +127,7 @@ export function AttendeeTable(props: {
 
   return (
     <Stack spacing={2}>
-      <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+      <Stack direction={{ xs: "column", sm: "row" }} spacing={2} useFlexGap sx={{ flexWrap: "wrap" }}>
         <TextField
           label="Search name or email"
           value={search}
@@ -159,6 +161,7 @@ export function AttendeeTable(props: {
           <MenuItem value="PENDING_APPROVAL">Pending approval</MenuItem>
           <MenuItem value="REJECTED">Rejected</MenuItem>
         </TextField>
+        {eventTitle ? <ExportEmailsButton eventTitle={eventTitle} attendees={rows} /> : null}
       </Stack>
       <TableContainer component={Paper} variant="outlined">
         <Table size="small">

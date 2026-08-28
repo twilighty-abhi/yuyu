@@ -1,6 +1,7 @@
 export type AttendeeEmailExportRow = {
   guestEmail: string | null;
-  user: { email: string | null } | null;
+  guestName?: string | null;
+  user: { name: string | null; email: string | null } | null;
 };
 
 function escapeCsvCell(value: string): string {
@@ -12,20 +13,21 @@ function escapeCsvCell(value: string): string {
     : safeValue;
 }
 
-/** Builds a single-column CSV of unique attendee email addresses. */
+/** Builds a CSV of unique attendee email addresses and their displayed names. */
 export function buildAttendeeEmailCsv(attendees: AttendeeEmailExportRow[]): string {
   const seen = new Set<string>();
-  const emails: string[] = [];
+  const rows: Array<[string, string]> = [];
 
   for (const attendee of attendees) {
     const email = (attendee.user?.email ?? attendee.guestEmail ?? "").trim();
     const normalized = email.toLowerCase();
     if (!email || seen.has(normalized)) continue;
     seen.add(normalized);
-    emails.push(email);
+    const name = (attendee.user?.name ?? attendee.guestName ?? "").trim();
+    rows.push([name, email]);
   }
 
-  return ["Email", ...emails.map(escapeCsvCell)].join("\n");
+  return ["Name,Email", ...rows.map((row) => row.map(escapeCsvCell).join(","))].join("\n");
 }
 
 export function attendeeEmailExportFilename(eventTitle: string, date = new Date()): string {

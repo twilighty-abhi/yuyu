@@ -5,20 +5,20 @@ import {
 } from "@/lib/attendeeEmailExport";
 
 describe("attendee email export", () => {
-  it("exports only unique attendee emails", () => {
+  it("exports names and only unique attendee emails", () => {
     expect(buildAttendeeEmailCsv([
-      { guestEmail: "Guest@example.test", user: null },
-      { guestEmail: "guest@EXAMPLE.test", user: null },
-      { guestEmail: null, user: { email: "member@example.test" } },
+      { guestEmail: "Guest@example.test", guestName: "Guest attendee", user: null },
+      { guestEmail: "guest@EXAMPLE.test", guestName: "Duplicate guest", user: null },
+      { guestEmail: null, user: { name: "Member attendee", email: "member@example.test" } },
       { guestEmail: null, user: null },
-    ])).toBe("Email\nGuest@example.test\nmember@example.test");
+    ])).toBe("Name,Email\nGuest attendee,Guest@example.test\nMember attendee,member@example.test");
   });
 
   it("escapes values that spreadsheets could interpret as formulas", () => {
     expect(buildAttendeeEmailCsv([
-      { guestEmail: "=unsafe@example.test", user: null },
-      { guestEmail: 'quoted"@example.test', user: null },
-    ])).toBe("Email\n\t=unsafe@example.test\n\"quoted\"\"@example.test\"");
+      { guestEmail: "=unsafe@example.test", guestName: "=unsafe name", user: null },
+      { guestEmail: 'quoted"@example.test', guestName: 'quoted" name', user: null },
+    ])).toBe("Name,Email\n\t=unsafe name,\t=unsafe@example.test\n\"quoted\"\" name\",\"quoted\"\"@example.test\"");
   });
 
   it("creates a safe, date-stamped filename", () => {

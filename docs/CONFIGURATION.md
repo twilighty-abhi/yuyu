@@ -12,9 +12,8 @@ Copy `.env.example` to `.env` for local development. Production secrets must com
 | `AUTH_SECRET` | Required | Auth.js signing/encryption secret, at least 32 characters |
 | `AUTH_URL` | Required | Canonical Auth.js HTTPS origin |
 | `NEXT_PUBLIC_BASE_URL` | Required | Public link origin; must exactly match `AUTH_URL` |
-| `AUTH_GOOGLE_ID` | Optional | Google OAuth client ID |
-| `AUTH_GOOGLE_SECRET` | Optional | Google OAuth client secret |
-| `NEXT_PUBLIC_AUTH_GOOGLE_CONFIGURED` | Optional | Set to `1` to render Google sign-in; this is build-visible configuration |
+| `AUTH_GOOGLE_ID` | Legacy fallback | Google OAuth client ID; configure new instances in Super admin → Settings |
+| `AUTH_GOOGLE_SECRET` | Legacy fallback | Google OAuth client secret; configure new instances in Super admin → Settings |
 | `SUPER_ADMIN_EMAIL` | Recommended | Sole email allowed into the instance administration area |
 
 ### Deployment example: `events.dev.idliapps.com`
@@ -66,16 +65,11 @@ Do not expose the application directly while trusting a client-controlled forwar
 
 | Variable | Production | Purpose |
 | --- | --- | --- |
-| `EMAIL_FROM` | Required | Verified sender identity |
-| `SMTP_SERVICE` | One SMTP mode required | Nodemailer service name |
-| `SMTP_HOST` | One SMTP mode required | Custom SMTP hostname |
-| `SMTP_PORT` | With custom SMTP | SMTP port, commonly 587 or 465 |
-| `SMTP_SECURE` | With custom SMTP | Whether to establish implicit TLS |
-| `SMTP_USER` / `SMTP_PASSWORD` | Normally required | SMTP credentials |
-| `SMTP_ALLOW_UNAUTHENTICATED` | Exceptional | Set to `1` only for a deliberately unauthenticated private relay |
+| `EMAIL_FROM` | Legacy fallback | Verified sender identity; configure new instances in Super admin → Settings |
+| `SMTP_*` | Legacy fallback | SMTP settings; configure new instances in Super admin → Settings |
 | `OUTBOX_RETENTION_DAYS` | Optional | Retention for sent outbox records; defaults to 30 |
 
-Production SMTP connections require TLS with certificate verification.
+Configure SMTP, Google SSO, and backup status under **Super admin → Settings**. SMTP and Google client secrets are encrypted at rest with a domain-separated key derived from `MFA_ENCRYPTION_KEY`, are never displayed after saving, and require the super-admin fresh-TOTP step-up. Environment values remain supported as migration fallbacks. Production SMTP connections require TLS with certificate verification.
 
 ## Object storage
 
@@ -93,9 +87,7 @@ The bucket must remain private. Existing database-backed assets can be moved wit
 
 | Variable | Purpose |
 | --- | --- |
-| `BACKUP_PROVIDER` | Name displayed on the operations screen |
-| `BACKUP_LAST_SUCCESS_AT` | ISO timestamp supplied by the backup job |
-| `BACKUP_RETENTION_DAYS` | Displayed backup-retention target |
+| `BACKUP_*` | Legacy fallback | Backup status metadata; configure new instances in Super admin → Settings |
 
 ## Test-only bypass
 

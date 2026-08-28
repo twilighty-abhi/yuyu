@@ -11,7 +11,7 @@ This page documents implemented controls and security boundaries. It is not a su
 - Password reset uses expiring verification tokens and the transactional outbox.
 - Password accounts require a one-time, expiring inbox-verification link before sign-in or event creation. Tokens are stored only as hashes and consumed once.
 - Credential users can enable TOTP MFA and receive one-use recovery codes.
-- TOTP seeds are encrypted with AES-256-GCM using `MFA_ENCRYPTION_KEY`; recovery codes are stored as keyed hashes.
+- TOTP seeds are encrypted with AES-256-GCM using `MFA_ENCRYPTION_KEY`; recovery codes are stored as keyed hashes. Super-admin SMTP and Google client secrets are separately domain-encrypted from that key and never rendered back to the browser.
 - Sensitive account operations revoke existing sessions and write audit events.
 - The super-admin panel requires a second, fresh TOTP step-up verification even after a normal authenticated session. Its signed, HttpOnly proof lasts 10 minutes and is bound to the user/session version.
 - Google OAuth security, including MFA, is governed by the linked Google account.

@@ -557,6 +557,19 @@ model OperationalHeartbeat {
 model InstanceSetting {
   id                    String   @id
   allowNewUserSignups   Boolean  @default(true)
+  emailFrom             String?
+  smtpService           String?
+  smtpHost              String?
+  smtpPort              Int?
+  smtpSecure            Boolean  @default(false)
+  smtpUser              String?
+  smtpPasswordEncrypted String?
+  smtpAllowUnauthenticated Boolean @default(false)
+  googleClientId        String?
+  googleClientSecretEncrypted String?
+  backupProvider        String?
+  backupLastSuccessAt   DateTime?
+  backupRetentionDays   Int?
   updatedAt             DateTime @updatedAt
 }
 

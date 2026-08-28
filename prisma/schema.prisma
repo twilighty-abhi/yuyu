@@ -13,6 +13,14 @@ enum MembershipRole {
   MEMBER
 }
 
+enum EventPermission {
+  EDIT_DETAILS
+  MANAGE_REGISTRATIONS
+  MANAGE_INVITATIONS
+  CHECK_IN
+  PUBLISH_AND_SCHEDULE
+}
+
 enum EventStatus {
   DRAFT
   PUBLISHED
@@ -85,6 +93,8 @@ model User {
   auditEvents       AuditEvent[]
   checkInEvents     CheckInEvent[]
   rsvpDeletionUndos RsvpDeletionUndo[]
+  eventCollaborations EventCollaborator[]
+  eventCollaboratorInvitesUsed EventCollaboratorInvite[] @relation("EventCollaboratorInviteUsedBy")
 }
 
 model Account {
@@ -240,6 +250,8 @@ model Event {
   capacity              Int?
   status                EventStatus      @default(DRAFT)
   privacyType           EventPrivacyType @default(PUBLIC)
+  registrationClosesAt  DateTime?
+  registrationLeadMinutes Int?
   createdAt             DateTime         @default(now())
 
   organisation     Organisation           @relation(fields: [organisationId], references: [id], onDelete: Cascade)
@@ -247,6 +259,9 @@ model Event {
   invites          EventInvite[]
   registrationForm EventRegistrationForm?
   feedbackForm     EventFeedbackForm?
+  collaborators    EventCollaborator[]
+  collaboratorInvites EventCollaboratorInvite[]
+  scheduleItems    EventScheduleItem[]
 
   @@unique([organisationId, slug])
   @@index([organisationId])
@@ -284,9 +299,76 @@ model EventSeries {
   organisation Organisation    @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   instances    EventInstance[]
   invites      SeriesInvite[]
+  collaborators EventCollaborator[]
+  collaboratorInvites EventCollaboratorInvite[]
+  scheduleItems EventScheduleItem[]
 
   @@unique([organisationId, slug])
   @@index([organisationId])
+}
+
+/// A user-scoped grant for exactly one standalone event or recurring series.
+model EventCollaborator {
+  id            String            @id @default(cuid())
+  eventId       String?
+  eventSeriesId String?
+  userId        String
+  permissions   EventPermission[]
+  createdAt     DateTime          @default(now())
+
+  event  Event?       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  series EventSeries? @relation(fields: [eventSeriesId], references: [id], onDelete: Cascade)
+  user   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@unique([eventSeriesId, userId])
+  @@index([userId])
+  @@index([eventId])
+  @@index([eventSeriesId])
+}
+
+/// A single-use bearer invite. The raw token is never stored.
+model EventCollaboratorInvite {
+  id            String            @id @default(cuid())
+  eventId       String?
+  eventSeriesId String?
+  email         String
+  tokenHash     String            @unique
+  permissions   EventPermission[]
+  createdByUserId String
+  usedByUserId  String?
+  createdAt     DateTime          @default(now())
+  expiresAt     DateTime
+  usedAt        DateTime?
+
+  event  Event?       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  series EventSeries? @relation(fields: [eventSeriesId], references: [id], onDelete: Cascade)
+  usedBy User?        @relation("EventCollaboratorInviteUsedBy", fields: [usedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([eventId, email])
+  @@index([eventSeriesId, email])
+  @@index([expiresAt])
+}
+
+/// Agenda items retain their planned times; delay minutes cascade at display time.
+model EventScheduleItem {
+  id            String   @id @default(cuid())
+  eventId       String?
+  eventSeriesId String?
+  title         String
+  description   String   @default("")
+  startDateTime DateTime
+  endDateTime   DateTime
+  sortOrder     Int      @default(0)
+  delayMinutes  Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  event  Event?       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  series EventSeries? @relation(fields: [eventSeriesId], references: [id], onDelete: Cascade)
+
+  @@index([eventId, sortOrder])
+  @@index([eventSeriesId, sortOrder])
 }
 
 model SeriesInvite {

@@ -6,11 +6,12 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { canManageEvents, getMembership } from "@/lib/permissions";
-import { deleteRsvpSchema, manualRsvpSchema, restoreRsvpSchema } from "@/lib/validators";
+import { deleteRsvpSchema, manualRsvpSchema, restoreRsvpSchema, updateRsvpRegistrationSchema } from "@/lib/validators";
 import type { ActionResult } from "./org";
 import { flattenZodErrors } from "./utils";
 import { recordAuditEvent } from "@/lib/audit";
 import { submitManualGuestRsvpCore } from "@/lib/rsvpCore";
+import { validateAndNormalizeAnswers } from "@/lib/rsvpCore";
 import { isActionRateLimited } from "@/lib/actionRateLimit";
 
 const UNDO_TTL_MS = 5 * 60_000;
@@ -49,6 +50,80 @@ export async function addManualRsvp(
   revalidateRsvpPaths(org.slug, { eventId: parsed.data.eventId, eventInstanceId: null });
   revalidatePath(`/dashboard/${org.slug}/event/${parsed.data.eventId}/check-in`);
   return { ok: true, data: { count: result.data.count, status: result.data.status } };
+}
+
+export async function updateRsvpRegistration(input: unknown): Promise<ActionResult> {
+  const session = await auth();
+  if (!session?.user?.id) return { ok: false, error: "You must be signed in." };
+  if (await isActionRateLimited("rsvp", session.user.id)) {
+    return { ok: false, error: "Too many attendee edits. Please try again shortly." };
+  }
+  const parsed = updateRsvpRegistrationSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Invalid input.", fieldErrors: flattenZodErrors(parsed.error) };
+
+  const org = await prisma.organisation.findUnique({ where: { slug: parsed.data.organisationSlug } });
+  if (!org) return { ok: false, error: "Organisation not found." };
+  const membership = await getMembership(session.user.id, org.id);
+  if (!canManageEvents(membership)) return { ok: false, error: "You do not have permission to edit registrations." };
+
+  const target = parsed.data.eventId
+    ? { eventId: parsed.data.eventId, event: { organisationId: org.id } }
+    : { eventInstanceId: parsed.data.eventInstanceId, eventInstance: { series: { organisationId: org.id } } };
+  const rsvp = await prisma.rSVP.findFirst({
+    where: { id: parsed.data.rsvpId, ...target },
+    include: {
+      user: { select: { id: true } },
+      event: { select: { slug: true, registrationForm: { include: { fields: { orderBy: { sortOrder: "asc" } } } } } },
+    },
+  });
+  if (!rsvp) return { ok: false, error: "RSVP not found." };
+
+  const formFields = rsvp.event?.registrationForm?.fields ?? [];
+  const validated = validateAndNormalizeAnswers({
+    fields: formFields.map((field) => ({ ...field, options: field.options })),
+    answers: parsed.data.answers as Record<string, unknown>,
+  });
+  if ("error" in validated) return { ok: false, error: validated.error };
+
+  const guestUpdate = rsvp.userId ? {} : {
+    guestName: parsed.data.name?.trim() || rsvp.guestName,
+    guestEmail: parsed.data.guestEmail?.trim().toLowerCase() || rsvp.guestEmail,
+  };
+  const guestEmail = "guestEmail" in guestUpdate ? guestUpdate.guestEmail : rsvp.guestEmail;
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.rSVP.update({
+        where: { id: rsvp.id },
+        data: {
+          ...guestUpdate,
+          ...(rsvp.userId ? {} : { attendeeKey: `guest:${guestEmail}` }),
+        },
+      });
+      await tx.rsvpAnswer.deleteMany({ where: { rsvpId: rsvp.id } });
+      if (validated.rows.length > 0) {
+        await tx.rsvpAnswer.createMany({
+          data: validated.rows.map((row) => ({
+            rsvpId: rsvp.id,
+            fieldId: row.fieldId,
+            valueText: row.valueText ?? null,
+            valueBool: row.valueBool ?? null,
+            valueNumber: row.valueNumber ?? null,
+            valueDate: row.valueDate ?? null,
+          })),
+        });
+      }
+    });
+  } catch (error) {
+    if (typeof error === "object" && error !== null && "code" in error && (error as { code?: string }).code === "P2002") {
+      return { ok: false, error: "This email is already registered for this event." };
+    }
+    console.error("[rsvp] registration update failed", error);
+    return { ok: false, error: "Could not update the registration." };
+  }
+
+  await recordAuditEvent({ action: "RSVP_REGISTRATION_UPDATED", actorUserId: session.user.id, organisationId: org.id, targetType: "RSVP", targetId: rsvp.id });
+  revalidateRsvpPaths(org.slug, { eventId: rsvp.eventId, eventInstanceId: rsvp.eventInstanceId, eventSlug: rsvp.event?.slug });
+  return { ok: true };
 }
 
 const snapshotSchema = z.object({

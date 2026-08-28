@@ -17,6 +17,7 @@ import Stack from "@mui/material/Stack";
 import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
 import DeleteOutlineOutlinedIcon from "@mui/icons-material/DeleteOutlineOutlined";
+import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import HelpOutlineOutlinedIcon from "@mui/icons-material/HelpOutlineOutlined";
 import Dialog from "@mui/material/Dialog";
 import DialogTitle from "@mui/material/DialogTitle";
@@ -32,6 +33,8 @@ import {
 } from "@/app/actions/rsvp-lifecycle";
 import { useToast } from "@/components/feedback/ToastProvider";
 import { useRouter } from "next/navigation";
+import { EditRsvpDialog } from "@/components/attendees/EditRsvpDialog";
+import type { ManualRsvpField } from "@/components/attendees/ManualRsvpDialog";
 
 export type AttendeeRow = {
   id: string;
@@ -50,6 +53,7 @@ export type AttendeeRow = {
     valueNumber?: number | null;
     valueDate?: string | null;
   }>;
+  registrationFields?: ManualRsvpField[];
 };
 
 type FilterKind = "all" | "guests" | "users";
@@ -76,8 +80,9 @@ export function AttendeeTable(props: {
   eventInstanceId?: string;
   attendees: AttendeeRow[];
   canManage: boolean;
+  registrationFields?: ManualRsvpField[];
 }) {
-  const { organisationSlug, eventId, eventInstanceId, attendees, canManage } =
+  const { organisationSlug, eventId, eventInstanceId, attendees, canManage, registrationFields = [] } =
     props;
   const router = useRouter();
   const { showToast } = useToast();
@@ -89,6 +94,7 @@ export function AttendeeTable(props: {
   const [answersTitle, setAnswersTitle] = useState<string>("");
   const [answersRows, setAnswersRows] = useState<{ label: string; value: string }[]>([]);
   const [deleteConfirmAttendee, setDeleteConfirmAttendee] = useState<AttendeeRow | null>(null);
+  const [editAttendee, setEditAttendee] = useState<AttendeeRow | null>(null);
 
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -347,6 +353,13 @@ export function AttendeeTable(props: {
                             </>
                           ) : null}
                           <IconButton
+                            aria-label="Edit registration"
+                            disabled={pending}
+                            onClick={() => setEditAttendee(a)}
+                          >
+                            <EditOutlinedIcon fontSize="small" />
+                          </IconButton>
+                          <IconButton
                             aria-label="Remove RSVP"
                             disabled={pending}
                             onClick={() => setDeleteConfirmAttendee(a)}
@@ -439,6 +452,7 @@ export function AttendeeTable(props: {
           });
         }}
       />
+      {editAttendee ? <EditRsvpDialog organisationSlug={organisationSlug} eventId={eventId} eventInstanceId={eventInstanceId} attendee={editAttendee} fields={registrationFields} onClose={() => setEditAttendee(null)} onUpdated={() => router.refresh()} /> : null}
     </Stack>
   );
 }

@@ -23,6 +23,7 @@ import { addManualRsvp } from "@/app/actions/rsvp-admin";
 import { useToast } from "@/components/feedback/ToastProvider";
 
 export type ManualRsvpField = {
+  id: string;
   key: string;
   label: string;
   type: RegistrationFieldType;

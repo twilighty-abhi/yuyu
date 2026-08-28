@@ -156,7 +156,7 @@ function coerceDate(v: unknown): Date | null {
   return null;
 }
 
-function validateAndNormalizeAnswers(params: {
+export function validateAndNormalizeAnswers(params: {
   fields: Array<{
     id: string;
     key: string;

@@ -131,6 +131,7 @@ export default async function SeriesManagePage({ params }: Props) {
             eventInstanceId={firstInstanceId}
             attendees={attendees}
             canManage
+            registrationFields={[]}
           />
         </>
       ) : null}

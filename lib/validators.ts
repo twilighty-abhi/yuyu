@@ -172,6 +172,22 @@ export const manualRsvpSchema = z.object({
   answers: z.record(z.string(), z.unknown()).optional().default({}),
 });
 
+/** An organisation admin editing an existing RSVP registration. */
+export const updateRsvpRegistrationSchema = z
+  .object({
+    organisationSlug: z.string().trim().min(1),
+    eventId: z.string().trim().optional(),
+    eventInstanceId: z.string().trim().optional(),
+    rsvpId: z.string().trim().min(1),
+    name: attendeeNameSchema.optional().or(z.literal("")),
+    guestEmail: z.string().trim().email("Valid email required").optional().or(z.literal("")),
+    answers: z.record(z.string(), z.unknown()).optional().default({}),
+  })
+  .refine(
+    (d) => Boolean(d.eventId?.length) !== Boolean(d.eventInstanceId?.length),
+    { message: "Event or instance is required.", path: ["eventId"] },
+  );
+
 export const updateEventSchema = z
   .object({
     organisationSlug: z.string().trim().min(1),

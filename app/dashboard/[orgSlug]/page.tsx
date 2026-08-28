@@ -7,7 +7,7 @@ import { prisma } from "@/lib/db";
 import {
   canManageEvents,
   isOrgAdmin,
-  requireOrgMembership,
+  requireOrgDashboardAccess,
 } from "@/lib/permissions";
 import Link from "next/link";
 import Button from "@mui/material/Button";
@@ -45,7 +45,12 @@ export default async function OrgDashboardPage({ params, searchParams }: Props) 
   const page = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
   const pageSize = 6;
 
-  const { organisation, membership } = await requireOrgMembership(orgSlug);
+  const access = await requireOrgDashboardAccess(orgSlug);
+  const { organisation, membership } = access;
+  if (!membership) {
+    const grants = await prisma.eventCollaborator.findMany({ where: { userId: access.userId, OR: [{ event: { organisationId: organisation.id } }, { series: { organisationId: organisation.id } }] }, include: { event: true, series: true } });
+    return <Stack spacing={2}><Typography variant="h4">{organisation.name}</Typography><Typography color="text.secondary">Your assigned events</Typography>{grants.map((grant) => grant.event ? <Link key={grant.id} href={`/dashboard/${organisation.slug}/event/${grant.event.id}`}><Button variant="outlined">{grant.event.title}</Button></Link> : grant.series ? <Link key={grant.id} href={`/dashboard/${organisation.slug}/series/${grant.series.id}`}><Button variant="outlined">{grant.series.title}</Button></Link> : null)}</Stack>;
+  }
   const manage = canManageEvents(membership);
   const admin = isOrgAdmin(membership.role);
 

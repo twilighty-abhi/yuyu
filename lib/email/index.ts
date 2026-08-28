@@ -197,6 +197,16 @@ export async function sendEventInvitation(params: {
   await transporter.sendMail({ from, to: params.to, subject, text, html });
 }
 
+export async function sendCollaboratorInvitation(params: { to: string; eventTitle: string; inviteUrl: string }) {
+  const { transporter, from } = await getEmailTransport();
+  const subject = `Co-organizer invitation: ${params.eventTitle}`;
+  const safeUrl = escapeHtml(params.inviteUrl);
+  const text = `You have been invited to co-organize "${params.eventTitle}". Sign in with this email address to accept:\n${params.inviteUrl}`;
+  const html = `<p>You have been invited to co-organize <strong>${escapeHtml(params.eventTitle)}</strong>.</p><p><a href="${safeUrl}">Accept co-organizer invite</a></p><p>${safeUrl}</p>`;
+  if (!transporter) { console.log(`[EMAIL MOCK] To: ${params.to}\n${text}`); return; }
+  await transporter.sendMail({ from, to: params.to, subject, text, html });
+}
+
 export async function sendReminder(params: {
   to: string;
   eventTitle: string;

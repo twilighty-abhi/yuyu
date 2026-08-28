@@ -148,3 +148,15 @@ export async function requireOrgMembership(
 ): Promise<OrgAccessContext> {
   return requireOrgRole(orgSlug, "MEMBER");
 }
+
+/** Dashboard access may also be granted by an event/series collaborator assignment. */
+export async function requireOrgDashboardAccess(orgSlug: string): Promise<Omit<OrgAccessContext, "membership"> & { membership: Membership | null; isCollaborator: boolean }> {
+  const session = await requireAuth();
+  const org = await prisma.organisation.findUnique({ where: { slug: orgSlug } });
+  if (!org) redirect("/dashboard");
+  const membership = await getMembership(session.user.id, org.id);
+  if (membership) return { organisation: { id: org.id, slug: org.slug, name: org.name }, membership, userId: session.user.id, isCollaborator: false };
+  const grant = await prisma.eventCollaborator.findFirst({ where: { userId: session.user.id, OR: [{ event: { organisationId: org.id } }, { series: { organisationId: org.id } }] }, select: { id: true } });
+  if (!grant) redirect("/dashboard");
+  return { organisation: { id: org.id, slug: org.slug, name: org.name }, membership: null, userId: session.user.id, isCollaborator: true };
+}

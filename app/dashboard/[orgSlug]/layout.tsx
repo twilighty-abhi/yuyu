@@ -1,5 +1,5 @@
 import { DashboardLayout } from "@/components/dashboard/DashboardLayout";
-import { requireOrgMembership } from "@/lib/permissions";
+import { requireOrgDashboardAccess } from "@/lib/permissions";
 
 export default async function OrgSlugLayout({
   children,
@@ -9,7 +9,7 @@ export default async function OrgSlugLayout({
   params: Promise<{ orgSlug: string }>;
 }) {
   const { orgSlug } = await params;
-  const { organisation } = await requireOrgMembership(orgSlug);
+  const { organisation } = await requireOrgDashboardAccess(orgSlug);
 
   return (
     <DashboardLayout

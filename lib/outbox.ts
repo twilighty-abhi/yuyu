@@ -2,7 +2,7 @@ import "server-only";
 
 import { OutboxStatus, Prisma, RsvpStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { sendApprovalNotification, sendEventInvitation, sendRSVPConfirmation } from "@/lib/email";
+import { sendApprovalNotification, sendCollaboratorInvitation, sendEventInvitation, sendRSVPConfirmation } from "@/lib/email";
 import { sendPasswordResetEmail } from "@/lib/email/passwordReset";
 import { sendEmailVerificationEmail } from "@/lib/email/emailVerification";
 import { redactSensitiveText } from "@/lib/redactSensitiveText";
@@ -42,6 +42,9 @@ type EmailVerificationPayload = {
   verificationUrl: string;
   expiresAt: string;
 };
+type CollaboratorInvitePayload = { to: string; eventTitle: string; inviteUrl: string };
+
+export async function enqueueCollaboratorInvite(client: OutboxClient, payload: CollaboratorInvitePayload) { return client.outboxMessage.create({ data: { kind: "collaborator-invite", payload: payload as Prisma.InputJsonValue } }); }
 
 export async function enqueueRsvpConfirmation(
   client: OutboxClient,
@@ -157,6 +160,7 @@ function asEmailVerificationPayload(value: Prisma.JsonValue): EmailVerificationP
   if (typeof payload.to !== "string" || typeof payload.verificationUrl !== "string" || typeof payload.expiresAt !== "string" || Number.isNaN(Date.parse(payload.expiresAt))) return null;
   return payload as EmailVerificationPayload;
 }
+function asCollaboratorInvitePayload(value: Prisma.JsonValue): CollaboratorInvitePayload | null { if (!value || typeof value !== "object" || Array.isArray(value)) return null; const p = value as Record<string, unknown>; return typeof p.to === "string" && typeof p.eventTitle === "string" && typeof p.inviteUrl === "string" ? p as CollaboratorInvitePayload : null; }
 
 /** Deliver a small batch. Run this from a protected scheduler, never a request path. */
 export async function deliverOutboxBatch(limit = 20) {
@@ -231,6 +235,11 @@ export async function deliverOutboxBatch(limit = 20) {
         const payload = asEventInvitePayload(message.payload);
         if (!payload) throw new Error("Invalid event invite payload");
         await sendEventInvitation(payload);
+      } else if (message.kind === "collaborator-invite") {
+        const payload = asCollaboratorInvitePayload(message.payload);
+        if (!payload) throw new Error("Invalid collaborator invite payload");
+        await sendCollaboratorInvitation(payload);
+        removeAfterDelivery = true;
       } else {
         throw new Error("Unsupported outbox message kind");
       }

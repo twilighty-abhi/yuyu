@@ -12,6 +12,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getMembership } from "@/lib/permissions";
 import { OrgEventsContainer } from "@/components/org/OrgEventsContainer";
+import { CopyOrganisationUrl } from "@/components/org/CopyOrganisationUrl";
 import { EventPrivacyType, EventStatus } from "@prisma/client";
 
 import type { Metadata } from "next";
@@ -165,12 +166,7 @@ export default async function OrganisationPage({ params }: Props) {
                   >
                     {org.name}
                   </Typography>
-                  <Chip
-                    size="small"
-                    label={`/${org.slug}`}
-                    variant="outlined"
-                    sx={{ bgcolor: "background.paper" }}
-                  />
+                  <CopyOrganisationUrl slug={org.slug} />
                 </Stack>
 
                 <Typography

@@ -9,6 +9,7 @@ import {
   eventsResponseSchema,
   participantsResponseSchema,
 } from "@/lib/api/v1/schemas";
+import type { ParticipantAttendance } from "@/lib/api/v1/schemas";
 
 const eventSelect = {
   id: true,
@@ -84,6 +85,8 @@ export async function listApiParticipants(
   eventId: string,
   limit: number,
   cursor: ApiCursor | null,
+  attendance: ParticipantAttendance = "all",
+  includeAttendance = false,
 ) {
   const event = await prisma.event.findFirst({
     where: { id: eventId, organisationId },
@@ -95,6 +98,8 @@ export async function listApiParticipants(
     where: {
       eventId: event.id,
       status: RsvpStatus.CONFIRMED,
+      ...(attendance === "checked_in" ? { checkedInAt: { not: null } } : {}),
+      ...(attendance === "not_checked_in" ? { checkedInAt: null } : {}),
       ...(cursor ? {
         OR: [
           { createdAt: { lt: new Date(cursor.timestamp) } },
@@ -106,6 +111,7 @@ export async function listApiParticipants(
       id: true,
       guestName: true,
       createdAt: true,
+      checkedInAt: true,
       user: { select: { name: true } },
     },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -119,6 +125,7 @@ export async function listApiParticipants(
       id: row.id,
       displayName: row.user?.name?.trim() || row.guestName?.trim() || "Participant",
       registeredAt: row.createdAt.toISOString(),
+      ...(includeAttendance ? { checkedInAt: row.checkedInAt?.toISOString() ?? null } : {}),
     })),
     pagination: { nextCursor: hasMore && last ? encodeCursor(last.createdAt, last.id) : null },
   });

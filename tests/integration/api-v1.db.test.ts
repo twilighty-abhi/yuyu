@@ -26,7 +26,8 @@ describe.sequential("machine API tenant boundary", () => {
     eventA = first.id;
     eventB = second.id;
     await prisma.rSVP.createMany({ data: [
-      { eventId: eventA, attendeeKey: `guest:confirmed-${suffix}`, guestEmail: `secret-${suffix}@example.test`, guestName: "Confirmed participant", status: RsvpStatus.CONFIRMED },
+      { eventId: eventA, attendeeKey: `guest:confirmed-${suffix}`, guestEmail: `secret-${suffix}@example.test`, guestName: "Confirmed participant", status: RsvpStatus.CONFIRMED, checkedInAt: new Date("2030-01-01T10:15:00.000Z") },
+      { eventId: eventA, attendeeKey: `guest:not-checked-in-${suffix}`, guestEmail: `not-checked-in-${suffix}@example.test`, guestName: "Unconfirmed attendance participant", status: RsvpStatus.CONFIRMED },
       { eventId: eventA, attendeeKey: `guest:waitlisted-${suffix}`, guestEmail: `wait-${suffix}@example.test`, guestName: "Waitlisted participant", status: RsvpStatus.WAITLISTED },
     ] });
   });
@@ -51,10 +52,24 @@ describe.sequential("machine API tenant boundary", () => {
 
   it("returns only confirmed participants and excludes contact/security fields", async () => {
     const result = await listApiParticipants(orgA, eventA, 10, null);
-    expect(result?.data).toEqual([expect.objectContaining({ displayName: "Confirmed participant" })]);
+    expect(result?.data).toEqual(expect.arrayContaining([
+      expect.objectContaining({ displayName: "Confirmed participant" }),
+      expect.objectContaining({ displayName: "Unconfirmed attendance participant" }),
+    ]));
     expect(JSON.stringify(result)).not.toContain(`secret-${suffix}@example.test`);
     expect(JSON.stringify(result)).not.toContain("checkInToken");
     await expect(listApiParticipants(orgA, eventB, 10, null)).resolves.toBeNull();
+  });
+
+  it("filters attendance without exposing it and reveals it only when requested", async () => {
+    const checkedIn = await listApiParticipants(orgA, eventA, 10, null, "checked_in");
+    expect(checkedIn?.data).toEqual([expect.objectContaining({ displayName: "Confirmed participant" })]);
+    expect(checkedIn?.data[0]).not.toHaveProperty("checkedInAt");
+
+    const withAttendance = await listApiParticipants(orgA, eventA, 10, null, "not_checked_in", true);
+    expect(withAttendance?.data).toEqual([
+      expect.objectContaining({ displayName: "Unconfirmed attendance participant", checkedInAt: null }),
+    ]);
   });
 
   it("persists only digests and enforces rotation, scopes, disablement, revocation, and expiry immediately", async () => {

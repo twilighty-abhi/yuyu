@@ -1,6 +1,10 @@
 import { z } from "zod";
 
-export const API_SCOPES = ["events:read", "participants:read"] as const;
+export const API_SCOPES = [
+  "events:read",
+  "participants:read",
+  "participants:attendance:read",
+] as const;
 
 export type ApiScope = (typeof API_SCOPES)[number];
 

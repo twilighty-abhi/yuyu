@@ -10,6 +10,16 @@ export const collectionQuerySchema = z.object({
   cursor: z.string().min(1).max(1024).optional(),
 }).strict();
 
+export const participantAttendanceSchema = z.enum(["all", "checked_in", "not_checked_in"]);
+export type ParticipantAttendance = z.infer<typeof participantAttendanceSchema>;
+
+export const participantCollectionQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  cursor: z.string().min(1).max(1024).optional(),
+  attendance: participantAttendanceSchema.default("all"),
+  include: z.enum(["attendance"]).optional(),
+}).strict();
+
 export const eventDtoSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -33,6 +43,7 @@ export const participantDtoSchema = z.object({
   id: z.string(),
   displayName: z.string(),
   registeredAt: z.string().datetime(),
+  checkedInAt: z.string().datetime().nullable().optional(),
 }).strict();
 
 export const eventResponseSchema = z.object({ data: eventDtoSchema }).strict();

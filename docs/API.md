@@ -23,9 +23,10 @@ Invalid, expired, revoked, and disabled credentials all receive the same generic
 | Scope | Capability |
 | --- | --- |
 | `events:read` | Read standalone event metadata belonging to the client's organisation |
-| `participants:read` | Read the minimal confirmed-participant roster for an event belonging to the client's organisation |
+| `participants:read` | Read the minimal confirmed-participant roster for an event belonging to the client's organisation; can filter it by attendance without returning attendance data |
+| `participants:attendance:read` | With `participants:read`, opt in to the `checkedInAt` timestamp with `include=attendance` |
 
-Participant access does not include email, user IDs, registration answers, invitation data, feedback linkage, or ticket/check-in/certificate tokens.
+`participants:attendance:read` does not grant roster access by itself. Participant access does not include email, user IDs, registration answers, invitation data, feedback linkage, or ticket/check-in/certificate tokens.
 
 ## Endpoints
 
@@ -48,10 +49,10 @@ Requires `events:read`. Missing and cross-organisation IDs both return the same 
 ### List confirmed participants
 
 ```http
-GET /api/v1/events/:eventId/participants?limit=50&cursor=<cursor>
+GET /api/v1/events/:eventId/participants?limit=50&cursor=<cursor>&attendance=checked_in&include=attendance
 ```
 
-Requires `participants:read`. Only confirmed standalone-event RSVPs are returned.
+Requires `participants:read`. Only confirmed standalone-event RSVPs are returned. `attendance` accepts `all` (the default), `checked_in`, or `not_checked_in`; it does not require an extra scope because it only filters the existing minimal roster. `include=attendance` returns the nullable `checkedInAt` timestamp and additionally requires `participants:attendance:read`.
 
 ```json
 {
@@ -59,7 +60,8 @@ Requires `participants:read`. Only confirmed standalone-event RSVPs are returned
     {
       "id": "example-rsvp-id",
       "displayName": "Participant name",
-      "registeredAt": "2030-01-01T10:00:00.000Z"
+      "registeredAt": "2030-01-01T10:00:00.000Z",
+      "checkedInAt": "2030-01-01T10:15:00.000Z"
     }
   ],
   "pagination": {

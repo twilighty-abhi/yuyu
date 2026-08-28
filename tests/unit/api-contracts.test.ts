@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { decodeCursor, encodeCursor } from "@/lib/api/v1/pagination";
-import { collectionQuerySchema, emptyQuerySchema, eventDtoSchema, participantDtoSchema } from "@/lib/api/v1/schemas";
+import { collectionQuerySchema, emptyQuerySchema, eventDtoSchema, participantCollectionQuerySchema, participantDtoSchema } from "@/lib/api/v1/schemas";
 
 describe("API v1 contracts", () => {
   it("round-trips a versioned cursor and rejects malformed cursors", () => {
@@ -24,5 +24,12 @@ describe("API v1 contracts", () => {
     expect(collectionQuerySchema.safeParse({ organisationId: "other-org" }).success).toBe(false);
     expect(emptyQuerySchema.safeParse({ organisationId: "other-org" }).success).toBe(false);
     expect(emptyQuerySchema.safeParse({}).success).toBe(true);
+  });
+
+  it("validates attendance filters and the opt-in attendance field", () => {
+    expect(participantCollectionQuerySchema.parse({})).toMatchObject({ limit: 50, attendance: "all" });
+    expect(participantCollectionQuerySchema.parse({ attendance: "checked_in", include: "attendance" })).toMatchObject({ attendance: "checked_in", include: "attendance" });
+    expect(participantCollectionQuerySchema.safeParse({ attendance: "late" }).success).toBe(false);
+    expect(participantCollectionQuerySchema.safeParse({ include: "email" }).success).toBe(false);
   });
 });

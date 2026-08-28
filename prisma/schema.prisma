@@ -337,6 +337,7 @@ model RSVP {
   checkInEvents     CheckInEvent[]
 
   @@index([eventId])
+  @@index([eventId, status, checkedInAt, createdAt, id], map: "RSVP_eventId_status_checkedInAt_createdAt_id_idx")
   @@index([eventInstanceId])
   @@index([eventId, attendeeKey])
   @@index([eventInstanceId, attendeeKey])

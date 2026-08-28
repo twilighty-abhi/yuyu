@@ -7,6 +7,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { hasVerifiedGoogleEmail } from "@/lib/googleAuth";
 import { decryptMfaSecret, hashRecoveryCode, verifyMfaCode } from "@/lib/mfa";
+import { isNewUserRegistrationEnabled } from "@/lib/instanceSettings";
 
 const googleId = process.env.AUTH_GOOGLE_ID ?? process.env.GOOGLE_CLIENT_ID;
 const googleSecret =
@@ -25,6 +26,10 @@ const credentialsSchema = z.object({
  */
 class MfaRequiredError extends CredentialsSignin {
   code = "mfa_required";
+}
+
+class EmailVerificationRequiredError extends CredentialsSignin {
+  code = "email_verification_required";
 }
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
@@ -75,6 +80,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             email: true,
             image: true,
             passwordHash: true,
+            emailVerified: true,
             mfaSecretEncrypted: true,
             recoveryCodeHashes: true,
           },
@@ -83,6 +89,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         const ok = await bcrypt.compare(password, user.passwordHash);
         if (!ok) return null;
+        if (!user.emailVerified) throw new EmailVerificationRequiredError();
 
         if (user.mfaSecretEncrypted) {
           const code = parsed.data.totp ?? "";
@@ -110,9 +117,22 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
   ],
   callbacks: {
-    async signIn({ account, profile }) {
+    async signIn({ user, account, profile }) {
       if (account?.provider !== "google") return true;
-      return hasVerifiedGoogleEmail(profile);
+      if (!hasVerifiedGoogleEmail(profile)) return false;
+      if (!(await isNewUserRegistrationEnabled())) {
+        const existingAccount = await prisma.account.findUnique({
+          where: { provider_providerAccountId: { provider: account.provider, providerAccountId: account.providerAccountId } },
+          select: { id: true },
+        });
+        if (!existingAccount) {
+          const email = typeof user.email === "string" ? user.email.trim().toLowerCase() : "";
+          const existingUser = email ? await prisma.user.findUnique({ where: { email }, select: { id: true } }) : null;
+          // Existing password users may still link their verified Google identity.
+          if (!existingUser) return false;
+        }
+      }
+      return true;
     },
     async jwt({ token, user }) {
       const userId = user?.id ?? token.sub;
@@ -145,6 +165,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       (session as typeof session & { authenticatedAt?: number }).authenticatedAt =
         sessionToken.authenticatedAt;
       return session;
+    },
+  },
+  events: {
+    async signIn({ user, account }) {
+      if (account?.provider === "google") {
+        // Auth.js creates or links the adapter user after callbacks.signIn.
+        await prisma.user.update({ where: { id: user.id }, data: { emailVerified: new Date() } });
+      }
     },
   },
 });

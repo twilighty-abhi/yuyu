@@ -23,6 +23,12 @@ export async function getMembership(
   });
 }
 
+/** Read from the database for mutation gates; session JWTs can be stale. */
+export async function isUserEmailVerified(userId: string): Promise<boolean> {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { emailVerified: true } });
+  return user?.emailVerified != null;
+}
+
 export function hasRoleAtLeast(
   role: MembershipRole,
   min: MembershipRole,

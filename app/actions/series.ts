@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { buildRecurrenceIcs, materializeInstances } from "@/lib/recurrence";
-import { canCreateEvent, canManageEvents, getMembership } from "@/lib/permissions";
+import { canCreateEvent, canManageEvents, getMembership, isUserEmailVerified } from "@/lib/permissions";
 import { slugifyTitle, withSlugSuffix } from "@/lib/slug";
 import {
   createSeriesSchema,
@@ -36,6 +36,9 @@ export async function createEventSeries(
   const session = await auth();
   if (!session?.user?.id) {
     return { ok: false, error: "You must be signed in." };
+  }
+  if (!(await isUserEmailVerified(session.user.id))) {
+    return { ok: false, error: "Verify your email before creating event series." };
   }
   if (await isActionRateLimited("create", session.user.id)) {
     return { ok: false, error: "Too many creation attempts. Please try again later." };

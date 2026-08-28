@@ -1,14 +1,18 @@
-"use client";
-
 import { Suspense } from "react";
 import Box from "@mui/material/Box";
 import Grid from "@mui/material/Grid";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
+import { connection } from "next/server";
 import { LoginForm } from "./ui";
+import { isNewUserRegistrationEnabled } from "@/lib/instanceSettings";
 
-export default function LoginPage() {
+export default async function LoginPage() {
+  // The public registration policy is an instance setting and must be read
+  // only for a real request, never from a build-time database.
+  await connection();
+  const accountCreationEnabled = await isNewUserRegistrationEnabled();
   return (
     <Box
       sx={{
@@ -81,7 +85,7 @@ export default function LoginPage() {
                   }}
                 >
                   <Suspense fallback={<Typography color="text.secondary">Loading sign in…</Typography>}>
-                    <LoginForm />
+                    <LoginForm accountCreationEnabled={accountCreationEnabled} />
                   </Suspense>
                 </Box>
               </Stack>

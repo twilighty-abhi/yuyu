@@ -13,7 +13,7 @@ import Tabs from "@mui/material/Tabs";
 import Tab from "@mui/material/Tab";
 import Link from "@mui/material/Link";
 import Typography from "@mui/material/Typography";
-import { signUpWithPassword } from "@/app/actions/auth";
+import { resendEmailVerification, signUpWithPassword } from "@/app/actions/auth";
 
 const showGoogle = process.env.NEXT_PUBLIC_AUTH_GOOGLE_CONFIGURED === "1";
 
@@ -88,7 +88,7 @@ const primaryButtonSx = {
 
 type Mode = "signin" | "signup";
 
-export function LoginForm() {
+export function LoginForm({ accountCreationEnabled }: { accountCreationEnabled: boolean }) {
   const router = useRouter();
   const sp = useSearchParams();
   const callbackUrl = useMemo(() => {
@@ -102,10 +102,13 @@ export function LoginForm() {
   const [totp, setTotp] = useState("");
   const [mfaRequired, setMfaRequired] = useState(false);
   const [name, setName] = useState("");
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(() =>
+    sp.get("verified") === "1" ? "Email verified. You can now sign in." : null,
+  );
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
   const [loading, setLoading] = useState<string | null>(null);
+  const [needsEmailVerification, setNeedsEmailVerification] = useState(false);
 
   function resetStatus() {
     setError(null);
@@ -145,6 +148,11 @@ export function LoginForm() {
         setMfaRequired(true);
         return;
       }
+      if (r.code === "email_verification_required") {
+        setNeedsEmailVerification(true);
+        setMessage("Verify your email before signing in. You can request a new link below.");
+        return;
+      }
       setError(mfaRequired ? "Invalid authenticator or recovery code." : "Invalid email or password.");
       return;
     }
@@ -163,20 +171,23 @@ export function LoginForm() {
       setLoading(null);
       return;
     }
-    const r = await signIn("credentials", {
-      email,
-      password,
-      redirect: false,
-    });
     setLoading(null);
-    if (!r || r.error) {
-      setMessage("Account created. Please sign in.");
-      setMode("signin");
-      setPassword("");
+    setNeedsEmailVerification(true);
+    setMessage("Check your inbox for a link to verify your email and activate your account.");
+    setMode("signin");
+    setPassword("");
+  }
+
+  async function handleResendVerification() {
+    resetStatus();
+    setLoading("resend-verification");
+    const result = await resendEmailVerification({ email });
+    setLoading(null);
+    if (!result.ok) {
+      setError(result.error);
       return;
     }
-    router.push(callbackUrl);
-    router.refresh();
+    setMessage("If that account needs verification, a new link has been sent.");
   }
 
   const isSignUp = mode === "signup";
@@ -242,6 +253,7 @@ export function LoginForm() {
           setMode(v);
           resetStatus();
           resetMfaChallenge();
+          setNeedsEmailVerification(false);
         }}
         variant="fullWidth"
         sx={{
@@ -260,11 +272,17 @@ export function LoginForm() {
         }}
       >
         <Tab label="Sign in" value="signin" />
-        <Tab label="Create account" value="signup" />
+        {accountCreationEnabled ? <Tab label="Create account" value="signup" /> : null}
       </Tabs>
 
       {error ? <Alert severity="error">{error}</Alert> : null}
       {message ? <Alert severity="success">{message}</Alert> : null}
+
+      {needsEmailVerification ? (
+        <Button variant="outlined" disabled={!!loading || !email} onClick={handleResendVerification} sx={{ textTransform: "none", alignSelf: "flex-start", color: "rgba(255,255,255,0.9)", borderColor: "rgba(255,255,255,0.35)" }}>
+          {loading === "resend-verification" ? "Sending…" : "Resend verification email"}
+        </Button>
+      ) : null}
 
       {showGoogle ? (
         <Button
@@ -400,7 +418,7 @@ export function LoginForm() {
         </Box>
       ) : null}
 
-      <Box sx={{ textAlign: "center" }}>
+      {accountCreationEnabled ? <Box sx={{ textAlign: "center" }}>
         <Link
           component="button"
           type="button"
@@ -409,6 +427,7 @@ export function LoginForm() {
             setMode(isSignUp ? "signin" : "signup");
             resetStatus();
             resetMfaChallenge();
+            setNeedsEmailVerification(false);
           }}
           sx={{
             color: "rgba(255,255,255,0.7)",
@@ -420,7 +439,7 @@ export function LoginForm() {
             ? "Already have an account? Sign in"
             : "Don't have an account? Create one"}
         </Link>
-      </Box>
+      </Box> : null}
     </Stack>
   );
 }

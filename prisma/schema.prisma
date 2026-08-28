@@ -552,6 +552,14 @@ model OperationalHeartbeat {
   updatedAt       DateTime  @updatedAt
 }
 
+/// Instance-wide, super-admin-managed controls. The singleton row is created
+/// on first change; absence deliberately preserves the secure default below.
+model InstanceSetting {
+  id                    String   @id
+  allowNewUserSignups   Boolean  @default(true)
+  updatedAt             DateTime @updatedAt
+}
+
 /// Tracks stored files (S3/R2/MinIO/etc.) for per-org storage accounting.
 /// This is optional for runtime today but enables accurate “bytes stored” metrics.
 model Asset {

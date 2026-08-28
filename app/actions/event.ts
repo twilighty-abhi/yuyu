@@ -8,6 +8,7 @@ import {
   canCreateEvent,
   canPublishEvents,
   getMembership,
+  isUserEmailVerified,
 } from "@/lib/permissions";
 import { slugifyTitle, withSlugSuffix } from "@/lib/slug";
 import {
@@ -32,6 +33,7 @@ export async function uploadEventCoverImage(
 ): Promise<ActionResult<{ url: string }>> {
   const session = await auth();
   if (!session?.user?.id) return { ok: false, error: "You must be signed in." };
+  if (!(await isUserEmailVerified(session.user.id))) return { ok: false, error: "Verify your email before uploading event images." };
   if (await isActionRateLimited("upload", session.user.id)) {
     return { ok: false, error: "Too many uploads. Please try again later." };
   }
@@ -91,6 +93,9 @@ export async function createEvent(input: unknown): Promise<ActionResult<{ id: st
   const session = await auth();
   if (!session?.user?.id) {
     return { ok: false, error: "You must be signed in." };
+  }
+  if (!(await isUserEmailVerified(session.user.id))) {
+    return { ok: false, error: "Verify your email before creating events." };
   }
   if (await isActionRateLimited("create", session.user.id)) {
     return { ok: false, error: "Too many creation attempts. Please try again later." };
@@ -393,6 +398,9 @@ export async function cloneEvent(
   const session = await auth();
   if (!session?.user?.id) {
     return { ok: false, error: "You must be signed in." };
+  }
+  if (!(await isUserEmailVerified(session.user.id))) {
+    return { ok: false, error: "Verify your email before creating events." };
   }
 
   const parsed = cloneEventSchema.safeParse(input);

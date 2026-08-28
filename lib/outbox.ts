@@ -4,6 +4,7 @@ import { OutboxStatus, Prisma, RsvpStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { sendApprovalNotification, sendEventInvitation, sendRSVPConfirmation } from "@/lib/email";
 import { sendPasswordResetEmail } from "@/lib/email/passwordReset";
+import { sendEmailVerificationEmail } from "@/lib/email/emailVerification";
 import { redactSensitiveText } from "@/lib/redactSensitiveText";
 
 type OutboxClient = Prisma.TransactionClient | typeof prisma;
@@ -34,6 +35,12 @@ type EventInvitePayload = {
   organisationName: string;
   orgSlug: string;
   eventSlug: string;
+};
+
+type EmailVerificationPayload = {
+  to: string;
+  verificationUrl: string;
+  expiresAt: string;
 };
 
 export async function enqueueRsvpConfirmation(
@@ -81,6 +88,15 @@ export async function enqueueEventInvite(
       kind: "event-invite",
       payload: payload as Prisma.InputJsonValue,
     },
+  });
+}
+
+export async function enqueueEmailVerification(
+  client: OutboxClient,
+  payload: EmailVerificationPayload,
+) {
+  return client.outboxMessage.create({
+    data: { kind: "email-verification", payload: payload as Prisma.InputJsonValue },
   });
 }
 
@@ -133,6 +149,13 @@ function asEventInvitePayload(value: Prisma.JsonValue): EventInvitePayload | nul
     typeof payload.eventSlug !== "string"
   ) return null;
   return payload as EventInvitePayload;
+}
+
+function asEmailVerificationPayload(value: Prisma.JsonValue): EmailVerificationPayload | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const payload = value as Record<string, unknown>;
+  if (typeof payload.to !== "string" || typeof payload.verificationUrl !== "string" || typeof payload.expiresAt !== "string" || Number.isNaN(Date.parse(payload.expiresAt))) return null;
+  return payload as EmailVerificationPayload;
 }
 
 /** Deliver a small batch. Run this from a protected scheduler, never a request path. */
@@ -193,6 +216,17 @@ export async function deliverOutboxBatch(limit = 20) {
         // Reset URLs are bearer secrets. Remove them immediately after sending
         // rather than retaining them with ordinary delivery history.
         removeAfterDelivery = true;
+      } else if (message.kind === "email-verification") {
+        const payload = asEmailVerificationPayload(message.payload);
+        if (!payload) throw new Error("Invalid email verification payload");
+        if (new Date(payload.expiresAt) <= new Date()) {
+          await prisma.outboxMessage.delete({ where: { id: message.id } });
+          failed += 1;
+          continue;
+        }
+        await sendEmailVerificationEmail(payload);
+        // Verification URLs are bearer secrets; do not retain them after delivery.
+        removeAfterDelivery = true;
       } else if (message.kind === "event-invite") {
         const payload = asEventInvitePayload(message.payload);
         if (!payload) throw new Error("Invalid event invite payload");
@@ -212,7 +246,7 @@ export async function deliverOutboxBatch(limit = 20) {
     } catch (error) {
       const attempts = message.attempts + 1;
       const retryAt = new Date(Date.now() + Math.min(60 * 60_000, 2 ** attempts * 60_000));
-      if (message.kind === "password-reset" && attempts >= 8) {
+      if ((message.kind === "password-reset" || message.kind === "email-verification") && attempts >= 8) {
         await prisma.outboxMessage.delete({ where: { id: message.id } });
       } else {
         await prisma.outboxMessage.update({

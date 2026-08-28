@@ -63,8 +63,8 @@ export function CreateOrgForm() {
   return (
     <Stack
       component="form"
-      spacing={2}
-      sx={{ maxWidth: 520 }}
+      spacing={2.5}
+      sx={{ width: "100%" }}
       onSubmit={(e) => {
         e.preventDefault();
         setError(null);
@@ -85,7 +85,7 @@ export function CreateOrgForm() {
       }}
     >
       {error ? <Alert severity="error">{error}</Alert> : null}
-      <TextField name="name" label="Organisation name" required fullWidth />
+      <TextField name="name" label="Organisation name" required fullWidth autoFocus />
       <TextField
         name="slug"
         label="URL slug"
@@ -112,7 +112,13 @@ export function CreateOrgForm() {
         minRows={3}
       />
       <TextField name="logoUrl" label="Logo URL (optional)" fullWidth />
-      <Button type="submit" variant="contained" disabled={isSubmitDisabled} size="large" sx={{ alignSelf: "flex-start", textTransform: "none", borderRadius: 2, px: 2.5 }}>
+      <Button
+        type="submit"
+        variant="contained"
+        disabled={isSubmitDisabled}
+        size="large"
+        sx={{ textTransform: "none", borderRadius: 2, py: 1.25 }}
+      >
         Create organisation
       </Button>
     </Stack>

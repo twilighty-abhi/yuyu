@@ -11,16 +11,25 @@ import TableContainer from "@mui/material/TableContainer";
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { getRequestOrigin } from "@/lib/publicUrl";
-import { requireOrgRole } from "@/lib/permissions";
+import { requireOrgDashboardAccess } from "@/lib/permissions";
+import { canViewEventDashboard } from "@/lib/eventAccess";
 import { EditSeriesForm } from "@/components/series/EditSeriesForm";
 import { SeriesInvitePanel } from "@/components/invites/SeriesInvitePanel";
 import { AttendeeTable } from "@/components/attendees/AttendeeTable";
+import { ScheduleManager } from "@/components/schedule/ScheduleManager";
 
 type Props = { params: Promise<{ orgSlug: string; seriesId: string }> };
 
+function eventDateInput(date: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
+  const value = (type: string) => parts.find((part) => part.type === type)?.value;
+  return `${value("year")}-${value("month")}-${value("day")}`;
+}
+
 export default async function SeriesManagePage({ params }: Props) {
   const { orgSlug, seriesId } = await params;
-  const { organisation } = await requireOrgRole(orgSlug, "ADMIN");
+  const access = await requireOrgDashboardAccess(orgSlug);
+  const { organisation } = access;
 
   const series = await prisma.eventSeries.findFirst({
     where: { id: seriesId, organisationId: organisation.id },
@@ -29,9 +38,11 @@ export default async function SeriesManagePage({ params }: Props) {
         orderBy: { startDateTime: "asc" },
         take: 20,
       },
+      scheduleItems: { orderBy: { sortOrder: "asc" } },
     },
   });
   if (!series) notFound();
+  if (!access.membership && !(await canViewEventDashboard({ userId: access.userId, organisationId: organisation.id, eventSeriesId: series.id }))) notFound();
 
   const invites = await prisma.seriesInvite.findMany({
     where: { eventSeriesId: series.id },
@@ -90,6 +101,8 @@ export default async function SeriesManagePage({ params }: Props) {
           createdAt: i.createdAt.toISOString(),
         }))}
       />
+
+      <ScheduleManager organisationSlug={organisation.slug} eventSeriesId={series.id} items={series.scheduleItems.map((item) => ({ ...item, startDateTime: item.startDateTime.toISOString(), endDateTime: item.endDateTime.toISOString() }))} defaultDate={series.instances[0] ? eventDateInput(series.instances[0].startDateTime, series.timezone) : ""} />
 
       <Typography variant="h6" component="h2" sx={{ fontWeight: 700, letterSpacing: "-0.3px" }}>
         Upcoming instances

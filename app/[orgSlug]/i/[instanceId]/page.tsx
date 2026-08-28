@@ -13,6 +13,8 @@ import { RsvpForm } from "@/components/rsvp/RsvpForm";
 import { isEventPublished, shouldIndexPublicEvent } from "@/lib/eventVisibility";
 import { countConfirmedForInstance } from "@/lib/rsvpCapacity";
 import { safeTimeZone } from "@/lib/timeZone";
+import Link from "next/link";
+import Button from "@mui/material/Button";
 
 type Props = { params: Promise<{ orgSlug: string; instanceId: string }> };
 
@@ -146,6 +148,7 @@ export default async function InstanceEventPage({ params }: Props) {
           safeTimeZone(series.timezone),
         )}
       </Typography>
+      <Link href={`/${org.slug}/i/${instance.id}/schedule`} style={{ textDecoration: "none" }}><Button variant="outlined">View live schedule</Button></Link>
       {series.description ? (
         <Typography variant="body1" sx={{ whiteSpace: "pre-wrap" }}>
           {series.description}

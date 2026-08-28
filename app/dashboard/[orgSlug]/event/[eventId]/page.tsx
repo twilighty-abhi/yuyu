@@ -7,12 +7,19 @@ import Button from "@mui/material/Button";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import { prisma } from "@/lib/db";
 import { getRequestOrigin } from "@/lib/publicUrl";
-import { requireOrgRole } from "@/lib/permissions";
+import { requireOrgDashboardAccess } from "@/lib/permissions";
+import { canViewEventDashboard } from "@/lib/eventAccess";
 import { EventManageTabs } from "@/components/dashboard/EventManageTabs";
 
 type Props = {
   params: Promise<{ orgSlug: string; eventId: string }>;
 };
+
+function eventDateInput(date: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
+  const value = (type: string) => parts.find((part) => part.type === type)?.value;
+  return `${value("year")}-${value("month")}-${value("day")}`;
+}
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { eventId } = await params;
@@ -25,12 +32,15 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function EventManagePage({ params }: Props) {
   const { orgSlug, eventId } = await params;
-  const { organisation } = await requireOrgRole(orgSlug, "ADMIN");
+  const access = await requireOrgDashboardAccess(orgSlug);
+  const { organisation } = access;
 
   const event = await prisma.event.findFirst({
     where: { id: eventId, organisationId: organisation.id },
+    include: { scheduleItems: { orderBy: { sortOrder: "asc" } } },
   });
   if (!event) notFound();
+  if (!access.membership && !(await canViewEventDashboard({ userId: access.userId, organisationId: organisation.id, eventId: event.id }))) notFound();
 
   const rsvps = await prisma.rSVP.findMany({
     where: { eventId: event.id },
@@ -206,6 +216,8 @@ export default async function EventManagePage({ params }: Props) {
           rejected,
           checkedIn,
         }}
+        scheduleItems={event.scheduleItems.map((item) => ({ ...item, startDateTime: item.startDateTime.toISOString(), endDateTime: item.endDateTime.toISOString() }))}
+        scheduleDate={eventDateInput(event.startDateTime, event.timezone)}
       />
     </Stack>
   );

@@ -25,6 +25,8 @@ import QrCodeScannerOutlinedIcon from "@mui/icons-material/QrCodeScannerOutlined
 import PersonAddOutlinedIcon from "@mui/icons-material/PersonAddOutlined";
 import { ManualRsvpDialog } from "@/components/attendees/ManualRsvpDialog";
 import { useRouter } from "next/navigation";
+import { ScheduleManager } from "@/components/schedule/ScheduleManager";
+import { CollaboratorInvitePanel } from "@/components/event/CollaboratorInvitePanel";
 
 type InviteRow = { id: string; email: string; createdAt: string };
 
@@ -46,8 +48,10 @@ export function EventManageTabs(props: {
     rejected: number;
     checkedIn: number;
   };
+  scheduleItems: Array<{ id: string; title: string; description: string; startDateTime: string; endDateTime: string; delayMinutes: number }>;
+  scheduleDate: string;
 }) {
-  const { organisationSlug, event, attendees, invites, analytics, registrationFields, feedbackUrl, feedbackForm, feedbackFields, referenceTime } = props;
+  const { organisationSlug, event, attendees, invites, analytics, registrationFields, feedbackUrl, feedbackForm, feedbackFields, referenceTime, scheduleItems, scheduleDate } = props;
   const [tab, setTab] = useState(0);
   const [manualRsvpOpen, setManualRsvpOpen] = useState(false);
   const router = useRouter();
@@ -68,6 +72,7 @@ export function EventManageTabs(props: {
         <Tab label="Invites" />
         <Tab label="Registration form" />
         <Tab label="Feedback" />
+        <Tab label="Schedule" />
         <Tab label="Check-in" />
         <Tab label="More & delete" />
       </Tabs>
@@ -133,7 +138,8 @@ export function EventManageTabs(props: {
       {tab === 6 ? (
         <FeedbackFormEditor organisationSlug={organisationSlug} eventId={event.id} feedbackUrl={feedbackUrl} form={feedbackForm} fields={feedbackFields} />
       ) : null}
-      {tab === 7 ? (
+      {tab === 7 ? <ScheduleManager organisationSlug={organisationSlug} eventId={event.id} items={scheduleItems} defaultDate={scheduleDate} /> : null}
+      {tab === 8 ? (
         <Stack spacing={2}>
           <Paper variant="outlined" sx={{ p: 3 }}>
             <Stack spacing={2} sx={{ alignItems: "flex-start" }}>
@@ -158,8 +164,8 @@ export function EventManageTabs(props: {
           </Paper>
         </Stack>
       ) : null}
-      {tab === 8 ? (
-        <EventManageMore organisationSlug={organisationSlug} event={event} />
+      {tab === 9 ? (
+        <Stack spacing={2}><CollaboratorInvitePanel organisationSlug={organisationSlug} eventId={event.id} /><EventManageMore organisationSlug={organisationSlug} event={event} /></Stack>
       ) : null}
     </>
   );

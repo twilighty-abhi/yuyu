@@ -8,6 +8,8 @@ import TableCell from "@mui/material/TableCell";
 import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
 import { prisma } from "@/lib/db";
+import { isNewUserRegistrationEnabled } from "@/lib/instanceSettings";
+import { AccountCreationControl } from "@/components/super-admin/AccountCreationControl";
 
 function StatCard(props: { label: string; value: number }) {
   return (
@@ -25,10 +27,11 @@ function StatCard(props: { label: string; value: number }) {
 }
 
 export default async function SuperAdminAuthPage() {
-  const [accountsCount, sessionsCount, tokensCount] = await Promise.all([
+  const [accountsCount, sessionsCount, tokensCount, accountCreationEnabled] = await Promise.all([
     prisma.account.count(),
     prisma.session.count(),
     prisma.verificationToken.count(),
+    isNewUserRegistrationEnabled(),
   ]);
 
   const [accounts, sessions, tokens] = await Promise.all([
@@ -76,6 +79,8 @@ export default async function SuperAdminAuthPage() {
           <StatCard label="Verification tokens" value={tokensCount} />
         </Grid>
       </Grid>
+
+      <AccountCreationControl initialEnabled={accountCreationEnabled} />
 
       <Paper variant="outlined" sx={{ p: 2.25, borderRadius: 3 }}>
         <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>

@@ -18,6 +18,7 @@ Dynamic segments are shown as `:name` for readability.
 | `/ticket/:token` | Attendee ticket status and QR page |
 | `/join/org/:token` | Accept an organisation invitation |
 | `/login` | Password and Google sign-in/signup |
+| `/verify-email` | Consume a one-time email-verification link and activate a password account |
 | `/reset-password` | Password-reset request and completion |
 
 ## User and organisation dashboard
@@ -38,7 +39,7 @@ Dashboard pages require authentication and enforce membership/role permissions o
 
 ## Super-admin pages
 
-The `/super-admin` area includes overview, audit log, auth, events, invites, monitoring, operations, organisations, storage, and users. Access requires the authenticated email configured in `SUPER_ADMIN_EMAIL`; other users receive a not-found response.
+The `/super-admin` area includes overview, audit log, auth, events, invites, monitoring, operations, organisations, storage, and users. The Auth page includes the instance-wide new-account creation control. Access requires the authenticated email configured in `SUPER_ADMIN_EMAIL`; other users receive a not-found response.
 
 Every super-admin page additionally requires a current TOTP verification. Users without a valid 10-minute step-up proof are sent to `/super-admin-mfa`; authenticator MFA must be enrolled first from `/dashboard/security`.
 
@@ -55,7 +56,7 @@ Every super-admin page additionally requires a current TOTP verification. Users 
 | `/api/auth/*` | Auth.js | Session, provider, callback, and credential endpoints |
 | `GET /api/v1/events` | Machine bearer credential + `events:read` | Paginated tenant event metadata |
 | `GET /api/v1/events/:eventId` | Machine bearer credential + `events:read` | Tenant-scoped event metadata |
-| `GET /api/v1/events/:eventId/participants` | Machine bearer credential + `participants:read` | Paginated minimal confirmed-participant roster |
+| `GET /api/v1/events/:eventId/participants` | Machine bearer credential + `participants:read` | Paginated minimal confirmed-participant roster, with attendance filtering; `include=attendance` also requires `participants:attendance:read` |
 
 Opaque ticket and certificate URLs are bearer capabilities. Do not log them or place them in analytics payloads.
 

@@ -9,11 +9,13 @@ This page documents implemented controls and security boundaries. It is not a su
 - Passwords are bcrypt hashes and are never stored or logged in plaintext.
 - Auth.js sessions include a user `sessionVersion`; incrementing it invalidates issued sessions.
 - Password reset uses expiring verification tokens and the transactional outbox.
+- Password accounts require a one-time, expiring inbox-verification link before sign-in or event creation. Tokens are stored only as hashes and consumed once.
 - Credential users can enable TOTP MFA and receive one-use recovery codes.
 - TOTP seeds are encrypted with AES-256-GCM using `MFA_ENCRYPTION_KEY`; recovery codes are stored as keyed hashes.
 - Sensitive account operations revoke existing sessions and write audit events.
 - The super-admin panel requires a second, fresh TOTP step-up verification even after a normal authenticated session. Its signed, HttpOnly proof lasts 10 minutes and is bound to the user/session version.
 - Google OAuth security, including MFA, is governed by the linked Google account.
+- Super-admins with a fresh TOTP proof can disable new password and Google account creation; existing users can continue to sign in.
 - External applications use high-entropy, tenant-bound API credentials under `/api/v1`; raw secrets are displayed once and only SHA-256 digests are stored.
 
 ## Authorization and tenancy
@@ -55,7 +57,7 @@ This page documents implemented controls and security boundaries. It is not a su
 - Certificate-enabled feedback requires an email matching a confirmed RSVP, links the response for certificate generation, and allows repeat submissions.
 - Registration counts are omitted from public payloads when the organiser disables count display.
 - Audit metadata is designed to exclude email addresses, answers, passwords, and bearer tokens.
-- Machine participant responses intentionally exclude contact data, registration answers, user IDs, and ticket/check-in/certificate capabilities.
+- Machine participant responses intentionally exclude contact data, registration answers, user IDs, and ticket/check-in/certificate capabilities. Attendance filtering does not reveal check-in data; the nullable check-in timestamp requires the separate `participants:attendance:read` scope and an explicit `include=attendance` request.
 - Asset buckets are private; safe derivatives are delivered through the application.
 - Retention cleanup covers expired verification tokens, undo snapshots, and old sent outbox records. Deployment operators must define broader legal retention and deletion procedures.
 

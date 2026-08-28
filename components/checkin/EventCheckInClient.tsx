@@ -54,6 +54,7 @@ import {
 import { useToast } from "@/components/feedback/ToastProvider";
 import { CheckInQrScanner } from "@/components/checkin/CheckInQrScanner";
 import { IdCardPrintDialog } from "@/components/checkin/IdCardPrintDialog";
+import { shouldRefreshCheckIn } from "@/lib/checkInRefresh";
 
 export type CheckInRecentRow = {
   rsvpId: string;
@@ -239,6 +240,25 @@ export function EventCheckInClient(props: {
   useEffect(() => {
     if (isOnline && queuedCount > 0) syncOfflineQueue();
   }, [isOnline, queuedCount, syncOfflineQueue]);
+
+  useEffect(() => {
+    const refreshWhenSafe = () => {
+      if (shouldRefreshCheckIn({
+        isVisible: document.visibilityState === "visible",
+        isOnline,
+        scanOpen,
+        idCardOpen,
+      })) {
+        router.refresh();
+      }
+    };
+    const interval = window.setInterval(refreshWhenSafe, 30_000);
+    document.addEventListener("visibilitychange", refreshWhenSafe);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", refreshWhenSafe);
+    };
+  }, [idCardOpen, isOnline, router, scanOpen]);
 
   const queueLocalCheckIn = useCallback(async (attendee: OfflineAttendee) => {
     const checkedInAt = new Date().toISOString();
@@ -900,8 +920,8 @@ export function EventCheckInClient(props: {
           </Button>
         </Stack>
         <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
-          Export includes the list on this page (up to 200). Refresh after new
-          check-ins to update.
+          Export includes the list on this page (up to 200). This page refreshes
+          automatically while it is open.
         </Typography>
         {recent.length === 0 ? (
           <Typography color="text.secondary" sx={{ mt: 2 }}>

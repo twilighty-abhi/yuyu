@@ -16,12 +16,6 @@ type Props = {
   params: Promise<{ orgSlug: string; eventId: string }>;
 };
 
-function eventDateInput(date: Date, timeZone: string) {
-  const parts = new Intl.DateTimeFormat("en", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
-  const value = (type: string) => parts.find((part) => part.type === type)?.value;
-  return `${value("year")}-${value("month")}-${value("day")}`;
-}
-
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { eventId } = await params;
   const event = await prisma.event.findUnique({
@@ -38,7 +32,7 @@ export default async function EventManagePage({ params }: Props) {
 
   const event = await prisma.event.findFirst({
     where: { id: eventId, organisationId: organisation.id },
-    include: { scheduleItems: { orderBy: { sortOrder: "asc" } } },
+    include: { page: { include: { sections: { orderBy: { sortOrder: "asc" } } } }, highlights: { orderBy: { sortOrder: "asc" } }, speakers: { orderBy: { sortOrder: "asc" } }, sponsors: { orderBy: { sortOrder: "asc" } }, resources: { orderBy: { sortOrder: "asc" } }, faqs: { orderBy: { sortOrder: "asc" } }, sessions: { orderBy: { sortOrder: "asc" }, include: { speakers: true } } },
   });
   if (!event) notFound();
   if (!access.membership && !(await canViewEventDashboard({ userId: access.userId, organisationId: organisation.id, eventId: event.id }))) notFound();
@@ -126,6 +120,19 @@ export default async function EventManagePage({ params }: Props) {
     select: { id: true, email: true, createdAt: true },
   });
 
+  const [collaborators, pendingCollaboratorInvites] = await Promise.all([
+    prisma.eventCollaborator.findMany({
+      where: { eventId: event.id },
+      include: { user: { select: { name: true, email: true } } },
+      orderBy: { createdAt: "asc" },
+    }),
+    prisma.eventCollaboratorInvite.findMany({
+      where: { eventId: event.id, usedAt: null, expiresAt: { gt: new Date() } },
+      select: { id: true, email: true, expiresAt: true },
+      orderBy: { createdAt: "desc" },
+    }),
+  ]);
+
   const form = await prisma.eventRegistrationForm.findUnique({
     where: { eventId: event.id },
     include: { fields: { orderBy: { sortOrder: "asc" } } },
@@ -212,6 +219,10 @@ export default async function EventManagePage({ params }: Props) {
         }))}
         registrationFields={registrationFields}
         referenceTime={new Date().toISOString()}
+website={{ page: event.page, highlights: event.highlights.map((x) => ({ id: x.id, title: x.title, description: x.description, visibility: x.visibility, values: { icon: x.icon, sortOrder: x.sortOrder } })), speakers: event.speakers.map((x) => ({ id: x.id, title: x.name, description: x.bioHtml, visibility: x.visibility, values: { headline: x.headline, organisation: x.organisation, photoUrl: x.photoUrl, websiteUrl: x.websiteUrl, linkedinUrl: x.linkedinUrl, xUrl: x.xUrl, sortOrder: x.sortOrder } })), sponsors: event.sponsors.map((x) => ({ id: x.id, title: x.name, description: x.description, visibility: x.visibility, values: { logoUrl: x.logoUrl, websiteUrl: x.websiteUrl, tier: x.tier, sortOrder: x.sortOrder } })), resources: event.resources.map((x) => ({ id: x.id, title: x.title, description: x.description, visibility: x.visibility, values: { externalUrl: x.externalUrl, sortOrder: x.sortOrder } })), faqs: event.faqs.map((x) => ({ id: x.id, title: x.question, description: x.answerHtml, visibility: x.visibility, values: { sortOrder: x.sortOrder } })) }}
+        canManageCollaborators={Boolean(access.membership && isOrgAdmin(access.membership.role))}
+        collaborators={collaborators.map((collaborator) => ({ id: collaborator.id, name: collaborator.user.name, email: collaborator.user.email, permissions: collaborator.permissions }))}
+        pendingCollaboratorInvites={pendingCollaboratorInvites.map((invite) => ({ id: invite.id, email: invite.email, expiresAt: invite.expiresAt.toISOString() }))}
         analytics={{
           total,
           confirmed,
@@ -220,8 +231,6 @@ export default async function EventManagePage({ params }: Props) {
           rejected,
           checkedIn,
         }}
-        scheduleItems={event.scheduleItems.map((item) => ({ ...item, startDateTime: item.startDateTime.toISOString(), endDateTime: item.endDateTime.toISOString() }))}
-        scheduleDate={eventDateInput(event.startDateTime, event.timezone)}
       />
     </Stack>
   );

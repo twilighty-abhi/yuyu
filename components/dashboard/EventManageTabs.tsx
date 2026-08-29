@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import type { Event } from "@prisma/client";
+import type { Event, EventPermission } from "@prisma/client";
 import Tab from "@mui/material/Tab";
 import Tabs from "@mui/material/Tabs";
 import Button from "@mui/material/Button";
@@ -25,8 +25,9 @@ import QrCodeScannerOutlinedIcon from "@mui/icons-material/QrCodeScannerOutlined
 import PersonAddOutlinedIcon from "@mui/icons-material/PersonAddOutlined";
 import { ManualRsvpDialog } from "@/components/attendees/ManualRsvpDialog";
 import { useRouter } from "next/navigation";
-import { ScheduleManager } from "@/components/schedule/ScheduleManager";
 import { CollaboratorInvitePanel } from "@/components/event/CollaboratorInvitePanel";
+import { EventWebsiteManager } from "@/components/event/EventWebsiteManager";
+import { EventWebsiteReleaseControl } from "@/components/event/EventWebsiteReleaseControl";
 
 type InviteRow = { id: string; email: string; createdAt: string };
 
@@ -48,10 +49,12 @@ export function EventManageTabs(props: {
     rejected: number;
     checkedIn: number;
   };
-  scheduleItems: Array<{ id: string; title: string; description: string; startDateTime: string; endDateTime: string; delayMinutes: number }>;
-  scheduleDate: string;
+  website: { page: { isPublished: boolean; tagline: string; logoUrl: string | null; accentColor: string | null; aboutHtml: string; sections: Array<{ type: string; isVisible: boolean; sortOrder: number }> } | null; highlights: Array<{ id: string; title: string; description: string; visibility: string; values: Record<string, string | number | null> }>; speakers: Array<{ id: string; title: string; description: string; visibility: string; values: Record<string, string | number | null> }>; sponsors: Array<{ id: string; title: string; description: string; visibility: string; values: Record<string, string | number | null> }>; resources: Array<{ id: string; title: string; description: string; visibility: string; values: Record<string, string | number | null> }>; faqs: Array<{ id: string; title: string; description: string; visibility: string; values: Record<string, string | number | null> }> };
+  canManageCollaborators: boolean;
+  collaborators: Array<{ id: string; name: string | null; email: string | null; permissions: EventPermission[] }>;
+  pendingCollaboratorInvites: Array<{ id: string; email: string; expiresAt: string }>;
 }) {
-  const { organisationSlug, event, attendees, invites, analytics, registrationFields, feedbackUrl, feedbackForm, feedbackFields, referenceTime, scheduleItems, scheduleDate } = props;
+  const { organisationSlug, event, attendees, invites, analytics, registrationFields, feedbackUrl, feedbackForm, feedbackFields, referenceTime, website, canManageCollaborators, collaborators, pendingCollaboratorInvites } = props;
   const [tab, setTab] = useState(0);
   const [manualRsvpOpen, setManualRsvpOpen] = useState(false);
   const router = useRouter();
@@ -66,13 +69,13 @@ export function EventManageTabs(props: {
         sx={{ borderBottom: 1, borderColor: "divider", mb: 2 }}
       >
         <Tab label="Overview" />
+        <Tab label="Event Page & Program" />
         <Tab label="Details" />
         <Tab label="Attendees" />
         <Tab label="Analytics" />
         <Tab label="Invites" />
         <Tab label="Registration form" />
         <Tab label="Feedback" />
-        <Tab label="Schedule" />
         <Tab label="Check-in" />
         <Tab label="More & delete" />
       </Tabs>
@@ -87,10 +90,18 @@ export function EventManageTabs(props: {
           onOpenTab={setTab}
         />
       ) : null}
-      {tab === 1 ? (
-        <EditEventForm organisationSlug={organisationSlug} event={event} />
-      ) : null}
+      {tab === 1 ? <Stack spacing={3}><Paper variant="outlined" sx={{ p: 2.5 }}><Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ alignItems: { sm: "center" }, justifyContent: "space-between" }}><div><Typography variant="h6">Programme schedule</Typography><Typography variant="body2" color="text.secondary">Add sessions, adjust planned times, and apply live cascading delays from the dedicated schedule workspace.</Typography></div><Button component={Link} href={`/dashboard/${organisationSlug}/event/${event.id}/schedule`} variant="outlined">Open schedule</Button></Stack></Paper><EventWebsiteManager organisationSlug={organisationSlug} eventId={event.id} eventSlug={event.slug} {...website} /></Stack> : null}
       {tab === 2 ? (
+        <Stack spacing={3}>
+          <EventWebsiteReleaseControl
+            organisationSlug={organisationSlug}
+            eventId={event.id}
+            isPublished={website.page?.isPublished ?? false}
+          />
+          <EditEventForm organisationSlug={organisationSlug} event={event} />
+        </Stack>
+      ) : null}
+      {tab === 3 ? (
         <Stack spacing={2}>
           <Stack direction="row" spacing={1} useFlexGap sx={{ justifyContent: "flex-end", flexWrap: "wrap" }}>
             <Button variant="contained" startIcon={<PersonAddOutlinedIcon />} onClick={() => setManualRsvpOpen(true)}>
@@ -117,10 +128,10 @@ export function EventManageTabs(props: {
           />
         </Stack>
       ) : null}
-      {tab === 3 ? (
+      {tab === 4 ? (
         <EventAnalyticsPanel analytics={analytics} />
       ) : null}
-      {tab === 4 ? (
+      {tab === 5 ? (
         <EventInvitePanel
           organisationSlug={organisationSlug}
           eventId={event.id}
@@ -128,17 +139,16 @@ export function EventManageTabs(props: {
           invites={invites}
         />
       ) : null}
-      {tab === 5 ? (
+      {tab === 6 ? (
         <EventRegistrationFormEditor
           organisationSlug={organisationSlug}
           eventId={event.id}
           fields={registrationFields}
         />
       ) : null}
-      {tab === 6 ? (
+      {tab === 7 ? (
         <FeedbackFormEditor organisationSlug={organisationSlug} eventId={event.id} feedbackUrl={feedbackUrl} form={feedbackForm} fields={feedbackFields} />
       ) : null}
-      {tab === 7 ? <ScheduleManager organisationSlug={organisationSlug} eventId={event.id} items={scheduleItems} defaultDate={scheduleDate} /> : null}
       {tab === 8 ? (
         <Stack spacing={2}>
           <Paper variant="outlined" sx={{ p: 3 }}>
@@ -165,7 +175,7 @@ export function EventManageTabs(props: {
         </Stack>
       ) : null}
       {tab === 9 ? (
-        <Stack spacing={2}><CollaboratorInvitePanel organisationSlug={organisationSlug} eventId={event.id} /><EventManageMore organisationSlug={organisationSlug} event={event} /></Stack>
+        <Stack spacing={2}>{canManageCollaborators ? <CollaboratorInvitePanel organisationSlug={organisationSlug} eventId={event.id} collaborators={collaborators} pendingInvites={pendingCollaboratorInvites} /> : null}<EventManageMore organisationSlug={organisationSlug} event={event} /></Stack>
       ) : null}
     </>
   );

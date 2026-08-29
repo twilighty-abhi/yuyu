@@ -25,6 +25,44 @@ enum EventStatus {
   DRAFT
   PUBLISHED
   HIDDEN
+  CANCELLED
+}
+
+enum EventPageSectionType {
+  HERO
+  ABOUT
+  HIGHLIGHTS
+  SCHEDULE
+  SPEAKERS
+  SPONSORS
+  VENUE
+  FAQ
+  RESOURCES
+}
+
+enum ContentVisibility {
+  DRAFT
+  PUBLISHED
+  HIDDEN
+}
+
+enum EventSessionType {
+  KEYNOTE
+  TALK
+  PANEL
+  WORKSHOP
+  FIRESIDE_CHAT
+  NETWORKING
+  BREAK
+  OTHER
+}
+
+enum SponsorTier {
+  PLATINUM
+  GOLD
+  SILVER
+  PARTNER
+  COMMUNITY_PARTNER
 }
 
 enum EventPrivacyType {
@@ -252,6 +290,12 @@ model Event {
   privacyType           EventPrivacyType @default(PUBLIC)
   registrationClosesAt  DateTime?
   registrationLeadMinutes Int?
+  /// bcrypt hash for the public venue check-in station PIN. The PIN itself is
+  /// never persisted; incrementing the version invalidates station cookies.
+  checkInStationPinHash String?
+  /// Encrypted solely so organisation admins can retrieve the current venue PIN.
+  checkInStationPinEncrypted String?
+  checkInStationSecretVersion Int @default(0)
   createdAt             DateTime         @default(now())
 
   organisation     Organisation           @relation(fields: [organisationId], references: [id], onDelete: Cascade)
@@ -261,7 +305,14 @@ model Event {
   feedbackForm     EventFeedbackForm?
   collaborators    EventCollaborator[]
   collaboratorInvites EventCollaboratorInvite[]
-  scheduleItems    EventScheduleItem[]
+  page             EventPage?
+  highlights       EventHighlight[]
+  sessions         EventSession[]
+  speakers         EventSpeaker[]
+  sponsors         EventSponsor[]
+  venue            EventVenue?
+  faqs             EventFaq[]
+  resources        EventResource[]
 
   @@unique([organisationId, slug])
   @@index([organisationId])
@@ -353,8 +404,7 @@ model EventCollaboratorInvite {
 /// Agenda items retain their planned times; delay minutes cascade at display time.
 model EventScheduleItem {
   id            String   @id @default(cuid())
-  eventId       String?
-  eventSeriesId String?
+  eventSeriesId String
   title         String
   description   String   @default("")
   startDateTime DateTime
@@ -364,11 +414,186 @@ model EventScheduleItem {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  event  Event?       @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  series EventSeries? @relation(fields: [eventSeriesId], references: [id], onDelete: Cascade)
+  series EventSeries @relation(fields: [eventSeriesId], references: [id], onDelete: Cascade)
 
-  @@index([eventId, sortOrder])
   @@index([eventSeriesId, sortOrder])
+}
+
+model EventPage {
+  id          String @id @default(cuid())
+  eventId     String @unique
+  /// Event website content remains private until an authorised organiser releases it.
+  isPublished Boolean @default(false)
+  tagline     String @default("")
+  logoUrl     String?
+  accentColor String?
+  aboutHtml   String @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  event    Event              @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  sections EventPageSection[]
+}
+
+model EventPageSection {
+  id        String               @id @default(cuid())
+  pageId    String
+  type      EventPageSectionType
+  isVisible Boolean              @default(true)
+  sortOrder Int                  @default(0)
+
+  page EventPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@unique([pageId, type])
+  @@index([pageId, sortOrder])
+}
+
+model EventHighlight {
+  id         String            @id @default(cuid())
+  eventId    String
+  title      String
+  description String           @default("")
+  icon       String?
+  visibility ContentVisibility @default(DRAFT)
+  sortOrder  Int               @default(0)
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  @@index([eventId, sortOrder])
+}
+
+model EventVenue {
+  id              String            @id @default(cuid())
+  eventId         String            @unique
+  name            String
+  address         String             @default("")
+  city            String             @default("")
+  country         String             @default("")
+  latitude        Decimal?           @db.Decimal(9, 6)
+  longitude       Decimal?           @db.Decimal(9, 6)
+  mapLinkUrl      String?
+  directions      String             @default("")
+  parkingInfo     String             @default("")
+  publicTransport String             @default("")
+  accessibilityInfo String           @default("")
+  visibility      ContentVisibility  @default(DRAFT)
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  rooms EventVenueRoom[]
+}
+
+model EventVenueRoom {
+  id       String @id @default(cuid())
+  venueId  String
+  name     String
+  sortOrder Int @default(0)
+
+  venue EventVenue @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  sessions EventSession[]
+  @@unique([venueId, name])
+  @@index([venueId, sortOrder])
+}
+
+model EventSession {
+  id            String            @id @default(cuid())
+  eventId       String
+  title         String
+  slug          String
+  descriptionHtml String           @default("")
+  startDateTime DateTime
+  endDateTime   DateTime
+  type          EventSessionType  @default(TALK)
+  track         String?
+  roomId        String?
+  visibility    ContentVisibility @default(DRAFT)
+  sortOrder     Int               @default(0)
+  /// Live delay applied to this session and every later event session at display time.
+  delayMinutes  Int               @default(0)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  event     Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  room      EventVenueRoom?   @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  speakers  EventSessionSpeaker[]
+  resources EventResource[]
+  @@unique([eventId, slug])
+  @@index([eventId, startDateTime, sortOrder])
+  @@index([roomId])
+}
+
+model EventSpeaker {
+  id           String            @id @default(cuid())
+  eventId      String
+  name         String
+  slug         String
+  photoUrl     String?
+  headline     String             @default("")
+  organisation String             @default("")
+  bioHtml      String             @default("")
+  websiteUrl   String?
+  linkedinUrl  String?
+  xUrl         String?
+  visibility   ContentVisibility  @default(DRAFT)
+  sortOrder    Int                @default(0)
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  sessions EventSessionSpeaker[]
+  @@unique([eventId, slug])
+  @@index([eventId, sortOrder])
+}
+
+model EventSessionSpeaker {
+  eventSessionId String
+  speakerId      String
+  sortOrder      Int @default(0)
+
+  session EventSession @relation(fields: [eventSessionId], references: [id], onDelete: Cascade)
+  speaker EventSpeaker @relation(fields: [speakerId], references: [id], onDelete: Cascade)
+  @@id([eventSessionId, speakerId])
+  @@index([speakerId, sortOrder])
+}
+
+model EventSponsor {
+  id          String            @id @default(cuid())
+  eventId     String
+  name        String
+  logoUrl     String?
+  description String             @default("")
+  websiteUrl  String?
+  tier        SponsorTier        @default(PARTNER)
+  visibility  ContentVisibility  @default(DRAFT)
+  sortOrder   Int                @default(0)
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  @@index([eventId, tier, sortOrder])
+}
+
+model EventFaq {
+  id         String            @id @default(cuid())
+  eventId    String
+  question   String
+  answerHtml String             @default("")
+  visibility ContentVisibility  @default(DRAFT)
+  sortOrder  Int                @default(0)
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  @@index([eventId, sortOrder])
+}
+
+model EventResource {
+  id             String            @id @default(cuid())
+  eventId        String?
+  eventSessionId String?
+  title          String
+  description    String             @default("")
+  externalUrl    String?
+  assetKey       String?
+  visibility     ContentVisibility  @default(DRAFT)
+  sortOrder      Int                @default(0)
+
+  event   Event?        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  session EventSession? @relation(fields: [eventSessionId], references: [id], onDelete: Cascade)
+  @@index([eventId, sortOrder])
+  @@index([eventSessionId, sortOrder])
 }
 
 model SeriesInvite {

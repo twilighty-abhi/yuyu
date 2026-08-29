@@ -1,0 +1,1 @@
+ALTER TABLE "EventPage" ADD COLUMN "isPublished" BOOLEAN NOT NULL DEFAULT false;

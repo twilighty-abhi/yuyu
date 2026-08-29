@@ -35,7 +35,9 @@ export default async function EventPage({ params }: Props) {
     const email = (await auth())?.user?.email?.trim().toLowerCase();
     if (!email || !(await prisma.eventInvite.findUnique({ where: { eventId_email: { eventId: event.id, email } }, select: { id: true } }))) notFound();
   }
-  const published = preview ? {} : { visibility: ContentVisibility.PUBLISHED };
+  // Preview grants access to an unreleased event page, but it still mirrors the
+  // public content surface: drafts must never be rendered as published content.
+  const published = { visibility: ContentVisibility.PUBLISHED };
   const [page, highlights, sessions, speakers, sponsors, faqs, resources, form, confirmed] = await Promise.all([
     prisma.eventPage.findUnique({ where: { eventId: event.id }, include: { sections: { orderBy: { sortOrder: "asc" } } } }),
     prisma.eventHighlight.findMany({ where: { eventId: event.id, ...published }, orderBy: { sortOrder: "asc" } }),

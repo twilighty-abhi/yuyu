@@ -50,6 +50,8 @@ export async function createEventCollaboratorInvite(input: unknown): Promise<Act
   await recordAuditEvent({ action: "EVENT_COLLABORATOR_INVITED", actorUserId: session.user.id, organisationId: org.id, targetType: "EventCollaboratorInvite", targetId: invite.id });
   startOutboxWorker();
   revalidatePath(`/dashboard/${org.slug}`);
+  if (parsed.data.eventId) revalidatePath(`/dashboard/${org.slug}/event/${parsed.data.eventId}`);
+  revalidatePath("/dashboard");
   return { ok: true, data: { token, inviteId: invite.id } };
 }
 
@@ -62,5 +64,21 @@ export async function revokeEventCollaborator(input: unknown): Promise<ActionRes
   const deleted = await prisma.eventCollaborator.deleteMany({ where: { id: parsed.data.collaboratorId, ...(parsed.data.eventId ? { eventId: parsed.data.eventId } : { eventSeriesId: parsed.data.eventSeriesId }) } });
   if (!deleted.count) return { ok: false, error: "Collaborator not found." };
   await recordAuditEvent({ action: "EVENT_COLLABORATOR_REVOKED", actorUserId: session.user.id, organisationId: org.id, targetType: "EventCollaborator", targetId: parsed.data.collaboratorId });
+  if (parsed.data.eventId) revalidatePath(`/dashboard/${org.slug}/event/${parsed.data.eventId}`);
+  revalidatePath("/dashboard");
+  return { ok: true };
+}
+
+export async function updateEventCollaboratorPermissions(input: unknown): Promise<ActionResult> {
+  const session = await auth();
+  const parsed = target.extend({ collaboratorId: z.string().min(1), permissions }).safeParse(input);
+  if (!session?.user?.id || !parsed.success) return { ok: false, error: "Invalid collaborator permissions." };
+  const org = await requireAdmin(parsed.data.organisationSlug, session.user.id);
+  if (!org) return { ok: false, error: "You do not have permission." };
+  const updated = await prisma.eventCollaborator.updateMany({ where: { id: parsed.data.collaboratorId, ...(parsed.data.eventId ? { eventId: parsed.data.eventId } : { eventSeriesId: parsed.data.eventSeriesId }) }, data: { permissions: parsed.data.permissions } });
+  if (!updated.count) return { ok: false, error: "Collaborator not found." };
+  await recordAuditEvent({ action: "EVENT_COLLABORATOR_PERMISSIONS_UPDATED", actorUserId: session.user.id, organisationId: org.id, targetType: "EventCollaborator", targetId: parsed.data.collaboratorId, metadata: { permissions: parsed.data.permissions.join(",") } });
+  if (parsed.data.eventId) revalidatePath(`/dashboard/${org.slug}/event/${parsed.data.eventId}`);
+  revalidatePath("/dashboard");
   return { ok: true };
 }

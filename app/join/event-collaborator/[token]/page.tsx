@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import Button from "@mui/material/Button";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
@@ -22,5 +23,7 @@ export default async function JoinEventCollaboratorPage({ params }: { params: Pr
   });
   const orgSlug = invite.event?.organisationId ? (await prisma.organisation.findUnique({ where: { id: invite.event.organisationId }, select: { slug: true } }))?.slug : invite.series ? (await prisma.organisation.findUnique({ where: { id: invite.series.organisationId }, select: { slug: true } }))?.slug : null;
   if (!orgSlug) return <Typography>Invite accepted.</Typography>;
-  return <Stack spacing={2}><Typography variant="h5">You’re a co-organizer</Typography><Link href={`/dashboard/${orgSlug}`}><Button variant="contained">Open assigned event</Button></Link></Stack>;
+  revalidatePath("/dashboard");
+  const assignedHref = invite.eventId ? `/dashboard/${orgSlug}/event/${invite.eventId}` : `/dashboard/${orgSlug}/series/${invite.eventSeriesId}`;
+  return <Stack spacing={2}><Typography variant="h5">You’re a co-organizer</Typography><Link href={assignedHref}><Button variant="contained">Open assigned {invite.eventId ? "event" : "series"}</Button></Link></Stack>;
 }

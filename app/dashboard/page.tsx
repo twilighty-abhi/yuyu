@@ -95,6 +95,24 @@ export default async function DashboardPage() {
     take: 5,
   });
 
+  const collaboratorGrants = await prisma.eventCollaborator.findMany({
+    where: { userId: session.user.id },
+    orderBy: { createdAt: "desc" },
+    include: {
+      event: { select: { id: true, title: true, organisation: { select: { id: true, name: true, slug: true } } } },
+      series: { select: { id: true, title: true, organisation: { select: { id: true, name: true, slug: true } } } },
+    },
+  });
+  const membershipOrganisationIds = new Set(orgs.map((org) => org.id));
+  const coOrganizedEvents = collaboratorGrants.flatMap((grant) => {
+    const item = grant.event
+      ? { id: grant.event.id, title: grant.event.title, organisation: grant.event.organisation, href: `/dashboard/${grant.event.organisation.slug}/event/${grant.event.id}`, label: "Event" }
+      : grant.series
+        ? { id: grant.series.id, title: grant.series.title, organisation: grant.series.organisation, href: `/dashboard/${grant.series.organisation.slug}/series/${grant.series.id}`, label: "Series" }
+        : null;
+    return item && !membershipOrganisationIds.has(item.organisation.id) ? [{ ...item, permissions: grant.permissions }] : [];
+  });
+
   const userName = session.user.name || "User";
 
   return (
@@ -171,6 +189,38 @@ export default async function DashboardPage() {
           </Button>
         </Link>
       </Stack>
+
+      {coOrganizedEvents.length ? (
+        <Stack spacing={2}>
+          <Stack direction="row" spacing={1} sx={{ alignItems: "baseline" }}>
+            <Typography variant="h6" sx={{ fontWeight: 700, color: "text.primary", letterSpacing: "-0.3px" }}>
+              Co-organized events
+            </Typography>
+            <Typography variant="body2" sx={{ color: "text.secondary" }}>
+              Events you can manage without organisation membership
+            </Typography>
+          </Stack>
+          <Grid container spacing={2}>
+            {coOrganizedEvents.map((item) => (
+              <Grid key={`${item.label}-${item.id}`} size={{ xs: 12, md: 6 }}>
+                <Card variant="outlined" sx={{ borderRadius: "16px", backgroundColor: "background.paper", borderColor: "divider" }}>
+                  <Link href={item.href} style={{ color: "inherit", display: "block", textDecoration: "none" }}>
+                  <CardActionArea component="div">
+                    <CardContent sx={{ p: 2.5 }}>
+                      <Stack spacing={0.75}>
+                        <Typography variant="caption" color="text.secondary">{item.label} · {item.organisation.name}</Typography>
+                        <Typography sx={{ fontWeight: 700 }}>{item.title}</Typography>
+                        <Typography variant="caption" color="text.secondary">{item.permissions.map((permission) => permission.replaceAll("_", " ").toLowerCase()).join(" · ")}</Typography>
+                      </Stack>
+                    </CardContent>
+                  </CardActionArea>
+                  </Link>
+                </Card>
+              </Grid>
+            ))}
+          </Grid>
+        </Stack>
+      ) : null}
 
       {/* ── TWO COLUMN LISTS (HIG GROUPED LAYOUT) ── */}
       <Grid container spacing={4}>

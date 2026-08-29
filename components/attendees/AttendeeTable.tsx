@@ -9,6 +9,7 @@ import TableBody from "@mui/material/TableBody";
 import TableCell from "@mui/material/TableCell";
 import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
+import TablePagination from "@mui/material/TablePagination";
 import TableContainer from "@mui/material/TableContainer";
 import Paper from "@mui/material/Paper";
 import IconButton from "@mui/material/IconButton";
@@ -91,6 +92,8 @@ export function AttendeeTable(props: {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<FilterKind>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(25);
   const [pending, startTransition] = useTransition();
   const [answersOpen, setAnswersOpen] = useState(false);
   const [answersTitle, setAnswersTitle] = useState<string>("");
@@ -110,6 +113,7 @@ export function AttendeeTable(props: {
       return name.includes(q) || email.includes(q);
     });
   }, [attendees, search, filter, statusFilter]);
+  const pageRows = rows.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
 
   function targetPayload() {
     if (eventId) return { eventId };
@@ -131,7 +135,7 @@ export function AttendeeTable(props: {
         <TextField
           label="Search name or email"
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => { setSearch(e.target.value); setPage(0); }}
           size="small"
           fullWidth
         />
@@ -140,7 +144,7 @@ export function AttendeeTable(props: {
           select
           size="small"
           value={filter}
-          onChange={(e) => setFilter(e.target.value as FilterKind)}
+          onChange={(e) => { setFilter(e.target.value as FilterKind); setPage(0); }}
           sx={{ minWidth: 160 }}
         >
           <MenuItem value="all">All</MenuItem>
@@ -152,7 +156,7 @@ export function AttendeeTable(props: {
           select
           size="small"
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+          onChange={(e) => { setStatusFilter(e.target.value as StatusFilter); setPage(0); }}
           sx={{ minWidth: 160 }}
         >
           <MenuItem value="all">All statuses</MenuItem>
@@ -163,17 +167,17 @@ export function AttendeeTable(props: {
         </TextField>
         {eventTitle ? <ExportEmailsButton eventTitle={eventTitle} attendees={rows} /> : null}
       </Stack>
-      <TableContainer component={Paper} variant="outlined">
-        <Table size="small">
+      <TableContainer component={Paper} variant="outlined" sx={{ width: "100%", maxWidth: "100%", overflowX: "auto" }}>
+        <Table size="small" sx={{ width: "100%", minWidth: { xs: 0, sm: 760 } }}>
           <TableHead>
             <TableRow>
               <TableCell>Name</TableCell>
-              <TableCell>Email</TableCell>
-              <TableCell>Answers</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell>Check-in</TableCell>
-              <TableCell>RSVP time</TableCell>
-              {canManage ? <TableCell align="center">Ticket</TableCell> : null}
+              <TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}>Email</TableCell>
+              <TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}>Answers</TableCell>
+              <TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}>Status</TableCell>
+              <TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}>Check-in</TableCell>
+              <TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}>RSVP time</TableCell>
+              {canManage ? <TableCell align="center" sx={{ display: { xs: "none", sm: "table-cell" } }}>Ticket</TableCell> : null}
               {canManage ? <TableCell align="right">Actions</TableCell> : null}
             </TableRow>
           </TableHead>
@@ -187,7 +191,7 @@ export function AttendeeTable(props: {
                 </TableCell>
               </TableRow>
             ) : (
-              rows.map((a) => {
+              pageRows.map((a) => {
                 const email = a.user?.email ?? a.guestEmail ?? "—";
                 const guestDisplayName =
                   a.guestName?.trim() ||
@@ -198,9 +202,12 @@ export function AttendeeTable(props: {
                 const answerCount = a.answers?.length ?? 0;
                 return (
                   <TableRow key={a.id}>
-                    <TableCell>{name}</TableCell>
-                    <TableCell>{email}</TableCell>
-                    <TableCell>
+                    <TableCell sx={{ maxWidth: { xs: 118, sm: "none" }, overflow: "hidden" }}>
+                      <Typography variant="body2" noWrap>{name}</Typography>
+                      <Chip label={statusLabel(a.status)} size="small" sx={{ display: { xs: "inline-flex", sm: "none" }, mt: 0.5, maxWidth: "100%" }} />
+                    </TableCell>
+                    <TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}>{email}</TableCell>
+                    <TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}>
                       {answerCount > 0 ? (
                         <Button
                           size="small"
@@ -220,10 +227,10 @@ export function AttendeeTable(props: {
                         </Typography>
                       )}
                     </TableCell>
-                    <TableCell>
+                    <TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}>
                       <Chip label={statusLabel(a.status)} size="small" />
                     </TableCell>
-                    <TableCell>
+                    <TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}>
                       {a.checkedInAt ? (
                         <Chip
                           label={new Date(a.checkedInAt).toLocaleTimeString(
@@ -240,20 +247,21 @@ export function AttendeeTable(props: {
                         </Typography>
                       )}
                     </TableCell>
-                    <TableCell>{ts}</TableCell>
+                    <TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}>{ts}</TableCell>
                     {canManage ? (
-                      <TableCell align="center">
+                      <TableCell align="center" sx={{ display: { xs: "none", sm: "table-cell" } }}>
                         <CopyTicketButton ticketUrl={a.ticketUrl} />
                       </TableCell>
                     ) : null}
                     {canManage ? (
-                      <TableCell align="right">
+                      <TableCell align="right" sx={{ width: { xs: 126, sm: "auto" }, whiteSpace: "normal" }}>
                         <Stack
-                          direction="row"
+                          direction={{ xs: "column", sm: "row" }}
                           spacing={0.5}
                           useFlexGap
                           sx={{
                             flexWrap: "wrap",
+                            alignItems: { xs: "flex-end", sm: "center" },
                             justifyContent: "flex-end",
                           }}
                         >
@@ -379,6 +387,16 @@ export function AttendeeTable(props: {
           </TableBody>
         </Table>
       </TableContainer>
+      <TablePagination
+        component="div"
+        count={rows.length}
+        page={page}
+        onPageChange={(_, nextPage) => setPage(nextPage)}
+        rowsPerPage={rowsPerPage}
+        onRowsPerPageChange={(event) => { setRowsPerPage(Number(event.target.value)); setPage(0); }}
+        rowsPerPageOptions={[25, 50, 100]}
+        labelRowsPerPage="Attendees per page"
+      />
 
       <Dialog open={answersOpen} onClose={() => setAnswersOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>Answers · {answersTitle}</DialogTitle>

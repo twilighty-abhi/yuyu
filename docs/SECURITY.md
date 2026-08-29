@@ -39,6 +39,7 @@ This page documents implemented controls and security boundaries. It is not a su
 ## Tokens and sensitive links
 
 - Check-in and certificate tokens are high-entropy random values.
+- Venue check-in stations require an event-scoped, bcrypt-protected rotating PIN. Successful entry creates a signed, HttpOnly browser proof scoped to that event and expiring one hour after it ends; rotation and disablement invalidate existing proofs immediately. Station PINs, proofs, attendee exports, and offline rosters are never exposed through the public station.
 - Ticket, certificate, invitation, password-reset, and MFA enrollment values are secrets or bearer capabilities.
 - They must not appear in logs, audit metadata, monitoring tags, or analytics.
 - Readiness and scheduler secrets are compared in constant time and unauthorized calls return generic responses.

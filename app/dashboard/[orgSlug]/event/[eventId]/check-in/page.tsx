@@ -5,6 +5,8 @@ import Stack from "@mui/material/Stack";
 import { prisma } from "@/lib/db";
 import { requireOrgRole } from "@/lib/permissions";
 import { EventCheckInClient } from "@/components/checkin/EventCheckInClient";
+import { CheckInStationSettings } from "@/components/checkin/CheckInStationSettings";
+import { getRequestOrigin } from "@/lib/publicUrl";
 
 type Props = {
   params: Promise<{ orgSlug: string; eventId: string }>;
@@ -31,7 +33,7 @@ function labelAttendee(r: {
 
 export default async function EventCheckInPage({ params }: Props) {
   const { orgSlug, eventId } = await params;
-  const { organisation } = await requireOrgRole(orgSlug, "MEMBER");
+  const { organisation, membership } = await requireOrgRole(orgSlug, "MEMBER");
 
   const [event, organisationBrand] = await Promise.all([
     prisma.event.findFirst({
@@ -75,6 +77,8 @@ export default async function EventCheckInPage({ params }: Props) {
     checkedInAt: r.checkedInAt!.toISOString(),
   }));
 
+  const origin = await getRequestOrigin();
+  const stationUrl = `${origin}/${organisation.slug}/${event.slug}/check-in`;
   return (
     <Stack spacing={2}>
       <Typography variant="h5" component="h1" sx={{ fontWeight: 600 }}>
@@ -90,6 +94,7 @@ export default async function EventCheckInPage({ params }: Props) {
         stats={{ confirmed, checkedIn: checkedInCount }}
         recent={recent}
       />
+      {membership.role === "OWNER" || membership.role === "ADMIN" ? <CheckInStationSettings organisationSlug={organisation.slug} eventId={event.id} stationUrl={stationUrl} enabled={Boolean(event.checkInStationPinHash)} /> : null}
     </Stack>
   );
 }

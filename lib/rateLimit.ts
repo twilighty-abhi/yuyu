@@ -13,6 +13,7 @@ export type Bucket =
   | "upload"
   | "invite"
   | "checkin"
+  | "checkinStationPin"
   | "search"
   | "apiRead"
   | "apiWrite";
@@ -29,6 +30,7 @@ const limits: Record<Bucket, { max: number; windowMs: number }> = {
   upload: { max: 12, windowMs: 60 * 60_000 },
   invite: { max: 30, windowMs: 60 * 60_000 },
   checkin: { max: 180, windowMs: 60_000 },
+  checkinStationPin: { max: 5, windowMs: 60_000 },
   search: { max: 60, windowMs: 60_000 },
   apiRead: { max: 600, windowMs: 60_000 },
   apiWrite: { max: 60, windowMs: 60_000 },

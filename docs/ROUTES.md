@@ -14,6 +14,7 @@ Dynamic segments are shown as `:name` for readability.
 | `/:orgSlug` | Public organisation page |
 | `/:orgSlug/:eventSlug` | Public event details and RSVP |
 | `/:orgSlug/:eventSlug/feedback` | Event feedback form when open |
+| `/:orgSlug/:eventSlug/check-in` | PIN-protected venue check-in station; usable by trusted on-site staff without an account |
 | `/:orgSlug/i/:instanceId` | Recurring-series instance and RSVP |
 | `/ticket/:token` | Attendee ticket status and QR page |
 | `/join/org/:token` | Accept an organisation invitation |
@@ -34,6 +35,7 @@ Dynamic segments are shown as `:name` for readability.
 | `/dashboard/:orgSlug/settings` | Organisation settings |
 | `/dashboard/:orgSlug/members` | Members, roles, and invitations |
 | `/dashboard/:orgSlug/event/:eventId` | Event overview, attendees, forms, invites, and feedback |
+| `/dashboard/:orgSlug/event/:eventId/schedule` | Standalone-event programme planning and live delay management |
 | `/dashboard/:orgSlug/event/:eventId/check-in` | Online/offline check-in station |
 | `/dashboard/:orgSlug/series/:seriesId` | Recurring-series management |
 
@@ -51,6 +53,7 @@ Every super-admin page additionally requires a current TOTP verification. Users 
 | --- | --- | --- |
 | `POST /api/rsvp` | Optional session | Submit an event or instance RSVP |
 | `POST /api/feedback` | Public, rate-limited | Submit feedback; email is used only for certificate-enabled forms |
+| `POST /api/check-in/station` | PIN-scoped station session, rate-limited | Open and operate a venue check-in station |
 | `GET /api/search?q=...` | Public, rate-limited | Return matching public events |
 | `GET /api/ticket/:token/download` | Opaque token | Download the attendee ticket |
 | `GET /api/feedback/certificate/:token` | Opaque token | Download an eligible JPEG certificate |

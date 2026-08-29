@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import type { RsvpStatus } from "@prisma/client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -14,6 +14,7 @@ import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
 import FormControlLabel from "@mui/material/FormControlLabel";
+import IconButton from "@mui/material/IconButton";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
 import Switch from "@mui/material/Switch";
@@ -24,11 +25,13 @@ import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
+import Tooltip from "@mui/material/Tooltip";
 import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
 import CloudDoneOutlinedIcon from "@mui/icons-material/CloudDoneOutlined";
 import CloudOffOutlinedIcon from "@mui/icons-material/CloudOffOutlined";
 import SyncOutlinedIcon from "@mui/icons-material/SyncOutlined";
 import PrintOutlinedIcon from "@mui/icons-material/PrintOutlined";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import {
   checkInByRsvpId,
   downloadOfflineCheckInRoster,
@@ -62,6 +65,9 @@ export type CheckInRecentRow = {
   email: string | null;
   checkedInAt: string;
 };
+type StationResponse =
+  | { ok: true; data: CheckInPreviewData & CheckInResultData & { rows: LookupRow[] } }
+  | { ok: false; error: string; needsForce?: boolean };
 
 function CheckInDetailsList({ details }: { details: CheckInResultData["checkInDetails"] }) {
   if (details.length === 0) return null;
@@ -75,6 +81,22 @@ function CheckInDetailsList({ details }: { details: CheckInResultData["checkInDe
       ))}
     </Stack>
   );
+}
+
+function RegistrationDetailsList({ details }: { details: CheckInResultData["registrationDetails"] }) {
+  if (details.length === 0) return null;
+  return <Stack component="dl" spacing={0.25} sx={{ m: 0 }}>
+    {details.map((detail) => <Stack component="div" direction="row" spacing={0.75} key={detail.key} sx={{ alignItems: "baseline" }}>
+      <Typography component="dt" variant="body2" color="text.secondary">{detail.label}:</Typography>
+      <Typography component="dd" variant="body2" sx={{ m: 0, fontWeight: 600 }}>{detail.value}</Typography>
+    </Stack>)}
+  </Stack>;
+}
+
+/** Render a stable server/client value first, then adapt to the device locale. */
+function CheckInTimestamp({ value }: { value: string }) {
+  const isClient = useSyncExternalStore(() => () => {}, () => true, () => false);
+  return <>{isClient ? new Date(value).toLocaleString() : `${value.slice(0, 16).replace("T", " ")} UTC`}</>;
 }
 
 function playSuccessFeedback() {
@@ -106,11 +128,14 @@ export function EventCheckInClient(props: {
   organisationLogoUrl: string | null;
   eventId: string;
   eventTitle: string;
+  /** A PIN-authorised public station. It is deliberately online-only. */
+  stationMode?: boolean;
+  eventSlug?: string;
   registrationFields: Array<{ key: string; label: string }>;
   stats: { confirmed: number; checkedIn: number };
   recent: CheckInRecentRow[];
 }) {
-  const { organisationSlug, organisationName, organisationLogoUrl, eventId, eventTitle, registrationFields, stats, recent } = props;
+  const { organisationSlug, organisationName, organisationLogoUrl, eventId, eventTitle, registrationFields, stats, recent, stationMode = false, eventSlug } = props;
   const router = useRouter();
   const { showToast } = useToast();
   const [pending, startTransition] = useTransition();
@@ -131,7 +156,14 @@ export function EventCheckInClient(props: {
   const [isOnline, setIsOnline] = useState(true);
   const [idCardOpen, setIdCardOpen] = useState(false);
   const [idCardAttendee, setIdCardAttendee] = useState<CheckInResultData | null>(null);
+  const [idCardPrintingEnabled, setIdCardPrintingEnabled] = useState(false);
+  const [detailsAttendee, setDetailsAttendee] = useState<CheckInPreviewData | null>(null);
   const confirmRef = useRef<HTMLButtonElement | null>(null);
+  const stationRequest = useCallback(async (action: string, payload: Record<string, unknown>): Promise<StationResponse> => {
+    const response = await fetch("/api/check-in/station", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify({ organisationSlug, eventSlug, action, ...payload }) });
+    const result = await response.json() as StationResponse;
+    return result;
+  }, [eventSlug, organisationSlug]);
 
   const showIdCard = useCallback((attendee: CheckInResultData) => {
     setIdCardAttendee(attendee);
@@ -139,15 +171,17 @@ export function EventCheckInClient(props: {
   }, []);
 
   const refreshOfflineState = useCallback(async () => {
+    if (stationMode) return;
     const [roster, pendingCheckIns] = await Promise.all([
       getOfflineRoster(eventId),
       getPendingOfflineCheckIns(eventId),
     ]);
     setOfflineRoster(roster ?? null);
     setQueuedCount(pendingCheckIns.length);
-  }, [eventId]);
+  }, [eventId, stationMode]);
 
   useEffect(() => {
+    if (stationMode) return;
     const initialOfflineState = window.setTimeout(() => {
       void refreshOfflineState();
     }, 0);
@@ -162,17 +196,17 @@ export function EventCheckInClient(props: {
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
     };
-  }, [refreshOfflineState]);
+  }, [refreshOfflineState, stationMode]);
 
   useEffect(() => {
     // Turbopack's development chunks are replaced frequently and must never be
     // controlled by the offline worker. The worker is only an event-day
     // production feature for the check-in dashboard.
-    if (process.env.NODE_ENV !== "production" || !("serviceWorker" in navigator)) return;
+    if (stationMode || process.env.NODE_ENV !== "production" || !("serviceWorker" in navigator)) return;
     void navigator.serviceWorker.register("/sw.js", { scope: "/dashboard/", updateViaCache: "none" }).catch(() => {
       // Offline data remains available even if the browser disallows service workers.
     });
-  }, []);
+  }, [stationMode]);
 
   const downloadOfflineRoster = useCallback(() => {
     startTransition(async () => {
@@ -238,8 +272,8 @@ export function EventCheckInClient(props: {
   }, [eventId, organisationSlug, refreshOfflineState, router, showToast]);
 
   useEffect(() => {
-    if (isOnline && queuedCount > 0) syncOfflineQueue();
-  }, [isOnline, queuedCount, syncOfflineQueue]);
+    if (!stationMode && isOnline && queuedCount > 0) syncOfflineQueue();
+  }, [isOnline, queuedCount, stationMode, syncOfflineQueue]);
 
   useEffect(() => {
     const refreshWhenSafe = () => {
@@ -285,7 +319,7 @@ export function EventCheckInClient(props: {
       registrationDetails: attendee.registrationDetails ?? [],
       kind: "success",
     });
-    showIdCard({
+    if (idCardPrintingEnabled) showIdCard({
       rsvpId: attendee.rsvpId,
       displayName: attendee.displayName,
       email: attendee.email,
@@ -299,11 +333,11 @@ export function EventCheckInClient(props: {
     playSuccessFeedback();
     await refreshOfflineState();
     showToast(`Checked in offline: ${attendee.displayName}`, "success");
-  }, [eventId, override, refreshOfflineState, showIdCard, showToast]);
+  }, [eventId, idCardPrintingEnabled, override, refreshOfflineState, showIdCard, showToast]);
 
   const openPreviewForScan = useCallback(
     (text: string) => {
-      if (!navigator.onLine) {
+      if (!navigator.onLine && !stationMode) {
         void (async () => {
           const roster = await getOfflineRoster(eventId);
           if (!roster) {
@@ -335,12 +369,9 @@ export function EventCheckInClient(props: {
         return;
       }
       startTransition(async () => {
-        const res = await previewCheckInByToken({
-          organisationSlug,
-          eventId,
-          rawInput: text,
-          force: override,
-        });
+        const res = stationMode
+          ? await stationRequest("previewToken", { rawInput: text, force: override })
+          : await previewCheckInByToken({ organisationSlug, eventId, rawInput: text, force: override });
         if (!res.ok) {
           showToast(res.error, "error");
           setScanPreview(null);
@@ -352,7 +383,7 @@ export function EventCheckInClient(props: {
         setScanOpen(true);
       });
     },
-    [eventId, organisationSlug, override, showToast],
+    [eventId, organisationSlug, override, showToast, stationMode, stationRequest],
   );
 
   const onScan = useCallback(
@@ -389,12 +420,9 @@ export function EventCheckInClient(props: {
       return;
     }
     startTransition(async () => {
-      const res = await checkInByRsvpId({
-        organisationSlug,
-        eventId,
-        rsvpId: scanPreview.rsvpId,
-        force: override,
-      });
+      const res = stationMode
+        ? await stationRequest("checkInRsvp", { rsvpId: scanPreview.rsvpId, force: override })
+        : await checkInByRsvpId({ organisationSlug, eventId, rsvpId: scanPreview.rsvpId, force: override });
       if (!res.ok) {
         if (res.needsForce) {
           showToast(`${res.error} Enable “Override” and try again.`, "warning");
@@ -412,7 +440,7 @@ export function EventCheckInClient(props: {
         showToast(`Checked in: ${d.displayName}`, "success");
         playSuccessFeedback();
       }
-      showIdCard(d);
+      if (idCardPrintingEnabled) showIdCard(d);
       setLookupRows((rows) => rows.map((row) => (
         row.rsvpId === d.rsvpId
           ? { ...row, checkedInAt: d.checkedInAt }
@@ -423,7 +451,7 @@ export function EventCheckInClient(props: {
       setManual("");
       router.refresh();
     });
-  }, [eventId, organisationSlug, override, queueLocalCheckIn, router, scanIsOffline, scanPreview, showIdCard, showToast]);
+  }, [eventId, idCardPrintingEnabled, organisationSlug, override, queueLocalCheckIn, router, scanIsOffline, scanPreview, showIdCard, showToast, stationMode, stationRequest]);
 
   useEffect(() => {
     if (!scanOpen) return;
@@ -439,7 +467,7 @@ export function EventCheckInClient(props: {
   };
 
   const runLookup = useCallback(() => {
-    if (!navigator.onLine) {
+    if (!navigator.onLine && !stationMode) {
       void (async () => {
         const q = lookupQuery.trim().toLowerCase();
         const roster = await getOfflineRoster(eventId);
@@ -459,21 +487,19 @@ export function EventCheckInClient(props: {
       return;
     }
     startTransition(async () => {
-      const res = await lookupAttendeesForCheckIn({
-        organisationSlug,
-        eventId,
-        query: lookupQuery,
-      });
+      const res = stationMode
+        ? await stationRequest("lookup", { query: lookupQuery })
+        : await lookupAttendeesForCheckIn({ organisationSlug, eventId, query: lookupQuery });
       if (!res.ok) {
         showToast(res.error, "error");
         return;
       }
       setLookupRows(res.data!.rows);
     });
-  }, [eventId, lookupQuery, organisationSlug, showToast]);
+  }, [eventId, lookupQuery, organisationSlug, showToast, stationMode, stationRequest]);
 
   const checkInRow = (row: LookupRow, force: boolean) => {
-    if (!navigator.onLine) {
+    if (!navigator.onLine && !stationMode) {
       void (async () => {
         const roster = await getOfflineRoster(eventId);
         const attendee = roster?.rows.find((item) => item.rsvpId === row.rsvpId);
@@ -508,12 +534,9 @@ export function EventCheckInClient(props: {
       return;
     }
     startTransition(async () => {
-      const res = await previewCheckInByRsvpId({
-        organisationSlug,
-        eventId,
-        rsvpId: row.rsvpId,
-        force,
-      });
+      const res = stationMode
+        ? await stationRequest("previewRsvp", { rsvpId: row.rsvpId, force })
+        : await previewCheckInByRsvpId({ organisationSlug, eventId, rsvpId: row.rsvpId, force });
       if (!res.ok) {
         if (res.needsForce) {
           showToast(`${res.error} Enable “Override” and try again.`, "warning");
@@ -528,9 +551,19 @@ export function EventCheckInClient(props: {
     });
   };
 
+  const viewAttendee = (row: LookupRow) => {
+    startTransition(async () => {
+      const res = stationMode
+        ? await stationRequest("previewRsvp", { rsvpId: row.rsvpId, force: false })
+        : await previewCheckInByRsvpId({ organisationSlug, eventId, rsvpId: row.rsvpId, force: false });
+      if (!res.ok) return showToast(res.error, "error");
+      setDetailsAttendee(res.data!);
+    });
+  };
+
   const onUndo = (rsvpId: string) => {
     startTransition(async () => {
-      const res = await undoCheckIn({ organisationSlug, eventId, rsvpId });
+      const res = stationMode ? await stationRequest("undo", { rsvpId }) : await undoCheckIn({ organisationSlug, eventId, rsvpId });
       if (!res.ok) {
         showToast(res.error, "error");
         return;
@@ -596,18 +629,18 @@ export function EventCheckInClient(props: {
           <Typography variant="body1" sx={{ fontWeight: 600 }}>
             {eventTitle}
           </Typography>
-          <Button
+          {!stationMode ? <Button
             component={Link}
             href={`/dashboard/${organisationSlug}/event/${eventId}`}
             size="small"
             sx={{ mt: 1 }}
           >
             Back to event
-          </Button>
+          </Button> : null}
         </Paper>
       </Stack>
 
-      <Paper
+      {!stationMode ? <Paper
         variant="outlined"
         sx={{
           p: 2,
@@ -641,28 +674,26 @@ export function EventCheckInClient(props: {
             ) : null}
           </Stack>
         </Stack>
-      </Paper>
+      </Paper> : null}
 
-      <FormControlLabel
-        control={
-          <Switch
-            checked={override}
-            onChange={(_, v) => setOverride(v)}
-            color="warning"
-          />
-        }
-        label="Override (waitlist / pending approval)"
-      />
+      <Stack direction="row" spacing={0.5} sx={{ alignItems: "center", alignSelf: "flex-start" }}>
+        <Switch id="check-in-override" checked={override} onChange={(_, v) => setOverride(v)} color="warning" />
+        <Typography component="label" htmlFor="check-in-override" variant="body2">Override (waitlist / pending approval)</Typography>
+        <Tooltip title="Allows check-in for waitlisted or pending-approval attendees. Rejected and invalid registrations remain blocked." enterTouchDelay={0}>
+          <IconButton size="small" aria-label="About override check-in"><InfoOutlinedIcon fontSize="small" /></IconButton>
+        </Tooltip>
+      </Stack>
 
       <Paper variant="outlined" sx={{ p: 2 }}>
         <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} sx={{ alignItems: { sm: "center" }, justifyContent: "space-between" }}>
           <Box>
             <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>ID card printing</Typography>
-            <Typography variant="body2" color="text.secondary">A6 portrait is ready by default. Set a custom size and card text for this check-in device.</Typography>
+            <Typography variant="body2" color="text.secondary">Off by default. Enable it when this desk should offer cards after check-in.</Typography>
           </Box>
-          <Button variant="outlined" startIcon={<PrintOutlinedIcon />} onClick={() => { setIdCardAttendee(null); setIdCardOpen(true); }}>
-            Set up cards
-          </Button>
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={0.5} sx={{ alignItems: { xs: "stretch", sm: "center" } }}>
+            <FormControlLabel control={<Switch checked={idCardPrintingEnabled} onChange={(_, enabled) => { setIdCardPrintingEnabled(enabled); if (!enabled) setIdCardOpen(false); }} />} label="Enable" />
+            {idCardPrintingEnabled ? <Button variant="outlined" startIcon={<PrintOutlinedIcon />} onClick={() => { setIdCardAttendee(null); setIdCardOpen(true); }}>Set up cards</Button> : null}
+          </Stack>
         </Stack>
       </Paper>
 
@@ -757,7 +788,7 @@ export function EventCheckInClient(props: {
           ) : null}
         </DialogContent>
         <DialogActions>
-          <Button
+          {!stationMode ? <Button
             onClick={() => {
               setScanOpen(false);
               setScanPreview(null);
@@ -765,7 +796,7 @@ export function EventCheckInClient(props: {
             color="inherit"
           >
             Cancel
-          </Button>
+          </Button> : null}
           <Button
             ref={(el) => {
               confirmRef.current = el;
@@ -797,12 +828,12 @@ export function EventCheckInClient(props: {
           <CheckInDetailsList details={lastResult.checkInDetails} />
           {lastResult.checkedInAt ? (
             <Typography variant="caption" color="text.secondary">
-              {new Date(lastResult.checkedInAt).toLocaleString()}
+              <CheckInTimestamp value={lastResult.checkedInAt} />
             </Typography>
           ) : null}
-          <Button size="small" startIcon={<PrintOutlinedIcon />} onClick={() => showIdCard(lastResult)} sx={{ mt: 0.75 }}>
+          {idCardPrintingEnabled ? <Button size="small" startIcon={<PrintOutlinedIcon />} onClick={() => showIdCard(lastResult)} sx={{ mt: 0.75 }}>
             Print ID card
-          </Button>
+          </Button> : null}
         </Alert>
       ) : null}
 
@@ -848,24 +879,45 @@ export function EventCheckInClient(props: {
           </Button>
         </Stack>
         {lookupRows.length > 0 ? (
-          <Table size="small" sx={{ mt: 2 }}>
+          <>
+          <Stack spacing={1} sx={{ display: { xs: "flex", sm: "none" }, mt: 2 }}>
+            {lookupRows.map((row) => <Paper key={row.rsvpId} variant="outlined" sx={{ p: 1.25 }}>
+              <Stack spacing={0.75}>
+                <Button variant="text" color="inherit" onClick={() => viewAttendee(row)} disabled={pending} sx={{ justifyContent: "flex-start", minWidth: 0, p: 0, textTransform: "none" }}>
+                  <Typography variant="subtitle2" noWrap>{row.displayName}</Typography>
+                </Button>
+                <Stack direction="row" spacing={0.75} useFlexGap sx={{ alignItems: "center", flexWrap: "wrap" }}>
+                  <Chip label={row.status} size="small" />
+                  {row.checkedInAt ? <Chip label="Checked in" size="small" color="success" variant="outlined" /> : null}
+                </Stack>
+                {row.email ? <Typography variant="body2" color="text.secondary" noWrap>{row.email}</Typography> : null}
+                {row.checkedInAt ? <Button size="small" color="warning" onClick={() => onUndo(row.rsvpId)} disabled={pending || !isOnline} sx={{ alignSelf: "flex-start" }}>Undo check-in</Button> : <Button size="small" variant="contained" onClick={() => checkInRow(row, override)} disabled={pending} sx={{ alignSelf: "flex-start", whiteSpace: "nowrap" }}>Check in</Button>}
+              </Stack>
+            </Paper>)}
+          </Stack>
+          <Table size="small" sx={{ display: { xs: "none", sm: "table" }, mt: 2, width: "100%", tableLayout: { xs: "fixed", sm: "auto" } }}>
             <TableHead>
               <TableRow>
                 <TableCell>Name</TableCell>
-                <TableCell>Email</TableCell>
-                <TableCell>Status</TableCell>
-                <TableCell align="right">Actions</TableCell>
+                <TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}>Email</TableCell>
+                <TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}>Status</TableCell>
+                <TableCell align="right" sx={{ width: { xs: 112, sm: "auto" } }}>Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {lookupRows.map((row) => (
                 <TableRow key={row.rsvpId}>
-                  <TableCell>{row.displayName}</TableCell>
-                  <TableCell>{row.email ?? "—"}</TableCell>
-                  <TableCell>
+                  <TableCell sx={{ overflow: "hidden" }}>
+                    <Button variant="text" color="inherit" onClick={() => viewAttendee(row)} disabled={pending} sx={{ display: "block", minWidth: 0, maxWidth: "100%", p: 0, textAlign: "left", textTransform: "none" }}>
+                      <Typography variant="body2" noWrap>{row.displayName}</Typography>
+                    </Button>
+                    <Chip label={row.status} size="small" sx={{ display: { xs: "inline-flex", sm: "none" }, mt: 0.5, maxWidth: "100%" }} />
+                  </TableCell>
+                  <TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}>{row.email ?? "—"}</TableCell>
+                  <TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}>
                     <Chip label={row.status} size="small" />
                   </TableCell>
-                  <TableCell align="right">
+                  <TableCell align="right" sx={{ px: { xs: 0.5, sm: 2 }, whiteSpace: "nowrap" }}>
                     <Stack
                       direction="row"
                       spacing={0.5}
@@ -878,6 +930,7 @@ export function EventCheckInClient(props: {
                           color="warning"
                           onClick={() => onUndo(row.rsvpId)}
                           disabled={pending || !isOnline}
+                          sx={{ minWidth: 96, whiteSpace: "nowrap" }}
                         >
                           Undo
                         </Button>
@@ -887,6 +940,7 @@ export function EventCheckInClient(props: {
                           variant="contained"
                           onClick={() => checkInRow(row, override)}
                           disabled={pending}
+                          sx={{ minWidth: 96, whiteSpace: "nowrap" }}
                         >
                           Check in
                         </Button>
@@ -897,8 +951,27 @@ export function EventCheckInClient(props: {
               ))}
             </TableBody>
           </Table>
+          </>
         ) : null}
       </Paper>
+
+      <Dialog open={Boolean(detailsAttendee)} onClose={() => setDetailsAttendee(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>Attendee details</DialogTitle>
+        <DialogContent>
+          {detailsAttendee ? <Stack spacing={1.25}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{detailsAttendee.displayName}</Typography>
+            <Typography variant="body2" color="text.secondary">{detailsAttendee.email ?? "No email address"}</Typography>
+            <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
+              <Chip label={detailsAttendee.status} size="small" />
+              {detailsAttendee.alreadyCheckedIn ? <Chip label="Already checked in" size="small" color="success" /> : null}
+            </Stack>
+            {detailsAttendee.checkedInAt ? <Typography variant="body2">Checked in: <CheckInTimestamp value={detailsAttendee.checkedInAt} /></Typography> : null}
+            {detailsAttendee.checkInDetails.length > 0 ? <><Typography variant="subtitle2">Check-in details</Typography><CheckInDetailsList details={detailsAttendee.checkInDetails} /></> : null}
+            {detailsAttendee.registrationDetails.length > 0 ? <><Typography variant="subtitle2">Registration details</Typography><RegistrationDetailsList details={detailsAttendee.registrationDetails} /></> : null}
+          </Stack> : null}
+        </DialogContent>
+        <DialogActions><Button onClick={() => setDetailsAttendee(null)}>Close</Button></DialogActions>
+      </Dialog>
 
       <Paper variant="outlined" sx={{ p: 2 }}>
         <Stack
@@ -919,16 +992,27 @@ export function EventCheckInClient(props: {
             Export CSV (shown below)
           </Button>
         </Stack>
-        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
+        {!stationMode ? <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
           Export includes the list on this page (up to 200). This page refreshes
           automatically while it is open.
-        </Typography>
+        </Typography> : null}
         {recent.length === 0 ? (
           <Typography color="text.secondary" sx={{ mt: 2 }}>
             No check-ins yet.
           </Typography>
         ) : (
-          <Table size="small" sx={{ mt: 2 }}>
+          <>
+          <Stack spacing={1} sx={{ display: { xs: "flex", sm: "none" }, mt: 2 }}>
+            {recent.map((r) => <Paper key={r.rsvpId} variant="outlined" sx={{ p: 1.25 }}>
+              <Stack spacing={0.5}>
+                <Typography variant="subtitle2" noWrap>{r.displayName}</Typography>
+                {r.email ? <Typography variant="body2" color="text.secondary" noWrap>{r.email}</Typography> : null}
+                <Typography variant="body2" color="text.secondary"><CheckInTimestamp value={r.checkedInAt} /></Typography>
+                <Button size="small" color="warning" onClick={() => onUndo(r.rsvpId)} disabled={pending || !isOnline} sx={{ alignSelf: "flex-start" }}>Undo check-in</Button>
+              </Stack>
+            </Paper>)}
+          </Stack>
+          <Table size="small" sx={{ display: { xs: "none", sm: "table" }, mt: 2 }}>
             <TableHead>
               <TableRow>
                 <TableCell>Name</TableCell>
@@ -943,7 +1027,7 @@ export function EventCheckInClient(props: {
                   <TableCell>{r.displayName}</TableCell>
                   <TableCell>{r.email ?? "—"}</TableCell>
                   <TableCell>
-                    {new Date(r.checkedInAt).toLocaleString()}
+                    <CheckInTimestamp value={r.checkedInAt} />
                   </TableCell>
                   <TableCell align="right">
                     <Button
@@ -959,17 +1043,18 @@ export function EventCheckInClient(props: {
               ))}
             </TableBody>
           </Table>
+          </>
         )}
       </Paper>
 
-      <Typography variant="body2" color="text.secondary">
+      {!stationMode ? <Typography variant="body2" color="text.secondary">
         Each attendee has a unique ticket URL under{" "}
         <Box component="span" sx={{ fontFamily: "monospace", fontSize: "0.85em" }}>
           /ticket/&lt;code&gt;
         </Box>
         . Use <strong>Copy ticket</strong> in the attendee list to share it, or
         open the check-in page from the event dashboard on a tablet at the door.
-      </Typography>
+      </Typography> : null}
     </Stack>
   );
 }

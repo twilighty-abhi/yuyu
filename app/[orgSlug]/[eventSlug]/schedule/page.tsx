@@ -1,8 +1,16 @@
+import Link from "next/link";
+import { Stack, Typography } from "@mui/material";
 import { notFound } from "next/navigation";
-import Stack from "@mui/material/Stack";
-import Typography from "@mui/material/Typography";
+import { ContentVisibility, EventStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { effectiveSchedule } from "@/lib/schedule";
-import { LiveSchedule } from "@/components/schedule/LiveSchedule";
+import { effectiveEventProgram } from "@/lib/eventProgram";
 
-export default async function EventSchedulePage({ params }: { params: Promise<{ orgSlug: string; eventSlug: string }> }) { const { orgSlug, eventSlug } = await params; const org = await prisma.organisation.findUnique({ where: { slug: orgSlug } }); if (!org) notFound(); const event = await prisma.event.findUnique({ where: { organisationId_slug: { organisationId: org.id, slug: eventSlug } }, include: { scheduleItems: { orderBy: { sortOrder: "asc" } } } }); if (!event || event.status === "DRAFT" || event.privacyType === "INVITE_ONLY") notFound(); const items = effectiveSchedule(event.scheduleItems).map((i) => ({ ...i, effectiveStart: i.effectiveStart.toISOString(), effectiveEnd: i.effectiveEnd.toISOString() })); return <Stack spacing={3} sx={{ maxWidth: 800, py: 2 }}><Typography variant="overline">{org.name}</Typography><Typography variant="h3">{event.title} schedule</Typography><LiveSchedule items={items} timeZone={event.timezone} /></Stack>; }
+export default async function EventSchedulePage({ params }: { params: Promise<{ orgSlug: string; eventSlug: string }> }) {
+  const { orgSlug, eventSlug } = await params;
+  const org = await prisma.organisation.findUnique({ where: { slug: orgSlug } });
+  if (!org) notFound();
+  const event = await prisma.event.findUnique({ where: { organisationId_slug: { organisationId: org.id, slug: eventSlug } }, include: { sessions: { where: { visibility: ContentVisibility.PUBLISHED }, include: { room: true }, orderBy: [{ startDateTime: "asc" }, { sortOrder: "asc" }] } } });
+  if (!event || event.status !== EventStatus.PUBLISHED || event.privacyType === "INVITE_ONLY") notFound();
+  const sessions = effectiveEventProgram(event.sessions);
+  return <Stack spacing={2} sx={{ maxWidth: 800, py: 2 }}><Typography variant="overline">{org.name}</Typography><Typography variant="h3">{event.title} program</Typography>{sessions.map((session) => <Stack key={session.id} component={Link} href={`/${org.slug}/${event.slug}/sessions/${session.slug}`} sx={{ p: 2, color: "text.primary", textDecoration: "none", border: 1, borderColor: "divider", borderRadius: 2 }}><Typography sx={{ fontWeight: 700 }}>{session.title}</Typography><Typography variant="body2">{session.effectiveStartDateTime.toLocaleString(undefined, { timeZone: event.timezone })} · {session.room?.name ?? "Room TBA"}</Typography></Stack>)}</Stack>;
+}

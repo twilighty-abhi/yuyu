@@ -32,6 +32,7 @@ Desktop.ini
 
 # production
 /build
+/backups/
 
 # misc
 *.pem

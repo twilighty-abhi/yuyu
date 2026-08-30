@@ -26,6 +26,44 @@ The backup fields do not run, retain, or restore backups. Keep those controls wi
 
 ## Backup and incident minimums
 
+- The repository provides database archives for operator-initiated backups and restores. Install PostgreSQL `psql`, `pg_dump`, and `pg_restore` clients compatible with the managed PostgreSQL server in the production release environment. The commands use a temporary owner-only PostgreSQL password file rather than placing the database URL/password in child-process arguments. The `backups/` directory is gitignored, must reside on encrypted host storage, and retains the newest seven complete archive pairs.
+- Create a local backup from the repository directory with `npm run db:backup`. This reads only `DATABASE_URL`, requires its TLS setting, queries the live database size to require 20% plus 256 MiB of free-space headroom, and writes a compressed custom PostgreSQL archive plus a SHA-256 metadata sidecar.
+- To additionally copy an archive to a **dedicated private backup bucket**, pass all S3 settings only to the command (never save them in application settings or repository files):
+
+  ```bash
+  npm run db:backup -- \
+    --s3-bucket yuyu-production-backups \
+    --s3-region region-name \
+    --s3-endpoint https://s3.example.com \
+    --s3-access-key-id short-lived-access-key \
+    --s3-secret-access-key short-lived-secret \
+    --s3-prefix yuyu-production
+  ```
+
+  Add `--s3-force-path-style` only for providers that require it. The bucket must be private, use provider-side encryption at rest, and grant this credential only the object operations needed for the selected prefix. Prefer short-lived bucket-scoped credentials; command-line secrets can be exposed through shell history or process inspection.
+- Restore is deliberately destructive. It refuses development/test/localhost targets and requires both the parsed database name and an explicit production acknowledgement. It creates a local safety backup before replacing data, then runs the migration status and production schema verification checks:
+
+  ```bash
+  npm run db:restore -- \
+    --file backups/yuyu-backup-2026-08-30T00-00-00-000Z.dump \
+    --production \
+    --confirm-database yuyu
+  ```
+
+  To restore a remote archive, replace `--file` with `--s3-key yuyu-production/yuyu-backup-2026-08-30T00-00-00-000Z.dump` and supply the same required S3 options used for upload. Archives are streamed for upload and download rather than loaded into process memory; remote restores are downloaded temporarily, checksum-verified, restored, and removed from local temporary storage. Keep the provider bucket as the disaster-recovery source and perform a documented restore drill at least quarterly.
+
+  ```bash
+  npm run db:restore -- \
+    --s3-key yuyu-production/yuyu-backup-2026-08-30T00-00-00-000Z.dump \
+    --s3-bucket yuyu-production-backups \
+    --s3-region region-name \
+    --s3-endpoint https://s3.example.com \
+    --s3-access-key-id short-lived-access-key \
+    --s3-secret-access-key short-lived-secret \
+    --s3-prefix yuyu-production \
+    --production \
+    --confirm-database yuyu
+  ```
 - Test a point-in-time database restore every quarter and record the recovery time and data-loss window.
 - Alert on failed backups, failed migrations, outbox messages in `FAILED`, unavailable Redis, elevated 5xx rates, and database saturation.
 - Rotate `AUTH_SECRET`, `CRON_SECRET`, OAuth credentials, SMTP credentials, and database credentials through the secrets manager; rehearse revocation.

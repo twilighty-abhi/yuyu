@@ -35,7 +35,7 @@ export function PublicFeedbackForm(props: { orgSlug: string; eventSlug: string; 
   }); }}>
     <Stack spacing={2.25}>
       {error ? <Alert severity="error">{error}</Alert> : null}
-      {props.certificateEnabled ? <><Typography variant="body2" color="text.secondary">Use the email address from your confirmed registration to personalize the certificate.</Typography><TextField label="Registered email" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required fullWidth /></> : <Typography variant="body2" color="text.secondary">This feedback is anonymous. No email address or attendee identity is collected.</Typography>}
+      {props.certificateEnabled ? <><Typography variant="body2" color="text.secondary">Use the email address from your confirmed registration to personalize the certificate.</Typography><TextField label="Registered email" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required fullWidth /></> : <Typography variant="body2" color="text.secondary">This response is not linked to your account or registration. Avoid including identifying information if you want it to remain anonymous.</Typography>}
       {props.fields.map((field) => {
         const value = answers[field.key];
         if (field.type === "TEXTAREA") return <TextField key={field.key} label={field.label} multiline minRows={4} required={field.required} fullWidth value={typeof value === "string" ? value : ""} onChange={(event) => setAnswer(field.key, event.target.value)} />;

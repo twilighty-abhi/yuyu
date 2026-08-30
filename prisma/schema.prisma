@@ -290,8 +290,8 @@ model Event {
   privacyType           EventPrivacyType @default(PUBLIC)
   registrationClosesAt  DateTime?
   registrationLeadMinutes Int?
-  /// bcrypt hash for the public venue check-in station PIN. The PIN itself is
-  /// never persisted; incrementing the version invalidates station cookies.
+  /// bcrypt hash for the public venue check-in station PIN. Incrementing the
+  /// version invalidates all existing station proofs.
   checkInStationPinHash String?
   /// Encrypted solely so organisation admins can retrieve the current venue PIN.
   checkInStationPinEncrypted String?
@@ -774,7 +774,12 @@ model EventFeedbackResponse {
 model EventFeedbackAnswer {
   id          String    @id @default(cuid())
   responseId  String
-  fieldId     String
+  fieldId     String?
+  /// Immutable field semantics retained even when organisers later edit or
+  /// remove the live form field.
+  fieldKey    String
+  fieldLabel  String
+  fieldType   RegistrationFieldType
   valueText   String?
   valueBool   Boolean?
   valueNumber Float?
@@ -782,7 +787,7 @@ model EventFeedbackAnswer {
   createdAt   DateTime  @default(now())
 
   response EventFeedbackResponse @relation(fields: [responseId], references: [id], onDelete: Cascade)
-  field    EventFeedbackField    @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  field    EventFeedbackField?   @relation(fields: [fieldId], references: [id], onDelete: SetNull)
 
   @@index([responseId])
   @@index([fieldId])

@@ -39,7 +39,7 @@ This page documents implemented controls and security boundaries. It is not a su
 ## Tokens and sensitive links
 
 - Check-in and certificate tokens are high-entropy random values.
-- Venue check-in stations require an event-scoped, bcrypt-protected rotating PIN. Successful entry creates a signed, HttpOnly browser proof scoped to that event and expiring one hour after it ends; rotation and disablement invalidate existing proofs immediately. Station PINs, proofs, attendee exports, and offline rosters are never exposed through the public station.
+- Venue check-in stations require an event-scoped, bcrypt-protected rotating PIN. PIN management/recovery requires a fresh administrator sign-in and recoverable PIN ciphertext uses a domain-separated authenticated-encryption key. A station can open only from 24 hours before the event through one hour after it ends. Successful entry creates a signed, HttpOnly proof bound to that event, expiry, and PIN version; rotation and disablement invalidate existing proofs immediately. Station PINs, proofs, attendee exports, and offline rosters are never exposed through the public station.
 - Ticket, certificate, invitation, password-reset, and MFA enrollment values are secrets or bearer capabilities.
 - They must not appear in logs, audit metadata, monitoring tags, or analytics.
 - Readiness and scheduler secrets are compared in constant time and unauthorized calls return generic responses.
@@ -56,11 +56,26 @@ This page documents implemented controls and security boundaries. It is not a su
 
 - Certificate-disabled feedback stores answers without email or RSVP identity and allows repeat anonymous submissions.
 - Certificate-enabled feedback requires an email matching a confirmed RSVP, links the response for certificate generation, and allows repeat submissions.
+- Feedback mode, eligibility, typed answers, and response creation are one locked transaction. PostgreSQL forbids partial identity/certificate linkage, while immutable question snapshots keep historical answers meaningful after form maintenance.
 - Registration counts are omitted from public payloads when the organiser disables count display.
 - Audit metadata is designed to exclude email addresses, answers, passwords, and bearer tokens.
+- Public and dashboard browser event DTOs use explicit selects that exclude
+  check-in station secrets and unused relations. Production exception logging
+  is category-only. Attendee answers and ticket capabilities require the exact
+  registration-management permission; the check-in surface requires the
+  separate exact check-in permission.
 - Machine participant responses intentionally exclude contact data, registration answers, user IDs, and ticket/check-in/certificate capabilities. Attendance filtering does not reveal check-in data; the nullable check-in timestamp requires the separate `participants:attendance:read` scope and an explicit `include=attendance` request.
-- Asset buckets are private; safe derivatives are delivered through the application.
-- Retention cleanup covers expired verification tokens, undo snapshots, and old sent outbox records. Deployment operators must define broader legal retention and deletion procedures.
+- Asset buckets are private; only generated organisation-bound WebP derivatives
+  are delivered through the application key allowlist. Uploads are signature-
+  checked, decoded under a hard pixel limit, single-frame enforced, resized,
+  metadata-stripped, and re-encoded before storage.
+- Capability-bearing outbox rows are deleted after delivery, expiry, or terminal
+  failure. Queue/heartbeat failures persist only normalized error class/code,
+  and retries use a stable non-sensitive Message-ID under lease-owned state
+  transitions. Protected scheduler/readiness routes require one exact bearer.
+- Retention cleanup covers expired sessions, invitations, verification tokens,
+  undo snapshots, and old sent/failed non-capability outbox records. Deployment
+  operators must define broader legal retention and deletion procedures.
 
 ## Audit trail
 

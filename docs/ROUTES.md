@@ -36,7 +36,7 @@ Dynamic segments are shown as `:name` for readability.
 | `/dashboard/:orgSlug/members` | Members, roles, and invitations |
 | `/dashboard/:orgSlug/event/:eventId` | Event overview, attendees, forms, invites, and feedback |
 | `/dashboard/:orgSlug/event/:eventId/schedule` | Standalone-event programme planning and live delay management |
-| `/dashboard/:orgSlug/event/:eventId/check-in` | Online/offline check-in station |
+| `/dashboard/:orgSlug/event/:eventId/check-in` | Online/offline check-in station; organisation admin or exact event `CHECK_IN` grant |
 | `/dashboard/:orgSlug/series/:seriesId` | Recurring-series management |
 
 Dashboard pages require authentication and enforce membership/role permissions on the server.
@@ -57,7 +57,7 @@ Every super-admin page additionally requires a current TOTP verification. Users 
 | `GET /api/search?q=...` | Public, rate-limited | Return matching public events |
 | `GET /api/ticket/:token/download` | Opaque token | Download the attendee ticket |
 | `GET /api/feedback/certificate/:token` | Opaque token | Download an eligible JPEG certificate |
-| `GET /api/uploads/:key` | Public application route | Stream a stored safe derivative with response controls |
+| `GET /api/uploads/:key` | Public application route | Stream an allowlisted organisation WebP derivative with immutable/nosniff response controls |
 | `/api/auth/*` | Auth.js | Session, provider, callback, and credential endpoints |
 | `GET /api/v1/events` | Machine bearer credential + `events:read` | Paginated tenant event metadata |
 | `GET /api/v1/events/:eventId` | Machine bearer credential + `events:read` | Tenant-scoped event metadata |

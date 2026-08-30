@@ -13,6 +13,7 @@ import { recordAuditEvent } from "@/lib/audit";
 import { submitManualGuestRsvpCore } from "@/lib/rsvpCore";
 import { validateAndNormalizeAnswers } from "@/lib/rsvpCore";
 import { isActionRateLimited } from "@/lib/actionRateLimit";
+import { hasCapacityToRestoreConfirmedRsvp } from "@/lib/rsvpCapacity";
 
 const UNDO_TTL_MS = 5 * 60_000;
 
@@ -117,7 +118,7 @@ export async function updateRsvpRegistration(input: unknown): Promise<ActionResu
     if (typeof error === "object" && error !== null && "code" in error && (error as { code?: string }).code === "P2002") {
       return { ok: false, error: "This email is already registered for this event." };
     }
-    console.error("[rsvp] registration update failed", error);
+    console.error("[rsvp] registration update failed");
     return { ok: false, error: "Could not update the registration." };
   }
 
@@ -162,6 +163,7 @@ function revalidateRsvpPaths(orgSlug: string, target: { eventId: string | null; 
 export async function deleteRsvp(input: unknown): Promise<ActionResult<{ undoId: string }>> {
   const session = await auth();
   if (!session?.user?.id) return { ok: false, error: "You must be signed in." };
+  if (await isActionRateLimited("rsvp", session.user.id)) return { ok: false, error: "Too many attendee updates. Try again shortly." };
 
   const parsed = deleteRsvpSchema.safeParse(input);
   if (!parsed.success) {
@@ -233,6 +235,7 @@ export async function deleteRsvp(input: unknown): Promise<ActionResult<{ undoId:
 export async function restoreRsvp(input: unknown): Promise<ActionResult> {
   const session = await auth();
   if (!session?.user?.id) return { ok: false, error: "You must be signed in." };
+  if (await isActionRateLimited("rsvp", session.user.id)) return { ok: false, error: "Too many attendee updates. Try again shortly." };
   const parsed = restoreRsvpSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "Invalid restore request." };
 
@@ -261,6 +264,10 @@ export async function restoreRsvp(input: unknown): Promise<ActionResult> {
   let restoredId: string;
   try {
     const restored = await prisma.$transaction(async (tx) => {
+      if (snapshot.data.status === RsvpStatus.CONFIRMED) {
+        const target = snapshot.data.eventId ? { eventId: snapshot.data.eventId } : { eventInstanceId: snapshot.data.eventInstanceId! };
+        if (!(await hasCapacityToRestoreConfirmedRsvp(tx, target))) return null;
+      }
       const created = await tx.rSVP.create({
         data: {
           eventId: snapshot.data.eventId,
@@ -285,12 +292,13 @@ export async function restoreRsvp(input: unknown): Promise<ActionResult> {
       await tx.rsvpDeletionUndo.delete({ where: { id: undo.id } });
       return created;
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    if (!restored) return { ok: false, error: "This RSVP cannot be restored because the event is now at capacity." };
     restoredId = restored.id;
   } catch (error) {
     if (typeof error === "object" && error !== null && "code" in error && (error as { code?: string }).code === "P2002") {
       return { ok: false, error: "This RSVP can no longer be restored because a conflicting registration exists." };
     }
-    console.error("[rsvp] restore failed", error);
+    console.error("[rsvp] restore failed");
     return { ok: false, error: "Could not restore the RSVP." };
   }
 

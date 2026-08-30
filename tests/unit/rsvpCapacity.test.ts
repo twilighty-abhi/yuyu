@@ -8,7 +8,7 @@ const prismaMock = vi.hoisted(() => ({
 vi.mock("@/lib/db", () => ({ prisma: prismaMock }));
 vi.mock("@/lib/outbox", () => ({ enqueueRsvpStatusNotification: vi.fn() }));
 
-import { confirmRsvpWithinCapacity } from "@/lib/rsvpCapacity";
+import { confirmRsvpWithinCapacity, hasCapacityToRestoreConfirmedRsvp } from "@/lib/rsvpCapacity";
 
 const tx = {
   $queryRaw: vi.fn(),
@@ -16,11 +16,30 @@ const tx = {
     count: vi.fn(),
     updateMany: vi.fn(),
   },
+  eventInstance: { findUnique: vi.fn() },
 };
 
 beforeEach(() => {
   vi.clearAllMocks();
   prismaMock.$transaction.mockImplementation(async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx));
+});
+
+describe("RSVP restore capacity", () => {
+  it("locks the target and rejects a confirmed restore when the replacement slot is full", async () => {
+    tx.$queryRaw.mockResolvedValue([{ capacity: 1 }]);
+    tx.rSVP.count.mockResolvedValue(1);
+    await expect(hasCapacityToRestoreConfirmedRsvp(tx as never, { eventId: "event_1" })).resolves.toBe(false);
+    expect(tx.$queryRaw).toHaveBeenCalledOnce();
+    expect(tx.rSVP.count).toHaveBeenCalledWith({ where: { eventId: "event_1", status: RsvpStatus.CONFIRMED } });
+  });
+
+  it("keeps event-instance capacity isolated from sibling occurrences", async () => {
+    tx.$queryRaw.mockResolvedValue([]);
+    tx.eventInstance.findUnique.mockResolvedValue({ series: { capacity: 2 } });
+    tx.rSVP.count.mockResolvedValue(1);
+    await expect(hasCapacityToRestoreConfirmedRsvp(tx as never, { eventInstanceId: "instance_1" })).resolves.toBe(true);
+    expect(tx.rSVP.count).toHaveBeenCalledWith({ where: { eventInstanceId: "instance_1", status: RsvpStatus.CONFIRMED } });
+  });
 });
 
 describe("confirmRsvpWithinCapacity", () => {

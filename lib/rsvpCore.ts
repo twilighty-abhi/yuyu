@@ -16,7 +16,13 @@ function normalizeGuestEmail(email: string) {
   return email.trim().toLowerCase();
 }
 
-function decideStatus(params: {
+class RsvpTargetClosedError extends Error {}
+
+function isRsvpTargetClosedError(error: unknown): error is RsvpTargetClosedError {
+  return error instanceof RsvpTargetClosedError;
+}
+
+export function decideRsvpStatus(params: {
   capacity: number | null;
   confirmedCount: number;
   privacyType: EventPrivacyType;
@@ -24,11 +30,11 @@ function decideStatus(params: {
   const { capacity, confirmedCount, privacyType } = params;
   const full = capacity != null && confirmedCount >= capacity;
 
-  if (full) {
-    return RsvpStatus.WAITLISTED;
-  }
   if (privacyType === EventPrivacyType.APPROVAL_REQUIRED) {
     return RsvpStatus.PENDING_APPROVAL;
+  }
+  if (full) {
+    return RsvpStatus.WAITLISTED;
   }
   return RsvpStatus.CONFIRMED;
 }
@@ -47,12 +53,33 @@ async function reserveRsvp(params: {
   data: Omit<Prisma.RSVPUncheckedCreateInput, "status">;
   notification: { to: string; eventTitle: string };
   afterCreate?: (tx: Prisma.TransactionClient, rsvpId: string) => Promise<void>;
+  enforceOpen?: boolean;
 }) {
   return prisma.$transaction(async (tx) => {
+    let capacity = params.capacity;
+    let privacyType = params.privacyType;
     if ("eventId" in params.target) {
       await tx.$queryRaw`SELECT "id" FROM "Event" WHERE "id" = ${params.target.eventId} FOR UPDATE`;
+      const current = await tx.event.findUnique({
+        where: { id: params.target.eventId },
+        select: { capacity: true, privacyType: true, status: true, endDateTime: true, registrationClosesAt: true, registrationLeadMinutes: true, startDateTime: true, page: { select: { isPublished: true } } },
+      });
+      if (!current) throw new RsvpTargetClosedError();
+      if (params.enforceOpen !== false && (current.status !== EventStatus.PUBLISHED || current.page?.isPublished !== true || current.endDateTime <= new Date() || isRegistrationClosed(current))) throw new RsvpTargetClosedError();
+      capacity = current.capacity;
+      privacyType = current.privacyType;
     } else {
-      await tx.$queryRaw`SELECT "id" FROM "EventInstance" WHERE "id" = ${params.target.eventInstanceId} FOR UPDATE`;
+      await tx.$queryRaw`
+        SELECT i."id" FROM "EventSeries" s
+        INNER JOIN "EventInstance" i ON i."eventSeriesId" = s."id"
+        WHERE i."id" = ${params.target.eventInstanceId}
+        FOR UPDATE OF s, i
+      `;
+      const current = await tx.eventInstance.findUnique({ where: { id: params.target.eventInstanceId }, select: { endDateTime: true, series: { select: { capacity: true, privacyType: true, status: true } } } });
+      if (!current) throw new RsvpTargetClosedError();
+      if (params.enforceOpen !== false && (current.series.status !== EventStatus.PUBLISHED || current.endDateTime <= new Date())) throw new RsvpTargetClosedError();
+      capacity = current.series.capacity;
+      privacyType = current.series.privacyType;
     }
 
     const confirmedCount = await tx.rSVP.count({
@@ -61,10 +88,10 @@ async function reserveRsvp(params: {
         status: RsvpStatus.CONFIRMED,
       },
     });
-    const status = decideStatus({
-      capacity: params.capacity,
+    const status = decideRsvpStatus({
+      capacity,
       confirmedCount,
-      privacyType: params.privacyType,
+      privacyType,
     });
     const rsvp = await tx.rSVP.create({
       data: { ...params.data, status },
@@ -79,7 +106,7 @@ async function reserveRsvp(params: {
     await params.afterCreate?.(tx, rsvp.id);
     const count = await tx.rSVP.count({ where: params.target });
     return { ...rsvp, status, count };
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  });
 }
 
 async function resolveAttendeeEmail(
@@ -324,10 +351,12 @@ export async function submitRsvpCore(
       where: {
         organisationId_slug: { organisationId: org.id, slug: eventSlug },
       },
+      include: { page: { select: { isPublished: true } } },
     });
     if (
       !event ||
       event.status !== EventStatus.PUBLISHED ||
+      event.page?.isPublished !== true ||
       event.endDateTime <= new Date() ||
       isRegistrationClosed(event)
     ) {
@@ -426,6 +455,7 @@ export async function submitRsvpCore(
         data: { count: reservation.count, status: reservation.status, ticketToken: reservation.checkInToken },
       };
     } catch (e: unknown) {
+      if (isRsvpTargetClosedError(e)) return { ok: false, error: "This event is not open for RSVP." };
       if (
         typeof e === "object" &&
         e !== null &&
@@ -434,7 +464,7 @@ export async function submitRsvpCore(
       ) {
         return { ok: false, error: "You have already RSVP’d for this event." };
       }
-      console.error(e);
+      console.error("[rsvp] authenticated submission failed");
       return { ok: false, error: "Could not save your RSVP." };
     }
   }
@@ -474,10 +504,12 @@ export async function submitRsvpCore(
     where: {
       organisationId_slug: { organisationId: org.id, slug: eventSlug },
     },
+    include: { page: { select: { isPublished: true } } },
   });
   if (
     !event ||
     event.status !== EventStatus.PUBLISHED ||
+    event.page?.isPublished !== true ||
     event.endDateTime <= new Date() ||
     isRegistrationClosed(event)
   ) {
@@ -546,6 +578,7 @@ export async function submitRsvpCore(
       data: { count: reservation.count, status: reservation.status, ticketToken: reservation.checkInToken },
     };
   } catch (e: unknown) {
+    if (isRsvpTargetClosedError(e)) return { ok: false, error: "This event is not open for RSVP." };
     if (
       typeof e === "object" &&
       e !== null &&
@@ -557,7 +590,7 @@ export async function submitRsvpCore(
         error: "This email is already registered for this event.",
       };
     }
-    console.error(e);
+    console.error("[rsvp] guest submission failed");
     return { ok: false, error: "Could not save your RSVP." };
   }
 }
@@ -617,6 +650,7 @@ export async function submitManualGuestRsvpCore(
         guestName: parsed.data.name.trim(),
         attendeeKey: `guest:${email}`,
       },
+      enforceOpen: false,
       afterCreate: async (tx, rsvpId) => {
         if (validated.rows.length === 0) return;
         await tx.rsvpAnswer.createMany({
@@ -648,7 +682,7 @@ export async function submitManualGuestRsvpCore(
     ) {
       return { ok: false, error: "This email is already registered for this event." };
     }
-    console.error(error);
+    console.error("[rsvp] manual submission failed");
     return { ok: false, error: "Could not save the attendee RSVP." };
   }
 }
@@ -773,6 +807,7 @@ async function submitInstanceRsvp(params: {
       data: { count: reservation.count, status: reservation.status, ticketToken: reservation.checkInToken },
     };
   } catch (e: unknown) {
+    if (isRsvpTargetClosedError(e)) return { ok: false, error: "This event is not open for RSVP." };
     if (
       typeof e === "object" &&
       e !== null &&
@@ -781,7 +816,7 @@ async function submitInstanceRsvp(params: {
     ) {
       return { ok: false, error: "You have already RSVP’d for this event." };
     }
-    console.error(e);
+    console.error("[rsvp] occurrence submission failed");
     return { ok: false, error: "Could not save your RSVP." };
   }
 }

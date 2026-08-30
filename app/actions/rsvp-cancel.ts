@@ -6,6 +6,11 @@ import { prisma } from "@/lib/db";
 import { enqueueRsvpStatusNotification } from "@/lib/outbox";
 import { recordAuditEvent } from "@/lib/audit";
 import type { ActionResult } from "./org";
+import { z } from "zod";
+import { isActionRateLimited } from "@/lib/actionRateLimit";
+import { EventPrivacyType } from "@prisma/client";
+
+const cancelRsvpSchema = z.object({ checkInToken: z.string().trim().min(8).max(256) }).strict();
 
 /**
  * Cancel an RSVP.  The caller must either:
@@ -15,13 +20,13 @@ import type { ActionResult } from "./org";
  * When a CONFIRMED RSVP is cancelled and there are WAITLISTED RSVPs,
  * the oldest waitlisted RSVP is auto-promoted to CONFIRMED.
  */
-export async function cancelRsvp(input: {
-  checkInToken: string;
-}): Promise<ActionResult<{ cancelled: true }>> {
-  const { checkInToken } = input;
-  if (!checkInToken?.trim()) {
+export async function cancelRsvp(input: unknown): Promise<ActionResult<{ cancelled: true }>> {
+  const parsed = cancelRsvpSchema.safeParse(input);
+  if (!parsed.success) {
     return { ok: false, error: "Missing token." };
   }
+  const { checkInToken } = parsed.data;
+  if (await isActionRateLimited("rsvp", checkInToken)) return { ok: false, error: "Too many cancellation attempts. Please try again shortly." };
 
   const rsvp = await prisma.rSVP.findUnique({
     where: { checkInToken: checkInToken.trim() },
@@ -31,6 +36,7 @@ export async function cancelRsvp(input: {
           id: true,
           slug: true,
           title: true,
+          privacyType: true,
           organisation: { select: { id: true, slug: true } },
         },
       },
@@ -38,7 +44,7 @@ export async function cancelRsvp(input: {
         select: {
           id: true,
           series: {
-            select: { title: true, organisation: { select: { id: true, slug: true } } },
+            select: { title: true, privacyType: true, organisation: { select: { id: true, slug: true } } },
           },
         },
       },
@@ -70,7 +76,8 @@ export async function cancelRsvp(input: {
     if (!current) return { error: "RSVP not found." };
     if (current.checkedInAt) return { error: "Cannot cancel — you have already checked in." };
     await tx.rSVP.delete({ where: { id: current.id } });
-    if (current.status === "CONFIRMED") {
+    const privacyType = rsvp.event?.privacyType ?? rsvp.eventInstance?.series.privacyType;
+    if (current.status === "CONFIRMED" && privacyType !== EventPrivacyType.APPROVAL_REQUIRED) {
       const target = current.eventId ? { eventId: current.eventId } : { eventInstanceId: current.eventInstanceId! };
       const nextWaitlisted = await tx.rSVP.findFirst({
         where: { ...target, status: "WAITLISTED" },

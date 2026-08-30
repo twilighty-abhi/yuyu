@@ -6,6 +6,7 @@ import {
   rsvpGuestSchema,
   createOrganisationSchema,
   updateRsvpRegistrationSchema,
+  rsvpTransitionSchema,
 } from "@/lib/validators";
 
 describe("RSVP validation", () => {
@@ -32,6 +33,14 @@ describe("RSVP validation", () => {
     });
     expect(result.guestEmail).toBe("guest@example.com");
     expect(rsvpGuestSchema.safeParse({ guestEmail: "guest@example.com", name: "Jamie", orgSlug: "demo" }).success).toBe(false);
+    expect(rsvpGuestSchema.safeParse({ orgSlug: "demo", eventSlug: "event", eventInstanceId: "instance", guestEmail: "guest@example.com", name: "Jamie" }).success).toBe(false);
+  });
+
+  it("requires exactly one target for lifecycle transitions", () => {
+    const base = { organisationSlug: "demo", rsvpId: "rsvp_1" };
+    expect(rsvpTransitionSchema.safeParse({ ...base, eventId: "event_1" }).success).toBe(true);
+    expect(rsvpTransitionSchema.safeParse({ ...base, eventInstanceId: "instance_1" }).success).toBe(true);
+    expect(rsvpTransitionSchema.safeParse({ ...base, eventId: "event_1", eventInstanceId: "instance_1" }).success).toBe(false);
   });
 
   it("requires exactly one target when editing a registration", () => {

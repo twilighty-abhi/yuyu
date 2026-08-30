@@ -35,8 +35,13 @@ export async function submitRsvp(
       typeof (input as { eventSlug: unknown }).eventSlug === "string"
         ? (input as { eventSlug: string }).eventSlug
         : null;
-    if (orgSlug && eventSlug) {
-      revalidatePath(`/${orgSlug}/${eventSlug}`);
+    const eventInstanceId =
+      typeof input === "object" && input !== null && "eventInstanceId" in input && typeof (input as { eventInstanceId?: unknown }).eventInstanceId === "string"
+        ? (input as { eventInstanceId: string }).eventInstanceId
+        : null;
+    if (orgSlug) {
+      if (eventSlug) revalidatePath(`/${orgSlug}/${eventSlug}`);
+      if (eventInstanceId) revalidatePath(`/${orgSlug}/i/${eventInstanceId}`);
       revalidatePath(`/${orgSlug}`);
     }
   }

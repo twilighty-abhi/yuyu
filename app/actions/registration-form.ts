@@ -7,6 +7,7 @@ import { flattenZodErrors } from "@/app/actions/utils";
 import { prisma } from "@/lib/db";
 import { requireOrgRole } from "@/lib/permissions";
 import { recordAuditEvent } from "@/lib/audit";
+import { isActionRateLimited } from "@/lib/actionRateLimit";
 
 const upsertFieldSchema = z.object({
   organisationSlug: z.string().trim().min(1),
@@ -33,7 +34,7 @@ const upsertFieldSchema = z.object({
         .filter(Boolean);
     }
     return [];
-  }, z.array(z.string().trim().min(1).max(200))).optional().default([]),
+  }, z.array(z.string().trim().min(1).max(200)).max(100).transform((items) => [...new Set(items)])).optional().default([]),
 });
 
 export async function upsertEventRegistrationField(
@@ -53,6 +54,7 @@ export async function upsertEventRegistrationField(
   const options = parsed.data.options ?? [];
 
   const { organisation, userId } = await requireOrgRole(organisationSlug, "ADMIN");
+  if (await isActionRateLimited("rsvp", userId)) return { ok: false, error: "Too many form updates. Try again shortly." };
   const event = await prisma.event.findFirst({
     where: { id: eventId, organisationId: organisation.id },
     select: { id: true },
@@ -77,8 +79,8 @@ export async function upsertEventRegistrationField(
       });
 
       if (fieldId) {
-        const updated = await tx.eventRegistrationField.update({
-          where: { id: fieldId },
+        const updated = await tx.eventRegistrationField.updateMany({
+          where: { id: fieldId, formId: form.id },
           data: {
             key,
             label,
@@ -86,12 +88,9 @@ export async function upsertEventRegistrationField(
             required,
             options: needsOptions ? options : [],
           },
-          select: { id: true, formId: true },
         });
-        if (updated.formId !== form.id) {
-          throw new Error("Field does not belong to this event.");
-        }
-        return updated;
+        if (updated.count !== 1) throw new Error("Field does not belong to this event.");
+        return { id: fieldId, formId: form.id };
       }
 
       const max = await tx.eventRegistrationField.aggregate({
@@ -133,7 +132,7 @@ export async function upsertEventRegistrationField(
     ) {
       return { ok: false, error: "That field key is already in use." };
     }
-    console.error(e);
+    console.error("[registration form] update failed");
     return { ok: false, error: "Could not save field." };
   }
 }
@@ -158,6 +157,7 @@ export async function deleteEventRegistrationField(
 
   const { organisationSlug, eventId, fieldId } = parsed.data;
   const { organisation, userId } = await requireOrgRole(organisationSlug, "ADMIN");
+  if (await isActionRateLimited("rsvp", userId)) return { ok: false, error: "Too many form updates. Try again shortly." };
 
   const event = await prisma.event.findFirst({
     where: { id: eventId, organisationId: organisation.id },
@@ -187,7 +187,7 @@ export async function deleteEventRegistrationField(
 const reorderSchema = z.object({
   organisationSlug: z.string().trim().min(1),
   eventId: z.string().trim().min(1),
-  fieldIds: z.array(z.string().trim().min(1)).min(1),
+  fieldIds: z.array(z.string().trim().min(1)).min(1).max(200).refine((ids) => new Set(ids).size === ids.length, "Field IDs must be unique."),
 });
 
 export async function reorderEventRegistrationFields(
@@ -204,6 +204,7 @@ export async function reorderEventRegistrationFields(
 
   const { organisationSlug, eventId, fieldIds } = parsed.data;
   const { organisation, userId } = await requireOrgRole(organisationSlug, "ADMIN");
+  if (await isActionRateLimited("rsvp", userId)) return { ok: false, error: "Too many form updates. Try again shortly." };
 
   const event = await prisma.event.findFirst({
     where: { id: eventId, organisationId: organisation.id },
@@ -222,6 +223,7 @@ export async function reorderEventRegistrationFields(
     select: { id: true },
   });
   const existingSet = new Set(existing.map((f) => f.id));
+  if (fieldIds.length !== existing.length) return { ok: false, error: "Invalid field list." };
   for (const id of fieldIds) {
     if (!existingSet.has(id)) {
       return { ok: false, error: "Invalid field list." };

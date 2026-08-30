@@ -11,6 +11,7 @@ import { rsvpTransitionSchema } from "@/lib/validators";
 import type { ActionResult } from "./org";
 import { flattenZodErrors } from "./utils";
 import { recordAuditEvent } from "@/lib/audit";
+import { isActionRateLimited } from "@/lib/actionRateLimit";
 
 function revalidateRsvpPaths(params: {
   orgSlug: string;
@@ -92,6 +93,7 @@ export async function approveRsvp(input: unknown): Promise<ActionResult> {
   if (!session?.user?.id) {
     return { ok: false, error: "You must be signed in." };
   }
+  if (await isActionRateLimited("rsvp", session.user.id)) return { ok: false, error: "Too many attendee updates. Try again shortly." };
 
   const parsed = rsvpTransitionSchema.safeParse(input);
   if (!parsed.success) {
@@ -173,6 +175,7 @@ export async function rejectRsvp(input: unknown): Promise<ActionResult> {
   if (!session?.user?.id) {
     return { ok: false, error: "You must be signed in." };
   }
+  if (await isActionRateLimited("rsvp", session.user.id)) return { ok: false, error: "Too many attendee updates. Try again shortly." };
 
   const parsed = rsvpTransitionSchema.safeParse(input);
   if (!parsed.success) {
@@ -243,6 +246,7 @@ export async function promoteFromWaitlist(input: unknown): Promise<ActionResult>
   if (!session?.user?.id) {
     return { ok: false, error: "You must be signed in." };
   }
+  if (await isActionRateLimited("rsvp", session.user.id)) return { ok: false, error: "Too many attendee updates. Try again shortly." };
 
   const parsed = rsvpTransitionSchema.safeParse(input);
   if (!parsed.success) {

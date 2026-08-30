@@ -16,6 +16,33 @@ export async function countConfirmedForInstance(
   });
 }
 
+/** Caller must already be inside the restore transaction. Uses the same target
+ * row lock as new reservations so an undo cannot race a final-slot claim. */
+export async function hasCapacityToRestoreConfirmedRsvp(
+  tx: Prisma.TransactionClient,
+  target: { eventId: string } | { eventInstanceId: string },
+): Promise<boolean> {
+  let capacity: number | null;
+  if ("eventId" in target) {
+    const rows = await tx.$queryRaw<Array<{ capacity: number | null }>>`
+      SELECT "capacity" FROM "Event" WHERE "id" = ${target.eventId} FOR UPDATE
+    `;
+    if (!rows[0]) return false;
+    capacity = rows[0].capacity;
+  } else {
+    await tx.$queryRaw`SELECT "id" FROM "EventInstance" WHERE "id" = ${target.eventInstanceId} FOR UPDATE`;
+    const instance = await tx.eventInstance.findUnique({
+      where: { id: target.eventInstanceId },
+      select: { series: { select: { capacity: true } } },
+    });
+    if (!instance) return false;
+    capacity = instance.series.capacity;
+  }
+  if (capacity == null) return true;
+  const confirmed = await tx.rSVP.count({ where: { ...target, status: RsvpStatus.CONFIRMED } });
+  return confirmed < capacity;
+}
+
 /** Atomically promote/approve an RSVP without exceeding the configured capacity. */
 export async function confirmRsvpWithinCapacity(params: {
   rsvpId: string;
@@ -45,5 +72,5 @@ export async function confirmRsvpWithinCapacity(params: {
       });
     }
     return updated.count === 1 ? "confirmed" : "changed";
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  });
 }

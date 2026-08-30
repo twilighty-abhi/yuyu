@@ -30,8 +30,9 @@ export default async function RootLayout({
       <body style={{ display: "flex", flexDirection: "column", minHeight: "100dvh" }}>
         <AppRouterCacheProvider options={{ key: "mui" }}>
           <Providers>
+            <a className="skip-link" href="#main-content">Skip to main content</a>
             <AppBarNav />
-            <Box component="main" sx={{ flex: 1, py: 3 }}>
+            <Box component="main" id="main-content" tabIndex={-1} sx={{ flex: 1, py: 3 }}>
               <Container
                 maxWidth={false}
                 sx={{ width: "100%", maxWidth: 1440, mx: "auto", px: { xs: 2, sm: 3, lg: 4 } }}

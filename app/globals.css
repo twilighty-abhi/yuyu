@@ -31,6 +31,35 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+.skip-link {
+  position: fixed;
+  left: 12px;
+  top: 12px;
+  z-index: 2000;
+  padding: 10px 14px;
+  border-radius: 8px;
+  color: #ffffff;
+  background: #007aff;
+  font-weight: 700;
+  text-decoration: none;
+  transform: translateY(-160%);
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 /*
  * Earlier screens used dark-only sx colours. Keep those legacy declarations
  * from leaking into light mode while individual screens are progressively
@@ -62,6 +91,18 @@ body {
 :root[data-color-mode="light"] .MuiFormHelperText-root,
 :root[data-color-mode="light"] .MuiInputLabel-root {
   color: #6c6c70 !important;
+}
+
+:root[data-color-mode="light"] .MuiTypography-colorError {
+  color: #d70015 !important;
+}
+
+:root[data-color-mode="light"] .MuiTypography-colorSuccess {
+  color: #248a3d !important;
+}
+
+:root[data-color-mode="light"] .MuiTypography-colorWarning {
+  color: #a15c00 !important;
 }
 
 :root[data-color-mode="light"] .MuiLink-root,

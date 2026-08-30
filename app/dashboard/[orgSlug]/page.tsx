@@ -20,13 +20,28 @@ import Chip from "@mui/material/Chip";
 import EventIcon from "@mui/icons-material/Event";
 import AddIcon from "@mui/icons-material/Add";
 import RepeatIcon from "@mui/icons-material/Repeat";
+import { EventStatus, type Prisma } from "@prisma/client";
+import { paginationWindow } from "@/lib/pagination";
 
 import type { Metadata } from "next";
 
 type Props = {
   params: Promise<{ orgSlug: string }>;
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{ page?: string; seriesPage?: string; view?: string }>;
 };
+
+const EVENT_PAGE_SIZE = 6;
+const SERIES_PAGE_SIZE = 6;
+type EventView = "upcoming" | "past" | "draft" | "all";
+
+function dashboardQuery(params: { view: EventView; page?: number; seriesPage?: number }) {
+  const query = new URLSearchParams();
+  if (params.view !== "upcoming") query.set("view", params.view);
+  if (params.page && params.page > 1) query.set("page", String(params.page));
+  if (params.seriesPage && params.seriesPage > 1) query.set("seriesPage", String(params.seriesPage));
+  const value = query.toString();
+  return value ? `?${value}` : "";
+}
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { orgSlug } = await params;
@@ -43,7 +58,10 @@ export default async function OrgDashboardPage({ params, searchParams }: Props) 
   const { orgSlug } = await params;
   const sp = await searchParams;
   const page = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
-  const pageSize = 6;
+  const seriesPage = Math.max(1, parseInt(sp.seriesPage ?? "1", 10) || 1);
+  const view: EventView = ["upcoming", "past", "draft", "all"].includes(sp.view ?? "")
+    ? (sp.view as EventView)
+    : "upcoming";
 
   const access = await requireOrgDashboardAccess(orgSlug);
   const { organisation, membership } = access;
@@ -54,26 +72,37 @@ export default async function OrgDashboardPage({ params, searchParams }: Props) 
   const manage = canManageEvents(membership);
   const admin = isOrgAdmin(membership.role);
 
-  const totalEvents = await prisma.event.count({
-    where: { organisationId: organisation.id },
-  });
-  const totalPages = Math.ceil(totalEvents / pageSize) || 1;
+  const now = new Date();
+  const eventWhere: Prisma.EventWhereInput = {
+    organisationId: organisation.id,
+    ...(view === "upcoming" ? { status: EventStatus.PUBLISHED, endDateTime: { gte: now } } : {}),
+    ...(view === "past" ? { status: EventStatus.PUBLISHED, endDateTime: { lt: now } } : {}),
+    ...(view === "draft" ? { status: EventStatus.DRAFT } : {}),
+  };
+  const [activeEvents, totalEvents, totalSeries] = await Promise.all([
+    prisma.event.count({ where: { organisationId: organisation.id, status: EventStatus.PUBLISHED, endDateTime: { gte: now } } }),
+    prisma.event.count({ where: eventWhere }),
+    prisma.eventSeries.count({ where: { organisationId: organisation.id } }),
+  ]);
+  const totalPages = Math.ceil(totalEvents / EVENT_PAGE_SIZE) || 1;
   const safePage = Math.min(page, totalPages);
+  const totalSeriesPages = Math.ceil(totalSeries / SERIES_PAGE_SIZE) || 1;
+  const safeSeriesPage = Math.min(seriesPage, totalSeriesPages);
 
-  const events = await prisma.event.findMany({
-    where: { organisationId: organisation.id },
-    orderBy: { startDateTime: "asc" },
-    skip: (safePage - 1) * pageSize,
-    take: pageSize,
-  });
-
-  const orgSeries = await prisma.organisation.findUnique({
-    where: { id: organisation.id },
-    select: {
-      eventSeries: { orderBy: { createdAt: "desc" } },
-    },
-  });
-  const seriesList = orgSeries?.eventSeries ?? [];
+  const [events, seriesList] = await Promise.all([
+    prisma.event.findMany({
+      where: eventWhere,
+      orderBy: view === "past" ? { startDateTime: "desc" } : view === "all" || view === "draft" ? { createdAt: "desc" } : { startDateTime: "asc" },
+      skip: (safePage - 1) * EVENT_PAGE_SIZE,
+      take: EVENT_PAGE_SIZE,
+    }),
+    prisma.eventSeries.findMany({
+      where: { organisationId: organisation.id },
+      orderBy: { createdAt: "desc" },
+      skip: (safeSeriesPage - 1) * SERIES_PAGE_SIZE,
+      take: SERIES_PAGE_SIZE,
+    }),
+  ]);
 
   return (
     <>
@@ -82,8 +111,9 @@ export default async function OrgDashboardPage({ params, searchParams }: Props) 
         sx={{
           p: { xs: 2.5, sm: 3.5 },
           borderRadius: "22px",
-          borderColor: "rgba(255, 255, 255, 0.09)",
-          background: "linear-gradient(120deg, rgba(10,132,255,0.15), rgba(28,28,30,0.96) 55%, rgba(48,209,88,0.08))",
+          borderColor: "divider",
+          backgroundColor: "background.paper",
+          backgroundImage: "linear-gradient(120deg, rgba(10,132,255,0.13), transparent 58%, rgba(48,209,88,0.08))",
           boxShadow: "0 18px 45px rgba(0,0,0,0.14)",
         }}
       >
@@ -103,17 +133,17 @@ export default async function OrgDashboardPage({ params, searchParams }: Props) 
           >
             {organisation.name}
           </Typography>
-          <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.58)", maxWidth: 560 }}>
+          <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 560 }}>
             Plan events, manage your members, and keep your organisation moving.
           </Typography>
         </Stack>
         <Stack direction="row" spacing={2} useFlexGap sx={{ flexWrap: "wrap", alignItems: "center" }}>
           <Stack spacing={0} sx={{ minWidth: 92, pr: { sm: 1 } }}>
-            <Typography variant="caption" sx={{ color: "rgba(255,255,255,0.58)", textTransform: "uppercase", letterSpacing: "0.8px", fontWeight: 700 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ textTransform: "uppercase", letterSpacing: "0.8px", fontWeight: 700 }}>
               Active events
             </Typography>
             <Typography variant="h4" sx={{ fontWeight: 720, letterSpacing: "-1px" }}>
-              {totalEvents}
+              {activeEvents}
             </Typography>
           </Stack>
           <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", alignItems: "center" }}>
@@ -137,8 +167,8 @@ export default async function OrgDashboardPage({ params, searchParams }: Props) 
             px: { xs: 2, sm: 2.5 },
             py: 1.5,
             borderRadius: "16px",
-            borderColor: "rgba(255,255,255,0.08)",
-            backgroundColor: "rgba(255,255,255,0.025)",
+            borderColor: "divider",
+            backgroundColor: "background.paper",
           }}
         >
           <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} sx={{ justifyContent: "space-between", alignItems: { xs: "flex-start", sm: "center" } }}>
@@ -183,19 +213,41 @@ export default async function OrgDashboardPage({ params, searchParams }: Props) 
               </Link>
             </Paper>
           ))}
+          {totalSeriesPages > 1 ? (
+            <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "flex-end" }}>
+              <Button href={`/dashboard/${organisation.slug}${dashboardQuery({ view, page: safePage, seriesPage: safeSeriesPage - 1 })}`} size="small" disabled={safeSeriesPage <= 1}>Previous series</Button>
+              <Chip label={`Series page ${safeSeriesPage} of ${totalSeriesPages}`} size="small" variant="outlined" />
+              <Button href={`/dashboard/${organisation.slug}${dashboardQuery({ view, page: safePage, seriesPage: safeSeriesPage + 1 })}`} size="small" disabled={safeSeriesPage >= totalSeriesPages}>Next series</Button>
+            </Stack>
+          ) : null}
         </Stack>
       )}
 
-      <Stack direction="row" spacing={1} sx={{ mt: 4, mb: 1.5, alignItems: "center" }}>
-        <EventIcon sx={{ color: "#8E8E93", fontSize: 20 }} />
-        <Typography variant="h6" component="h2" sx={{ fontWeight: 700, letterSpacing: "-0.3px" }}>Events</Typography>
+      <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} sx={{ mt: 4, mb: 1.5, alignItems: { xs: "stretch", sm: "center" }, justifyContent: "space-between" }}>
+        <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+          <EventIcon color="disabled" sx={{ fontSize: 20 }} />
+          <Typography variant="h6" component="h2" sx={{ fontWeight: 700, letterSpacing: "-0.3px" }}>Events</Typography>
+        </Stack>
+        <Stack component="nav" direction="row" spacing={0.5} useFlexGap sx={{ flexWrap: "wrap" }} aria-label="Filter events">
+          {(["upcoming", "past", "draft", "all"] as const).map((option) => (
+            <Button
+              key={option}
+              href={`/dashboard/${organisation.slug}${dashboardQuery({ view: option, seriesPage: safeSeriesPage })}`}
+              size="small"
+              variant={view === option ? "contained" : "text"}
+              aria-current={view === option ? "page" : undefined}
+            >
+              {option[0].toUpperCase() + option.slice(1)}
+            </Button>
+          ))}
+        </Stack>
       </Stack>
 
       {events.length === 0 ? (
-        <Paper variant="outlined" sx={{ p: 5, textAlign: "center", borderRadius: "16px", borderColor: "rgba(255,255,255,0.08)", backgroundColor: "rgba(255,255,255,0.025)" }}>
+        <Paper variant="outlined" sx={{ p: 5, textAlign: "center", borderRadius: "16px", borderColor: "divider", backgroundColor: "background.paper" }}>
           <Typography color="text.secondary">
-            No events yet.
-            {manage ? " Create one with the button below." : ""}
+            {view === "upcoming" ? "No upcoming published events." : `No ${view} events found.`}
+            {manage && view === "upcoming" ? " Create one using New event." : ""}
           </Typography>
         </Paper>
       ) : (
@@ -223,7 +275,7 @@ export default async function OrgDashboardPage({ params, searchParams }: Props) 
             sx={{ alignItems: "center", justifyContent: "space-between" }}
           >
             <Typography variant="body2" color="text.secondary">
-              Showing {((safePage - 1) * pageSize) + 1}–{Math.min(safePage * pageSize, totalEvents)} of {totalEvents} event{totalEvents === 1 ? "" : "s"}
+              Showing {((safePage - 1) * EVENT_PAGE_SIZE) + 1}–{Math.min(safePage * EVENT_PAGE_SIZE, totalEvents)} of {totalEvents} event{totalEvents === 1 ? "" : "s"}
             </Typography>
             {totalPages > 1 ? (
               <Chip label={`Page ${safePage} of ${totalPages}`} size="small" variant="outlined" />
@@ -237,19 +289,14 @@ export default async function OrgDashboardPage({ params, searchParams }: Props) 
                   Previous
                 </Button>
               ) : (
-                <Link href={`/dashboard/${organisation.slug}?page=${safePage - 1}`} style={{ textDecoration: "none" }}>
+                <Link href={`/dashboard/${organisation.slug}${dashboardQuery({ view, page: safePage - 1, seriesPage: safeSeriesPage })}`} style={{ textDecoration: "none" }}>
                   <Button component="span" variant="outlined" size="small" startIcon={<NavigateBeforeIcon />} sx={{ borderRadius: 2 }}>
                     Previous
                   </Button>
                 </Link>
               )}
-              {(() => {
-                const pages = [];
-                for (let i = 1; i <= totalPages; i++) {
-                  pages.push(i);
-                }
-                return pages.map((p) => (
-                  <Link key={p} href={`/dashboard/${organisation.slug}?page=${p}`} style={{ textDecoration: "none" }}>
+              {paginationWindow(safePage, totalPages).map((p) => (
+                  <Link key={p} href={`/dashboard/${organisation.slug}${dashboardQuery({ view, page: p, seriesPage: safeSeriesPage })}`} style={{ textDecoration: "none" }}>
                     <Button
                       component="span"
                       variant={p === safePage ? "contained" : "text"}
@@ -269,14 +316,13 @@ export default async function OrgDashboardPage({ params, searchParams }: Props) 
                       {p}
                     </Button>
                   </Link>
-                ));
-              })()}
+                ))}
               {safePage >= totalPages ? (
                 <Button variant="outlined" size="small" disabled endIcon={<NavigateNextIcon />} sx={{ borderRadius: 2 }}>
                   Next
                 </Button>
               ) : (
-                <Link href={`/dashboard/${organisation.slug}?page=${safePage + 1}`} style={{ textDecoration: "none" }}>
+                <Link href={`/dashboard/${organisation.slug}${dashboardQuery({ view, page: safePage + 1, seriesPage: safeSeriesPage })}`} style={{ textDecoration: "none" }}>
                   <Button component="span" variant="outlined" size="small" endIcon={<NavigateNextIcon />} sx={{ borderRadius: 2 }}>
                     Next
                   </Button>

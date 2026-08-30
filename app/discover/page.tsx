@@ -7,7 +7,6 @@ import TextField from "@mui/material/TextField";
 import Paper from "@mui/material/Paper";
 import InputAdornment from "@mui/material/InputAdornment";
 import Chip from "@mui/material/Chip";
-import Link from "next/link";
 import SearchIcon from "@mui/icons-material/Search";
 import FilterListIcon from "@mui/icons-material/FilterList";
 import ClearIcon from "@mui/icons-material/Clear";
@@ -18,6 +17,9 @@ import { prisma } from "@/lib/db";
 import { DiscoverEventCard } from "@/components/event/DiscoverEventCard";
 import { InstanceCard } from "@/components/event/InstanceCard";
 import type { Metadata } from "next";
+import Alert from "@mui/material/Alert";
+import { parseDiscoveryDateRange } from "@/lib/dateFilter";
+import { paginationWindow } from "@/lib/pagination";
 
 export const metadata: Metadata = {
   title: "Discover Events",
@@ -56,8 +58,7 @@ export default async function DiscoverPage({
   const q = (sp.q?.trim() || "").slice(0, MAX_QUERY_LENGTH);
   const page = Math.min(MAX_DISCOVERY_PAGES, Math.max(1, parseInt(sp.page ?? "1", 10) || 1));
 
-  const fromDate = sp.from ? new Date(sp.from) : null;
-  const toDate = sp.to ? new Date(sp.to) : null;
+  const { fromDate, toExclusive, error: dateRangeError } = parseDiscoveryDateRange(sp.from, sp.to);
 
   const eventWhere = {
     status: EventStatus.PUBLISHED,
@@ -72,10 +73,10 @@ export default async function DiscoverPage({
           ],
         }
       : {}),
-    ...((fromDate || toDate) && {
+    ...(!dateRangeError && (fromDate || toExclusive) && {
       startDateTime: {
-        ...(fromDate && !Number.isNaN(fromDate.getTime()) ? { gte: fromDate } : {}),
-        ...(toDate && !Number.isNaN(toDate.getTime()) ? { lte: toDate } : {}),
+        ...(fromDate ? { gte: fromDate } : {}),
+        ...(toExclusive ? { lt: toExclusive } : {}),
       },
     }),
   } as const;
@@ -94,10 +95,10 @@ export default async function DiscoverPage({
         : {}),
     },
     endDateTime: { gte: new Date() },
-    ...((fromDate || toDate) && {
+    ...(!dateRangeError && (fromDate || toExclusive) && {
       startDateTime: {
-        ...(fromDate && !Number.isNaN(fromDate.getTime()) ? { gte: fromDate } : {}),
-        ...(toDate && !Number.isNaN(toDate.getTime()) ? { lte: toDate } : {}),
+        ...(fromDate ? { gte: fromDate } : {}),
+        ...(toExclusive ? { lt: toExclusive } : {}),
       },
     }),
   };
@@ -111,8 +112,8 @@ export default async function DiscoverPage({
   const totalPages = Math.min(MAX_DISCOVERY_PAGES, Math.max(1, Math.ceil(totalItems / PAGE_SIZE)));
   const safePage = Math.min(page, totalPages);
   const startIdx = (safePage - 1) * PAGE_SIZE;
-  const validFrom = fromDate && !Number.isNaN(fromDate.getTime()) ? fromDate : null;
-  const validTo = toDate && !Number.isNaN(toDate.getTime()) ? toDate : null;
+  const validFrom = dateRangeError ? null : fromDate;
+  const validToExclusive = dateRangeError ? null : toExclusive;
   const searchPattern = `%${q}%`;
   const eventFilters = [
     Prisma.sql`e."status" = ${EventStatus.PUBLISHED}::"EventStatus"`,
@@ -121,7 +122,7 @@ export default async function DiscoverPage({
     Prisma.sql`e."endDateTime" >= NOW()`,
     ...(q ? [Prisma.sql`(e."title" ILIKE ${searchPattern} OR e."description" ILIKE ${searchPattern})`] : []),
     ...(validFrom ? [Prisma.sql`e."startDateTime" >= ${validFrom}`] : []),
-    ...(validTo ? [Prisma.sql`e."startDateTime" <= ${validTo}`] : []),
+    ...(validToExclusive ? [Prisma.sql`e."startDateTime" < ${validToExclusive}`] : []),
   ];
   const instanceFilters = [
     Prisma.sql`s."status" = ${EventStatus.PUBLISHED}::"EventStatus"`,
@@ -129,7 +130,7 @@ export default async function DiscoverPage({
     Prisma.sql`i."endDateTime" >= NOW()`,
     ...(q ? [Prisma.sql`(s."title" ILIKE ${searchPattern} OR s."description" ILIKE ${searchPattern})`] : []),
     ...(validFrom ? [Prisma.sql`i."startDateTime" >= ${validFrom}`] : []),
-    ...(validTo ? [Prisma.sql`i."startDateTime" <= ${validTo}`] : []),
+    ...(validToExclusive ? [Prisma.sql`i."startDateTime" < ${validToExclusive}`] : []),
   ];
   const ordering = sort === "popular"
     ? Prisma.sql`"popularity" DESC, "startDateTime" ASC, "id" ASC`
@@ -192,12 +193,12 @@ export default async function DiscoverPage({
           sx={{
             fontWeight: 700,
             letterSpacing: "-1px",
-            color: "#FFFFFF",
+            color: "text.primary",
           }}
         >
           Discover events
         </Typography>
-        <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.58)" }}>
+        <Typography variant="body2" color="text.secondary">
           Browse public events from organisations on Yuyu.
         </Typography>
       </Stack>
@@ -211,8 +212,8 @@ export default async function DiscoverPage({
         sx={{
           p: 1.25,
           borderRadius: "16px",
-          backgroundColor: "rgba(28,28,30,0.82)",
-          borderColor: "rgba(255, 255, 255, 0.09)",
+          backgroundColor: "background.paper",
+          borderColor: "divider",
           boxShadow: "0 6px 18px rgba(0,0,0,0.1)",
         }}
       >
@@ -226,7 +227,7 @@ export default async function DiscoverPage({
                 input: {
                   startAdornment: (
                     <InputAdornment position="start">
-                      <SearchIcon sx={{ color: "rgba(255, 255, 255, 0.44)" }} />
+                      <SearchIcon color="disabled" />
                     </InputAdornment>
                   ),
                 },
@@ -273,17 +274,16 @@ export default async function DiscoverPage({
             >
               {hasActiveFilters && (
                 <Button
-                  component={Link}
                   href="/discover"
                   variant="text"
                   startIcon={<ClearIcon />}
                   sx={{
-                    color: "#8E8E93",
+                    color: "text.secondary",
                     minWidth: 0,
                     px: 1,
                     textTransform: "none",
                     transition: "color 0.2s",
-                    "&:hover": { color: "#ffffff", backgroundColor: "rgba(255, 255, 255, 0.04)" },
+                    "&:hover": { color: "text.primary", backgroundColor: "action.hover" },
                   }}
                 >
                   Clear Filters
@@ -312,6 +312,8 @@ export default async function DiscoverPage({
         </Stack>
       </Paper>
 
+      {dateRangeError ? <Alert severity="warning">{dateRangeError} Date filtering was not applied.</Alert> : null}
+
       {/* Results */}
       {totalItems > 0 ? (
         <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ justifyContent: "space-between", alignItems: { xs: "flex-start", sm: "center" } }}>
@@ -328,7 +330,7 @@ export default async function DiscoverPage({
       ) : null}
 
       {pageItems.length === 0 ? (
-        <Paper variant="outlined" sx={{ p: 6, textAlign: "center", borderRadius: "18px", borderColor: "rgba(255,255,255,0.08)", backgroundColor: "rgba(255,255,255,0.025)" }}>
+        <Paper variant="outlined" sx={{ p: 6, textAlign: "center", borderRadius: "18px", borderColor: "divider", backgroundColor: "background.paper" }}>
           <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>Nothing matches just yet</Typography>
           <Typography color="text.secondary" variant="body2" sx={{ mt: 0.75 }}>
             Try clearing a filter or searching for something else.
@@ -374,7 +376,6 @@ export default async function DiscoverPage({
           }}
         >
           <Button
-            component={Link}
             href={`/discover${buildQueryString({ ...baseParams, page: String(safePage - 1) })}`}
             variant="outlined"
             size="small"
@@ -386,17 +387,9 @@ export default async function DiscoverPage({
           </Button>
 
           {/* Page number buttons - show up to 7 pages */}
-          {(() => {
-            const pages: number[] = [];
-            let start = Math.max(1, safePage - 3);
-            const end = Math.min(totalPages, start + 6);
-            start = Math.max(1, end - 6);
-            for (let i = start; i <= end; i++) pages.push(i);
-
-            return pages.map((p) => (
+          {paginationWindow(safePage, totalPages).map((p) => (
               <Button
                 key={p}
-                component={Link}
                 href={`/discover${buildQueryString({ ...baseParams, page: String(p) })}`}
                 variant={p === safePage ? "contained" : "text"}
                 size="small"
@@ -416,11 +409,9 @@ export default async function DiscoverPage({
               >
                 {p}
               </Button>
-            ));
-          })()}
+            ))}
 
           <Button
-            component={Link}
             href={`/discover${buildQueryString({ ...baseParams, page: String(safePage + 1) })}`}
             variant="outlined"
             size="small"

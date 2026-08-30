@@ -60,6 +60,7 @@ import { CheckInQrScanner } from "@/components/checkin/CheckInQrScanner";
 import { IdCardPrintDialog } from "@/components/checkin/IdCardPrintDialog";
 import { shouldRefreshCheckIn } from "@/lib/checkInRefresh";
 import { buildCsv } from "@/lib/csv";
+import { InstallCheckInAppButton } from "@/components/checkin/InstallCheckInAppButton";
 
 export type CheckInRecentRow = {
   rsvpId: string;
@@ -673,6 +674,7 @@ export function EventCheckInClient(props: {
             </Box>
           </Stack>
           <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
+            <InstallCheckInAppButton />
             <Button size="small" variant="outlined" startIcon={<DownloadOutlinedIcon />} onClick={downloadOfflineRoster} disabled={pending || !isOnline} sx={{ textTransform: "none" }}>
               {offlineRoster ? "Refresh roster" : "Make available offline"}
             </Button>

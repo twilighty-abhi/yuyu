@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { gateCheckInForStatus, parseCheckInPayload } from "@/lib/checkIn";
 import { prisma } from "@/lib/db";
-import { canManageEvents, getMembership } from "@/lib/permissions";
+import { EventPermission } from "@prisma/client";
+import { canAccessEvent } from "@/lib/eventAccess";
 import {
   attendeeLookupSchema,
   checkInByRsvpIdSchema,
@@ -16,6 +17,7 @@ import {
 import type { ActionResult } from "./org";
 import { flattenZodErrors } from "./utils";
 import { isActionRateLimited } from "@/lib/actionRateLimit";
+import { commitCheckInProjection, commitUndoCheckInProjection } from "@/lib/checkInMutations";
 import {
   getCheckInDetails,
   getRegistrationDetails,
@@ -75,9 +77,8 @@ async function requireOrgMemberForEvent(
   });
   if (!org) return { ok: false as const, error: "Organisation not found." };
 
-  const membership = await getMembership(session.user.id, org.id);
-  if (!canManageEvents(membership)) {
-    return { ok: false as const, error: "Only organisation admins can operate check-in." };
+  if (!(await canAccessEvent({ userId: session.user.id, organisationId: org.id, eventId, permission: EventPermission.CHECK_IN }))) {
+    return { ok: false as const, error: "You do not have permission to operate check-in." };
   }
 
   const event = await prisma.event.findFirst({
@@ -89,48 +90,8 @@ async function requireOrgMemberForEvent(
     ok: true as const,
     event,
     orgSlug: org.slug,
-    membership,
     actorUserId: session.user.id,
   };
-}
-
-async function commitCheckIn(params: {
-  rsvpId: string;
-  actorUserId: string;
-  source: "online" | "offline-sync";
-  checkedInAt: Date;
-}) {
-  return prisma.$transaction(async (tx) => {
-    const updated = await tx.rSVP.updateMany({
-      where: { id: params.rsvpId, checkedInAt: null },
-      data: { checkedInAt: params.checkedInAt },
-    });
-    if (updated.count === 0) return false;
-    await tx.checkInEvent.create({
-      data: {
-        rsvpId: params.rsvpId,
-        actorUserId: params.actorUserId,
-        action: "CHECKED_IN",
-        source: params.source,
-        occurredAt: params.checkedInAt,
-      },
-    });
-    return true;
-  });
-}
-
-async function commitUndoCheckIn(params: { rsvpId: string; actorUserId: string }) {
-  await prisma.$transaction(async (tx) => {
-    await tx.rSVP.update({ where: { id: params.rsvpId }, data: { checkedInAt: null } });
-    await tx.checkInEvent.create({
-      data: {
-        rsvpId: params.rsvpId,
-        actorUserId: params.actorUserId,
-        action: "CHECK_IN_UNDONE",
-        source: "online",
-      },
-    });
-  });
 }
 
 function attendeeLabel(r: {
@@ -277,14 +238,19 @@ export async function checkInByToken(
   }
 
   const now = new Date();
-  const committed = await commitCheckIn({
+  const committed = await commitCheckInProjection({
     rsvpId: rsvp.id,
     actorUserId: ctx.actorUserId,
     source: "online",
     checkedInAt: now,
+    force: Boolean(force),
   });
-  if (!committed) {
-    const current = await prisma.rSVP.findUnique({ where: { id: rsvp.id }, select: { checkedInAt: true } });
+  if (committed.state !== "checked-in") {
+    if (committed.state === "missing") return { ok: false, error: "RSVP not found." };
+    if (committed.state === "ineligible") {
+      const currentGate = gateCheckInForStatus(committed.status, Boolean(force));
+      return { ok: false, error: currentGate.ok ? "Check-in could not be completed." : currentGate.reason };
+    }
     return {
       ok: true,
       data: {
@@ -293,7 +259,7 @@ export async function checkInByToken(
         email: rsvp.user?.email ?? rsvp.guestEmail,
         status: rsvp.status,
         alreadyCheckedIn: true,
-        checkedInAt: current?.checkedInAt?.toISOString() ?? now.toISOString(),
+        checkedInAt: committed.checkedInAt.toISOString(),
         checkInQrToken: rsvp.checkInToken,
         checkInDetails: getCheckInDetails(rsvp.answers),
         registrationDetails: getRegistrationDetails(rsvp.answers),
@@ -359,7 +325,8 @@ export async function undoCheckIn(input: unknown): Promise<ActionResult> {
     return { ok: false, error: "RSVP not found." };
   }
 
-  await commitUndoCheckIn({ rsvpId: rsvp.id, actorUserId: ctx.actorUserId });
+  const undone = await commitUndoCheckInProjection({ rsvpId: rsvp.id, actorUserId: ctx.actorUserId, source: "online" });
+  if (!undone) return { ok: false, error: "This attendee is not currently checked in." };
 
   revalidateAfterCheckIn(ctx.orgSlug, {
     eventId: rsvp.eventId,
@@ -396,7 +363,7 @@ export async function downloadOfflineCheckInRoster(
   if (!ctx.ok) return { ok: false, error: ctx.error };
 
   const rsvps = await prisma.rSVP.findMany({
-    where: { eventId: ctx.event.id },
+    where: { eventId: ctx.event.id, status: { in: ["CONFIRMED", "WAITLISTED", "PENDING_APPROVAL"] } },
     include: {
       user: { select: { name: true, email: true } },
       answers: { include: { field: { select: { key: true, label: true } } } },
@@ -442,8 +409,14 @@ export async function syncOfflineCheckIns(
   const syncedIds: string[] = [];
   const alreadyCheckedInIds: string[] = [];
   const failed: { rsvpId: string; error: string }[] = [];
+  const seenRsvpIds = new Set<string>();
 
   for (const checkIn of checkIns) {
+    if (seenRsvpIds.has(checkIn.rsvpId)) {
+      failed.push({ rsvpId: checkIn.rsvpId, error: "Duplicate offline check-in entry." });
+      continue;
+    }
+    seenRsvpIds.add(checkIn.rsvpId);
     const rsvp = rsvpById.get(checkIn.rsvpId);
     if (!rsvp) {
       failed.push({ rsvpId: checkIn.rsvpId, error: "RSVP not found for this event." });
@@ -454,18 +427,35 @@ export async function syncOfflineCheckIns(
       failed.push({ rsvpId: checkIn.rsvpId, error: gate.reason });
       continue;
     }
+    const checkedInAt = new Date(checkIn.checkedInAt);
+    const earliest = ctx.event.startDateTime.getTime() - 24 * 60 * 60_000;
+    const latest = Math.min(Date.now() + 5 * 60_000, ctx.event.endDateTime.getTime() + 60 * 60_000);
+    if (checkedInAt.getTime() < earliest || checkedInAt.getTime() > latest) {
+      failed.push({ rsvpId: checkIn.rsvpId, error: "Offline check-in time is outside the event operating window." });
+      continue;
+    }
     if (rsvp.checkedInAt) {
       alreadyCheckedInIds.push(rsvp.id);
       continue;
     }
-    const committed = await commitCheckIn({
+    const committed = await commitCheckInProjection({
       rsvpId: rsvp.id,
       actorUserId: ctx.actorUserId,
       source: "offline-sync",
-      checkedInAt: new Date(checkIn.checkedInAt),
+      checkedInAt,
+      force: checkIn.force,
     });
-    if (committed) syncedIds.push(rsvp.id);
-    else alreadyCheckedInIds.push(rsvp.id);
+    if (committed.state === "checked-in") {
+      syncedIds.push(rsvp.id);
+    } else if (committed.state === "already-checked-in") {
+      alreadyCheckedInIds.push(rsvp.id);
+    } else {
+        const currentGate = committed.state === "ineligible" ? gateCheckInForStatus(committed.status, checkIn.force) : null;
+        failed.push({
+          rsvpId: rsvp.id,
+          error: committed.state === "missing" ? "RSVP not found for this event." : currentGate?.ok ? "Check-in could not be completed." : currentGate!.reason,
+        });
+    }
   }
 
   if (syncedIds.length > 0) {
@@ -627,14 +617,19 @@ export async function checkInByRsvpId(
   }
 
   const now = new Date();
-  const committed = await commitCheckIn({
+  const committed = await commitCheckInProjection({
     rsvpId: rsvp.id,
     actorUserId: ctx.actorUserId,
     source: "online",
     checkedInAt: now,
+    force: Boolean(force),
   });
-  if (!committed) {
-    const current = await prisma.rSVP.findUnique({ where: { id: rsvp.id }, select: { checkedInAt: true } });
+  if (committed.state !== "checked-in") {
+    if (committed.state === "missing") return { ok: false, error: "RSVP not found." };
+    if (committed.state === "ineligible") {
+      const currentGate = gateCheckInForStatus(committed.status, Boolean(force));
+      return { ok: false, error: currentGate.ok ? "Check-in could not be completed." : currentGate.reason };
+    }
     return {
       ok: true,
       data: {
@@ -643,7 +638,7 @@ export async function checkInByRsvpId(
         email: rsvp.user?.email ?? rsvp.guestEmail,
         status: rsvp.status,
         alreadyCheckedIn: true,
-        checkedInAt: current?.checkedInAt?.toISOString() ?? now.toISOString(),
+        checkedInAt: committed.checkedInAt.toISOString(),
         checkInQrToken: rsvp.checkInToken,
         checkInDetails: getCheckInDetails(rsvp.answers),
         registrationDetails: getRegistrationDetails(rsvp.answers),

@@ -84,11 +84,12 @@ export function CheckInQrScanner(props: {
       );
       setRunning(true);
     } catch (e) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : "Could not start the camera. Try manual code entry.",
-      );
+      const name = e && typeof e === "object" && "name" in e ? String(e.name) : "";
+      setError(name === "NotAllowedError"
+        ? "Camera access was denied. Allow camera access or use manual code entry."
+        : name === "NotFoundError"
+          ? "No camera was found. Use manual code entry."
+          : "Could not start the camera. Try manual code entry.");
       scannerRef.current = null;
       setRunning(false);
     }
@@ -104,6 +105,7 @@ export function CheckInQrScanner(props: {
     <Stack spacing={1}>
       <Box
         id={regionId}
+        aria-label="Camera preview for ticket QR scanning"
         sx={{
           width: "100%",
           minHeight: 260,
@@ -138,7 +140,7 @@ export function CheckInQrScanner(props: {
         )}
       </Stack>
       {error ? (
-        <Typography variant="body2" color="error">
+        <Typography variant="body2" color="error" role="alert">
           {error}
         </Typography>
       ) : null}

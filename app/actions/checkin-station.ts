@@ -8,14 +8,19 @@ import { createStationPin, decryptStationPin, encryptStationPin, hashStationPin 
 import { recordAuditEvent } from "@/lib/audit";
 import type { ActionResult } from "./org";
 import { isActionRateLimited } from "@/lib/actionRateLimit";
+import { hasRecentAuthentication } from "@/lib/reauth";
 
-const schema = z.object({ organisationSlug: z.string().trim().min(1), eventId: z.string().trim().min(1) });
+const schema = z.object({
+  organisationSlug: z.string().trim().min(1).max(120),
+  eventId: z.string().trim().min(1).max(128),
+}).strict();
 
 async function resolve(input: unknown) {
   const parsed = schema.safeParse(input);
   if (!parsed.success) return { ok: false as const, error: "Invalid station settings." };
   const { organisation, userId } = await requireOrgRole(parsed.data.organisationSlug, "ADMIN");
-  if (await isActionRateLimited("checkin", userId)) return { ok: false as const, error: "Too many requests. Please try again shortly." };
+  if (!(await hasRecentAuthentication())) return { ok: false as const, error: "For security, sign in again before managing the venue station PIN." };
+  if (await isActionRateLimited("action", userId)) return { ok: false as const, error: "Too many requests. Please try again shortly." };
   const event = await prisma.event.findFirst({ where: { id: parsed.data.eventId, organisationId: organisation.id }, select: { id: true, slug: true, checkInStationPinEncrypted: true } });
   if (!event) return { ok: false as const, error: "Event not found." };
   return { ok: true as const, organisation, userId, event };
@@ -26,8 +31,10 @@ export async function createOrRotateCheckInStation(input: unknown): Promise<Acti
   if (!ctx.ok) return ctx;
   const pin = createStationPin();
   const hash = await hashStationPin(pin);
-  await prisma.event.update({ where: { id: ctx.event.id }, data: { checkInStationPinHash: hash, checkInStationPinEncrypted: encryptStationPin(pin), checkInStationSecretVersion: { increment: 1 } } });
-  await recordAuditEvent({ action: "CHECK_IN_STATION_PIN_ROTATED", actorUserId: ctx.userId, organisationId: ctx.organisation.id, targetType: "Event", targetId: ctx.event.id });
+  await prisma.$transaction(async (tx) => {
+    await tx.event.update({ where: { id: ctx.event.id }, data: { checkInStationPinHash: hash, checkInStationPinEncrypted: encryptStationPin(pin), checkInStationSecretVersion: { increment: 1 } } });
+    await recordAuditEvent({ action: "CHECK_IN_STATION_PIN_ROTATED", actorUserId: ctx.userId, organisationId: ctx.organisation.id, targetType: "Event", targetId: ctx.event.id, client: tx });
+  });
   revalidatePath(`/dashboard/${ctx.organisation.slug}/event/${ctx.event.id}/check-in`);
   return { ok: true, data: { pin } };
 }
@@ -35,8 +42,10 @@ export async function createOrRotateCheckInStation(input: unknown): Promise<Acti
 export async function disableCheckInStation(input: unknown): Promise<ActionResult> {
   const ctx = await resolve(input);
   if (!ctx.ok) return ctx;
-  await prisma.event.update({ where: { id: ctx.event.id }, data: { checkInStationPinHash: null, checkInStationPinEncrypted: null, checkInStationSecretVersion: { increment: 1 } } });
-  await recordAuditEvent({ action: "CHECK_IN_STATION_DISABLED", actorUserId: ctx.userId, organisationId: ctx.organisation.id, targetType: "Event", targetId: ctx.event.id });
+  await prisma.$transaction(async (tx) => {
+    await tx.event.update({ where: { id: ctx.event.id }, data: { checkInStationPinHash: null, checkInStationPinEncrypted: null, checkInStationSecretVersion: { increment: 1 } } });
+    await recordAuditEvent({ action: "CHECK_IN_STATION_DISABLED", actorUserId: ctx.userId, organisationId: ctx.organisation.id, targetType: "Event", targetId: ctx.event.id, client: tx });
+  });
   revalidatePath(`/dashboard/${ctx.organisation.slug}/event/${ctx.event.id}/check-in`);
   return { ok: true };
 }

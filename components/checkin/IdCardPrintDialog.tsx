@@ -150,6 +150,7 @@ async function printCard(params: { settings: IdCardPrintSettings; attendee: Atte
   const { settings, attendee, organisationLogoUrl } = params;
   const printWindow = window.open("", "_blank");
   if (!printWindow) return false;
+  printWindow.opener = null;
 
   let qrDataUrl: string;
   try {

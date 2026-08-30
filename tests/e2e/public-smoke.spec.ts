@@ -9,6 +9,7 @@ let organisationId: string;
 let ticketToken: string;
 let waitlistedToken: string;
 let feedbackEmail: string;
+let feedbackFormId: string;
 
 test.beforeAll(async () => {
   const organisation = await prisma.organisation.create({
@@ -42,6 +43,7 @@ test.beforeAll(async () => {
   const feedbackForm = await prisma.eventFeedbackForm.create({
     data: { eventId: event.id, isOpen: true, title: "Tell us what you thought", certificateEnabled: true },
   });
+  feedbackFormId = feedbackForm.id;
   await prisma.eventFeedbackField.create({
     data: {
       formId: feedbackForm.id,
@@ -127,9 +129,13 @@ test("a confirmed attendee can download a QR ticket", async ({ page }) => {
   page.on("pageerror", (error) => browserErrors.push(error.message));
   await page.goto(`/ticket/${ticketToken}`);
   await expect(page.getByRole("heading", { name: "Downloadable ticket test" })).toBeVisible();
+  await expect(page.locator('meta[name="referrer"]')).toHaveAttribute("content", "no-referrer");
+  await expect(page.getByText(/Ticket link:/)).toHaveCount(0);
 
   const ticketResponse = await page.request.get(`/api/ticket/${ticketToken}/download`);
   expect(ticketResponse.headers()["content-type"]).toBe("image/jpeg");
+  expect(ticketResponse.headers()["cache-control"]).toContain("no-store");
+  expect(ticketResponse.headers()["referrer-policy"]).toBe("no-referrer");
   const ticketBytes = await ticketResponse.body();
   expect(Array.from(ticketBytes.subarray(0, 3))).toEqual([0xff, 0xd8, 0xff]);
   const { data: pixels } = await sharp(ticketBytes).raw().toBuffer({ resolveWithObject: true });
@@ -160,8 +166,13 @@ test("a confirmed attendee can submit feedback and download a white JPEG certifi
   expect(href).toMatch(/^\/api\/feedback\/certificate\//);
   const response = await request.get(href!);
   expect(response.headers()["content-type"]).toBe("image/jpeg");
+  expect(response.headers()["cache-control"]).toContain("no-store");
+  expect(response.headers()["referrer-policy"]).toBe("no-referrer");
   const bytes = await response.body();
   expect(Array.from(bytes.subarray(0, 3))).toEqual([0xff, 0xd8, 0xff]);
   const { data: pixels } = await sharp(bytes).raw().toBuffer({ resolveWithObject: true });
   expect([...pixels.subarray(0, 3)].every((channel) => channel >= 250)).toBe(true);
+  await prisma.eventFeedbackForm.update({ where: { id: feedbackFormId }, data: { certificateEnabled: false } });
+  await expect(await request.get(href!)).toBeOK();
+  expect((await request.get("/api/feedback/certificate/not-valid!")).status()).toBe(404);
 });

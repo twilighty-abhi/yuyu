@@ -5,7 +5,6 @@ import Stack from "@mui/material/Stack";
 import Chip from "@mui/material/Chip";
 import Alert from "@mui/material/Alert";
 import { prisma } from "@/lib/db";
-import { getRequestOrigin } from "@/lib/publicUrl";
 import { TicketQrPanel } from "@/components/ticket/TicketQrPanel";
 import { CancelRsvpButton } from "@/components/ticket/CancelRsvpButton";
 import { TicketDownloadButton } from "@/components/ticket/TicketDownloadButton";
@@ -15,10 +14,19 @@ type Props = {
   params: Promise<{ token: string }>;
 };
 
+export const dynamic = "force-dynamic";
+
+function validToken(value: string | undefined) {
+  const token = value?.trim() ?? "";
+  return /^[A-Za-z0-9_-]{8,128}$/.test(token) ? token : null;
+}
+
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { token } = await params;
+  const safeToken = validToken(token);
+  if (!safeToken) return { title: "Your Ticket", robots: { index: false, follow: false }, referrer: "no-referrer" };
   const rsvp = await prisma.rSVP.findUnique({
-    where: { checkInToken: token?.trim() || "" },
+    where: { checkInToken: safeToken },
     select: {
       event: { select: { title: true } },
       eventInstance: { select: { series: { select: { title: true } } } },
@@ -28,6 +36,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return {
     title: title ? `Ticket · ${title}` : "Your Ticket",
     robots: { index: false, follow: false },
+    referrer: "no-referrer",
   };
 }
 
@@ -61,10 +70,11 @@ function statusLabel(status: string) {
 
 export default async function TicketPage({ params }: Props) {
   const { token } = await params;
-  if (!token?.trim()) notFound();
+  const safeToken = validToken(token);
+  if (!safeToken) notFound();
 
   const rsvp = await prisma.rSVP.findUnique({
-    where: { checkInToken: token.trim() },
+    where: { checkInToken: safeToken },
     include: {
       user: { select: { name: true } },
       event: {
@@ -95,8 +105,6 @@ export default async function TicketPage({ params }: Props) {
   });
 
   if (!rsvp) notFound();
-
-  const origin = await getRequestOrigin();
 
   let orgName: string;
   let orgSlug: string;
@@ -180,9 +188,6 @@ export default async function TicketPage({ params }: Props) {
           <TicketDownloadButton
             downloadUrl={`/api/ticket/${rsvp.checkInToken}/download`}
           />
-          <Typography variant="caption" color="text.secondary" sx={{ wordBreak: "break-all" }}>
-            Ticket link: {origin}/ticket/{rsvp.checkInToken}
-          </Typography>
         </>
       ) : (
         <Alert severity={rsvp.status === "REJECTED" ? "error" : "info"}>

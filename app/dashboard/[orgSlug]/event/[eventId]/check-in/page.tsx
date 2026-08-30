@@ -1,9 +1,10 @@
 import { notFound } from "next/navigation";
-import type { Metadata } from "next";
 import Typography from "@mui/material/Typography";
 import Stack from "@mui/material/Stack";
 import { prisma } from "@/lib/db";
-import { requireOrgRole } from "@/lib/permissions";
+import { EventPermission } from "@prisma/client";
+import { isOrgAdmin, requireOrgDashboardAccess } from "@/lib/permissions";
+import { canAccessEvent } from "@/lib/eventAccess";
 import { EventCheckInClient } from "@/components/checkin/EventCheckInClient";
 import { CheckInStationSettings } from "@/components/checkin/CheckInStationSettings";
 import { getRequestOrigin } from "@/lib/publicUrl";
@@ -12,14 +13,7 @@ type Props = {
   params: Promise<{ orgSlug: string; eventId: string }>;
 };
 
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const { eventId } = await params;
-  const event = await prisma.event.findUnique({
-    where: { id: eventId },
-    select: { title: true },
-  });
-  return { title: event ? `Check-in · ${event.title}` : "Check-in" };
-}
+export const metadata = { title: "Event check-in", robots: { index: false, follow: false } };
 
 function labelAttendee(r: {
   user: { name: string | null; email: string | null } | null;
@@ -33,7 +27,8 @@ function labelAttendee(r: {
 
 export default async function EventCheckInPage({ params }: Props) {
   const { orgSlug, eventId } = await params;
-  const { organisation, membership } = await requireOrgRole(orgSlug, "MEMBER");
+  const access = await requireOrgDashboardAccess(orgSlug);
+  const { organisation } = access;
 
   const [event, organisationBrand] = await Promise.all([
     prisma.event.findFirst({
@@ -45,6 +40,8 @@ export default async function EventCheckInPage({ params }: Props) {
     }),
   ]);
   if (!event) notFound();
+  const isAdmin = Boolean(access.membership && isOrgAdmin(access.membership.role));
+  if (!isAdmin && !(await canAccessEvent({ userId: access.userId, organisationId: organisation.id, eventId: event.id, permission: EventPermission.CHECK_IN }))) notFound();
 
   const [confirmed, checkedInCount, recentRsvps, registrationForm] = await Promise.all([
     prisma.rSVP.count({
@@ -94,7 +91,7 @@ export default async function EventCheckInPage({ params }: Props) {
         stats={{ confirmed, checkedIn: checkedInCount }}
         recent={recent}
       />
-      {membership.role === "OWNER" || membership.role === "ADMIN" ? <CheckInStationSettings organisationSlug={organisation.slug} eventId={event.id} stationUrl={stationUrl} enabled={Boolean(event.checkInStationPinHash)} /> : null}
+      {isAdmin ? <CheckInStationSettings organisationSlug={organisation.slug} eventId={event.id} stationUrl={stationUrl} enabled={Boolean(event.checkInStationPinHash)} /> : null}
     </Stack>
   );
 }

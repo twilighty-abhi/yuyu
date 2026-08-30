@@ -49,6 +49,7 @@ import {
   getOfflineRoster,
   getPendingOfflineCheckIns,
   queueOfflineCheckIn,
+  removeOfflineRoster,
   removeQueuedOfflineCheckIns,
   saveOfflineRoster,
   type OfflineAttendee,
@@ -58,6 +59,7 @@ import { useToast } from "@/components/feedback/ToastProvider";
 import { CheckInQrScanner } from "@/components/checkin/CheckInQrScanner";
 import { IdCardPrintDialog } from "@/components/checkin/IdCardPrintDialog";
 import { shouldRefreshCheckIn } from "@/lib/checkInRefresh";
+import { buildCsv } from "@/lib/csv";
 
 export type CheckInRecentRow = {
   rsvpId: string;
@@ -270,6 +272,18 @@ export function EventCheckInClient(props: {
       }
     });
   }, [eventId, organisationSlug, refreshOfflineState, router, showToast]);
+
+  const clearOfflineRoster = useCallback(() => {
+    startTransition(async () => {
+      if (queuedCount > 0) {
+        showToast("Sync pending check-ins before removing offline attendee data.", "warning");
+        return;
+      }
+      await removeOfflineRoster(eventId);
+      await refreshOfflineState();
+      showToast("Offline attendee data removed from this device.", "success");
+    });
+  }, [eventId, queuedCount, refreshOfflineState, showToast]);
 
   useEffect(() => {
     if (!stationMode && isOnline && queuedCount > 0) syncOfflineQueue();
@@ -574,15 +588,10 @@ export function EventCheckInClient(props: {
   };
 
   const csvBlob = useMemo(() => {
-    const header = ["Name", "Email", "Checked in at"];
-    const lines = recent.map((r) => [
-      `"${r.displayName.replace(/"/g, '""')}"`,
-      `"${(r.email ?? "").replace(/"/g, '""')}"`,
-      `"${new Date(r.checkedInAt).toISOString()}"`,
+    const body = buildCsv([
+      ["Name", "Email", "Checked in at"],
+      ...recent.map((r) => [r.displayName, r.email ?? "", new Date(r.checkedInAt).toISOString()]),
     ]);
-    const body = [header.join(","), ...lines.map((l) => l.join(","))].join(
-      "\n",
-    );
     return new Blob([body], { type: "text/csv;charset=utf-8" });
   }, [recent]);
 
@@ -667,6 +676,11 @@ export function EventCheckInClient(props: {
             <Button size="small" variant="outlined" startIcon={<DownloadOutlinedIcon />} onClick={downloadOfflineRoster} disabled={pending || !isOnline} sx={{ textTransform: "none" }}>
               {offlineRoster ? "Refresh roster" : "Make available offline"}
             </Button>
+            {offlineRoster ? (
+              <Button size="small" color="error" onClick={clearOfflineRoster} disabled={pending || queuedCount > 0} sx={{ textTransform: "none" }}>
+                Remove offline data
+              </Button>
+            ) : null}
             {queuedCount > 0 ? (
               <Button size="small" variant="contained" startIcon={<SyncOutlinedIcon />} onClick={syncOfflineQueue} disabled={pending || !isOnline} sx={{ textTransform: "none" }}>
                 Sync {queuedCount}

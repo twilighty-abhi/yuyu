@@ -15,7 +15,7 @@ export default async function VenueCheckInStationPage({ params }: Props) {
   // A disabled/missing station deliberately looks identical to an unknown URL.
   if (!event?.checkInStationPinHash) notFound();
   const proof = (await cookies()).get(CHECK_IN_STATION_COOKIE)?.value;
-  if (!hasValidCheckInStationProof(proof, event.id, event.checkInStationSecretVersion, event.endDateTime)) return <CheckInStationUnlock organisationSlug={orgSlug} eventSlug={eventSlug} />;
+  if (!hasValidCheckInStationProof(proof, event.id, event.checkInStationSecretVersion, event.startDateTime, event.endDateTime)) return <CheckInStationUnlock organisationSlug={orgSlug} eventSlug={eventSlug} />;
   const [confirmed, checkedIn, recentRsvps, form] = await Promise.all([
     prisma.rSVP.count({ where: { eventId: event.id, status: "CONFIRMED" } }),
     prisma.rSVP.count({ where: { eventId: event.id, checkedInAt: { not: null } } }),

@@ -1,9 +1,16 @@
 import * as OTPAuth from "otpauth";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+
+const dbMocks = vi.hoisted(() => ({ executeRaw: vi.fn() }));
+vi.mock("@/lib/db", () => ({ prisma: { $executeRaw: dbMocks.executeRaw } }));
 
 beforeAll(() => {
   process.env.AUTH_SECRET = "unit-test-auth-secret-with-at-least-32-characters";
   process.env.MFA_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString("base64");
+});
+
+beforeEach(() => {
+  dbMocks.executeRaw.mockReset();
 });
 
 describe("MFA security primitives", () => {
@@ -24,5 +31,14 @@ describe("MFA security primitives", () => {
     if (!(parsed instanceof OTPAuth.TOTP)) throw new Error("Expected a TOTP URI.");
     expect(verifyMfaCode(enrollment.secret, "person@example.com", parsed.generate())).toBe(true);
     expect(hashRecoveryCode("ABCD-EF12-3456")).toBe(hashRecoveryCode("abcdef123456"));
+  });
+
+  it("accepts a recovery code only when PostgreSQL atomically removes it", async () => {
+    const { consumeRecoveryCode } = await import("@/lib/mfa");
+    dbMocks.executeRaw.mockResolvedValueOnce(1).mockResolvedValueOnce(0);
+
+    await expect(consumeRecoveryCode("user_1", "ABCD-EF12-3456")).resolves.toBe(true);
+    await expect(consumeRecoveryCode("user_1", "ABCD-EF12-3456")).resolves.toBe(false);
+    expect(dbMocks.executeRaw).toHaveBeenCalledTimes(2);
   });
 });

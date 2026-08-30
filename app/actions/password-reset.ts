@@ -7,7 +7,7 @@ import { prisma } from "@/lib/db";
 import type { ActionResult } from "./org";
 import { flattenZodErrors } from "./utils";
 import { isActionRateLimited } from "@/lib/actionRateLimit";
-import { sendPasswordResetEmail } from "@/lib/email/passwordReset";
+import { enqueuePasswordReset } from "@/lib/outbox";
 
 const TOKEN_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
 
@@ -62,8 +62,8 @@ export async function requestPasswordReset(
   ).replace(/\/$/, "");
   const resetUrl = `${baseUrl}/reset-password?token=${rawToken}&email=${encodeURIComponent(email)}`;
 
-  // A reset link is time-sensitive. Store its one-time hash first, then send
-  // synchronously so the recipient does not wait for the periodic outbox job.
+  // Persist the one-time hash and its expiring mail in one transaction. The
+  // request path must never wait for SMTP or commit a token without delivery.
   await prisma.$transaction(async (tx) => {
     await tx.verificationToken.deleteMany({
       where: { identifier: `reset:${email}` },
@@ -71,15 +71,12 @@ export async function requestPasswordReset(
     await tx.verificationToken.create({
       data: { identifier: `reset:${email}`, token: tokenHash, expires },
     });
+    await enqueuePasswordReset(tx, {
+      to: email,
+      resetUrl,
+      expiresAt: expires.toISOString(),
+    });
   });
-
-  try {
-    await sendPasswordResetEmail({ to: email, resetUrl });
-  } catch (error) {
-    // Preserve the non-enumerating response. Operators receive the server-side
-    // error while the caller cannot infer whether an account exists.
-    console.error("[password reset] immediate email delivery failed", error);
-  }
 
   return { ok: true, data: { sent: true } };
 }

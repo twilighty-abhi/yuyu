@@ -2,6 +2,7 @@ import "server-only";
 
 import crypto from "crypto";
 import * as OTPAuth from "otpauth";
+import { prisma } from "@/lib/db";
 
 const ISSUER = "Yuyu Events";
 
@@ -60,4 +61,20 @@ export function generateRecoveryCodes() {
 export function hashRecoveryCode(code: string) {
   const normalized = code.replace(/[\s-]/g, "").toUpperCase();
   return crypto.createHmac("sha256", process.env.AUTH_SECRET ?? "").update(normalized).digest("hex");
+}
+
+/**
+ * Atomically consume one recovery-code hash. Performing array removal inside
+ * PostgreSQL prevents concurrent sign-ins from accepting the same code or
+ * reintroducing a code through a stale read/replace update.
+ */
+export async function consumeRecoveryCode(userId: string, code: string) {
+  const recoveryHash = hashRecoveryCode(code);
+  const consumed = await prisma.$executeRaw`
+    UPDATE "User"
+    SET "recoveryCodeHashes" = array_remove("recoveryCodeHashes", ${recoveryHash})
+    WHERE "id" = ${userId}
+      AND ${recoveryHash} = ANY("recoveryCodeHashes")
+  `;
+  return consumed === 1;
 }

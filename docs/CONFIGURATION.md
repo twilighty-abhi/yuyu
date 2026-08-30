@@ -67,7 +67,7 @@ Do not expose the application directly while trusting a client-controlled forwar
 | --- | --- | --- |
 | `EMAIL_FROM` | Legacy fallback | Verified sender identity; configure new instances in Super admin → Settings |
 | `SMTP_*` | Legacy fallback | SMTP settings; configure new instances in Super admin → Settings |
-| `OUTBOX_RETENTION_DAYS` | Optional | Retention for sent outbox records; defaults to 30 |
+| `OUTBOX_RETENTION_DAYS` | Optional | Retention for non-capability sent/failed outbox history; defaults to 30 (capability-bearing rows are deleted immediately after delivery or terminal failure) |
 
 Configure SMTP, Google SSO, and backup status under **Super admin → Settings**. SMTP and Google client secrets are encrypted at rest with a domain-separated key derived from `MFA_ENCRYPTION_KEY`, are never displayed after saving, and require the super-admin fresh-TOTP step-up. Environment values remain supported as migration fallbacks. Production SMTP connections require TLS with certificate verification.
 

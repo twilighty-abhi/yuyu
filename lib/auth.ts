@@ -6,7 +6,7 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { hasVerifiedGoogleEmail } from "@/lib/googleAuth";
-import { decryptMfaSecret, hashRecoveryCode, verifyMfaCode } from "@/lib/mfa";
+import { consumeRecoveryCode, decryptMfaSecret, verifyMfaCode } from "@/lib/mfa";
 import { isNewUserRegistrationEnabled } from "@/lib/instanceSettings";
 import { getGoogleSsoSettings } from "@/lib/instanceSettings";
 
@@ -81,7 +81,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth(async () => {
             passwordHash: true,
             emailVerified: true,
             mfaSecretEncrypted: true,
-            recoveryCodeHashes: true,
           },
         });
         if (!user?.passwordHash) return null;
@@ -95,15 +94,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth(async () => {
           if (!user.email) return null;
           if (!code) throw new MfaRequiredError();
           const validTotp = verifyMfaCode(decryptMfaSecret(user.mfaSecretEncrypted), user.email, code);
-          const recoveryHash = hashRecoveryCode(code);
-          const validRecovery = user.recoveryCodeHashes.includes(recoveryHash);
-          if (!validTotp && !validRecovery) return null;
-          if (validRecovery) {
-            await prisma.user.update({
-              where: { id: user.id },
-              data: { recoveryCodeHashes: { set: user.recoveryCodeHashes.filter((hash) => hash !== recoveryHash) } },
-            });
-          }
+          if (!validTotp && !(await consumeRecoveryCode(user.id, code))) return null;
         }
 
         return {

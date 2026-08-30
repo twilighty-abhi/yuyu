@@ -6,12 +6,16 @@ import { prisma } from "@/lib/db";
 import { requireSuperAdmin } from "@/lib/permissions";
 import { decryptMfaSecret, verifyMfaCode } from "@/lib/mfa";
 import { createSuperAdminMfaProof, SUPER_ADMIN_MFA_COOKIE, SUPER_ADMIN_MFA_MAX_AGE_SECONDS } from "@/lib/superAdminMfa";
+import { isActionRateLimited } from "@/lib/actionRateLimit";
 import type { ActionResult } from "./org";
 
 const schema = z.object({ code: z.string().trim().regex(/^\d{6}$/, "Enter a six-digit authenticator code.") });
 
 export async function verifySuperAdminMfa(input: unknown): Promise<ActionResult> {
   const session = await requireSuperAdmin();
+  if (await isActionRateLimited("auth", session.user.id)) {
+    return { ok: false, error: "Too many attempts. Please try again later." };
+  }
   const parsed = schema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "Enter a six-digit authenticator code." };
 

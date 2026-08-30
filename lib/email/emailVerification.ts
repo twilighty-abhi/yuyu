@@ -8,6 +8,7 @@ function escapeHtml(value: string) {
 export async function sendEmailVerificationEmail(params: {
   to: string;
   verificationUrl: string;
+  messageId?: string;
 }): Promise<void> {
   const { transporter, from } = await getEmailTransport();
   const safeUrl = escapeHtml(params.verificationUrl);
@@ -19,5 +20,5 @@ export async function sendEmailVerificationEmail(params: {
     console.log("[EMAIL MOCK] Verification email queued");
     return;
   }
-  await transporter.sendMail({ from, to: params.to, subject: "Verify your Yuyu email", text, html });
+  await transporter.sendMail({ messageId: params.messageId, from, to: params.to, subject: "Verify your Yuyu email", text, html });
 }

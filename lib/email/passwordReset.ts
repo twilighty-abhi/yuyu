@@ -8,6 +8,7 @@ function escapeHtml(value: string) {
 export async function sendPasswordResetEmail(params: {
   to: string;
   resetUrl: string;
+  messageId?: string;
 }): Promise<void> {
   const { transporter, from } = await getEmailTransport();
   const safeResetUrl = escapeHtml(params.resetUrl);
@@ -55,16 +56,14 @@ export async function sendPasswordResetEmail(params: {
   const text = `Reset Your Password\n\nHello,\n\nWe received a request to reset your password. Visit the following link to set a new password (expires in 1 hour):\n\n${params.resetUrl}\n\nIf you didn't request this, you can safely ignore this email.\n\nBest regards,\nYuyu Events`;
 
   if (!transporter) {
-    console.log("========================================");
-    console.log(`[EMAIL MOCK] To: ${params.to}`);
-    console.log(`[EMAIL MOCK] Subject: Reset your Yuyu password`);
-    console.log(`[EMAIL MOCK] Reset URL: ${params.resetUrl}`);
-    console.log(`[EMAIL MOCK] Text:\n${text}`);
-    console.log("========================================");
+    // Never print reset capabilities or account identifiers, including in
+    // development and CI logs.
+    console.log("[EMAIL MOCK] password reset email queued");
     return;
   }
 
   await transporter.sendMail({
+    messageId: params.messageId,
     from,
     to: params.to,
     subject: "Reset your Yuyu password",

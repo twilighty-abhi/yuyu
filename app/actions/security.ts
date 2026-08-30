@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { requireAuth } from "@/lib/permissions";
 import { hasRecentAuthentication } from "@/lib/reauth";
 import { createMfaEnrollment, decryptMfaSecret, encryptMfaSecret, generateRecoveryCodes, hashRecoveryCode, verifyMfaCode } from "@/lib/mfa";
+import { isActionRateLimited } from "@/lib/actionRateLimit";
 import type { ActionResult } from "./org";
 
 const codeSchema = z.object({ code: z.string().trim().min(6).max(32) });
@@ -29,6 +30,9 @@ export async function beginMfaEnrollment(): Promise<ActionResult<{ secret: strin
 
 export async function confirmMfaEnrollment(input: unknown): Promise<ActionResult<{ recoveryCodes: string[] }>> {
   const session = await requireAuth();
+  if (await isActionRateLimited("auth", session.user.id)) {
+    return { ok: false, error: "Too many attempts. Please try again later." };
+  }
   const parsed = codeSchema.safeParse(input);
   if (!parsed.success || !session.user.email) return { ok: false, error: "Enter a valid authenticator code." };
   const pending = await prisma.verificationToken.findFirst({
@@ -57,6 +61,9 @@ export async function confirmMfaEnrollment(input: unknown): Promise<ActionResult
 
 export async function disableMfa(input: unknown): Promise<ActionResult> {
   const session = await requireAuth();
+  if (await isActionRateLimited("auth", session.user.id)) {
+    return { ok: false, error: "Too many attempts. Please try again later." };
+  }
   const parsed = codeSchema.safeParse(input);
   if (!parsed.success || !session.user.email) return { ok: false, error: "Enter an authenticator or recovery code." };
   if (!(await hasRecentAuthentication())) return { ok: false, error: "Sign in again before disabling MFA." };

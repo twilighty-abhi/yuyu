@@ -7,6 +7,7 @@ import { INSTANCE_SETTINGS_ID } from "@/lib/instanceSettings";
 import { requireSuperAdminMfa } from "@/lib/permissions";
 import { recordAuditEvent } from "@/lib/audit";
 import { encryptInstanceConfigSecret } from "@/lib/instanceConfigSecrets";
+import { isActionRateLimited } from "@/lib/actionRateLimit";
 import type { ActionResult } from "./org";
 
 const signupSettingSchema = z.object({ allowNewUserSignups: z.boolean() });
@@ -25,6 +26,7 @@ const serviceSettingsSchema = z.object({
 
 export async function setNewUserRegistrationEnabled(input: unknown): Promise<ActionResult> {
   const session = await requireSuperAdminMfa();
+  if (await isActionRateLimited("action", session.user.id)) return { ok: false, error: "Too many requests. Try again shortly." };
   const parsed = signupSettingSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "Invalid account creation setting." };
 
@@ -47,17 +49,18 @@ export async function setNewUserRegistrationEnabled(input: unknown): Promise<Act
 
 export async function saveInstanceServiceSettings(input: unknown): Promise<ActionResult> {
   const session = await requireSuperAdminMfa();
+  if (await isActionRateLimited("action", session.user.id)) return { ok: false, error: "Too many requests. Try again shortly." };
   const parsed = serviceSettingsSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid instance settings." };
-  const value = parsed.data;
+  const { smtpPassword, googleClientSecret, ...value } = parsed.data;
   const existing = await prisma.instanceSetting.findUnique({
     where: { id: INSTANCE_SETTINGS_ID },
     select: { smtpPasswordEncrypted: true, googleClientSecretEncrypted: true },
   });
-  if ((value.smtpService || value.smtpHost) && !value.smtpAllowUnauthenticated && !value.smtpPassword && !existing?.smtpPasswordEncrypted) {
+  if ((value.smtpService || value.smtpHost) && !value.smtpAllowUnauthenticated && !smtpPassword && !existing?.smtpPasswordEncrypted) {
     return { ok: false, error: "Enter an SMTP password or use a deliberately unauthenticated private relay." };
   }
-  if (value.googleClientId && !value.googleClientSecret && !existing?.googleClientSecretEncrypted) {
+  if (value.googleClientId && !googleClientSecret && !existing?.googleClientSecretEncrypted) {
     return { ok: false, error: "Enter the Google OAuth client secret." };
   }
   await prisma.instanceSetting.upsert({
@@ -67,15 +70,15 @@ export async function saveInstanceServiceSettings(input: unknown): Promise<Actio
       emailFrom: value.emailFrom || null, smtpService: value.smtpService || null, smtpHost: value.smtpHost || null,
       smtpUser: value.smtpUser || null, googleClientId: value.googleClientId || null,
       backupProvider: value.backupProvider || null, backupLastSuccessAt: value.backupLastSuccessAt ? new Date(value.backupLastSuccessAt) : null,
-      smtpPasswordEncrypted: value.smtpPassword ? encryptInstanceConfigSecret(value.smtpPassword) : null,
-      googleClientSecretEncrypted: value.googleClientSecret ? encryptInstanceConfigSecret(value.googleClientSecret) : null,
+      smtpPasswordEncrypted: smtpPassword ? encryptInstanceConfigSecret(smtpPassword) : null,
+      googleClientSecretEncrypted: googleClientSecret ? encryptInstanceConfigSecret(googleClientSecret) : null,
     },
     update: {
       ...value, emailFrom: value.emailFrom || null, smtpService: value.smtpService || null, smtpHost: value.smtpHost || null,
       smtpUser: value.smtpUser || null, googleClientId: value.googleClientId || null,
       backupProvider: value.backupProvider || null, backupLastSuccessAt: value.backupLastSuccessAt ? new Date(value.backupLastSuccessAt) : null,
-      ...(value.smtpPassword ? { smtpPasswordEncrypted: encryptInstanceConfigSecret(value.smtpPassword) } : {}),
-      ...(value.googleClientSecret ? { googleClientSecretEncrypted: encryptInstanceConfigSecret(value.googleClientSecret) } : {}),
+      ...(smtpPassword ? { smtpPasswordEncrypted: encryptInstanceConfigSecret(smtpPassword) } : {}),
+      ...(googleClientSecret ? { googleClientSecretEncrypted: encryptInstanceConfigSecret(googleClientSecret) } : {}),
     },
   });
   await recordAuditEvent({

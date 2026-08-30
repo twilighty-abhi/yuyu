@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 function missing() {
-  return new Response(null, { status: 404 });
+  return new Response(null, { status: 404, headers: { "Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff" } });
 }
 
 type ReportRouteContext = { params: Promise<{ eventId: string }> };
@@ -30,6 +30,7 @@ export async function GET(_request: Request, context: ReportRouteContext) {
       "Content-Type": "application/pdf",
       "Content-Disposition": `attachment; filename="${reportFilename(metrics)}"`,
       "Cache-Control": "private, no-store",
+      "Referrer-Policy": "no-referrer",
       "X-Content-Type-Options": "nosniff",
     },
   });

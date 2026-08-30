@@ -37,6 +37,7 @@ import { useRouter } from "next/navigation";
 import { EditRsvpDialog } from "@/components/attendees/EditRsvpDialog";
 import type { ManualRsvpField } from "@/components/attendees/ManualRsvpDialog";
 import { ExportEmailsButton } from "@/components/attendees/ExportEmailsButton";
+import Alert from "@mui/material/Alert";
 
 export type AttendeeRow = {
   id: string;
@@ -84,8 +85,9 @@ export function AttendeeTable(props: {
   canManage: boolean;
   registrationFields?: ManualRsvpField[];
   eventTitle?: string;
+  collectionTruncated?: boolean;
 }) {
-  const { organisationSlug, eventId, eventInstanceId, attendees, canManage, registrationFields = [], eventTitle } =
+  const { organisationSlug, eventId, eventInstanceId, attendees, canManage, registrationFields = [], eventTitle, collectionTruncated = false } =
     props;
   const router = useRouter();
   const { showToast } = useToast();
@@ -131,6 +133,7 @@ export function AttendeeTable(props: {
 
   return (
     <Stack spacing={2}>
+      {collectionTruncated ? <Alert severity="warning">Only the 250 most recent registrations are loaded in this browser view.</Alert> : null}
       <Stack direction={{ xs: "column", sm: "row" }} spacing={2} useFlexGap sx={{ flexWrap: "wrap" }}>
         <TextField
           label="Search name or email"

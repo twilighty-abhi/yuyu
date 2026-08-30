@@ -3,16 +3,7 @@
 import Button from "@mui/material/Button";
 import FileDownloadOutlinedIcon from "@mui/icons-material/FileDownloadOutlined";
 import type { AttendeeRow } from "@/components/attendees/AttendeeTable";
-
-function escapeCell(value: string): string {
-  // Spreadsheet applications treat these prefixes as formulas even in a CSV.
-  // Prefix with a tab so attendee-controlled values remain literal text.
-  const safeValue = /^[=+\-@]/.test(value) ? `\t${value}` : value;
-  if (/[",\n\r]/.test(safeValue)) {
-    return `"${safeValue.replace(/"/g, '""')}"`;
-  }
-  return safeValue;
-}
+import { buildCsv } from "@/lib/csv";
 
 export function ExportCsvButton(props: {
   eventTitle: string;
@@ -68,10 +59,7 @@ export function ExportCsvButton(props: {
     });
 
     // Assemble CSV
-    const csvContent = [
-      headers.map(escapeCell).join(","),
-      ...rows.map((row) => row.map(escapeCell).join(",")),
-    ].join("\n");
+    const csvContent = buildCsv([headers, ...rows]);
 
     // Trigger download
     const blob = new Blob(["\uFEFF" + csvContent], {

@@ -1,17 +1,22 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { downloadFile } from "@/lib/storage";
+import { downloadFile, isPublicDerivativeKey } from "@/lib/storage";
 
 type Context = { params: Promise<{ key: string[] }> };
 
-export async function GET(request: NextRequest, { params }: Context) {
+const missingHeaders = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" };
+
+export async function GET(_request: NextRequest, { params }: Context) {
   try {
     const { key } = await params;
     const dbKey = key.join("/");
+    if (!isPublicDerivativeKey(dbKey)) {
+      return new NextResponse("Not Found", { status: 404, headers: missingHeaders });
+    }
 
     const asset = await downloadFile(dbKey);
     if (!asset) {
-      return new NextResponse("Not Found", { status: 404 });
+      return new NextResponse("Not Found", { status: 404, headers: missingHeaders });
     }
 
     return new Response(Uint8Array.from(asset.body).buffer, {
@@ -23,8 +28,8 @@ export async function GET(request: NextRequest, { params }: Context) {
         "Cache-Control": "public, max-age=31536000, immutable",
       },
     });
-  } catch (error) {
-    console.error("[uploads API] Failed to fetch asset:", error);
-    return new NextResponse("Internal Server Error", { status: 500 });
+  } catch {
+    console.error("[uploads API] Failed to fetch public derivative.");
+    return new NextResponse("Internal Server Error", { status: 500, headers: missingHeaders });
   }
 }

@@ -17,8 +17,9 @@ describe("attendee email export", () => {
   it("escapes values that spreadsheets could interpret as formulas", () => {
     expect(buildAttendeeEmailCsv([
       { guestEmail: "=unsafe@example.test", guestName: "=unsafe name", user: null },
+      { guestEmail: "  +hidden@example.test", guestName: "\t@hidden formula", user: null },
       { guestEmail: 'quoted"@example.test', guestName: 'quoted" name', user: null },
-    ])).toBe("Name,Email\n\t=unsafe name,\t=unsafe@example.test\n\"quoted\"\" name\",\"quoted\"\"@example.test\"");
+    ])).toBe("Name,Email\n'=unsafe name,'=unsafe@example.test\n'@hidden formula,'+hidden@example.test\n\"quoted\"\" name\",\"quoted\"\"@example.test\"");
   });
 
   it("creates a safe, date-stamped filename", () => {

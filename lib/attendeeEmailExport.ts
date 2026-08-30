@@ -1,17 +1,10 @@
+import { buildCsv } from "@/lib/csv";
+
 export type AttendeeEmailExportRow = {
   guestEmail: string | null;
   guestName?: string | null;
   user: { name: string | null; email: string | null } | null;
 };
-
-function escapeCsvCell(value: string): string {
-  // Spreadsheet applications treat these prefixes as formulas even in a CSV.
-  // Prefix with a tab so attendee-controlled values remain literal text.
-  const safeValue = /^[=+\-@]/.test(value) ? `\t${value}` : value;
-  return /[",\n\r]/.test(safeValue)
-    ? `"${safeValue.replace(/"/g, '""')}"`
-    : safeValue;
-}
 
 /** Builds a CSV of unique attendee email addresses and their displayed names. */
 export function buildAttendeeEmailCsv(attendees: AttendeeEmailExportRow[]): string {
@@ -27,7 +20,7 @@ export function buildAttendeeEmailCsv(attendees: AttendeeEmailExportRow[]): stri
     rows.push([name, email]);
   }
 
-  return ["Name,Email", ...rows.map((row) => row.map(escapeCsvCell).join(","))].join("\n");
+  return buildCsv([["Name", "Email"], ...rows]);
 }
 
 export function attendeeEmailExportFilename(eventTitle: string, date = new Date()): string {

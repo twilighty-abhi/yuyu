@@ -1,5 +1,7 @@
 import "server-only";
 
+import sharp from "sharp";
+
 const MAX_IMAGE_PIXELS = 25_000_000;
 
 export type SafeImage = {
@@ -63,8 +65,7 @@ function webpDimensions(bytes: Uint8Array) {
 }
 
 /** Verify binary image signatures and reject decode-bomb-sized inputs before storage. */
-export async function validateEventCoverImage(file: File): Promise<SafeImage | { error: string }> {
-  const bytes = new Uint8Array(await file.arrayBuffer());
+function validateImageBytes(bytes: Uint8Array): SafeImage | { error: string } {
   const isPng = bytes.length >= 24 && bytes.slice(0, 8).every((value, index) => value === [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a][index]);
   const isJpeg = bytes.length >= 4 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
   const isWebp = bytes.length >= 16 && String.fromCharCode(...bytes.slice(0, 4)) === "RIFF" && String.fromCharCode(...bytes.slice(8, 12)) === "WEBP";
@@ -82,4 +83,58 @@ export async function validateEventCoverImage(file: File): Promise<SafeImage | {
     return { error: "Use a valid JPEG, PNG, or WebP image no larger than 25 megapixels." };
   }
   return result;
+}
+
+export async function validateEventCoverImage(file: File): Promise<SafeImage | { error: string }> {
+  return validateImageBytes(new Uint8Array(await file.arrayBuffer()));
+}
+
+type DerivativeOptions = {
+  width: number;
+  height: number;
+  fit: "inside" | "cover";
+  position?: "attention";
+};
+
+/** Decode a validated, single-frame image under a hard pixel limit and strip metadata by re-encoding it. */
+export async function createSafeWebpDerivative(
+  file: File,
+  options: DerivativeOptions,
+): Promise<{ body: Buffer } | { error: string }> {
+  const body = Buffer.from(await file.arrayBuffer());
+  const inspected = validateImageBytes(body);
+  if ("error" in inspected) return inspected;
+
+  try {
+    const decoder = sharp(body, {
+      failOn: "warning",
+      limitInputPixels: MAX_IMAGE_PIXELS,
+      sequentialRead: true,
+    });
+    const metadata = await decoder.metadata();
+    const expectedFormat = inspected.extension === "jpg" ? "jpeg" : inspected.extension;
+    if (
+      metadata.format !== expectedFormat ||
+      !dimensionsAreSafe(metadata.width ?? null, metadata.height ?? null) ||
+      (metadata.pages ?? 1) !== 1
+    ) {
+      return { error: "Use a valid, single-frame JPEG, PNG, or WebP image no larger than 25 megapixels." };
+    }
+
+    return {
+      body: await decoder
+        .rotate()
+        .resize({
+          width: options.width,
+          height: options.height,
+          fit: options.fit,
+          withoutEnlargement: options.fit === "inside",
+          ...(options.position ? { position: options.position } : {}),
+        })
+        .webp({ quality: 86, effort: 5 })
+        .toBuffer(),
+    };
+  } catch {
+    return { error: "Use a valid, single-frame JPEG, PNG, or WebP image no larger than 25 megapixels." };
+  }
 }

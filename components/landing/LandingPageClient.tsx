@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { motion, AnimatePresence, type TargetAndTransition, type Variants } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion, type TargetAndTransition, type Variants } from "framer-motion";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Grid from "@mui/material/Grid";
@@ -18,9 +18,9 @@ import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import EventAvailableOutlinedIcon from "@mui/icons-material/EventAvailableOutlined";
 import GroupsOutlinedIcon from "@mui/icons-material/GroupsOutlined";
 import InsightsOutlinedIcon from "@mui/icons-material/InsightsOutlined";
-import LinkOutlinedIcon from "@mui/icons-material/LinkOutlined";
-import MailOutlineOutlinedIcon from "@mui/icons-material/MailOutlineOutlined";
-import ShieldOutlinedIcon from "@mui/icons-material/ShieldOutlined";
+import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
+import CloudDoneOutlinedIcon from "@mui/icons-material/CloudDoneOutlined";
+import WorkspacePremiumOutlinedIcon from "@mui/icons-material/WorkspacePremiumOutlined";
 import KeyboardArrowRightIcon from "@mui/icons-material/KeyboardArrowRight";
 import CheckCircleOutlineOutlinedIcon from "@mui/icons-material/CheckCircleOutlineOutlined";
 import StarsIcon from "@mui/icons-material/Stars";
@@ -55,6 +55,7 @@ const floatAnimation: { animate: TargetAndTransition } = {
 export function LandingPageClient(props: { getStartedHref: string }) {
   const { getStartedHref } = props;
   const [activeTab, setActiveTab] = useState<"rsvp" | "waitlist" | "checkin">("rsvp");
+  const prefersReducedMotion = useReducedMotion();
   const theme = useTheme();
   const isDark = theme.palette.mode === "dark";
   const subtleSurface = isDark ? "rgba(255,255,255,0.02)" : "rgba(60, 60, 67, 0.045)";
@@ -118,7 +119,7 @@ export function LandingPageClient(props: { getStartedHref: string }) {
           {/* Hero Left Content */}
           <Grid size={{ xs: 12, md: 6.5 }}>
             <motion.div
-              initial="hidden"
+              initial={prefersReducedMotion ? false : "hidden"}
               animate="visible"
               variants={staggerContainer}
             >
@@ -246,11 +247,11 @@ export function LandingPageClient(props: { getStartedHref: string }) {
           {/* Hero Right Visual (Floating Glass Dashboard Mockup) */}
           <Grid size={{ xs: 12, md: 5.5 }}>
             <motion.div
-              initial={{ opacity: 0, scale: 0.95, x: 20 }}
+              initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.95, x: 20 }}
               animate={{ opacity: 1, scale: 1, x: 0 }}
-              transition={{ duration: 0.8, delay: 0.2, ease: "easeOut" }}
+              transition={{ duration: prefersReducedMotion ? 0 : 0.8, delay: prefersReducedMotion ? 0 : 0.2, ease: "easeOut" }}
             >
-              <motion.div animate={floatAnimation.animate}>
+              <motion.div animate={prefersReducedMotion ? undefined : floatAnimation.animate}>
                 <Paper
                   variant="outlined"
                   sx={{
@@ -397,10 +398,10 @@ export function LandingPageClient(props: { getStartedHref: string }) {
           <AnimatePresence mode="wait">
             <motion.div
               key={activeTab}
-              initial={{ opacity: 0, y: 15 }}
+              initial={prefersReducedMotion ? false : { opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -15 }}
-              transition={{ duration: 0.3 }}
+              transition={{ duration: prefersReducedMotion ? 0 : 0.3 }}
             >
               <Paper
                 variant="outlined"
@@ -523,52 +524,42 @@ export function LandingPageClient(props: { getStartedHref: string }) {
       <Box sx={{ py: { xs: 8, md: 10 } }}>
         <Stack spacing={2} sx={{ alignItems: "center", textAlign: "center", mb: 8 }}>
           <Typography variant="overline" sx={{ color: "#7CF5B6", fontWeight: 700, letterSpacing: 1.5 }}>
-            ALL-IN-ONE PLATFORM
+            FROM FIRST RSVP TO FOLLOW-UP
           </Typography>
           <Typography variant="h3" sx={{ fontWeight: 800, letterSpacing: "-0.5px" }}>
-            Host events with absolute confidence
+            Built for the whole event lifecycle
           </Typography>
         </Stack>
 
         <Grid container spacing={3}>
           {[
             {
-              title: "Organisations & Teams",
-              desc: "Create team profiles, delegate access levels, and assign member or administrator roles with absolute isolation.",
-              icon: ShieldOutlinedIcon,
-            },
-            {
-              title: "SEO-Optimized Public Pages",
-              desc: "Dynamic, fast public pages optimized for indexing with OpenGraph support, metadata customization, and interactive calendars.",
-              icon: LinkOutlinedIcon,
-            },
-            {
-              title: "Granular RSVP Lifecycles",
-              desc: "Manage tickets across Pending, Approved, Waitlisted, and Cancelled states. Auto-revalidate cache states dynamically.",
-              icon: GroupsOutlinedIcon,
-            },
-            {
-              title: "Outreach & Invitations",
-              desc: "Send personalized email tickets directly from Yuyu's email invite panel with standard mail transport supports.",
-              icon: MailOutlineOutlinedIcon,
-            },
-            {
-              title: "Check-in Analytics",
-              desc: "Review live capacity percentages, scan check-in ratios, and export door metrics dynamically to CSV.",
-              icon: InsightsOutlinedIcon,
-            },
-            {
-              title: "Capacity Limits & Caps",
-              desc: "Configure exact capacity guidelines, automatically trigger waitlists, and override values for VIP entries.",
+              title: "Event planning made simple",
+              desc: "Add your event details, dates, location, capacity, timezone, cover image, and description. Publish when you are ready and keep everything in one place.",
               icon: EventAvailableOutlinedIcon,
+            },
+            {
+              title: "Private registration & approvals",
+              desc: "Choose public, hidden-link, approval-required, or invite-only access, then collect exactly the details each event needs.",
+              icon: LockOutlinedIcon,
+            },
+            {
+              title: "Offline-ready door check-in",
+              desc: "Save an attendee roster on the door device, check in guests without a connection, and sync the queue once you are back online.",
+              icon: CloudDoneOutlinedIcon,
+            },
+            {
+              title: "Feedback & certificates",
+              desc: "Gather configurable post-event feedback and issue eligible attendees a downloadable certificate when the event calls for it.",
+              icon: WorkspacePremiumOutlinedIcon,
             },
           ].map((feature, index) => {
             const IconComponent = feature.icon;
             return (
-              <Grid key={index} size={{ xs: 12, sm: 6, md: 4 }}>
+              <Grid key={index} size={{ xs: 12, sm: 6 }}>
                 <motion.div
-                  initial="hidden"
-                  whileInView="visible"
+                  initial={prefersReducedMotion ? false : "hidden"}
+                  whileInView={prefersReducedMotion ? undefined : "visible"}
                   viewport={{ once: true, margin: "-50px" }}
                   variants={{
                     hidden: { opacity: 0, y: 25 },
@@ -624,10 +615,10 @@ export function LandingPageClient(props: { getStartedHref: string }) {
       {/* ── CALL TO ACTION SECTION ── */}
       <Box sx={{ py: { xs: 6, md: 10 } }}>
         <motion.div
-          initial={{ opacity: 0, scale: 0.98 }}
-          whileInView={{ opacity: 1, scale: 1 }}
+          initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.98 }}
+          whileInView={prefersReducedMotion ? undefined : { opacity: 1, scale: 1 }}
           viewport={{ once: true }}
-          transition={{ duration: 0.6 }}
+          transition={{ duration: prefersReducedMotion ? 0 : 0.6 }}
         >
           <Paper
             variant="outlined"

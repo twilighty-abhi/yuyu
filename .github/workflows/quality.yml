@@ -27,6 +27,7 @@ jobs:
         ports: ["6379:6379"]
     env:
       DATABASE_URL: postgresql://yuyu:yuyu_ci@localhost:5432/yuyu_ci
+      TEST_DATABASE_URL: postgresql://yuyu:yuyu_ci@localhost:5432/yuyu_ci
       AUTH_SECRET: ci-only-not-a-production-secret-0123456789
       AUTH_URL: http://localhost:3000
       NEXT_PUBLIC_BASE_URL: http://localhost:3000
@@ -55,7 +56,9 @@ jobs:
       - run: npm run lint
       - run: npx tsc --noEmit
       - run: npm run test:unit
+      - run: npm run test:coverage
       - run: npm run test:integration
+      - run: npm run production:check
       - run: npm run build
       - run: docker build --build-arg NEXT_SERVER_ACTIONS_ENCRYPTION_KEY="$NEXT_SERVER_ACTIONS_ENCRYPTION_KEY" -t yuyu:ci .
       - name: Smoke-test standalone container

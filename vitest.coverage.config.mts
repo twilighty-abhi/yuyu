@@ -7,9 +7,9 @@ export default defineConfig({
   resolve: { alias: { "@": rootDir, "server-only": `${rootDir}tests/helpers/server-only.ts` } },
   test: {
     environment: "node",
-    include: ["tests/unit/**/*.test.ts", "tests/integration/**/*.test.ts"],
-    fileParallelism: false,
-    sequence: { concurrent: false },
+    // Coverage is intentionally service-independent. PostgreSQL suites have
+    // their own config and must be invoked only with a disposable TEST_DATABASE_URL.
+    include: ["tests/unit/**/*.test.ts"],
     coverage: {
       provider: "v8",
       reporter: ["text", "html"],

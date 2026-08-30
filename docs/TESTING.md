@@ -18,10 +18,13 @@ Machine API coverage includes bearer parsing and hashing, credential state, stri
 
 ```bash
 docker compose up -d
-npm run test:integration
+TEST_DATABASE_URL="postgresql://yuyu:yuyu_dev@localhost:5432/yuyu_dev" npm run test:integration
 ```
 
-These tests exercise real constraints, transactions, audit triggers, RSVP capacity, and feedback persistence. Keep the local test database disposable and never point integration tests at production.
+These tests exercise real constraints, transactions, audit triggers, RSVP
+capacity, and feedback persistence. `TEST_DATABASE_URL` is mandatory so the
+suite cannot silently inherit the application's ambient `DATABASE_URL`. Keep
+the named database disposable and never point it at production.
 
 The machine API integration suite additionally exercises persisted credential hashes, cross-tenant event access, participant privacy, and bounded collections.
 
@@ -31,7 +34,11 @@ The machine API integration suite additionally exercises persisted credential ha
 npm run test:coverage
 ```
 
-`vitest.coverage.config.mts` measures all `lib/**/*.ts` and `app/actions/**/*.ts` rather than a hand-selected subset. The configured minimum is a regression floor, not a statement that coverage is sufficient. At the last production-readiness pass, measured statement coverage was approximately 10.7%; increasing action authorization and error-path coverage remains required work.
+`vitest.coverage.config.mts` runs only service-independent unit tests while
+measuring all `lib/**/*.ts` and `app/actions/**/*.ts` rather than a hand-selected
+source subset. PostgreSQL tests must be run separately through
+`npm run test:integration` with a disposable `TEST_DATABASE_URL`. The configured
+minimum is a regression floor, not a statement that coverage is sufficient.
 
 ### Browser tests
 

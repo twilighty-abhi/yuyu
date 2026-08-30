@@ -88,12 +88,20 @@ export async function requireSuperAdmin(): Promise<
   if (!session?.user?.id) redirect("/login");
 
   const configured = process.env.SUPER_ADMIN_EMAIL;
-  const userEmail = session.user.email;
-  if (!configured || !userEmail) notFound();
+  if (!configured) notFound();
+  const user = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { email: true, emailVerified: true },
+  });
+  const userEmail = user?.email;
+  if (!userEmail || !user.emailVerified) notFound();
 
   if (normalizeEmail(userEmail) !== normalizeEmail(configured)) notFound();
 
-  return session as Session & { user: { id: string; email: string } };
+  return {
+    ...session,
+    user: { ...session.user, id: session.user.id, email: userEmail },
+  } as Session & { user: { id: string; email: string } };
 }
 
 /**

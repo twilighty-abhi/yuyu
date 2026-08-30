@@ -73,6 +73,7 @@ export async function addEventInvite(input: unknown): Promise<ActionResult> {
         organisationName: org.name,
         orgSlug: org.slug,
         eventSlug: event.slug,
+        expiresAt: event.endDateTime.toISOString(),
       });
       return created;
     });
@@ -91,7 +92,7 @@ export async function addEventInvite(input: unknown): Promise<ActionResult> {
     ) {
       return { ok: false, error: "That email is already invited." };
     }
-    console.error(e);
+    console.error("[event invite] creation failed");
     return { ok: false, error: "Could not add invite." };
   }
 }
@@ -192,7 +193,7 @@ export async function addSeriesInvite(input: unknown): Promise<ActionResult> {
     ) {
       return { ok: false, error: "That email is already invited." };
     }
-    console.error(e);
+    console.error("[series invite] creation failed");
     return { ok: false, error: "Could not add invite." };
   }
 }

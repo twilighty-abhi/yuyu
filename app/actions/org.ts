@@ -78,7 +78,7 @@ export async function createOrganisation(
         fieldErrors: { slug: ["Already taken"] },
       };
     }
-    console.error(e);
+    console.error("[organisation] creation failed");
     return { ok: false, error: "Could not create organisation." };
   }
 }
@@ -130,8 +130,8 @@ export async function updateOrganisation(input: unknown): Promise<ActionResult> 
     revalidatePath(`/dashboard/${org.slug}/members`);
     revalidatePath(`/${org.slug}`);
     return { ok: true };
-  } catch (e: unknown) {
-    console.error(e);
+  } catch {
+    console.error("[organisation] update failed");
     return { ok: false, error: "Could not update organisation." };
   }
 }

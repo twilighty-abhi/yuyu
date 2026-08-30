@@ -76,7 +76,7 @@ export async function createOrgInvite(input: unknown): Promise<
       ) {
         continue;
       }
-      console.error(e);
+      console.error("[organisation invite] creation failed");
       return { ok: false, error: "Could not create invite link." };
     }
   }

@@ -11,6 +11,7 @@ import { createEventCollaboratorToken, hashEventCollaboratorToken } from "@/lib/
 import { enqueueCollaboratorInvite } from "@/lib/outbox";
 import { getRequestOrigin } from "@/lib/publicUrl";
 import { startOutboxWorker } from "@/lib/outboxWorker";
+import { isActionRateLimited } from "@/lib/actionRateLimit";
 import type { ActionResult } from "./org";
 
 const permissions = z.array(z.nativeEnum(EventPermission)).min(1).max(5);
@@ -28,6 +29,7 @@ async function requireAdmin(orgSlug: string, userId: string) {
 export async function createEventCollaboratorInvite(input: unknown): Promise<ActionResult<{ token: string; inviteId: string }>> {
   const session = await auth();
   if (!session?.user?.id) return { ok: false, error: "You must be signed in." };
+  if (await isActionRateLimited("invite", session.user.id)) return { ok: false, error: "Too many invite requests. Please try again later." };
   const parsed = inviteSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "Invalid collaborator invite." };
   const org = await requireAdmin(parsed.data.organisationSlug, session.user.id);
@@ -38,13 +40,14 @@ export async function createEventCollaboratorInvite(input: unknown): Promise<Act
   if (!exists) return { ok: false, error: "Event not found." };
   const token = createEventCollaboratorToken();
   const origin = await getRequestOrigin();
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60_000);
   const invite = await prisma.$transaction(async (tx) => {
     const created = await tx.eventCollaboratorInvite.create({ data: {
     ...(parsed.data.eventId ? { eventId: parsed.data.eventId } : { eventSeriesId: parsed.data.eventSeriesId }),
     email: parsed.data.email.toLowerCase(), tokenHash: hashEventCollaboratorToken(token), permissions: parsed.data.permissions,
-    createdByUserId: session.user.id, expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60_000),
+    createdByUserId: session.user.id, expiresAt,
     } });
-    await enqueueCollaboratorInvite(tx, { to: parsed.data.email.toLowerCase(), eventTitle: exists.title, inviteUrl: `${origin}/join/event-collaborator/${token}` });
+    await enqueueCollaboratorInvite(tx, { to: parsed.data.email.toLowerCase(), eventTitle: exists.title, inviteUrl: `${origin}/join/event-collaborator/${token}`, expiresAt: expiresAt.toISOString() });
     return created;
   });
   await recordAuditEvent({ action: "EVENT_COLLABORATOR_INVITED", actorUserId: session.user.id, organisationId: org.id, targetType: "EventCollaboratorInvite", targetId: invite.id });
@@ -61,7 +64,14 @@ export async function revokeEventCollaborator(input: unknown): Promise<ActionRes
   if (!session?.user?.id || !parsed.success) return { ok: false, error: "Invalid request." };
   const org = await requireAdmin(parsed.data.organisationSlug, session.user.id);
   if (!org) return { ok: false, error: "You do not have permission." };
-  const deleted = await prisma.eventCollaborator.deleteMany({ where: { id: parsed.data.collaboratorId, ...(parsed.data.eventId ? { eventId: parsed.data.eventId } : { eventSeriesId: parsed.data.eventSeriesId }) } });
+  const deleted = await prisma.eventCollaborator.deleteMany({
+    where: {
+      id: parsed.data.collaboratorId,
+      ...(parsed.data.eventId
+        ? { eventId: parsed.data.eventId, event: { organisationId: org.id } }
+        : { eventSeriesId: parsed.data.eventSeriesId, series: { organisationId: org.id } }),
+    },
+  });
   if (!deleted.count) return { ok: false, error: "Collaborator not found." };
   await recordAuditEvent({ action: "EVENT_COLLABORATOR_REVOKED", actorUserId: session.user.id, organisationId: org.id, targetType: "EventCollaborator", targetId: parsed.data.collaboratorId });
   if (parsed.data.eventId) revalidatePath(`/dashboard/${org.slug}/event/${parsed.data.eventId}`);
@@ -75,7 +85,15 @@ export async function updateEventCollaboratorPermissions(input: unknown): Promis
   if (!session?.user?.id || !parsed.success) return { ok: false, error: "Invalid collaborator permissions." };
   const org = await requireAdmin(parsed.data.organisationSlug, session.user.id);
   if (!org) return { ok: false, error: "You do not have permission." };
-  const updated = await prisma.eventCollaborator.updateMany({ where: { id: parsed.data.collaboratorId, ...(parsed.data.eventId ? { eventId: parsed.data.eventId } : { eventSeriesId: parsed.data.eventSeriesId }) }, data: { permissions: parsed.data.permissions } });
+  const updated = await prisma.eventCollaborator.updateMany({
+    where: {
+      id: parsed.data.collaboratorId,
+      ...(parsed.data.eventId
+        ? { eventId: parsed.data.eventId, event: { organisationId: org.id } }
+        : { eventSeriesId: parsed.data.eventSeriesId, series: { organisationId: org.id } }),
+    },
+    data: { permissions: parsed.data.permissions },
+  });
   if (!updated.count) return { ok: false, error: "Collaborator not found." };
   await recordAuditEvent({ action: "EVENT_COLLABORATOR_PERMISSIONS_UPDATED", actorUserId: session.user.id, organisationId: org.id, targetType: "EventCollaborator", targetId: parsed.data.collaboratorId, metadata: { permissions: parsed.data.permissions.join(",") } });
   if (parsed.data.eventId) revalidatePath(`/dashboard/${org.slug}/event/${parsed.data.eventId}`);

@@ -13,7 +13,7 @@ export default function ErrorBoundary({ error, reset }: { error: Error & { diges
   return (
     <Stack spacing={2} sx={{ py: 8, textAlign: "center", alignItems: "center" }}>
       <Typography component="h1" variant="h4">Something went wrong</Typography>
-      <Typography color="text.secondary">Please try again. If this keeps happening, contact support.</Typography>
+      <Typography color="text.secondary">Please try again. If this keeps happening, contact the operator of this Yuyu instance.</Typography>
       <Button variant="contained" onClick={reset}>Try again</Button>
     </Stack>
   );

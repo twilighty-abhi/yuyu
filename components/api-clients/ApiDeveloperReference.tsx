@@ -152,7 +152,7 @@ export function ApiDeveloperReference({ apiBaseUrl }: { apiBaseUrl: string }) {
     {
       title: "List confirmed participants",
       scope: "participants:read",
-      description: "Lists minimal, confirmed-participant records only. Filter with attendance=all, checked_in, or not_checked_in. Check-in timestamps require the optional attendance field and scope.",
+      description: "Lists minimal, confirmed-participant records only. Attendance filters and check-in timestamps require the attendance scope.",
       request: `curl --request GET --url "${apiBaseUrl}/events/${eventId}/participants?attendance=checked_in&include=attendance" --header "Authorization: Bearer ${token}"`,
       response: `{
   "data": [
@@ -178,12 +178,12 @@ export function ApiDeveloperReference({ apiBaseUrl }: { apiBaseUrl: string }) {
       scope: "participants:read",
       capability: "Read the minimal confirmed-participant roster for an event owned by this organisation.",
       includes: "RSVP ID, display name, and registration timestamp for confirmed attendees only.",
-      excludes: "Email addresses, user IDs, answers, invitations, feedback linkage, attendance timestamps, and ticket, check-in, or certificate tokens. It can filter the roster by attendance without exposing attendance data.",
+      excludes: "Email addresses, user IDs, answers, invitations, feedback linkage, attendance state/timestamps, and ticket, check-in, or certificate tokens.",
     },
     {
       scope: "participants:attendance:read",
-      capability: "Opt in to check-in timestamps for the minimal participant roster.",
-      includes: "The nullable checkedInAt timestamp, only when the request also sends include=attendance. It requires participants:read for roster access.",
+      capability: "Filter by attendance state and opt in to check-in timestamps for the minimal participant roster.",
+      includes: "checked_in/not_checked_in filtering and the nullable checkedInAt timestamp when include=attendance is sent. It also requires participants:read.",
       excludes: "Email addresses, user IDs, answers, invitations, check-in tokens, and all write operations.",
     },
   ];

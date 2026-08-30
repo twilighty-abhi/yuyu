@@ -166,6 +166,10 @@ test("filters attendance without exposing timestamps and protects timestamp acce
   const denied = await request.get(`/api/v1/events/${eventAId}/participants?include=attendance`, { headers: bearer(participantsOnlyCredential) });
   expect(denied.status()).toBe(403);
   await expect(denied.json()).resolves.toMatchObject({ error: { code: "INSUFFICIENT_SCOPE" } });
+
+  const deniedFilter = await request.get(`/api/v1/events/${eventAId}/participants?attendance=checked_in`, { headers: bearer(participantsOnlyCredential) });
+  expect(deniedFilter.status()).toBe(403);
+  await expect(deniedFilter.json()).resolves.toMatchObject({ error: { code: "INSUFFICIENT_SCOPE" } });
 });
 
 test("enforces the participant scope", async ({ request }) => {

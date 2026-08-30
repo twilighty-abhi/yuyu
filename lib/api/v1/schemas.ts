@@ -13,6 +13,13 @@ export const collectionQuerySchema = z.object({
 export const participantAttendanceSchema = z.enum(["all", "checked_in", "not_checked_in"]);
 export type ParticipantAttendance = z.infer<typeof participantAttendanceSchema>;
 
+export function requestsParticipantAttendance(input: {
+  attendance: ParticipantAttendance;
+  include?: "attendance";
+}) {
+  return input.attendance !== "all" || input.include === "attendance";
+}
+
 export const participantCollectionQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
   cursor: z.string().min(1).max(1024).optional(),

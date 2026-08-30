@@ -1,7 +1,7 @@
 import "server-only";
 
 import { prisma } from "@/lib/db";
-import { redactSensitiveText } from "@/lib/redactSensitiveText";
+import { describeOperationalError } from "@/lib/redactSensitiveText";
 
 export const OUTBOX_SCHEDULER_HEARTBEAT_KEY = "outbox-scheduler";
 
@@ -51,14 +51,14 @@ export async function recordOutboxSchedulerSuccess(result: { sent: number; faile
 export async function recordOutboxSchedulerFailure(error: unknown) {
   const heartbeat = getHeartbeatDelegate();
   if (!heartbeat) return;
-  const message = error instanceof Error ? error.message : "Scheduler run failed";
+  const message = describeOperationalError(error);
   await heartbeat.upsert({
     where: { key: OUTBOX_SCHEDULER_HEARTBEAT_KEY },
     create: {
       key: OUTBOX_SCHEDULER_HEARTBEAT_KEY,
       lastStartedAt: new Date(),
-      lastError: redactSensitiveText(message).slice(0, 500),
+      lastError: message,
     },
-    update: { lastError: redactSensitiveText(message).slice(0, 500) },
+    update: { lastError: message },
   });
 }

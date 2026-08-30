@@ -1,14 +1,19 @@
-import crypto from "crypto";
 import { NextResponse } from "next/server";
 import { runOutboxScheduler } from "@/lib/outboxWorker";
+import { bearerSecretMatches } from "@/lib/bearerSecret";
+
+export const dynamic = "force-dynamic";
+const privateHeaders = { "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" };
 
 export async function POST(request: Request) {
-  const configuredSecret = process.env.CRON_SECRET;
-  const suppliedSecret = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
-  if (!configuredSecret || suppliedSecret.length !== configuredSecret.length || !crypto.timingSafeEqual(Buffer.from(suppliedSecret), Buffer.from(configuredSecret))) {
-    return new NextResponse("Not found", { status: 404 });
+  if (!bearerSecretMatches(request.headers.get("authorization"), process.env.CRON_SECRET)) {
+    return new NextResponse("Not found", { status: 404, headers: privateHeaders });
   }
 
-  const result = await runOutboxScheduler();
-  return NextResponse.json({ ok: true, ...result });
+  try {
+    const result = await runOutboxScheduler();
+    return NextResponse.json({ ok: true, ...result }, { headers: privateHeaders });
+  } catch {
+    return NextResponse.json({ ok: false, error: "Scheduler run failed." }, { status: 500, headers: privateHeaders });
+  }
 }

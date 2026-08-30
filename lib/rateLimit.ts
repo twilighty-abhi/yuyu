@@ -68,13 +68,13 @@ function getRedisClient(): Redis | null {
       lazyConnect: true,
     });
     
-    redisClient.on("error", (err) => {
-      console.warn("[rateLimit] Redis error, falling back to in-memory store:", err.message);
+    redisClient.on("error", () => {
+      console.warn("[rateLimit] Redis client error");
     });
     
     return redisClient;
-  } catch (e) {
-    console.error("[rateLimit] Failed to initialize Redis client:", e);
+  } catch {
+    console.error("[rateLimit] Redis client initialization failed");
     isRedisDisabled = true;
     return null;
   }
@@ -148,8 +148,8 @@ export async function checkRateLimitById(bucket: Bucket, id: string): Promise<bo
       String(windowMs),
     );
     return Number(count) <= max;
-  } catch (e) {
-    console.warn("[rateLimit] Redis check failed:", e);
+  } catch {
+    console.warn("[rateLimit] Redis check failed");
     if (process.env.NODE_ENV === "production" && !allowTestMemoryFallback()) return false;
     return checkRateLimitMemory(bucket, id);
   }

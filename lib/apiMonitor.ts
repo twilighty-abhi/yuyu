@@ -99,7 +99,7 @@ export function withApiMonitoring<TArgs extends unknown[]>(
           { status: 500, headers: { "Cache-Control": "no-store" } },
         );
       }
-      return NextResponse.json({ ok: false, error: "Internal server error." }, { status: 500 });
+      return NextResponse.json({ ok: false, error: "Internal server error." }, { status: 500, headers: { "Cache-Control": "no-store" } });
     }
   };
 }

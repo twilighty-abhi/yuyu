@@ -22,11 +22,13 @@ function workerState() {
 
 /** Runs one complete delivery/retention pass and records its operational state. */
 export async function runOutboxScheduler() {
-  await recordOutboxSchedulerStarted();
+  // Heartbeat persistence is observability, not part of the delivery commit.
+  // A heartbeat-table issue must not stop otherwise healthy queue processing.
+  await recordOutboxSchedulerStarted().catch(() => undefined);
   try {
     const result = await deliverOutboxBatch();
     const purged = await purgeExpiredOperationalData();
-    await recordOutboxSchedulerSuccess(result);
+    await recordOutboxSchedulerSuccess(result).catch(() => undefined);
     return { ...result, purged };
   } catch (error) {
     await recordOutboxSchedulerFailure(error).catch(() => undefined);
@@ -50,9 +52,9 @@ export function startOutboxWorker() {
     state.running = true;
     try {
       await runOutboxScheduler();
-    } catch (error) {
-      // The detailed, redacted failure is persisted in OperationalHeartbeat.
-      console.error("[outbox worker] scheduler run failed", error);
+    } catch {
+      // Failure metadata is persisted separately without exception text.
+      console.error("[outbox worker] scheduler run failed");
     } finally {
       state.running = false;
     }

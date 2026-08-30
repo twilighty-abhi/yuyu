@@ -5,6 +5,10 @@ function escapeHtml(value: string) {
   return value.replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]!);
 }
 
+function headerText(value: string) {
+  return value.replace(/[\u0000-\u001F\u007F]+/g, " ").trim().slice(0, 240);
+}
+
 
 function getBaseUrl(): string {
   return (process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000").replace(/\/$/, "");
@@ -15,12 +19,14 @@ export async function sendRSVPConfirmation(params: {
   eventTitle: string;
   status: RsvpStatus;
   checkInToken?: string;
+  messageId?: string;
 }): Promise<void> {
   const { transporter, from } = await getEmailTransport();
   const baseUrl = getBaseUrl();
 
   const ticketUrl = params.checkInToken ? `${baseUrl}/ticket/${params.checkInToken}` : null;
   const safeTitle = escapeHtml(params.eventTitle);
+  const subjectTitle = headerText(params.eventTitle);
   const safeTicketUrl = ticketUrl ? escapeHtml(ticketUrl) : null;
 
   let statusText = "Confirmed";
@@ -79,18 +85,17 @@ export async function sendRSVPConfirmation(params: {
   const text = `RSVP ${statusText}: ${params.eventTitle}\n\nHello,\n\nThank you for registering for "${params.eventTitle}". ${statusMessage}${ticketUrl && params.status === "CONFIRMED" ? `\n\nView your ticket here: ${ticketUrl}` : ""}\n\nBest regards,\nYuyu Events`;
 
   if (!transporter) {
-    console.log("========================================");
-    console.log(`[EMAIL MOCK] To: ${params.to}`);
-    console.log(`[EMAIL MOCK] Subject: RSVP ${statusText}: ${params.eventTitle}`);
-    console.log(`[EMAIL MOCK] Text:\n${text}`);
-    console.log("========================================");
+    // Email bodies can contain attendee PII and bearer ticket links. Mock
+    // delivery must remain safe for shared developer and CI logs.
+    console.log("[EMAIL MOCK] RSVP confirmation queued");
     return;
   }
 
   await transporter.sendMail({
+    messageId: params.messageId,
     from,
     to: params.to,
-    subject: `RSVP ${statusText}: ${params.eventTitle}`,
+    subject: `RSVP ${statusText}: ${subjectTitle}`,
     text,
     html,
   });
@@ -100,11 +105,13 @@ export async function sendApprovalNotification(params: {
   to: string;
   eventTitle: string;
   approved: boolean;
+  messageId?: string;
 }): Promise<void> {
   const { transporter, from } = await getEmailTransport();
 
   const statusText = params.approved ? "Approved" : "Declined";
   const safeTitle = escapeHtml(params.eventTitle);
+  const subjectTitle = headerText(params.eventTitle);
   const statusMessage = params.approved
     ? `Great news! Your RSVP request for <strong>${safeTitle}</strong> has been approved by the organizer.`
     : `We regret to inform you that your RSVP request for <strong>${safeTitle}</strong> has been declined by the organizer.`;
@@ -140,18 +147,15 @@ export async function sendApprovalNotification(params: {
   const text = `RSVP Update: ${statusText}\n\nHello,\n\n${params.approved ? `Your RSVP for "${params.eventTitle}" was approved!` : `Your RSVP for "${params.eventTitle}" was declined.`}\n\nBest regards,\nYuyu Events`;
 
   if (!transporter) {
-    console.log("========================================");
-    console.log(`[EMAIL MOCK] To: ${params.to}`);
-    console.log(`[EMAIL MOCK] Subject: RSVP Update: ${statusText} - ${params.eventTitle}`);
-    console.log(`[EMAIL MOCK] Text:\n${text}`);
-    console.log("========================================");
+    console.log("[EMAIL MOCK] RSVP update queued");
     return;
   }
 
   await transporter.sendMail({
+    messageId: params.messageId,
     from,
     to: params.to,
-    subject: `RSVP Update: ${statusText} - ${params.eventTitle}`,
+    subject: `RSVP Update: ${statusText} - ${subjectTitle}`,
     text,
     html,
   });
@@ -163,13 +167,14 @@ export async function sendEventInvitation(params: {
   organisationName: string;
   orgSlug: string;
   eventSlug: string;
+  messageId?: string;
 }): Promise<void> {
   const { transporter, from } = await getEmailTransport();
   const eventUrl = `${getBaseUrl()}/${encodeURIComponent(params.orgSlug)}/${encodeURIComponent(params.eventSlug)}`;
   const safeTitle = escapeHtml(params.eventTitle);
   const safeOrganisationName = escapeHtml(params.organisationName);
   const safeEventUrl = escapeHtml(eventUrl);
-  const subject = `You’re invited: ${params.eventTitle}`;
+  const subject = `You’re invited: ${headerText(params.eventTitle)}`;
   const text = `You’re invited to "${params.eventTitle}" by ${params.organisationName}.\n\nOpen the event and register with this email address:\n${eventUrl}\n\nYuyu Events`;
   const html = `
     <!DOCTYPE html>
@@ -188,41 +193,41 @@ export async function sendEventInvitation(params: {
     </body></html>`;
 
   if (!transporter) {
-    console.log(`[EMAIL MOCK] To: ${params.to}`);
-    console.log(`[EMAIL MOCK] Subject: ${subject}`);
-    console.log(`[EMAIL MOCK] Text:\n${text}`);
+    console.log("[EMAIL MOCK] event invitation queued");
     return;
   }
 
-  await transporter.sendMail({ from, to: params.to, subject, text, html });
+  await transporter.sendMail({ messageId: params.messageId, from, to: params.to, subject, text, html });
 }
 
-export async function sendCollaboratorInvitation(params: { to: string; eventTitle: string; inviteUrl: string }) {
+export async function sendCollaboratorInvitation(params: { to: string; eventTitle: string; inviteUrl: string; messageId?: string }) {
   const { transporter, from } = await getEmailTransport();
-  const subject = `Co-organizer invitation: ${params.eventTitle}`;
+  const subject = `Co-organizer invitation: ${headerText(params.eventTitle)}`;
   const safeUrl = escapeHtml(params.inviteUrl);
   const text = `You have been invited to co-organize "${params.eventTitle}". Sign in with this email address to accept:\n${params.inviteUrl}`;
   const html = `<p>You have been invited to co-organize <strong>${escapeHtml(params.eventTitle)}</strong>.</p><p><a href="${safeUrl}">Accept co-organizer invite</a></p><p>${safeUrl}</p>`;
-  if (!transporter) { console.log(`[EMAIL MOCK] To: ${params.to}\n${text}`); return; }
-  await transporter.sendMail({ from, to: params.to, subject, text, html });
+  if (!transporter) { console.log("[EMAIL MOCK] collaborator invitation queued"); return; }
+  await transporter.sendMail({ messageId: params.messageId, from, to: params.to, subject, text, html });
 }
 
 export async function sendReminder(params: {
   to: string;
   eventTitle: string;
   startsAtIso: string;
+  messageId?: string;
 }): Promise<void> {
   const { transporter, from } = await getEmailTransport();
 
   const formattedDate = new Date(params.startsAtIso).toLocaleString();
   const safeTitle = escapeHtml(params.eventTitle);
+  const subjectTitle = headerText(params.eventTitle);
 
   const html = `
     <!DOCTYPE html>
     <html>
       <head>
         <meta charset="utf-8">
-        <title>Upcoming Event Reminder: ${params.eventTitle}</title>
+        <title>Upcoming Event Reminder: ${safeTitle}</title>
       </head>
       <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8f9fa; margin: 0; padding: 20px; color: #1c1b1f;">
         <div style="max-width: 600px; margin: 40px auto; background-color: #ffffff; border-radius: 16px; border: 1px solid #e0e0e0; box-shadow: 0 4px 12px rgba(0,0,0,0.05); overflow: hidden;">
@@ -249,18 +254,15 @@ export async function sendReminder(params: {
   const text = `Upcoming Event Reminder: ${params.eventTitle}\n\nHello,\n\nThis is a reminder that "${params.eventTitle}" is starting at ${formattedDate}.\n\nBest regards,\nYuyu Events`;
 
   if (!transporter) {
-    console.log("========================================");
-    console.log(`[EMAIL MOCK] To: ${params.to}`);
-    console.log(`[EMAIL MOCK] Subject: Reminder: ${params.eventTitle} is starting soon`);
-    console.log(`[EMAIL MOCK] Text:\n${text}`);
-    console.log("========================================");
+    console.log("[EMAIL MOCK] event reminder queued");
     return;
   }
 
   await transporter.sendMail({
+    messageId: params.messageId,
     from,
     to: params.to,
-    subject: `Reminder: ${params.eventTitle} is starting soon`,
+    subject: `Reminder: ${subjectTitle} is starting soon`,
     text,
     html,
   });

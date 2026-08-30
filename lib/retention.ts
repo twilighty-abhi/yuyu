@@ -12,16 +12,26 @@ export async function purgeExpiredOperationalData(now = new Date()) {
     365,
   );
   const sentBefore = new Date(now.getTime() - outboxRetentionDays * DAY_MS);
-  const [tokens, undoSnapshots, sentMessages] = await prisma.$transaction([
+  const [tokens, sessions, organisationInvites, collaboratorInvites, undoSnapshots, sentMessages, failedMessages] = await prisma.$transaction([
     prisma.verificationToken.deleteMany({ where: { expires: { lt: now } } }),
+    prisma.session.deleteMany({ where: { expires: { lt: now } } }),
+    prisma.organisationInvite.deleteMany({ where: { usedAt: null, expiresAt: { lt: now } } }),
+    prisma.eventCollaboratorInvite.deleteMany({ where: { usedAt: null, expiresAt: { lt: now } } }),
     prisma.rsvpDeletionUndo.deleteMany({ where: { expiresAt: { lt: now } } }),
     prisma.outboxMessage.deleteMany({
       where: { status: OutboxStatus.SENT, sentAt: { lt: sentBefore } },
     }),
+    prisma.outboxMessage.deleteMany({
+      where: { status: OutboxStatus.FAILED, createdAt: { lt: sentBefore } },
+    }),
   ]);
   return {
     verificationTokens: tokens.count,
+    expiredSessions: sessions.count,
+    unusedOrganisationInvites: organisationInvites.count,
+    unusedCollaboratorInvites: collaboratorInvites.count,
     undoSnapshots: undoSnapshots.count,
     sentOutboxMessages: sentMessages.count,
+    failedOutboxMessages: failedMessages.count,
   };
 }

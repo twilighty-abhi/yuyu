@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Box from "@mui/material/Box";
 import Container from "@mui/material/Container";
 import Stack from "@mui/material/Stack";
@@ -8,22 +7,24 @@ import Typography from "@mui/material/Typography";
 import MuiLink from "@mui/material/Link";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useSession } from "next-auth/react";
 
-const footerLinks = [
+const publicLinks = [
   { label: "Discover", href: "/discover" },
-  { label: "Dashboard", href: "/dashboard" },
+  { label: "About", href: "/about" },
   { label: "Privacy", href: "/privacy" },
   { label: "Terms", href: "/terms" },
 ];
 
 export function AppFooter() {
   const pathname = usePathname();
-  const [year, setYear] = useState<number | null>(null);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => setYear(new Date().getFullYear()), 0);
-    return () => window.clearTimeout(timer);
-  }, []);
+  const { status } = useSession();
+  const year = new Date().getFullYear();
+  const footerLinks = status === "authenticated"
+    ? [{ label: "Dashboard", href: "/dashboard" }, { label: "Account", href: "/account" }, ...publicLinks]
+    : status === "unauthenticated"
+      ? [...publicLinks, { label: "Sign in", href: "/login" }]
+      : publicLinks;
 
   // Hide footer on login page
   if (pathname === "/login") return null;
@@ -60,7 +61,7 @@ export function AppFooter() {
               Yuyu
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              © {year ?? ""}
+              © {year}
             </Typography>
           </Stack>
 
@@ -75,6 +76,7 @@ export function AppFooter() {
                 key={l.href}
                 component={Link}
                 href={l.href}
+                aria-current={pathname === l.href || (l.href !== "/" && pathname?.startsWith(`${l.href}/`)) ? "page" : undefined}
                 underline="hover"
                 variant="body2"
                 color="text.secondary"

@@ -52,28 +52,39 @@ export function AppBarNav() {
         component="nav"
         aria-label="Main navigation"
         sx={{
-          maxWidth: 1100,
+          maxWidth: 1440,
           width: "100%",
           minHeight: { xs: 64, sm: 72 },
           mx: "auto",
           px: { xs: 1.5, sm: 3 },
           gap: { xs: 0.5, sm: 1 },
         }}
-      >
-        <Typography
-          variant="h6"
+        >
+        <Box
           component={Link}
           href="/"
+          aria-label="Yuyu home"
           sx={{
-            fontWeight: 700,
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 1,
             color: "primary.main",
             textDecoration: "none",
             mr: { xs: 0.5, sm: 2 },
             whiteSpace: "nowrap",
           }}
         >
-          Yuyu
-        </Typography>
+          <Box
+            component="img"
+            src="/brand/yuyu-mark.svg"
+            alt=""
+            aria-hidden
+            sx={{ width: 34, height: 34, display: "block", borderRadius: "10px" }}
+          />
+          <Typography variant="h6" sx={{ fontWeight: 700, letterSpacing: "-0.4px" }}>
+            Yuyu
+          </Typography>
+        </Box>
         <Box sx={{ display: { xs: "none", sm: "flex" }, gap: 0.5, flexGrow: 1 }}>
           <Button
             component={Link}
@@ -84,6 +95,28 @@ export function AppBarNav() {
             sx={{ minHeight: 44, px: 1.5 }}
           >
             Discover
+          </Button>
+          {status !== "authenticated" ? (
+            <Button
+              component={Link}
+              href="/features"
+              color="inherit"
+              size="small"
+              aria-current={pathname === "/features" ? "page" : undefined}
+              sx={{ minHeight: 44, px: 1.5 }}
+            >
+              Features
+            </Button>
+          ) : null}
+          <Button
+            component={Link}
+            href="/about"
+            color="inherit"
+            size="small"
+            aria-current={pathname === "/about" ? "page" : undefined}
+            sx={{ minHeight: 44, px: 1.5 }}
+          >
+            About
           </Button>
         </Box>
         <Box sx={{ flexGrow: { xs: 1, sm: 0 } }} />
@@ -106,10 +139,10 @@ export function AppBarNav() {
           <Box sx={{ display: { xs: "none", sm: "flex" }, gap: 1, alignItems: "center" }}>
             {status === "authenticated" ? (
               <>
-                <Button component={Link} href="/dashboard" color="inherit" sx={{ minHeight: 44 }}>
+                <Button component={Link} href="/dashboard" color="inherit" aria-current={pathname?.startsWith("/dashboard") ? "page" : undefined} sx={{ minHeight: 44 }}>
                 Dashboard
                 </Button>
-                <Button component={Link} href="/account" color="inherit" sx={{ minHeight: 44 }}>
+                <Button component={Link} href="/account" color="inherit" aria-current={pathname?.startsWith("/account") ? "page" : undefined} sx={{ minHeight: 44 }}>
                   Account
                 </Button>
                 <Button
@@ -161,6 +194,8 @@ export function AppBarNav() {
         <MenuItem component={Link} href="/discover" onClick={closeMobileMenu} selected={pathname === "/discover"} sx={{ minHeight: 48 }}>
           Discover
         </MenuItem>
+        {status !== "authenticated" ? <MenuItem component={Link} href="/features" onClick={closeMobileMenu} selected={pathname === "/features"} sx={{ minHeight: 48 }}>Features</MenuItem> : null}
+        <MenuItem component={Link} href="/about" onClick={closeMobileMenu} selected={pathname === "/about"} sx={{ minHeight: 48 }}>About</MenuItem>
         {status === "authenticated" ? (
           <MenuItem component={Link} href="/dashboard" onClick={closeMobileMenu} selected={pathname?.startsWith("/dashboard")} sx={{ minHeight: 48 }}>
             Dashboard

@@ -7,6 +7,7 @@ import Paper from "@mui/material/Paper";
 import Chip from "@mui/material/Chip";
 import Avatar from "@mui/material/Avatar";
 import Divider from "@mui/material/Divider";
+import Alert from "@mui/material/Alert";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
@@ -14,10 +15,14 @@ import { getMembership } from "@/lib/permissions";
 import { OrgEventsContainer } from "@/components/org/OrgEventsContainer";
 import { CopyOrganisationUrl } from "@/components/org/CopyOrganisationUrl";
 import { EventPrivacyType, EventStatus } from "@prisma/client";
+import { publicOrgEventSelect, publicOrgInstanceSelect } from "@/lib/publicOrgEventDto";
 
 import type { Metadata } from "next";
 
 type Props = { params: Promise<{ orgSlug: string }> };
+const PUBLIC_COLLECTION_LIMIT = 250;
+const PUBLIC_HISTORY_MS = 365 * 24 * 60 * 60_000;
+const PUBLIC_FUTURE_MS = 2 * 365 * 24 * 60 * 60_000;
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { orgSlug } = await params;
@@ -51,40 +56,56 @@ export default async function OrganisationPage({ params }: Props) {
   if (!org) notFound();
 
   const session = await auth();
-  const membership = session?.user?.id
-    ? await getMembership(session.user.id, org.id)
-    : null;
+  const now = new Date();
+  const windowStart = new Date(now.getTime() - PUBLIC_HISTORY_MS);
+  const windowEnd = new Date(now.getTime() + PUBLIC_FUTURE_MS);
 
   // Only fully public, published events belong on an organisation's public
   // listing. Hidden-link, approval-required, and invite-only events remain
   // reachable only through their intended access paths.
-  const events = await prisma.event.findMany({
+  const eventQuery = prisma.event.findMany({
     where: {
       organisationId: org.id,
       status: EventStatus.PUBLISHED,
       privacyType: EventPrivacyType.PUBLIC,
+      page: { is: { isPublished: true } },
+      endDateTime: { gte: windowStart },
+      startDateTime: { lte: windowEnd },
     },
+    select: publicOrgEventSelect,
     orderBy: { createdAt: "desc" },
+    take: PUBLIC_COLLECTION_LIMIT + 1,
   });
 
   // Apply the same visibility boundary to recurring-series instances.
-  const instances = await prisma.eventInstance.findMany({
+  const instanceQuery = prisma.eventInstance.findMany({
     where: {
       series: {
         organisationId: org.id,
         status: EventStatus.PUBLISHED,
         privacyType: EventPrivacyType.PUBLIC,
       },
+      endDateTime: { gte: windowStart },
+      startDateTime: { lte: windowEnd },
     },
-    include: { series: true },
+    select: publicOrgInstanceSelect,
     orderBy: { startDateTime: "asc" },
+    take: PUBLIC_COLLECTION_LIMIT + 1,
   });
+  const [membership, events, instances] = await Promise.all([
+    session?.user?.id ? getMembership(session.user.id, org.id) : Promise.resolve(null),
+    eventQuery,
+    instanceQuery,
+  ]);
+  const collectionTruncated = events.length > PUBLIC_COLLECTION_LIMIT || instances.length > PUBLIC_COLLECTION_LIMIT;
+  const visibleEvents = events.slice(0, PUBLIC_COLLECTION_LIMIT);
+  const visibleInstances = instances.slice(0, PUBLIC_COLLECTION_LIMIT);
 
   // Merge events and instances into one newest-created-first list. A recurring
   // occurrence represents its series for ordering purposes, not the time its
   // materialized instance row happened to be generated.
   const merged = [
-    ...events.map((event) => ({
+    ...visibleEvents.map((event) => ({
       kind: "event" as const,
       id: `e-${event.id}`,
       createdAt: event.createdAt,
@@ -94,7 +115,7 @@ export default async function OrganisationPage({ params }: Props) {
       description: event.description,
       event,
     })),
-    ...instances.map((instance) => ({
+    ...visibleInstances.map((instance) => ({
       kind: "instance" as const,
       id: `i-${instance.id}`,
       createdAt: instance.series.createdAt,
@@ -109,8 +130,7 @@ export default async function OrganisationPage({ params }: Props) {
   merged.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 
   // Count upcoming occurrences
-  const now = new Date();
-  const upcomingCount = merged.filter((item) => new Date(item.startDateTime) >= now).length;
+  const upcomingCount = merged.filter((item) => item.startDateTime >= now).length;
 
   return (
     <Stack spacing={3} sx={{ py: 2 }}>
@@ -232,6 +252,7 @@ export default async function OrganisationPage({ params }: Props) {
 
       {/* Main Events Area */}
       <Box id="events-list">
+        {collectionTruncated ? <Alert severity="info" sx={{ mb: 2 }}>Showing the first {PUBLIC_COLLECTION_LIMIT} standalone events and recurring dates in the public three-year window. Use event links or the organiser dashboard for older records.</Alert> : null}
         {merged.length === 0 ? (
           <Paper
             variant="outlined"

@@ -24,6 +24,7 @@ export const GET = withApiMonitoring("GET /api/search", async (request: Request)
     where: {
       status: EventStatus.PUBLISHED,
       privacyType: EventPrivacyType.PUBLIC,
+      page: { is: { isPublished: true } },
       OR: [
         { title: { contains: q, mode: "insensitive" } },
         { tags: { has: qLower } },
@@ -35,7 +36,19 @@ export const GET = withApiMonitoring("GET /api/search", async (request: Request)
         },
       ],
     },
-    include: {
+    select: {
+      id: true,
+      title: true,
+      slug: true,
+      description: true,
+      tags: true,
+      coverImageUrl: true,
+      startDateTime: true,
+      endDateTime: true,
+      timezone: true,
+      location: true,
+      mapLinkUrl: true,
+      isOnline: true,
       organisation: { select: { slug: true, name: true } },
     },
     orderBy: { startDateTime: "asc" },
@@ -44,10 +57,19 @@ export const GET = withApiMonitoring("GET /api/search", async (request: Request)
 
   return NextResponse.json({
     events: events.map((e) => ({
-      ...e,
+      id: e.id,
+      title: e.title,
+      slug: e.slug,
+      description: e.description,
+      tags: e.tags,
+      coverImageUrl: e.coverImageUrl,
       startDateTime: e.startDateTime.toISOString(),
       endDateTime: e.endDateTime.toISOString(),
-      createdAt: e.createdAt.toISOString(),
+      timezone: e.timezone,
+      location: e.location,
+      mapLinkUrl: e.mapLinkUrl,
+      isOnline: e.isOnline,
+      organisation: e.organisation,
     })),
   });
 });

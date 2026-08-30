@@ -11,10 +11,9 @@ import { slugifyTitle, withSlugSuffix } from "@/lib/slug";
 import { sanitizeRichText } from "@/lib/richText";
 import { recordAuditEvent } from "@/lib/audit";
 import { isActionRateLimited } from "@/lib/actionRateLimit";
-import { validateEventCoverImage } from "@/lib/imageValidation";
+import { createSafeWebpDerivative } from "@/lib/imageValidation";
 import { getPublicUrl, uploadFile } from "@/lib/storage";
 import type { ActionResult } from "./org";
-import sharp from "sharp";
 
 const http = z.string().url().refine((value) => {
   try { return ["http:", "https:"].includes(new URL(value).protocol); } catch { return false; }
@@ -30,6 +29,7 @@ const MAX_SPEAKER_PHOTO_BYTES = 5 * 1024 * 1024;
 async function context(input: z.infer<typeof target>, permission: EventPermission) {
   const session = await auth();
   if (!session?.user?.id) return null;
+  if (await isActionRateLimited("action", session.user.id)) return null;
   const org = await prisma.organisation.findUnique({ where: { slug: input.organisationSlug } });
   if (!org || !(await canAccessEvent({ userId: session.user.id, organisationId: org.id, eventId: input.eventId, permission }))) return null;
   const event = await prisma.event.findFirst({ where: { id: input.eventId, organisationId: org.id }, select: { id: true, slug: true } });
@@ -52,14 +52,13 @@ export async function uploadEventSpeakerPhoto(formData: FormData): Promise<Actio
   const file = formData.get("file");
   if (!parsed.success || !(file instanceof File)) return { ok: false, error: "Choose a speaker photo to upload." };
   if (file.size === 0 || file.size > MAX_SPEAKER_PHOTO_BYTES) return { ok: false, error: "Speaker photos must be 5 MB or smaller." };
-  const inspectedImage = await validateEventCoverImage(file);
-  if ("error" in inspectedImage) return { ok: false, error: inspectedImage.error };
   const c = await context(parsed.data, EventPermission.EDIT_DETAILS);
   if (!c) return { ok: false, error: "You do not have permission to upload speaker photos." };
   try {
-    const image = await sharp(Buffer.from(await file.arrayBuffer())).rotate().resize({ width: 1200, height: 1200, fit: "cover", position: "attention" }).webp({ quality: 86, effort: 5 }).toBuffer();
+    const derivative = await createSafeWebpDerivative(file, { width: 1200, height: 1200, fit: "cover", position: "attention" });
+    if ("error" in derivative) return { ok: false, error: derivative.error };
     const key = `organisations/${c.org.id}/event-speakers/${crypto.randomUUID()}.webp`;
-    await uploadFile({ key, body: image, contentType: "image/webp", organisationId: c.org.id });
+    await uploadFile({ key, body: derivative.body, contentType: "image/webp", organisationId: c.org.id });
     await recordAuditEvent({ action: "EVENT_SPEAKER_PHOTO_UPLOADED", actorUserId: session.user.id, organisationId: c.org.id, targetType: "Event", targetId: c.event.id });
     return { ok: true, data: { url: getPublicUrl(key) } };
   } catch {
@@ -77,14 +76,13 @@ export async function uploadEventSponsorLogo(formData: FormData): Promise<Action
   const file = formData.get("file");
   if (!parsed.success || !(file instanceof File)) return { ok: false, error: "Choose a sponsor logo to upload." };
   if (file.size === 0 || file.size > MAX_SPEAKER_PHOTO_BYTES) return { ok: false, error: "Sponsor logos must be 5 MB or smaller." };
-  const inspectedImage = await validateEventCoverImage(file);
-  if ("error" in inspectedImage) return { ok: false, error: inspectedImage.error };
   const c = await context(parsed.data, EventPermission.EDIT_DETAILS);
   if (!c) return { ok: false, error: "You do not have permission to upload sponsor logos." };
   try {
-    const image = await sharp(Buffer.from(await file.arrayBuffer())).rotate().resize({ width: 1200, height: 1200, fit: "inside", withoutEnlargement: true }).webp({ quality: 86, effort: 5 }).toBuffer();
+    const derivative = await createSafeWebpDerivative(file, { width: 1200, height: 1200, fit: "inside" });
+    if ("error" in derivative) return { ok: false, error: derivative.error };
     const key = `organisations/${c.org.id}/event-sponsors/${crypto.randomUUID()}.webp`;
-    await uploadFile({ key, body: image, contentType: "image/webp", organisationId: c.org.id });
+    await uploadFile({ key, body: derivative.body, contentType: "image/webp", organisationId: c.org.id });
     await recordAuditEvent({ action: "EVENT_SPONSOR_LOGO_UPLOADED", actorUserId: session.user.id, organisationId: c.org.id, targetType: "Event", targetId: c.event.id });
     return { ok: true, data: { url: getPublicUrl(key) } };
   } catch {
@@ -95,20 +93,23 @@ export async function uploadEventSponsorLogo(formData: FormData): Promise<Action
 export async function setEventPagePublished(input: unknown): Promise<ActionResult> {
   const parsed = target.extend({ isPublished: z.boolean() }).safeParse(input);
   if (!parsed.success) return fail("Invalid event website release request.");
-  const c = await context(parsed.data, EventPermission.EDIT_DETAILS);
+  const c = await context(parsed.data, EventPermission.PUBLISH_AND_SCHEDULE);
   if (!c) return fail("You do not have permission to release this event website.");
-  await prisma.eventPage.upsert({ where: { eventId: c.event.id }, create: { eventId: c.event.id, isPublished: parsed.data.isPublished }, update: { isPublished: parsed.data.isPublished } });
+  await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT "id" FROM "Event" WHERE "id" = ${c.event.id} FOR UPDATE`;
+    await tx.eventPage.upsert({ where: { eventId: c.event.id }, create: { eventId: c.event.id, isPublished: parsed.data.isPublished }, update: { isPublished: parsed.data.isPublished } });
+  });
   await recordAuditEvent({ action: parsed.data.isPublished ? "EVENT_PAGE_PUBLISHED" : "EVENT_PAGE_UNPUBLISHED", actorUserId: c.session.user.id, organisationId: c.org.id, targetType: "Event", targetId: c.event.id });
   paths(c.org.slug, c.event);
   return { ok: true };
 }
 
 export async function saveEventPage(input: unknown): Promise<ActionResult> {
-  const schema = target.extend({ isPublished: z.boolean().optional(), tagline: z.string().trim().max(240).default(""), logoUrl: optionalUrl, accentColor: z.union([z.string().regex(/^#[0-9a-fA-F]{6}$/), z.literal("")]).optional(), aboutHtml: z.string().max(50_000).default(""), sections: z.array(z.object({ type: z.nativeEnum(EventPageSectionType), isVisible: z.boolean(), sortOrder: z.number().int().min(0).max(20) })).length(9) });
+  const schema = target.extend({ tagline: z.string().trim().max(240).default(""), logoUrl: optionalUrl, accentColor: z.union([z.string().regex(/^#[0-9a-fA-F]{6}$/), z.literal("")]).optional(), aboutHtml: z.string().max(50_000).default(""), sections: z.array(z.object({ type: z.nativeEnum(EventPageSectionType), isVisible: z.boolean(), sortOrder: z.number().int().min(0).max(20) })).length(9) }).strict();
   const parsed = schema.safeParse(input); if (!parsed.success) return fail("Invalid event page settings.");
   const c = await context(parsed.data, EventPermission.EDIT_DETAILS); if (!c) return fail("You do not have permission to edit this event page.");
   await prisma.$transaction(async (tx) => {
-    const page = await tx.eventPage.upsert({ where: { eventId: c.event.id }, create: { eventId: c.event.id, isPublished: parsed.data.isPublished ?? false, tagline: parsed.data.tagline, logoUrl: parsed.data.logoUrl || null, accentColor: parsed.data.accentColor || null, aboutHtml: sanitizeRichText(parsed.data.aboutHtml) }, update: { isPublished: parsed.data.isPublished, tagline: parsed.data.tagline, logoUrl: parsed.data.logoUrl || null, accentColor: parsed.data.accentColor || null, aboutHtml: sanitizeRichText(parsed.data.aboutHtml) } });
+    const page = await tx.eventPage.upsert({ where: { eventId: c.event.id }, create: { eventId: c.event.id, isPublished: false, tagline: parsed.data.tagline, logoUrl: parsed.data.logoUrl || null, accentColor: parsed.data.accentColor || null, aboutHtml: sanitizeRichText(parsed.data.aboutHtml) }, update: { tagline: parsed.data.tagline, logoUrl: parsed.data.logoUrl || null, accentColor: parsed.data.accentColor || null, aboutHtml: sanitizeRichText(parsed.data.aboutHtml) } });
     for (const section of parsed.data.sections) await tx.eventPageSection.upsert({ where: { pageId_type: { pageId: page.id, type: section.type } }, create: { pageId: page.id, ...section }, update: { isVisible: section.isVisible, sortOrder: section.sortOrder } });
   });
   await recordAuditEvent({ action: "EVENT_PAGE_UPDATED", actorUserId: c.session.user.id, organisationId: c.org.id, targetType: "Event", targetId: c.event.id }); paths(c.org.slug, c.event); return { ok: true };
@@ -159,8 +160,12 @@ export async function saveSession(input: unknown): Promise<ActionResult> {
   const base = slugifyTitle(parsed.data.title); let slug = base; let n = 0; while (await prisma.eventSession.findFirst({ where: { eventId: c.event.id, slug, ...(parsed.data.id ? { id: { not: parsed.data.id } } : {}) }, select: { id: true } })) slug = withSlugSuffix(base, ++n);
   const data = { title: parsed.data.title, slug, descriptionHtml: sanitizeRichText(parsed.data.descriptionHtml), startDateTime: parsed.data.startDateTime, endDateTime: parsed.data.endDateTime, type: parsed.data.type, track: parsed.data.track || null, roomId: parsed.data.roomId || null, visibility: parsed.data.visibility, sortOrder: parsed.data.sortOrder };
   if (parsed.data.id && !(await prisma.eventSession.findFirst({ where: { id: parsed.data.id, eventId: c.event.id }, select: { id: true } }))) return fail("Session not found.");
-  const session = parsed.data.id ? await prisma.eventSession.update({ where: { id: parsed.data.id }, data }) : await prisma.eventSession.create({ data: { eventId: c.event.id, ...data } });
-  await prisma.eventSessionSpeaker.deleteMany({ where: { eventSessionId: session.id } }); if (parsed.data.speakerIds.length) await prisma.eventSessionSpeaker.createMany({ data: parsed.data.speakerIds.map((speakerId, sortOrder) => ({ eventSessionId: session.id, speakerId, sortOrder })) }); paths(c.org.slug, c.event); return { ok: true };
+  await prisma.$transaction(async (tx) => {
+    const session = parsed.data.id ? await tx.eventSession.update({ where: { id: parsed.data.id }, data }) : await tx.eventSession.create({ data: { eventId: c.event.id, ...data } });
+    await tx.eventSessionSpeaker.deleteMany({ where: { eventSessionId: session.id } });
+    if (parsed.data.speakerIds.length) await tx.eventSessionSpeaker.createMany({ data: parsed.data.speakerIds.map((speakerId, sortOrder) => ({ eventSessionId: session.id, speakerId, sortOrder })) });
+  });
+  paths(c.org.slug, c.event); return { ok: true };
 }
 
 export async function setEventSessionDelay(input: unknown): Promise<ActionResult> {

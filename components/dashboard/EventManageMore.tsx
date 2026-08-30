@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import type { Event } from "@prisma/client";
+import type { EventClientDto } from "@/lib/eventDto";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -43,7 +43,7 @@ async function copyToClipboard(text: string) {
 
 export function EventManageMore(props: {
   organisationSlug: string;
-  event: Event;
+  event: EventClientDto;
 }) {
   const { organisationSlug, event } = props;
   const router = useRouter();

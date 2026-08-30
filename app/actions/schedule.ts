@@ -7,6 +7,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { canAccessEvent } from "@/lib/eventAccess";
 import { recordAuditEvent } from "@/lib/audit";
+import { isActionRateLimited } from "@/lib/actionRateLimit";
 import type { ActionResult } from "./org";
 
 const target = z.object({ organisationSlug: z.string().min(1), eventSeriesId: z.string().min(1) });
@@ -23,6 +24,7 @@ function paths(orgSlug: string, data: z.infer<typeof target>) { revalidatePath(`
 export async function saveScheduleItem(input: unknown): Promise<ActionResult> {
   const session = await auth(); const parsed = itemSchema.safeParse(input);
   if (!session?.user?.id || !parsed.success) return { ok: false, error: "Invalid schedule item." };
+  if (await isActionRateLimited("action", session.user.id)) return { ok: false, error: "Too many schedule updates. Try again shortly." };
   const org = await context(parsed.data, session.user.id); if (!org) return { ok: false, error: "You do not have permission to manage the schedule." };
   const data = parsed.data;
   if (data.itemId) {
@@ -38,6 +40,7 @@ export async function saveScheduleItem(input: unknown): Promise<ActionResult> {
 export async function setScheduleDelay(input: unknown): Promise<ActionResult> {
   const session = await auth(); const parsed = target.extend({ itemId: z.string().min(1), delayMinutes: z.number().int().min(-720).max(1440) }).safeParse(input);
   if (!session?.user?.id || !parsed.success) return { ok: false, error: "Invalid delay." };
+  if (await isActionRateLimited("action", session.user.id)) return { ok: false, error: "Too many schedule updates. Try again shortly." };
   const org = await context(parsed.data, session.user.id); if (!org) return { ok: false, error: "You do not have permission to manage the schedule." };
   const item = await prisma.eventScheduleItem.updateMany({ where: { id: parsed.data.itemId, eventSeriesId: parsed.data.eventSeriesId }, data: { delayMinutes: parsed.data.delayMinutes } });
   if (!item.count) return { ok: false, error: "Schedule item not found." };

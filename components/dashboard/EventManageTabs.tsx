@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import type { Event, EventPermission } from "@prisma/client";
+import type { EventPermission } from "@prisma/client";
+import type { EventClientDto } from "@/lib/eventDto";
 import Tab from "@mui/material/Tab";
 import Tabs from "@mui/material/Tabs";
 import Button from "@mui/material/Button";
@@ -21,6 +22,7 @@ import {
 import Typography from "@mui/material/Typography";
 import Stack from "@mui/material/Stack";
 import Paper from "@mui/material/Paper";
+import Alert from "@mui/material/Alert";
 import QrCodeScannerOutlinedIcon from "@mui/icons-material/QrCodeScannerOutlined";
 import PersonAddOutlinedIcon from "@mui/icons-material/PersonAddOutlined";
 import { ManualRsvpDialog } from "@/components/attendees/ManualRsvpDialog";
@@ -33,8 +35,9 @@ type InviteRow = { id: string; email: string; createdAt: string };
 
 export function EventManageTabs(props: {
   organisationSlug: string;
-  event: Event;
+  event: EventClientDto;
   attendees: AttendeeRow[];
+  attendeesTruncated: boolean;
   invites: InviteRow[];
   registrationFields: RegistrationFieldRow[];
   feedbackUrl: string;
@@ -53,8 +56,10 @@ export function EventManageTabs(props: {
   canManageCollaborators: boolean;
   collaborators: Array<{ id: string; name: string | null; email: string | null; permissions: EventPermission[] }>;
   pendingCollaboratorInvites: Array<{ id: string; email: string; expiresAt: string }>;
+  canManageRegistrations: boolean;
+  canCheckIn: boolean;
 }) {
-  const { organisationSlug, event, attendees, invites, analytics, registrationFields, feedbackUrl, feedbackForm, feedbackFields, referenceTime, website, canManageCollaborators, collaborators, pendingCollaboratorInvites } = props;
+  const { organisationSlug, event, attendees, attendeesTruncated, invites, analytics, registrationFields, feedbackUrl, feedbackForm, feedbackFields, referenceTime, website, canManageCollaborators, canManageRegistrations, canCheckIn, collaborators, pendingCollaboratorInvites } = props;
   const [tab, setTab] = useState(0);
   const [manualRsvpOpen, setManualRsvpOpen] = useState(false);
   const router = useRouter();
@@ -103,6 +108,9 @@ export function EventManageTabs(props: {
       ) : null}
       {tab === 3 ? (
         <Stack spacing={2}>
+          {!canManageRegistrations ? <Typography color="text.secondary">You do not have permission to view or manage attendee registrations.</Typography> : null}
+          {canManageRegistrations ? <>
+          {attendeesTruncated ? <Alert severity="warning">This browser view and its CSV/email exports are limited to the 250 most recent registrations. Use a tenant API client with participant scope for a complete, paginated dataset.</Alert> : null}
           <Stack direction="row" spacing={1} useFlexGap sx={{ justifyContent: "flex-end", flexWrap: "wrap" }}>
             <Button variant="contained" startIcon={<PersonAddOutlinedIcon />} onClick={() => setManualRsvpOpen(true)}>
               Add attendee
@@ -126,6 +134,7 @@ export function EventManageTabs(props: {
             registrationFields={registrationFields}
             eventTitle={event.title}
           />
+          </> : null}
         </Stack>
       ) : null}
       {tab === 4 ? (
@@ -151,6 +160,8 @@ export function EventManageTabs(props: {
       ) : null}
       {tab === 8 ? (
         <Stack spacing={2}>
+          {!canCheckIn ? <Typography color="text.secondary">You do not have permission to operate check-in.</Typography> : null}
+          {canCheckIn ? (
           <Paper variant="outlined" sx={{ p: 3 }}>
             <Stack spacing={2} sx={{ alignItems: "flex-start" }}>
               <QrCodeScannerOutlinedIcon color="primary" sx={{ fontSize: 40 }} />
@@ -172,6 +183,7 @@ export function EventManageTabs(props: {
               </Button>
             </Stack>
           </Paper>
+          ) : null}
         </Stack>
       ) : null}
       {tab === 9 ? (

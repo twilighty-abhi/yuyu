@@ -22,11 +22,12 @@ import type { ActionResult } from "./org";
 import { flattenZodErrors } from "./utils";
 import { getPublicUrl, uploadFile } from "@/lib/storage";
 import { isActionRateLimited } from "@/lib/actionRateLimit";
-import { validateEventCoverImage } from "@/lib/imageValidation";
+import { createSafeWebpDerivative } from "@/lib/imageValidation";
 import { recordAuditEvent } from "@/lib/audit";
-import sharp from "sharp";
+import { z } from "zod";
 
 const MAX_COVER_IMAGE_BYTES = 5 * 1024 * 1024;
+const publishEventSchema = z.object({ organisationSlug: z.string().trim().min(1).max(120), eventSlug: z.string().trim().min(1).max(64) }).strict();
 
 export async function uploadEventCoverImage(
   formData: FormData,
@@ -46,9 +47,6 @@ export async function uploadEventCoverImage(
   if (file.size === 0 || file.size > MAX_COVER_IMAGE_BYTES) {
     return { ok: false, error: "Cover images must be 5 MB or smaller." };
   }
-  const inspectedImage = await validateEventCoverImage(file);
-  if ("error" in inspectedImage) return { ok: false, error: inspectedImage.error };
-
   const org = await prisma.organisation.findUnique({ where: { slug: organisationSlug } });
   if (!org) return { ok: false, error: "Organisation not found." };
   const membership = await getMembership(session.user.id, org.id);
@@ -57,21 +55,18 @@ export async function uploadEventCoverImage(
   }
 
   try {
-    const safeDerivative = await sharp(Buffer.from(await file.arrayBuffer()))
-      .rotate()
-      .resize({ width: 2400, height: 2400, fit: "inside", withoutEnlargement: true })
-      .webp({ quality: 86, effort: 5 })
-      .toBuffer();
+    const derivative = await createSafeWebpDerivative(file, { width: 2400, height: 2400, fit: "inside" });
+    if ("error" in derivative) return { ok: false, error: derivative.error };
     const key = `organisations/${org.id}/event-covers/${crypto.randomUUID()}.webp`;
     await uploadFile({
       key,
-      body: safeDerivative,
+      body: derivative.body,
       contentType: "image/webp",
       organisationId: org.id,
     });
     return { ok: true, data: { url: getPublicUrl(key) } };
-  } catch (error) {
-    console.error("[event] Cover image upload failed:", error);
+  } catch {
+    console.error("[event] cover image upload failed");
     return { ok: false, error: "Could not upload the cover image." };
   }
 }
@@ -188,8 +183,8 @@ export async function createEvent(input: unknown): Promise<ActionResult<{ id: st
 
     revalidateEventPaths(org.slug, slug, created.id);
     return { ok: true, data: { id: created.id, slug: created.slug } };
-  } catch (e) {
-    console.error(e);
+  } catch {
+    console.error("[event] creation failed");
     return { ok: false, error: "Could not create event." };
   }
 }
@@ -199,6 +194,7 @@ export async function updateEvent(input: unknown): Promise<ActionResult> {
   if (!session?.user?.id) {
     return { ok: false, error: "You must be signed in." };
   }
+  if (await isActionRateLimited("action", session.user.id)) return { ok: false, error: "Too many updates. Please try again later." };
 
   const parsed = updateEventSchema.safeParse(input);
   if (!parsed.success) {
@@ -236,27 +232,36 @@ export async function updateEvent(input: unknown): Promise<ActionResult> {
   if (!event) return { ok: false, error: "Event not found." };
 
   try {
-    await prisma.event.update({
-      where: { id: event.id },
-      data: {
-        title: data.title,
-        description: data.description ?? "",
-        tags: data.tags ?? [],
-        showRegistrationCount: data.showRegistrationCount ?? true,
-        coverImageUrl: data.coverImageUrl || null,
-        startDateTime: data.startDateTime,
-        endDateTime: data.endDateTime,
-        timezone: data.timezone,
-        location: data.location ?? "",
-        mapLinkUrl: data.mapLinkUrl || null,
-        isOnline: data.isOnline ?? false,
-        capacity: data.capacity ?? null,
-        status: data.status,
-        privacyType: data.privacyType,
-        registrationClosesAt: data.registrationClosesAt ?? null,
-        registrationLeadMinutes: data.registrationLeadMinutes ?? null,
-      },
+    const saved = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "Event" WHERE "id" = ${event.id} FOR UPDATE`;
+      if (data.capacity != null) {
+        const confirmed = await tx.rSVP.count({ where: { eventId: event.id, status: "CONFIRMED" } });
+        if (confirmed > data.capacity) return false;
+      }
+      await tx.event.update({
+        where: { id: event.id },
+        data: {
+          title: data.title,
+          description: data.description ?? "",
+          tags: data.tags ?? [],
+          showRegistrationCount: data.showRegistrationCount ?? true,
+          coverImageUrl: data.coverImageUrl || null,
+          startDateTime: data.startDateTime,
+          endDateTime: data.endDateTime,
+          timezone: data.timezone,
+          location: data.location ?? "",
+          mapLinkUrl: data.mapLinkUrl || null,
+          isOnline: data.isOnline ?? false,
+          capacity: data.capacity ?? null,
+          status: data.status,
+          privacyType: data.privacyType,
+          registrationClosesAt: data.registrationClosesAt ?? null,
+          registrationLeadMinutes: data.registrationLeadMinutes ?? null,
+        },
+      });
+      return true;
     });
+    if (!saved) return { ok: false, error: "Capacity cannot be lower than the current confirmed attendance." };
 
     await recordAuditEvent({
       action: "EVENT_UPDATED",
@@ -269,8 +274,8 @@ export async function updateEvent(input: unknown): Promise<ActionResult> {
 
     revalidateEventPaths(org.slug, event.slug, event.id);
     return { ok: true };
-  } catch (e) {
-    console.error(e);
+  } catch {
+    console.error("[event] update failed");
     return { ok: false, error: "Could not update event." };
   }
 }
@@ -280,6 +285,7 @@ export async function deleteEvent(input: unknown): Promise<ActionResult> {
   if (!session?.user?.id) {
     return { ok: false, error: "You must be signed in." };
   }
+  if (await isActionRateLimited("action", session.user.id)) return { ok: false, error: "Too many updates. Please try again later." };
 
   const parsed = deleteEventSchema.safeParse(input);
   if (!parsed.success) {
@@ -320,8 +326,8 @@ export async function deleteEvent(input: unknown): Promise<ActionResult> {
     revalidatePath(`/${org.slug}/${slug}`);
     revalidatePath(`/dashboard/${org.slug}`);
     return { ok: true };
-  } catch (e) {
-    console.error(e);
+  } catch {
+    console.error("[event] slug update failed");
     return { ok: false, error: "Could not delete event." };
   }
 }
@@ -333,6 +339,7 @@ export async function updateEventSlug(
   if (!session?.user?.id) {
     return { ok: false, error: "You must be signed in." };
   }
+  if (await isActionRateLimited("action", session.user.id)) return { ok: false, error: "Too many updates. Please try again later." };
 
   const parsed = updateEventSlugSchema.safeParse(input);
   if (!parsed.success) {
@@ -390,8 +397,8 @@ export async function updateEventSlug(
     revalidateEventPaths(org.slug, event.slug, event.id);
     revalidateEventPaths(org.slug, slug, event.id);
     return { ok: true, data: { slug } };
-  } catch (e) {
-    console.error(e);
+  } catch {
+    console.error("[event] deletion failed");
     return { ok: false, error: "Could not update event URL." };
   }
 }
@@ -406,6 +413,7 @@ export async function cloneEvent(
   if (!(await isUserEmailVerified(session.user.id))) {
     return { ok: false, error: "Verify your email before creating events." };
   }
+  if (await isActionRateLimited("create", session.user.id)) return { ok: false, error: "Too many creation attempts. Please try again later." };
 
   const parsed = cloneEventSchema.safeParse(input);
   if (!parsed.success) {
@@ -482,23 +490,23 @@ export async function cloneEvent(
 
     revalidateEventPaths(org.slug, created.slug, created.id);
     return { ok: true, data: { eventId: created.id } };
-  } catch (e) {
-    console.error(e);
+  } catch {
+    console.error("[event] clone failed");
     return { ok: false, error: "Could not clone event." };
   }
 }
 
-export async function publishEvent(input: {
-  organisationSlug: string;
-  eventSlug: string;
-}): Promise<ActionResult> {
+export async function publishEvent(input: unknown): Promise<ActionResult> {
   const session = await auth();
   if (!session?.user?.id) {
     return { ok: false, error: "You must be signed in." };
   }
+  if (await isActionRateLimited("action", session.user.id)) return { ok: false, error: "Too many updates. Please try again later." };
+  const parsed = publishEventSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Invalid publish request." };
 
   const org = await prisma.organisation.findUnique({
-    where: { slug: input.organisationSlug },
+    where: { slug: parsed.data.organisationSlug },
   });
   if (!org) return { ok: false, error: "Organisation not found." };
 
@@ -511,7 +519,7 @@ export async function publishEvent(input: {
     where: {
       organisationId_slug: {
         organisationId: org.id,
-        slug: input.eventSlug,
+        slug: parsed.data.eventSlug,
       },
     },
   });

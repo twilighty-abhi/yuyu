@@ -6,15 +6,14 @@ import Chip from "@mui/material/Chip";
 import Divider from "@mui/material/Divider";
 import Paper from "@mui/material/Paper";
 import { EventPrivacyType, EventStatus } from "@prisma/client";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { canManageEvents, getMembership } from "@/lib/permissions";
 import { RsvpForm } from "@/components/rsvp/RsvpForm";
 import { isEventPublished, shouldIndexPublicEvent } from "@/lib/eventVisibility";
 import { countConfirmedForInstance } from "@/lib/rsvpCapacity";
 import { safeTimeZone } from "@/lib/timeZone";
 import Link from "next/link";
 import Button from "@mui/material/Button";
+import { resolvePublicEventAccess } from "@/lib/publicEventAccess";
 
 type Props = { params: Promise<{ orgSlug: string; instanceId: string }> };
 
@@ -91,23 +90,8 @@ export default async function InstanceEventPage({ params }: Props) {
   if (!instance) notFound();
 
   const series = instance.series;
-  const session = await auth();
-  const membership = session?.user?.id
-    ? await getMembership(session.user.id, org.id)
-    : null;
-  const canPreviewDraft = canManageEvents(membership);
-  const canManage = canManageEvents(membership);
-
-  if (!isEventPublished(series.status) && !canPreviewDraft) notFound();
-  if (series.privacyType === EventPrivacyType.INVITE_ONLY && !canManage) {
-    const email = session?.user?.email?.trim().toLowerCase();
-    if (!email) notFound();
-    const invite = await prisma.seriesInvite.findUnique({
-      where: { eventSeriesId_email: { eventSeriesId: series.id, email } },
-      select: { id: true },
-    });
-    if (!invite) notFound();
-  }
+  const access = await resolvePublicEventAccess({ organisationId: org.id, eventSeriesId: series.id, status: series.status, privacyType: series.privacyType });
+  if (!access.allowed) notFound();
 
   const isPast = instance.endDateTime <= new Date();
   const showRsvp = series.status === EventStatus.PUBLISHED && !isPast;
@@ -128,7 +112,7 @@ export default async function InstanceEventPage({ params }: Props) {
       </Typography>
       <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
         <Chip label="Recurring" size="small" variant="outlined" />
-        {series.status === EventStatus.DRAFT ? (
+        {access.preview && series.status !== EventStatus.PUBLISHED ? (
           <Chip label="Draft preview" color="warning" />
         ) : null}
         {series.privacyType === EventPrivacyType.HIDDEN_LINK ? (

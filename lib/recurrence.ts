@@ -1,6 +1,7 @@
 import { rrulestr } from "rrule";
 
 const DEFAULT_MAX_INSTANCES = 48;
+const ABSOLUTE_MAX_INSTANCES = 500;
 
 /** Expand RRULE (ICS-style string with DTSTART + RRULE) into upcoming instance windows. */
 export function materializeInstances(
@@ -8,7 +9,7 @@ export function materializeInstances(
   instanceDurationMs: number,
   opts?: { maxInstances?: number; from?: Date; until?: Date },
 ): { startDateTime: Date; endDateTime: Date }[] {
-  const maxInstances = opts?.maxInstances ?? DEFAULT_MAX_INSTANCES;
+  const maxInstances = Math.min(ABSOLUTE_MAX_INSTANCES, Math.max(0, Math.floor(opts?.maxInstances ?? DEFAULT_MAX_INSTANCES)));
   const from = opts?.from ?? new Date();
   const until = opts?.until ?? new Date(from.getTime() + 366 * 24 * 60 * 60 * 1000);
 
@@ -19,14 +20,18 @@ export function materializeInstances(
     return [];
   }
 
-  const dates = rule.between(from, until, true);
   const out: { startDateTime: Date; endDateTime: Date }[] = [];
-  for (let i = 0; i < dates.length && out.length < maxInstances; i++) {
-    const start = dates[i]!;
+  let cursor = from;
+  let inclusive = true;
+  while (out.length < maxInstances) {
+    const start = rule.after(cursor, inclusive);
+    if (!start || start > until) break;
     out.push({
       startDateTime: start,
       endDateTime: new Date(start.getTime() + instanceDurationMs),
     });
+    cursor = start;
+    inclusive = false;
   }
   return out;
 }

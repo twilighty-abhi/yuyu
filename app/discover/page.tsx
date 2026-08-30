@@ -62,6 +62,7 @@ export default async function DiscoverPage({
   const eventWhere = {
     status: EventStatus.PUBLISHED,
     privacyType: EventPrivacyType.PUBLIC,
+    page: { is: { isPublished: true } },
     endDateTime: { gte: new Date() },
     ...(q
       ? {
@@ -116,6 +117,7 @@ export default async function DiscoverPage({
   const eventFilters = [
     Prisma.sql`e."status" = ${EventStatus.PUBLISHED}::"EventStatus"`,
     Prisma.sql`e."privacyType" = ${EventPrivacyType.PUBLIC}::"EventPrivacyType"`,
+    Prisma.sql`EXISTS (SELECT 1 FROM "EventPage" ep WHERE ep."eventId" = e."id" AND ep."isPublished" = TRUE)`,
     Prisma.sql`e."endDateTime" >= NOW()`,
     ...(q ? [Prisma.sql`(e."title" ILIKE ${searchPattern} OR e."description" ILIKE ${searchPattern})`] : []),
     ...(validFrom ? [Prisma.sql`e."startDateTime" >= ${validFrom}`] : []),

@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ auth: vi.fn(), organisationFindUnique: vi.fn(), eventFindFirst: vi.fn(), sessionUpdateMany: vi.fn(), sessionFindFirst: vi.fn(), canAccessEvent: vi.fn(), audit: vi.fn(), revalidatePath: vi.fn() }));
+const mocks = vi.hoisted(() => ({ auth: vi.fn(), rateLimit: vi.fn(), organisationFindUnique: vi.fn(), eventFindFirst: vi.fn(), sessionUpdateMany: vi.fn(), sessionFindFirst: vi.fn(), canAccessEvent: vi.fn(), audit: vi.fn(), revalidatePath: vi.fn() }));
 
 vi.mock("@/lib/auth", () => ({ auth: mocks.auth }));
+vi.mock("@/lib/actionRateLimit", () => ({ isActionRateLimited: mocks.rateLimit }));
 vi.mock("@/lib/db", () => ({ prisma: { organisation: { findUnique: mocks.organisationFindUnique }, event: { findFirst: mocks.eventFindFirst }, eventSession: { updateMany: mocks.sessionUpdateMany, findFirst: mocks.sessionFindFirst } } }));
 vi.mock("@/lib/eventAccess", () => ({ canAccessEvent: mocks.canAccessEvent }));
 vi.mock("@/lib/audit", () => ({ recordAuditEvent: mocks.audit }));
@@ -13,6 +14,7 @@ import { setEventSessionDelay } from "@/app/actions/event-website";
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.auth.mockResolvedValue({ user: { id: "user_1" } });
+  mocks.rateLimit.mockResolvedValue(false);
   mocks.organisationFindUnique.mockResolvedValue({ id: "org_1", slug: "org" });
   mocks.canAccessEvent.mockResolvedValue(true);
   mocks.eventFindFirst.mockResolvedValue({ id: "event_1", slug: "event" });

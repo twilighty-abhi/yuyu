@@ -4,7 +4,15 @@ CREATE TYPE "EventSessionType" AS ENUM ('KEYNOTE', 'TALK', 'PANEL', 'WORKSHOP', 
 CREATE TYPE "SponsorTier" AS ENUM ('PLATINUM', 'GOLD', 'SILVER', 'PARTNER', 'COMMUNITY_PARTNER');
 ALTER TYPE "EventStatus" ADD VALUE IF NOT EXISTS 'CANCELLED';
 
--- Standalone schedules are intentionally replaced by the first-class program.
+-- Preserve standalone agenda rows while replacing them with first-class
+-- program sessions. This temporary table lives for this migration connection
+-- only and prevents a previously deployed schedule from being silently lost.
+CREATE TEMP TABLE "_standalone_schedule_migration" ON COMMIT DROP AS
+SELECT "id", "eventId", "title", "description", "startDateTime", "endDateTime",
+       "sortOrder", "delayMinutes", "createdAt", "updatedAt"
+FROM "EventScheduleItem"
+WHERE "eventId" IS NOT NULL;
+
 DELETE FROM "EventScheduleItem" WHERE "eventId" IS NOT NULL;
 ALTER TABLE "EventScheduleItem" DROP CONSTRAINT "EventScheduleItem_one_target";
 ALTER TABLE "EventScheduleItem" DROP CONSTRAINT "EventScheduleItem_eventId_fkey";
@@ -78,6 +86,18 @@ CREATE INDEX "EventSession_eventId_startDateTime_sortOrder_idx" ON "EventSession
 CREATE INDEX "EventSession_roomId_idx" ON "EventSession"("roomId");
 ALTER TABLE "EventSession" ADD CONSTRAINT "EventSession_eventId_fkey" FOREIGN KEY ("eventId") REFERENCES "Event"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "EventSession" ADD CONSTRAINT "EventSession_roomId_fkey" FOREIGN KEY ("roomId") REFERENCES "EventVenueRoom"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+INSERT INTO "EventSession" (
+  "id", "eventId", "title", "slug", "descriptionHtml", "startDateTime",
+  "endDateTime", "type", "track", "roomId", "visibility", "sortOrder",
+  "createdAt", "updatedAt"
+)
+SELECT
+  "id", "eventId", "title", 'legacy-' || "id",
+  CASE WHEN "description" = '' THEN '' ELSE '<p>' || replace(replace(replace("description", '&', '&amp;'), '<', '&lt;'), E'\n', '<br>') || '</p>' END,
+  "startDateTime", "endDateTime", 'OTHER'::"EventSessionType", NULL, NULL,
+  'DRAFT'::"ContentVisibility", "sortOrder", "createdAt", "updatedAt"
+FROM "_standalone_schedule_migration";
 
 CREATE TABLE "EventSpeaker" (
   "id" TEXT NOT NULL, "eventId" TEXT NOT NULL, "name" TEXT NOT NULL, "slug" TEXT NOT NULL, "photoUrl" TEXT, "headline" TEXT NOT NULL DEFAULT '', "organisation" TEXT NOT NULL DEFAULT '', "bioHtml" TEXT NOT NULL DEFAULT '', "websiteUrl" TEXT, "linkedinUrl" TEXT, "xUrl" TEXT, "visibility" "ContentVisibility" NOT NULL DEFAULT 'DRAFT', "sortOrder" INTEGER NOT NULL DEFAULT 0,

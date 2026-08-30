@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import {
   EventPrivacyType,
   EventStatus,
-  type Event,
 } from "@prisma/client";
+import type { EventClientDto } from "@/lib/eventDto";
 import Button from "@mui/material/Button";
 import TextField from "@mui/material/TextField";
 import MenuItem from "@mui/material/MenuItem";
@@ -51,7 +51,7 @@ function toDatetimeLocalValue(d: Date) {
 
 export function EditEventForm(props: {
   organisationSlug: string;
-  event: Event;
+  event: EventClientDto;
 }) {
   const { organisationSlug, event } = props;
   const router = useRouter();
@@ -62,15 +62,15 @@ export function EditEventForm(props: {
   const [coverImageFile, setCoverImageFile] = useState<File | null>(null);
   const [isOnlinePreview, setIsOnlinePreview] = useState(event.isOnline);
   const [mapLinkPreviewUrl, setMapLinkPreviewUrl] = useState(
-    (event as Event & { mapLinkUrl?: string | null }).mapLinkUrl ?? "",
+    event.mapLinkUrl ?? "",
   );
   const [tagsPreview, setTagsPreview] = useState(
-    Array.isArray((event as Event & { tags?: string[] }).tags)
-      ? ((event as Event & { tags?: string[] }).tags ?? [])
+    Array.isArray(event.tags)
+      ? (event.tags ?? [])
       : [],
   );
   const [showRegistrationCountPreview, setShowRegistrationCountPreview] = useState(
-    (event as Event & { showRegistrationCount?: boolean }).showRegistrationCount ??
+    event.showRegistrationCount ??
       true,
   );
   const [start, setStart] = useState<Date | null>(
@@ -437,9 +437,7 @@ export function EditEventForm(props: {
                     label="Map link (optional)"
                     fullWidth
                     type="url"
-                    defaultValue={
-                      (event as Event & { mapLinkUrl?: string | null }).mapLinkUrl ?? ""
-                    }
+                    defaultValue={event.mapLinkUrl ?? ""}
                     disabled={isOnlinePreview}
                     onChange={(e) => setMapLinkPreviewUrl(e.target.value)}
                     helperText={
@@ -525,10 +523,10 @@ export function EditEventForm(props: {
                   />
                 </Grid>
                 <Grid size={{ xs: 12, md: 4 }}>
-                  <TextField name="registrationClosesAt" label="Registration closes at" type="datetime-local" fullWidth defaultValue={(event as Event & { registrationClosesAt?: Date | null }).registrationClosesAt ? toDatetimeLocalValue(new Date((event as Event & { registrationClosesAt?: Date | null }).registrationClosesAt!)) : ""} slotProps={{ inputLabel: { shrink: true } }} helperText="Use this or a lead time, not both." />
+                  <TextField name="registrationClosesAt" label="Registration closes at" type="datetime-local" fullWidth defaultValue={event.registrationClosesAt ? toDatetimeLocalValue(new Date(event.registrationClosesAt)) : ""} slotProps={{ inputLabel: { shrink: true } }} helperText="Use this or a lead time, not both." />
                 </Grid>
                 <Grid size={{ xs: 12, md: 4 }}>
-                  <TextField name="registrationLeadMinutes" label="Close before start (minutes)" type="number" fullWidth slotProps={{ htmlInput: { min: 0 } }} defaultValue={(event as Event & { registrationLeadMinutes?: number | null }).registrationLeadMinutes ?? ""} helperText="Relative cutoff; updates when the start time changes." />
+                  <TextField name="registrationLeadMinutes" label="Close before start (minutes)" type="number" fullWidth slotProps={{ htmlInput: { min: 0 } }} defaultValue={event.registrationLeadMinutes ?? ""} helperText="Relative cutoff; updates when the start time changes." />
                 </Grid>
                 <Grid size={{ xs: 12 }}>
                   <Paper

@@ -1,13 +1,13 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { ContentVisibility, EventPermission, EventPrivacyType } from "@prisma/client";
-import { auth } from "@/lib/auth";
+import { ContentVisibility, EventPrivacyType } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { canAccessEvent } from "@/lib/eventAccess";
 import { isEventPublished, shouldIndexPublicEvent } from "@/lib/eventVisibility";
+import { resolvePublicEventAccess } from "@/lib/publicEventAccess";
 import { countConfirmedForEvent } from "@/lib/rsvpCapacity";
 import { EventWebsiteShell } from "@/components/event/EventWebsiteShell";
 import { effectiveEventProgram } from "@/lib/eventProgram";
+import { plainTextToSafeHtml, sanitizeRichText } from "@/lib/richText";
 
 type Props = { params: Promise<{ orgSlug: string; eventSlug: string }> };
 
@@ -28,20 +28,16 @@ export default async function EventPage({ params }: Props) {
   const event = await prisma.event.findUnique({ where: { organisationId_slug: { organisationId: org.id, slug: eventSlug } } });
   if (!event) notFound();
   const release = await prisma.eventPage.findUnique({ where: { eventId: event.id }, select: { isPublished: true } });
-  const userId = (await auth())?.user?.id;
-  const preview = Boolean(userId && ((await canAccessEvent({ userId, organisationId: org.id, eventId: event.id, permission: EventPermission.EDIT_DETAILS })) || (await canAccessEvent({ userId, organisationId: org.id, eventId: event.id, permission: EventPermission.PUBLISH_AND_SCHEDULE }))));
-  if ((!isEventPublished(event.status) || !release?.isPublished) && !preview) notFound();
-  if (event.privacyType === EventPrivacyType.INVITE_ONLY && !preview) {
-    const email = (await auth())?.user?.email?.trim().toLowerCase();
-    if (!email || !(await prisma.eventInvite.findUnique({ where: { eventId_email: { eventId: event.id, email } }, select: { id: true } }))) notFound();
-  }
+  const access = await resolvePublicEventAccess({ organisationId: org.id, eventId: event.id, status: event.status, privacyType: event.privacyType, websiteReleased: release?.isPublished ?? false });
+  if (!access.allowed) notFound();
+  const preview = access.preview;
   // Preview grants access to an unreleased event page, but it still mirrors the
   // public content surface: drafts must never be rendered as published content.
   const published = { visibility: ContentVisibility.PUBLISHED };
   const [page, highlights, sessions, speakers, sponsors, faqs, resources, form, confirmed] = await Promise.all([
     prisma.eventPage.findUnique({ where: { eventId: event.id }, include: { sections: { orderBy: { sortOrder: "asc" } } } }),
     prisma.eventHighlight.findMany({ where: { eventId: event.id, ...published }, orderBy: { sortOrder: "asc" } }),
-    prisma.eventSession.findMany({ where: { eventId: event.id, ...published }, include: { room: true, speakers: { include: { speaker: true } } }, orderBy: [{ startDateTime: "asc" }, { sortOrder: "asc" }] }),
+    prisma.eventSession.findMany({ where: { eventId: event.id, ...published }, include: { room: true, speakers: { where: { speaker: { visibility: ContentVisibility.PUBLISHED } }, include: { speaker: true } } }, orderBy: [{ startDateTime: "asc" }, { sortOrder: "asc" }] }),
     prisma.eventSpeaker.findMany({ where: { eventId: event.id, ...published }, orderBy: { sortOrder: "asc" } }),
     prisma.eventSponsor.findMany({ where: { eventId: event.id, ...published }, orderBy: { sortOrder: "asc" } }),
     prisma.eventFaq.findMany({ where: { eventId: event.id, ...published }, orderBy: { sortOrder: "asc" } }),
@@ -53,11 +49,11 @@ export default async function EventPage({ params }: Props) {
   return <EventWebsiteShell
     orgSlug={org.slug} preview={preview}
     event={{ slug: event.slug, title: event.title, coverImageUrl: event.coverImageUrl, location: event.location, isOnline: event.isOnline, status: event.status, start: event.startDateTime.toISOString(), end: event.endDateTime.toISOString(), timezone: event.timezone, capacity: event.capacity }}
-    page={{ tagline: page?.tagline ?? "", logoUrl: page?.logoUrl ?? null, accentColor: page?.accentColor ?? null, aboutHtml: page?.aboutHtml || event.description, sections: page?.sections ?? defaults }}
+    page={{ tagline: page?.tagline ?? "", logoUrl: page?.logoUrl ?? null, accentColor: page?.accentColor ?? null, aboutHtml: page?.aboutHtml ? sanitizeRichText(page.aboutHtml) : plainTextToSafeHtml(event.description), sections: page?.sections ?? defaults }}
     highlights={highlights}
     sessions={effectiveEventProgram(sessions).map((session) => ({ id: session.id, slug: session.slug, title: session.title, start: session.effectiveStartDateTime.toISOString(), type: session.type, room: session.room?.name ?? null, speakers: session.speakers.map((speaker) => ({ slug: speaker.speaker.slug, name: speaker.speaker.name })) }))}
     speakers={speakers} sponsors={sponsors} venue={event.location || event.mapLinkUrl ? { location: event.location, mapLinkUrl: event.mapLinkUrl } : null}
-    faqs={faqs} resources={resources.map((resource) => ({ id: resource.id, title: resource.title, description: resource.description, href: resource.externalUrl! }))}
+    faqs={faqs.map((faq) => ({ ...faq, answerHtml: sanitizeRichText(faq.answerHtml) }))} resources={resources.map((resource) => ({ id: resource.id, title: resource.title, description: resource.description, href: resource.externalUrl! }))}
     registrationFields={(form?.fields ?? []).map((field) => ({ key: field.key, label: field.label, type: field.type, required: field.required, options: Array.isArray(field.options) ? field.options.filter((value): value is string => typeof value === "string") : [] }))}
     confirmedCount={event.showRegistrationCount ? confirmed : null}
   />;

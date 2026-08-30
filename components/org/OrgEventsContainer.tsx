@@ -11,6 +11,7 @@ import Paper from "@mui/material/Paper";
 import Tabs from "@mui/material/Tabs";
 import Tab from "@mui/material/Tab";
 import IconButton from "@mui/material/IconButton";
+import ButtonBase from "@mui/material/ButtonBase";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import GridViewIcon from "@mui/icons-material/GridView";
@@ -18,6 +19,7 @@ import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
 import Link from "next/link";
 import { DiscoverEventCard } from "@/components/event/DiscoverEventCard";
 import { InstanceCard } from "@/components/event/InstanceCard";
+import type { PublicOrgEvent, PublicOrgInstance } from "@/lib/publicOrgEventDto";
 
 type MergedItem =
   | {
@@ -28,8 +30,7 @@ type MergedItem =
       endDateTime: Date;
       title: string;
       description: string | null;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      event: any;
+      event: PublicOrgEvent;
     }
   | {
       kind: "instance";
@@ -39,8 +40,7 @@ type MergedItem =
       endDateTime: Date;
       title: string;
       description: string | null;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      instance: any;
+      instance: PublicOrgInstance;
     };
 
 type OrgEventsContainerProps = {
@@ -161,6 +161,7 @@ export function OrgEventsContainer({ orgSlug, organisationName, initialNow, item
 
         <ButtonGroup size="small" aria-label="view mode toggle" sx={{ alignSelf: "flex-end" }}>
           <Button
+            aria-pressed={viewMode === "grid"}
             variant={viewMode === "grid" ? "contained" : "outlined"}
             onClick={() => setViewMode("grid")}
             startIcon={<GridViewIcon />}
@@ -169,6 +170,7 @@ export function OrgEventsContainer({ orgSlug, organisationName, initialNow, item
             Grid
           </Button>
           <Button
+            aria-pressed={viewMode === "calendar"}
             variant={viewMode === "calendar" ? "contained" : "outlined"}
             onClick={() => setViewMode("calendar")}
             startIcon={<CalendarMonthIcon />}
@@ -253,10 +255,10 @@ export function OrgEventsContainer({ orgSlug, organisationName, initialNow, item
                 {monthName} {currentYear}
               </Typography>
               <Stack direction="row" spacing={1}>
-                <IconButton onClick={prevMonth} size="small" sx={{ border: "1px solid rgba(255,255,255,0.08)" }}>
+                <IconButton aria-label="Previous month" onClick={prevMonth} size="small" sx={{ border: "1px solid rgba(255,255,255,0.08)" }}>
                   <ChevronLeftIcon />
                 </IconButton>
-                <IconButton onClick={nextMonth} size="small" sx={{ border: "1px solid rgba(255,255,255,0.08)" }}>
+                <IconButton aria-label="Next month" onClick={nextMonth} size="small" sx={{ border: "1px solid rgba(255,255,255,0.08)" }}>
                   <ChevronRightIcon />
                 </IconButton>
               </Stack>
@@ -317,11 +319,9 @@ export function OrgEventsContainer({ orgSlug, organisationName, initialNow, item
                 return (
                   <Box
                     key={slot.key}
-                    onClick={() => setSelectedDay(dayNum)}
                     sx={{
                       minHeight: { xs: "50px", md: "110px" },
                       p: 1,
-                      cursor: "pointer",
                       border: isSelected
                         ? "1px solid #7CF5B6"
                         : "1px solid rgba(255, 255, 255, 0.04)",
@@ -332,13 +332,13 @@ export function OrgEventsContainer({ orgSlug, organisationName, initialNow, item
                         : "transparent",
                       transition: "all 0.15s ease",
                       position: "relative",
-                      "&:hover": {
-                        backgroundColor: "rgba(255, 255, 255, 0.05)",
-                      },
                     }}
                   >
                     {/* Day number label */}
-                    <Box
+                    <ButtonBase
+                      aria-label={`Show events on ${monthName} ${dayNum}, ${currentYear}${hasEvents ? `, ${dayEvents.length} event${dayEvents.length === 1 ? "" : "s"}` : ", no events"}`}
+                      aria-pressed={isSelected}
+                      onClick={() => setSelectedDay(dayNum)}
                       sx={{
                         display: "flex",
                         alignItems: "center",
@@ -355,10 +355,11 @@ export function OrgEventsContainer({ orgSlug, organisationName, initialNow, item
                           : "rgba(255,255,255,0.6)",
                         backgroundColor: isToday ? "rgba(124, 245, 182, 0.15)" : "transparent",
                         mb: 1,
+                        "&:focus-visible": { outline: "2px solid #7CF5B6", outlineOffset: 2 },
                       }}
                     >
                       {dayNum}
-                    </Box>
+                    </ButtonBase>
 
                     {/* Desktop events list */}
                     <Box sx={{ display: { xs: "none", md: "block" } }}>

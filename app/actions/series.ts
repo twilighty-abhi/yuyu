@@ -1,6 +1,6 @@
 "use server";
 
-import { EventStatus } from "@prisma/client";
+import { EventStatus, RsvpStatus } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
@@ -141,8 +141,8 @@ export async function createEventSeries(
       instances.map((i) => i.id),
     );
     return { ok: true, data: { id: series.id } };
-  } catch (e) {
-    console.error(e);
+  } catch {
+    console.error("[series] creation failed");
     return { ok: false, error: "Could not create event series." };
   }
 }
@@ -154,6 +154,7 @@ export async function updateEventSeriesMeta(
   if (!session?.user?.id) {
     return { ok: false, error: "You must be signed in." };
   }
+  if (await isActionRateLimited("action", session.user.id)) return { ok: false, error: "Too many updates. Please try again later." };
 
   const parsed = updateSeriesMetaSchema.safeParse(input);
   if (!parsed.success) {
@@ -180,17 +181,30 @@ export async function updateEventSeriesMeta(
   });
   if (!series) return { ok: false, error: "Series not found." };
 
-  await prisma.eventSeries.update({
-    where: { id: series.id },
-    data: {
-      title: data.title,
-      description: data.description ?? "",
-      timezone: data.timezone,
-      capacity: data.capacity ?? null,
-      status: data.status,
-      privacyType: data.privacyType,
-    },
+  const saved = await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT "id" FROM "EventSeries" WHERE "id" = ${series.id} FOR UPDATE`;
+    if (data.capacity != null) {
+      const counts = await tx.rSVP.groupBy({
+        by: ["eventInstanceId"],
+        where: { eventInstance: { eventSeriesId: series.id }, status: RsvpStatus.CONFIRMED },
+        _count: { _all: true },
+      });
+      if (counts.some((row) => row._count._all > data.capacity!)) return false;
+    }
+    await tx.eventSeries.update({
+      where: { id: series.id },
+      data: {
+        title: data.title,
+        description: data.description ?? "",
+        timezone: data.timezone,
+        capacity: data.capacity ?? null,
+        status: data.status,
+        privacyType: data.privacyType,
+      },
+    });
+    return true;
   });
+  if (!saved) return { ok: false, error: "Capacity cannot be lower than confirmed attendance for an occurrence." };
 
   await recordAuditEvent({
     action: "EVENT_SERIES_UPDATED",
@@ -218,6 +232,7 @@ export async function deleteEventSeries(input: unknown): Promise<ActionResult> {
   if (!session?.user?.id) {
     return { ok: false, error: "You must be signed in." };
   }
+  if (await isActionRateLimited("action", session.user.id)) return { ok: false, error: "Too many updates. Please try again later." };
 
   const parsed = deleteSeriesSchema.safeParse(input);
   if (!parsed.success) {

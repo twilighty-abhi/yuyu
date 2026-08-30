@@ -1,6 +1,6 @@
 "use client";
 
-import type { Event } from "@prisma/client";
+import type { EventClientDto } from "@/lib/eventDto";
 import Link from "next/link";
 import Alert from "@mui/material/Alert";
 import Avatar from "@mui/material/Avatar";
@@ -28,7 +28,7 @@ import VideocamOutlinedIcon from "@mui/icons-material/VideocamOutlined";
 import type { AttendeeRow } from "@/components/attendees/AttendeeTable";
 import { PublishEventButton } from "@/components/event/PublishEventButton";
 
-function asDate(value: Event["startDateTime"]): Date {
+function asDate(value: EventClientDto["startDateTime"]): Date {
   return value instanceof Date ? value : new Date(value as string);
 }
 
@@ -81,7 +81,7 @@ function formatRecapWhen(start: Date, end: Date, timeZone: string) {
   return { primary, endHint: `Ends ${endT}` };
 }
 
-function privacyLabel(p: Event["privacyType"]) {
+function privacyLabel(p: EventClientDto["privacyType"]) {
   switch (p) {
     case "PUBLIC":
       return "Public";
@@ -132,7 +132,7 @@ type InviteRow = { id: string; email: string; createdAt: string };
 
 export function EventManageOverview(props: {
   organisationSlug: string;
-  event: Event;
+  event: EventClientDto;
   analytics: {
     total: number;
     confirmed: number;

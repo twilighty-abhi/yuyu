@@ -26,7 +26,7 @@ const timezones = [
 
 export function EditSeriesForm(props: {
   organisationSlug: string;
-  series: EventSeries;
+  series: Pick<EventSeries, "id" | "title" | "description" | "recurrenceRule" | "timezone" | "capacity" | "status" | "privacyType">;
 }) {
   const { organisationSlug, series } = props;
   const router = useRouter();

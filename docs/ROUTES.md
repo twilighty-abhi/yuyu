@@ -57,6 +57,7 @@ Every super-admin page additionally requires a current TOTP verification. Users 
 | `GET /api/search?q=...` | Public, rate-limited | Return matching public events |
 | `GET /api/ticket/:token/download` | Opaque token | Download the attendee ticket |
 | `GET /api/feedback/certificate/:token` | Opaque token | Download an eligible JPEG certificate |
+| `GET /api/exports/events/:eventId/attendees` | Authenticated organisation admin or event collaborator with `MANAGE_REGISTRATIONS` | Audited full attendee CSV download |
 | `GET /api/uploads/:key` | Public application route | Stream an allowlisted organisation WebP derivative with immutable/nosniff response controls |
 | `/api/auth/*` | Auth.js | Session, provider, callback, and credential endpoints |
 | `GET /api/v1/events` | Machine bearer credential + `events:read` | Paginated tenant event metadata |

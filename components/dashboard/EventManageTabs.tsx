@@ -9,7 +9,6 @@ import Tabs from "@mui/material/Tabs";
 import Button from "@mui/material/Button";
 import { EditEventForm } from "@/components/event/EditEventForm";
 import { AttendeeTable, type AttendeeRow } from "@/components/attendees/AttendeeTable";
-import { ExportCsvButton } from "@/components/attendees/ExportCsvButton";
 import { EventInvitePanel } from "@/components/invites/EventInvitePanel";
 import { EventManageOverview } from "@/components/dashboard/EventManageOverview";
 import { EventAnalyticsPanel } from "@/components/dashboard/EventAnalyticsPanel";
@@ -110,12 +109,14 @@ export function EventManageTabs(props: {
         <Stack spacing={2}>
           {!canManageRegistrations ? <Typography color="text.secondary">You do not have permission to view or manage attendee registrations.</Typography> : null}
           {canManageRegistrations ? <>
-          {attendeesTruncated ? <Alert severity="warning">This browser view and its CSV/email exports are limited to the 250 most recent registrations. Use a tenant API client with participant scope for a complete, paginated dataset.</Alert> : null}
+          {attendeesTruncated ? <Alert severity="warning">Only the 250 most recent registrations are loaded in this browser view, and its email export is limited to those records. Download the full attendee CSV for the complete list.</Alert> : null}
           <Stack direction="row" spacing={1} useFlexGap sx={{ justifyContent: "flex-end", flexWrap: "wrap" }}>
             <Button variant="contained" startIcon={<PersonAddOutlinedIcon />} onClick={() => setManualRsvpOpen(true)}>
               Add attendee
             </Button>
-            <ExportCsvButton eventTitle={event.title} attendees={attendees} />
+            <Button component="a" href={`/api/exports/events/${event.id}/attendees`} variant="outlined">
+              Download full CSV
+            </Button>
           </Stack>
           {manualRsvpOpen ? (
             <ManualRsvpDialog

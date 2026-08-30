@@ -1,4 +1,5 @@
-const CACHE_NAME = "yuyu-checkin-static-v4";
+const CACHE_NAME = "yuyu-checkin-static-v5";
+const MAX_STATIC_ENTRIES = 128;
 
 self.addEventListener("install", () => {
   self.skipWaiting();
@@ -22,15 +23,20 @@ self.addEventListener("fetch", (event) => {
   // must contain only versioned static assets.
   if (request.url.includes("/_next/static/") && ["script", "style", "font"].includes(request.destination)) {
     event.respondWith(
-      fetch(request)
-        .then((response) => {
+      (async () => {
+        try {
+          const response = await fetch(request);
           if (response.ok && response.type === "basic") {
-            const copy = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+            const cache = await caches.open(CACHE_NAME);
+            await cache.put(request, response.clone());
+            const keys = await cache.keys();
+            await Promise.all(keys.slice(0, Math.max(0, keys.length - MAX_STATIC_ENTRIES)).map((key) => cache.delete(key)));
           }
           return response;
-        })
-        .catch(async () => (await caches.match(request)) || Response.error()),
+        } catch {
+          return (await caches.match(request)) || Response.error();
+        }
+      })(),
     );
   }
 });

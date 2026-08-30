@@ -7,7 +7,8 @@ import Typography from "@mui/material/Typography";
 
 export default function ErrorBoundary({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   useEffect(() => {
-    console.error("[ui] route error", error);
+    if (process.env.NODE_ENV === "development") console.error("[ui] route error", error);
+    else console.error("[ui] route error");
   }, [error]);
   return (
     <Stack spacing={2} sx={{ py: 8, textAlign: "center", alignItems: "center" }}>

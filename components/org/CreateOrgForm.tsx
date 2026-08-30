@@ -27,7 +27,7 @@ export function CreateOrgForm() {
         const available = await checkSlugAvailability(trimmed);
         setSlugState(available ? "available" : "taken");
       } catch (err) {
-        console.error("Failed to check slug availability:", err);
+        if (process.env.NODE_ENV === "development") console.error("Failed to check slug availability", err);
         setSlugState("idle");
       }
     }, 400);

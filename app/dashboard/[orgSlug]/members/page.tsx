@@ -9,6 +9,8 @@ import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
 import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Link from "next/link";
 import { headers } from "next/headers";
 import { prisma } from "@/lib/db";
 import {
@@ -21,24 +23,31 @@ import { OrgInviteLinkPanel } from "@/components/members/OrgInviteLinkPanel";
 
 import type { Metadata } from "next";
 
-type Props = { params: Promise<{ orgSlug: string }> };
+type Props = { params: Promise<{ orgSlug: string }>; searchParams: Promise<{ page?: string }> };
+const MEMBERS_PAGE_SIZE = 100;
 
 export const metadata: Metadata = {
   title: "Members",
   description: "Organisation members and roles.",
 };
 
-export default async function OrgMembersPage({ params }: Props) {
+export default async function OrgMembersPage({ params, searchParams }: Props) {
   const { orgSlug } = await params;
+  const requestedPage = Math.max(1, Number.parseInt((await searchParams).page ?? "1", 10) || 1);
   const { organisation, membership } = await requireOrgMembership(orgSlug);
   const ownerView = canManageMembers(membership);
   const adminView = isOrgAdmin(membership.role);
   const h = await headers();
 
+  const memberCount = await prisma.membership.count({ where: { organisationId: organisation.id } });
+  const memberPages = Math.max(1, Math.ceil(memberCount / MEMBERS_PAGE_SIZE));
+  const memberPage = Math.min(requestedPage, memberPages);
   const members = await prisma.membership.findMany({
     where: { organisationId: organisation.id },
-    include: { user: true },
+    select: { id: true, userId: true, role: true, createdAt: true, user: { select: { name: true, email: true } } },
     orderBy: { createdAt: "asc" },
+    skip: (memberPage - 1) * MEMBERS_PAGE_SIZE,
+    take: MEMBERS_PAGE_SIZE,
   });
 
   const invites = adminView
@@ -162,6 +171,7 @@ export default async function OrgMembersPage({ params }: Props) {
           </Table>
         </TableContainer>
       )}
+      {memberPages > 1 ? <Stack direction="row" spacing={1} sx={{ justifyContent: "flex-end", alignItems: "center" }}><Typography variant="body2" color="text.secondary">Page {memberPage} of {memberPages}</Typography><Button component={Link} href={`?page=${memberPage - 1}`} disabled={memberPage <= 1}>Previous</Button><Button component={Link} href={`?page=${memberPage + 1}`} disabled={memberPage >= memberPages}>Next</Button></Stack> : null}
     </Stack>
   );
 }

@@ -10,6 +10,7 @@ import TableRow from "@mui/material/TableRow";
 import TableContainer from "@mui/material/TableContainer";
 import Link from "next/link";
 import { prisma } from "@/lib/db";
+import { EventPermission } from "@prisma/client";
 import { getRequestOrigin } from "@/lib/publicUrl";
 import { isOrgAdmin, requireOrgDashboardAccess } from "@/lib/permissions";
 import { canViewEventDashboard } from "@/lib/eventAccess";
@@ -20,6 +21,7 @@ import { ScheduleManager } from "@/components/schedule/ScheduleManager";
 import { EventReportDownloadButton } from "@/components/reports/EventReportDownloadButton";
 
 type Props = { params: Promise<{ orgSlug: string; seriesId: string }> };
+const MAX_BROWSER_ATTENDEES = 250;
 
 function eventDateInput(date: Date, timeZone: string) {
   const parts = new Intl.DateTimeFormat("en", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
@@ -44,6 +46,12 @@ export default async function SeriesManagePage({ params }: Props) {
   });
   if (!series) notFound();
   if (!access.membership && !(await canViewEventDashboard({ userId: access.userId, organisationId: organisation.id, eventSeriesId: series.id }))) notFound();
+  const isAdmin = Boolean(access.membership && isOrgAdmin(access.membership.role));
+  const currentGrant = isAdmin ? null : await prisma.eventCollaborator.findFirst({
+    where: { eventSeriesId: series.id, userId: access.userId },
+    select: { permissions: true },
+  });
+  const canManageRegistrations = isAdmin || Boolean(currentGrant?.permissions.includes(EventPermission.MANAGE_REGISTRATIONS));
 
   const invites = await prisma.seriesInvite.findMany({
     where: { eventSeriesId: series.id },
@@ -51,11 +59,12 @@ export default async function SeriesManagePage({ params }: Props) {
   });
 
   const firstInstanceId = series.instances[0]?.id;
-  const rsvps = firstInstanceId
+  const rsvps = firstInstanceId && canManageRegistrations
     ? await prisma.rSVP.findMany({
         where: { eventInstanceId: firstInstanceId },
-        include: { user: true },
+        include: { user: { select: { id: true, name: true, email: true } } },
         orderBy: { createdAt: "desc" },
+        take: MAX_BROWSER_ATTENDEES + 1,
       })
     : [];
 
@@ -63,7 +72,8 @@ export default async function SeriesManagePage({ params }: Props) {
   const now = new Date();
   const canDownloadReports = Boolean(access.membership && isOrgAdmin(access.membership.role));
   const finishedInstances = series.instances.filter((instance) => instance.endDateTime < now);
-  const attendees = rsvps.map((r) => ({
+  const attendeesTruncated = rsvps.length > MAX_BROWSER_ATTENDEES;
+  const attendees = rsvps.slice(0, MAX_BROWSER_ATTENDEES).map((r) => ({
     id: r.id,
     status: r.status,
     createdAt: r.createdAt.toISOString(),
@@ -91,7 +101,16 @@ export default async function SeriesManagePage({ params }: Props) {
         <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 700 }}>
           Series details
         </Typography>
-        <EditSeriesForm organisationSlug={organisation.slug} series={series} />
+        <EditSeriesForm organisationSlug={organisation.slug} series={{
+          id: series.id,
+          title: series.title,
+          description: series.description,
+          recurrenceRule: series.recurrenceRule,
+          timezone: series.timezone,
+          capacity: series.capacity,
+          status: series.status,
+          privacyType: series.privacyType,
+        }} />
       </Paper>
 
       <Typography variant="h6" component="h2" sx={{ fontWeight: 700, letterSpacing: "-0.3px" }}>
@@ -164,7 +183,7 @@ export default async function SeriesManagePage({ params }: Props) {
         </>
       ) : null}
 
-      {firstInstanceId ? (
+      {firstInstanceId && canManageRegistrations ? (
         <>
           <Typography variant="h6" component="h2" sx={{ fontWeight: 700, letterSpacing: "-0.3px" }}>
             Attendees (first upcoming occurrence)
@@ -175,6 +194,7 @@ export default async function SeriesManagePage({ params }: Props) {
             attendees={attendees}
             canManage
             registrationFields={[]}
+            collectionTruncated={attendeesTruncated}
           />
         </>
       ) : null}

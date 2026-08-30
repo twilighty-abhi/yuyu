@@ -4,7 +4,8 @@ import { useEffect } from "react";
 
 export default function GlobalError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   useEffect(() => {
-    console.error("[ui] global error", error);
+    if (process.env.NODE_ENV === "development") console.error("[ui] global error", error);
+    else console.error("[ui] global error");
   }, [error]);
   return (
     <html lang="en">

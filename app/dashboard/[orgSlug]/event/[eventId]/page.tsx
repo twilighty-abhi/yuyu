@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import type { Metadata } from "next";
+import { EventPermission } from "@prisma/client";
 import Link from "next/link";
 import Typography from "@mui/material/Typography";
 import Stack from "@mui/material/Stack";
@@ -11,19 +11,14 @@ import { isOrgAdmin, requireOrgDashboardAccess } from "@/lib/permissions";
 import { canViewEventDashboard } from "@/lib/eventAccess";
 import { EventManageTabs } from "@/components/dashboard/EventManageTabs";
 import { EventReportDownloadButton } from "@/components/reports/EventReportDownloadButton";
+import { toEventClientDto } from "@/lib/eventDto";
 
 type Props = {
   params: Promise<{ orgSlug: string; eventId: string }>;
 };
+const MAX_BROWSER_ATTENDEES = 250;
 
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const { eventId } = await params;
-  const event = await prisma.event.findUnique({
-    where: { id: eventId },
-    select: { title: true },
-  });
-  return { title: event ? `Manage · ${event.title}` : "Manage Event" };
-}
+export const metadata = { title: "Manage event", robots: { index: false, follow: false } };
 
 export default async function EventManagePage({ params }: Props) {
   const { orgSlug, eventId } = await params;
@@ -37,17 +32,29 @@ export default async function EventManagePage({ params }: Props) {
   if (!event) notFound();
   if (!access.membership && !(await canViewEventDashboard({ userId: access.userId, organisationId: organisation.id, eventId: event.id }))) notFound();
 
-  const rsvps = await prisma.rSVP.findMany({
+  const isAdmin = Boolean(access.membership && isOrgAdmin(access.membership.role));
+  const currentGrant = isAdmin ? null : await prisma.eventCollaborator.findFirst({
+    where: { eventId: event.id, userId: access.userId },
+    select: { permissions: true },
+  });
+  const hasPermission = (permission: EventPermission) => isAdmin || Boolean(currentGrant?.permissions.includes(permission));
+  const canManageRegistrations = hasPermission(EventPermission.MANAGE_REGISTRATIONS);
+  const canManageInvitations = hasPermission(EventPermission.MANAGE_INVITATIONS);
+  const canCheckIn = hasPermission(EventPermission.CHECK_IN);
+
+  const rsvps = canManageRegistrations ? await prisma.rSVP.findMany({
     where: { eventId: event.id },
     include: {
-      user: true,
+      user: { select: { id: true, name: true, email: true } },
       answers: { include: { field: true } },
     },
     orderBy: { createdAt: "desc" },
-  });
+    take: MAX_BROWSER_ATTENDEES + 1,
+  }) : [];
+  const attendeesTruncated = rsvps.length > MAX_BROWSER_ATTENDEES;
 
   const origin = await getRequestOrigin();
-  const attendees = rsvps.map((r) => ({
+  const attendees = rsvps.slice(0, MAX_BROWSER_ATTENDEES).map((r) => ({
     id: r.id,
     status: r.status,
     createdAt: r.createdAt.toISOString(),
@@ -95,7 +102,7 @@ export default async function EventManagePage({ params }: Props) {
     pendingApproval,
     rejected,
     checkedIn,
-  ] = await Promise.all([
+  ] = canManageRegistrations ? await Promise.all([
     prisma.rSVP.count({ where: { eventId: event.id } }),
     prisma.rSVP.count({
       where: { eventId: event.id, status: "CONFIRMED" },
@@ -112,15 +119,15 @@ export default async function EventManagePage({ params }: Props) {
     prisma.rSVP.count({
       where: { eventId: event.id, checkedInAt: { not: null } },
     }),
-  ]);
+  ]) : [0, 0, 0, 0, 0, 0];
 
-  const invites = await prisma.eventInvite.findMany({
+  const invites = canManageInvitations ? await prisma.eventInvite.findMany({
     where: { eventId: event.id },
     orderBy: { createdAt: "desc" },
     select: { id: true, email: true, createdAt: true },
-  });
+  }) : [];
 
-  const [collaborators, pendingCollaboratorInvites] = await Promise.all([
+  const [collaborators, pendingCollaboratorInvites] = isAdmin ? await Promise.all([
     prisma.eventCollaborator.findMany({
       where: { eventId: event.id },
       include: { user: { select: { name: true, email: true } } },
@@ -131,7 +138,7 @@ export default async function EventManagePage({ params }: Props) {
       select: { id: true, email: true, expiresAt: true },
       orderBy: { createdAt: "desc" },
     }),
-  ]);
+  ]) : [[], []];
 
   const form = await prisma.eventRegistrationForm.findUnique({
     where: { eventId: event.id },
@@ -179,14 +186,14 @@ export default async function EventManagePage({ params }: Props) {
           useFlexGap
           sx={{ flexWrap: "wrap", alignItems: "center" }}
         >
-          <Link
+          {canCheckIn ? <Link
             href={`/dashboard/${organisation.slug}/event/${event.id}/check-in`}
             style={{ textDecoration: "none" }}
           >
             <Button variant="contained" size="small" sx={{ flexShrink: 0 }}>
               Check-in
             </Button>
-          </Link>
+          </Link> : null}
           {access.membership && isOrgAdmin(access.membership.role) && event.endDateTime < new Date() ? (
             <EventReportDownloadButton href={`/api/reports/event/${event.id}`} />
           ) : null}
@@ -208,8 +215,9 @@ export default async function EventManagePage({ params }: Props) {
 
       <EventManageTabs
         organisationSlug={organisation.slug}
-        event={event}
+        event={toEventClientDto(event)}
         attendees={attendees}
+        attendeesTruncated={attendeesTruncated}
         feedbackUrl={`${origin}/${organisation.slug}/${event.slug}/feedback`}
         feedbackForm={feedbackForm}
         feedbackFields={feedbackFields}
@@ -221,6 +229,8 @@ export default async function EventManagePage({ params }: Props) {
         referenceTime={new Date().toISOString()}
 website={{ page: event.page, highlights: event.highlights.map((x) => ({ id: x.id, title: x.title, description: x.description, visibility: x.visibility, values: { icon: x.icon, sortOrder: x.sortOrder } })), speakers: event.speakers.map((x) => ({ id: x.id, title: x.name, description: x.bioHtml, visibility: x.visibility, values: { headline: x.headline, organisation: x.organisation, photoUrl: x.photoUrl, websiteUrl: x.websiteUrl, linkedinUrl: x.linkedinUrl, xUrl: x.xUrl, sortOrder: x.sortOrder } })), sponsors: event.sponsors.map((x) => ({ id: x.id, title: x.name, description: x.description, visibility: x.visibility, values: { logoUrl: x.logoUrl, websiteUrl: x.websiteUrl, tier: x.tier, sortOrder: x.sortOrder } })), resources: event.resources.map((x) => ({ id: x.id, title: x.title, description: x.description, visibility: x.visibility, values: { externalUrl: x.externalUrl, sortOrder: x.sortOrder } })), faqs: event.faqs.map((x) => ({ id: x.id, title: x.question, description: x.answerHtml, visibility: x.visibility, values: { sortOrder: x.sortOrder } })) }}
         canManageCollaborators={Boolean(access.membership && isOrgAdmin(access.membership.role))}
+        canManageRegistrations={canManageRegistrations}
+        canCheckIn={canCheckIn}
         collaborators={collaborators.map((collaborator) => ({ id: collaborator.id, name: collaborator.user.name, email: collaborator.user.email, permissions: collaborator.permissions }))}
         pendingCollaboratorInvites={pendingCollaboratorInvites.map((invite) => ({ id: invite.id, email: invite.email, expiresAt: invite.expiresAt.toISOString() }))}
         analytics={{

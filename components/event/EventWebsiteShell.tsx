@@ -172,20 +172,22 @@ export function EventWebsiteShell(p: Props) {
             position: "relative",
             overflow: "hidden",
             borderRadius: { xs: 3, md: 5 },
-            color: "primary.contrastText",
-            bgcolor: accent,
-            boxShadow: "0 22px 60px rgba(21,21,21,0.18)",
+            minHeight: { md: 460 },
+            boxShadow: "0 22px 60px rgba(21,21,21,0.12)",
+            borderTop: `4px solid ${accent}`,
+            ...surfaceSx,
           }}
         >
           <Grid container>
             {p.event.coverImageUrl ? (
               <Grid
-                size={{ xs: 12, md: 5 }}
+                size={{ xs: 12, md: 4 }}
                 sx={{
                   display: "flex",
                   alignItems: "stretch",
-                  minHeight: { xs: 280, sm: 400, md: 520 },
-                  bgcolor: "rgba(0,0,0,0.2)",
+                  minHeight: { xs: 280, sm: 360, md: 460 },
+                  p: { xs: 1.5, sm: 2 },
+                  bgcolor: "#123d33",
                 }}
               >
                 <Box
@@ -197,18 +199,19 @@ export function EventWebsiteShell(p: Props) {
                     width: "100%",
                     height: "100%",
                     objectFit: "contain",
-                    bgcolor: "rgba(0,0,0,0.35)",
+                    borderRadius: 2,
+                    bgcolor: "#0d2c24",
                   }}
                 />
               </Grid>
             ) : null}
-            <Grid size={{ xs: 12, md: p.event.coverImageUrl ? 7 : 12 }}>
+            <Grid size={{ xs: 12, md: p.event.coverImageUrl ? 8 : 12 }}>
               <Stack
                 spacing={2.5}
                 sx={{
                   position: "relative",
-                  p: { xs: 3, sm: 5, md: 6 },
-                  minHeight: { md: 520 },
+                  p: { xs: 3, sm: 4, md: 5 },
+                  minHeight: { md: 460 },
                   justifyContent: "center",
                 }}
               >
@@ -228,7 +231,7 @@ export function EventWebsiteShell(p: Props) {
                   <Typography
                     variant="overline"
                     sx={{
-                      opacity: 0.78,
+                      color: "#1d6a57",
                       fontWeight: 700,
                       letterSpacing: "0.12em",
                     }}
@@ -244,6 +247,7 @@ export function EventWebsiteShell(p: Props) {
                       letterSpacing: "-0.055em",
                       fontWeight: 800,
                       maxWidth: 700,
+                      color: ink,
                     }}
                   >
                     {p.event.title}
@@ -253,9 +257,9 @@ export function EventWebsiteShell(p: Props) {
                       variant="h6"
                       sx={{
                         mt: 2,
-                        opacity: 0.92,
                         fontWeight: 400,
                         maxWidth: 580,
+                        color: muted,
                       }}
                     >
                       {p.page.tagline}
@@ -266,7 +270,7 @@ export function EventWebsiteShell(p: Props) {
                   spacing={1.25}
                   sx={{
                     fontSize: { xs: "1rem", sm: "1.0625rem" },
-                    opacity: 0.97,
+                    color: ink,
                   }}
                 >
                   <Stack
@@ -308,8 +312,8 @@ export function EventWebsiteShell(p: Props) {
                       label={`${p.sessions.length} session${p.sessions.length === 1 ? "" : "s"}`}
                       size="small"
                       sx={{
-                        bgcolor: "rgba(255,255,255,0.14)",
-                        color: "inherit",
+                        bgcolor: "#e4f1eb",
+                        color: "#1d5a4c",
                       }}
                     />
                   ) : null}
@@ -318,8 +322,8 @@ export function EventWebsiteShell(p: Props) {
                       label={`${p.speakers.length} speaker${p.speakers.length === 1 ? "" : "s"}`}
                       size="small"
                       sx={{
-                        bgcolor: "rgba(255,255,255,0.14)",
-                        color: "inherit",
+                        bgcolor: "#e4f1eb",
+                        color: "#1d5a4c",
                       }}
                     />
                   ) : null}
@@ -330,8 +334,10 @@ export function EventWebsiteShell(p: Props) {
                     p: { xs: 2.25, sm: 2.5 },
                     width: "100%",
                     borderRadius: 3,
-                    boxShadow: "0 12px 30px rgba(0,0,0,0.14)",
-                    ...surfaceSx,
+                    boxShadow: "none",
+                    bgcolor: "#f2f8f5",
+                    color: ink,
+                    border: "1px solid #c9e0d6",
                   }}
                 >
                   <Stack spacing={1.5}>
@@ -369,7 +375,12 @@ export function EventWebsiteShell(p: Props) {
                           : "At capacity"}
                       </Typography>
                     ) : null}
-                    <Button onClick={share} variant="text" fullWidth>
+                    <Button
+                      onClick={share}
+                      variant="text"
+                      fullWidth
+                      sx={{ color: "#1d5a4c" }}
+                    >
                       {shared ? "Link copied" : "Share event"}
                     </Button>
                   </Stack>

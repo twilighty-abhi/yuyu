@@ -47,6 +47,17 @@ const nextConfig: NextConfig = {
             : []),
         ],
       },
+      // These downloads are bearer capabilities. The catch-all policy above
+      // is intentionally overridden here so their URLs never leave the page
+      // in a Referer header.
+      {
+        source: "/api/ticket/:token/download",
+        headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
+      },
+      {
+        source: "/api/feedback/certificate/:token",
+        headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
+      },
     ];
   },
 };

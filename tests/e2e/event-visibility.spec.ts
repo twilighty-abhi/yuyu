@@ -43,7 +43,16 @@ test("an unreleased website is absent from every anonymous event surface", async
     `/${orgSlug}/${eventSlug}/sessions/private-session`,
     `/${orgSlug}/${eventSlug}/speakers/private-speaker`,
   ]) {
-    expect((await request.get(path)).status(), path).toBe(404);
+    const response = await request.get(path);
+    const body = await response.text();
+    // Next.js 16 may stream the not-found boundary after the HTTP status has
+    // been committed, producing a noindex soft 404. In either form, protected
+    // event content must be absent.
+    expect([200, 404], path).toContain(response.status());
+    expect(body, path).not.toContain(`Unreleased ${suffix}`);
+    if (response.status() === 200) {
+      expect(body, path).toMatch(/<meta[^>]+name=["']robots["'][^>]+noindex/i);
+    }
   }
 
   const search = await request.get(`/api/search?q=${encodeURIComponent(suffix)}`);

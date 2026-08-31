@@ -233,19 +233,8 @@ export function EventWebsiteShell(p: Props) {
                 ) : null}
                 <Box>
                   <Typography
-                    variant="overline"
-                    sx={{
-                      color: "#7CF5B6",
-                      fontWeight: 700,
-                      letterSpacing: "0.12em",
-                    }}
-                  >
-                    You’re invited
-                  </Typography>
-                  <Typography
                     variant="h1"
                     sx={{
-                      mt: 0.5,
                       fontSize: { xs: "2.45rem", sm: "3.7rem", md: "4.6rem" },
                       lineHeight: 0.96,
                       letterSpacing: "-0.055em",

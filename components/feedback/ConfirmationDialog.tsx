@@ -24,7 +24,7 @@ export function ConfirmationDialog(props: {
         {title}
       </DialogTitle>
       <DialogContent>
-        <Typography variant="body2" sx={{ color: "#8E8E93", lineHeight: 1.5 }}>
+        <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.5 }}>
           {message}
         </Typography>
       </DialogContent>
@@ -34,21 +34,11 @@ export function ConfirmationDialog(props: {
         </Button>
         <Button
           variant="contained"
+          color="error"
           onClick={onConfirm}
           disabled={loading}
-          sx={{
-            textTransform: "none",
-            backgroundColor: "#FF453A",
-            color: "#FFFFFF",
-            fontWeight: 600,
-            borderRadius: "8px",
-            "&:hover": {
-              backgroundColor: "#FF453A",
-              opacity: 0.9,
-            },
-          }}
         >
-          {loading ? "Deleting..." : confirmLabel}
+          {loading ? "Working…" : confirmLabel}
         </Button>
       </DialogActions>
     </Dialog>

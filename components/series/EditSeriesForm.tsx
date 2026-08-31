@@ -12,6 +12,8 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import { updateEventSeriesMeta, deleteEventSeries } from "@/app/actions/series";
 import { useToast } from "@/components/feedback/ToastProvider";
+import { ConfirmationDialog } from "@/components/feedback/ConfirmationDialog";
+import { useUnsavedChangesGuard } from "@/components/forms/useUnsavedChangesGuard";
 
 const timezones = [
   "UTC",
@@ -33,9 +35,28 @@ export function EditSeriesForm(props: {
   const { showToast } = useToast();
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [dirty, setDirty] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  useUnsavedChangesGuard(dirty && !pending);
+
+  const deleteSeries = () => {
+    setDeleteOpen(false);
+    startTransition(async () => {
+      const res = await deleteEventSeries({ organisationSlug, eventSeriesId: series.id });
+      if (!res.ok) {
+        showToast(res.error, "error");
+        return;
+      }
+      setDirty(false);
+      showToast("Series deleted", "success");
+      router.push(`/dashboard/${organisationSlug}`);
+    });
+  };
 
   return (
+    <>
     <form
+      onChangeCapture={() => setDirty(true)}
       onSubmit={(e) => {
         e.preventDefault();
         setError(null);
@@ -60,6 +81,7 @@ export function EditSeriesForm(props: {
             return;
           }
           showToast("Series saved", "success");
+          setDirty(false);
           router.refresh();
         });
       }}
@@ -140,25 +162,22 @@ export function EditSeriesForm(props: {
             color="error"
             variant="outlined"
             disabled={pending}
-            onClick={() => {
-              startTransition(async () => {
-                const res = await deleteEventSeries({
-                  organisationSlug,
-                  eventSeriesId: series.id,
-                });
-                if (!res.ok) {
-                  showToast(res.error, "error");
-                  return;
-                }
-                showToast("Series deleted", "success");
-                router.push(`/dashboard/${organisationSlug}`);
-              });
-            }}
+            onClick={() => setDeleteOpen(true)}
           >
             Delete series
           </Button>
         </Stack>
       </Stack>
     </form>
+    <ConfirmationDialog
+      open={deleteOpen}
+      title="Delete event series?"
+      message={`Delete “${series.title}” and its generated occurrences? This cannot be undone.`}
+      confirmLabel="Delete series"
+      loading={pending}
+      onCancel={() => setDeleteOpen(false)}
+      onConfirm={deleteSeries}
+    />
+    </>
   );
 }

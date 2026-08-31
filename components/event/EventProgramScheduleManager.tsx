@@ -105,12 +105,14 @@ function display(iso: string, timeZone: string) {
 export function EventProgramScheduleManager({
   organisationSlug,
   eventId,
+  eventStart,
   timeZone,
   sessions,
   speakers,
 }: {
   organisationSlug: string;
   eventId: string;
+  eventStart: string;
   timeZone: string;
   sessions: ProgramScheduleRow[];
   speakers: Array<{ id: string; name: string }>;
@@ -124,6 +126,7 @@ export function EventProgramScheduleManager({
   const [removeTarget, setRemoveTarget] = useState<ProgramScheduleRow | null>(
     null,
   );
+  const nextSessionStart = sessions.at(-1)?.endDateTime ?? eventStart;
   const complete = (
     result: { ok: boolean; error?: string },
     close?: () => void,
@@ -204,7 +207,9 @@ export function EventProgramScheduleManager({
           label="Planned start"
           type="datetime-local"
           defaultValue={
-            session ? localValue(session.startDateTime, timeZone) : ""
+            session
+              ? localValue(session.startDateTime, timeZone)
+              : localValue(nextSessionStart, timeZone)
           }
           slotProps={{ inputLabel: { shrink: true } }}
           required

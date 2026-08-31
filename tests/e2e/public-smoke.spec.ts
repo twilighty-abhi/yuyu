@@ -149,18 +149,20 @@ test("a confirmed attendee can download a QR ticket", async ({ page }) => {
 
 test("a waitlisted attendee cannot obtain a scannable ticket", async ({ page, request }) => {
   await page.goto(`/ticket/${waitlistedToken}`);
-  await expect(page.getByText("available after this registration is confirmed")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Download ticket" })).toHaveCount(0);
+  const main = page.locator("#main-content");
+  await expect(main.getByText("available after this registration is confirmed")).toBeVisible();
+  await expect(main.getByRole("link", { name: "Download ticket" })).toHaveCount(0);
   expect((await request.get(`/api/ticket/${waitlistedToken}/download`)).status()).toBe(404);
 });
 
 test("a confirmed attendee can submit feedback and download a white JPEG certificate", async ({ page, request }) => {
   await page.goto(`/e2e-test-${suffix}/download-ticket-${suffix}/feedback`);
-  await expect(page.getByRole("heading", { name: "Tell us what you thought" })).toBeVisible();
-  await page.getByLabel("Registered email").fill(feedbackEmail);
-  await page.getByLabel("Your feedback").fill("Very useful event.");
-  await page.getByRole("button", { name: "Submit feedback & get certificate" }).click();
-  const certificate = page.getByRole("link", { name: "Download certificate (JPG)" });
+  const main = page.locator("#main-content");
+  await expect(main.getByRole("heading", { name: "Tell us what you thought" })).toBeVisible();
+  await main.getByLabel("Registered email").fill(feedbackEmail);
+  await main.getByLabel("Your feedback").fill("Very useful event.");
+  await main.getByRole("button", { name: "Submit feedback & get certificate" }).click();
+  const certificate = main.getByRole("link", { name: "Download certificate (JPG)" });
   await expect(certificate).toBeVisible();
   const href = await certificate.getAttribute("href");
   expect(href).toMatch(/^\/api\/feedback\/certificate\//);

@@ -702,23 +702,34 @@ export function EventWebsiteShell(p: Props) {
                     size={{ xs: 12, md: 7 }}
                     sx={{
                       minHeight: { xs: 260, md: 360 },
-                      bgcolor: "grey.100",
                     }}
                   >
-                    <Box
-                      component="iframe"
-                      title={`Map for ${p.venue.location || "event venue"}`}
-                      loading="lazy"
-                      referrerPolicy="no-referrer-when-downgrade"
-                      src={`https://maps.google.com/maps?q=${encodeURIComponent(mapQuery)}&output=embed`}
+                    <Paper
+                      variant="outlined"
                       sx={{
-                        display: "block",
                         width: "100%",
                         height: "100%",
                         minHeight: { xs: 260, md: 360 },
-                        border: 0,
+                        overflow: "hidden",
+                        borderRadius: 3,
+                        ...surfaceSx,
                       }}
-                    />
+                    >
+                      <Box
+                        component="iframe"
+                        title={`Map for ${p.venue.location || "event venue"}`}
+                        loading="lazy"
+                        referrerPolicy="no-referrer-when-downgrade"
+                        src={`https://maps.google.com/maps?q=${encodeURIComponent(mapQuery)}&output=embed`}
+                        sx={{
+                          display: "block",
+                          width: "100%",
+                          height: "100%",
+                          minHeight: { xs: 260, md: 360 },
+                          border: 0,
+                        }}
+                      />
+                    </Paper>
                   </Grid>
                 ) : null}
               </Grid>

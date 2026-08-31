@@ -124,9 +124,9 @@ export function EventWebsiteShell(p: Props) {
   const [shared, setShared] = useState(false);
   const { mode } = useAppColorMode();
   const isDark = mode === "dark";
-  const ink = isDark ? "#f4fff9" : "#102119";
-  const muted = isDark ? "#b8cbc1" : "#52665c";
-  const surface = isDark ? "#102b21" : "#f8fcf9";
+  const ink = isDark ? "#f7f9fb" : "#17191b";
+  const muted = isDark ? "#aab5bc" : "#5f666d";
+  const surface = isDark ? "#121619" : "#ffffff";
   const divider = isDark ? "rgba(255,255,255,0.14)" : "rgba(16,33,25,0.16)";
   const titleSx = { fontSize: { xs: "2rem", md: "2.5rem" }, mb: 2, color: ink };
   const surfaceSx = { bgcolor: surface, color: ink, borderColor: divider };
@@ -161,7 +161,7 @@ export function EventWebsiteShell(p: Props) {
     <Box
       sx={{
         minHeight: "100vh",
-        bgcolor: isDark ? "#061814" : "#f2f7f4",
+        bgcolor: isDark ? "#000000" : "#f2f2f7",
         pb: { xs: 5, md: 8 },
       }}
     >
@@ -191,7 +191,7 @@ export function EventWebsiteShell(p: Props) {
                   alignItems: "stretch",
                   minHeight: { xs: 280, sm: 360, md: 460 },
                   p: { xs: 1.5, sm: 2 },
-                  bgcolor: isDark ? "#0a231a" : "#dceee5",
+                  bgcolor: isDark ? "#0c1114" : "#e8eef1",
                 }}
               >
                 <Box
@@ -204,7 +204,7 @@ export function EventWebsiteShell(p: Props) {
                     height: "100%",
                     objectFit: "contain",
                     borderRadius: 2,
-                    bgcolor: isDark ? "#061814" : "#c9dfd4",
+                    bgcolor: isDark ? "#050709" : "#dbe4e7",
                   }}
                 />
               </Grid>
@@ -316,8 +316,8 @@ export function EventWebsiteShell(p: Props) {
                       label={`${p.sessions.length} session${p.sessions.length === 1 ? "" : "s"}`}
                       size="small"
                       sx={{
-                        bgcolor: isDark ? "#1d4a3b" : "#d7eee3",
-                        color: isDark ? ink : "#174a3b",
+                        bgcolor: isDark ? "rgba(124,245,182,0.12)" : "#d7eee3",
+                        color: isDark ? "#c8f9dd" : "#174a3b",
                       }}
                     />
                   ) : null}
@@ -326,8 +326,8 @@ export function EventWebsiteShell(p: Props) {
                       label={`${p.speakers.length} speaker${p.speakers.length === 1 ? "" : "s"}`}
                       size="small"
                       sx={{
-                        bgcolor: isDark ? "#1d4a3b" : "#d7eee3",
-                        color: isDark ? ink : "#174a3b",
+                        bgcolor: isDark ? "rgba(124,245,182,0.12)" : "#d7eee3",
+                        color: isDark ? "#c8f9dd" : "#174a3b",
                       }}
                     />
                   ) : null}
@@ -339,7 +339,7 @@ export function EventWebsiteShell(p: Props) {
                     width: "100%",
                     borderRadius: 3,
                     boxShadow: "none",
-                    bgcolor: isDark ? "#16382c" : "#e4f3eb",
+                    bgcolor: isDark ? "#151f23" : "#ffffff",
                     color: ink,
                     border: "1px solid rgba(52,199,89,0.28)",
                   }}

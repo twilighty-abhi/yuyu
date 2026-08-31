@@ -518,18 +518,10 @@ export function EventWebsiteShell(p: Props) {
                 {p.sessions.map((x) => (
                   <Box
                     key={x.id}
-                    component={Link}
-                    href={`/${p.orgSlug}/${p.event.slug}/sessions/${x.slug}`}
                     sx={{
                       py: { xs: 1.5, sm: 2 },
                       borderBottom: `1px solid ${divider}`,
                       color: ink,
-                      textDecoration: "none",
-                      transition: "0.2s",
-                      "&:hover": {
-                        borderColor: "primary.main",
-                        transform: "translateY(-1px)",
-                      },
                     }}
                   >
                     <Typography sx={{ fontWeight: 750 }}>{x.title}</Typography>
@@ -554,11 +546,8 @@ export function EventWebsiteShell(p: Props) {
                 {p.speakers.map((x) => (
                   <Grid key={x.id} size={{ xs: 12, sm: 6, md: 4 }}>
                     <Stack
-                      component={Link}
-                      href={
-                        x.websiteUrl ||
-                        `/${p.orgSlug}/${p.event.slug}/speakers/${x.slug}`
-                      }
+                      component={x.websiteUrl ? "a" : "div"}
+                      href={x.websiteUrl || undefined}
                       target={x.websiteUrl ? "_blank" : undefined}
                       rel={x.websiteUrl ? "noopener noreferrer" : undefined}
                       direction="row"

@@ -27,6 +27,7 @@ import { useAppColorMode } from "@/components/providers";
 
 type Props = {
   orgSlug: string;
+  organisation: { name: string; logoUrl: string | null };
   preview: boolean;
   event: {
     slug: string;
@@ -161,7 +162,7 @@ export function EventWebsiteShell(p: Props) {
     <Box
       sx={{
         minHeight: "100vh",
-        bgcolor: "#181818",
+        bgcolor: isDark ? "#181818" : "#f2f2f7",
         pb: { xs: 5, md: 8 },
       }}
     >
@@ -338,12 +339,6 @@ export function EventWebsiteShell(p: Props) {
                       <Typography variant="h6" sx={{ fontWeight: 800 }}>
                         Join this event
                       </Typography>
-                      <Typography
-                        variant="body2"
-                        sx={{ mt: 0.25, color: muted }}
-                      >
-                        Reserve your free place in a few moments.
-                      </Typography>
                     </Box>
                     {p.event.status === "CANCELLED" ? (
                       <Alert severity="error">Event cancelled</Alert>
@@ -387,6 +382,45 @@ export function EventWebsiteShell(p: Props) {
             </Grid>
           </Grid>
         </Box>
+      </Container>
+      <Container maxWidth="lg" sx={{ mt: 2.5 }}>
+        <Stack
+          component={Link}
+          href={`/${p.orgSlug}`}
+          direction="row"
+          spacing={1.25}
+          sx={{
+            width: "fit-content",
+            color: ink,
+            textDecoration: "none",
+            alignItems: "center",
+          }}
+        >
+          <Avatar
+            variant="rounded"
+            src={p.organisation.logoUrl || undefined}
+            alt={p.organisation.name}
+            sx={{
+              width: 42,
+              height: 42,
+              bgcolor: isDark ? "#252a2d" : "#e3e8eb",
+              color: ink,
+            }}
+          >
+            {p.organisation.name.trim().slice(0, 1).toUpperCase()}
+          </Avatar>
+          <Box>
+            <Typography
+              variant="caption"
+              sx={{ display: "block", color: muted }}
+            >
+              Hosted by
+            </Typography>
+            <Typography sx={{ fontWeight: 750 }}>
+              {p.organisation.name}
+            </Typography>
+          </Box>
+        </Stack>
       </Container>
       <Dialog
         open={open}

@@ -18,10 +18,10 @@ import type { ActionResult } from "./org";
 const http = z.string().url().refine((value) => {
   try { return ["http:", "https:"].includes(new URL(value).protocol); } catch { return false; }
 }, "Use an HTTP(S) URL");
-const optionalUrl = z.union([http, z.literal("")]).optional();
+const optionalUrl = z.union([http, z.literal(""), z.null()]).optional();
 // Safe derivatives use an application-relative delivery URL in local/self-hosted
 // setups where NEXT_PUBLIC_BASE_URL is intentionally not configured.
-const optionalImageUrl = z.union([http, z.string().regex(/^\/api\/uploads\//), z.literal("")]).optional();
+const optionalImageUrl = z.union([http, z.string().regex(/^\/api\/uploads\//), z.literal(""), z.null()]).optional();
 const target = z.object({ organisationSlug: z.string().min(1), eventId: z.string().min(1) });
 const visibility = z.nativeEnum(ContentVisibility).default(ContentVisibility.DRAFT);
 const MAX_SPEAKER_PHOTO_BYTES = 5 * 1024 * 1024;

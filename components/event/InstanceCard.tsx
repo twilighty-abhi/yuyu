@@ -47,13 +47,13 @@ export function InstanceCard(props: {
       sx={{
         height: "100%",
         borderRadius: "18px",
-        borderColor: "rgba(255,255,255,0.09)",
-        backgroundColor: "rgba(28,28,30,0.92)",
+        borderColor: "divider",
+        backgroundColor: "background.paper",
         boxShadow: "0 8px 24px rgba(0,0,0,0.1)",
         transition: "transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease",
         "&:hover": {
           transform: "translateY(-3px)",
-          borderColor: "rgba(10,132,255,0.42)",
+          borderColor: "primary.main",
           boxShadow: "0 18px 32px rgba(0,0,0,0.2)",
         },
       }}

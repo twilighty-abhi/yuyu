@@ -67,13 +67,13 @@ export function EventCard(props: {
         height: "100%",
         overflow: "hidden",
         borderRadius: "18px",
-        borderColor: "rgba(255,255,255,0.09)",
-        backgroundColor: "rgba(28,28,30,0.92)",
+        borderColor: "divider",
+        backgroundColor: "background.paper",
         boxShadow: "0 8px 24px rgba(0,0,0,0.1)",
         transition: "transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease",
         "&:hover": {
           transform: "translateY(-3px)",
-          borderColor: "rgba(10,132,255,0.42)",
+          borderColor: "primary.main",
           boxShadow: "0 18px 32px rgba(0,0,0,0.2)",
         },
       }}
@@ -102,11 +102,7 @@ export function EventCard(props: {
                 label={event.isOnline ? "Online" : "In person"}
                 size="small"
                 variant="outlined"
-                sx={
-                  event.isOnline
-                    ? { borderColor: "rgba(10,132,255,0.45)", color: "#72B7FF" }
-                    : { borderColor: "rgba(48,209,88,0.4)", color: "#7CE6A2" }
-                }
+                color={event.isOnline ? "primary" : "success"}
               />
               <EventCountdownBadge
                 startAt={event.startDateTime.toISOString()}

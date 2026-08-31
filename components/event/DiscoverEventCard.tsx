@@ -36,12 +36,12 @@ export function DiscoverEventCard(props: {
         height: "100%",
         overflow: "hidden",
         borderRadius: "16px",
-        borderColor: "rgba(255,255,255,0.09)",
-        backgroundColor: "rgba(28,28,30,0.92)",
+        borderColor: "divider",
+        backgroundColor: "background.paper",
         transition: "transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease",
         "&:hover": {
           transform: "translateY(-2px)",
-          borderColor: "rgba(10,132,255,0.42)",
+          borderColor: "primary.main",
           boxShadow: "0 14px 28px rgba(0,0,0,0.18)",
         },
       }}
@@ -69,7 +69,7 @@ export function DiscoverEventCard(props: {
                   label={event.isOnline ? "Online" : "In person"}
                   size="small"
                   variant="outlined"
-                  sx={event.isOnline ? { borderColor: "rgba(10,132,255,0.45)", color: "#72B7FF" } : { borderColor: "rgba(48,209,88,0.4)", color: "#7CE6A2" }}
+                  color={event.isOnline ? "primary" : "success"}
                 />
                 <Typography variant="caption" color="text.secondary" noWrap>
                   {organisationName}

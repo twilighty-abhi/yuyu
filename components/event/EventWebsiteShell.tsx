@@ -3,14 +3,10 @@
 import Link from "next/link";
 import { useState } from "react";
 import CalendarMonthOutlinedIcon from "@mui/icons-material/CalendarMonthOutlined";
-import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import LocationOnOutlinedIcon from "@mui/icons-material/LocationOnOutlined";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import VideocamOutlinedIcon from "@mui/icons-material/VideocamOutlined";
 import {
-  Accordion,
-  AccordionDetails,
-  AccordionSummary,
   Alert,
   Avatar,
   Box,
@@ -417,14 +413,7 @@ export function EventWebsiteShell(p: Props) {
       <Container maxWidth="lg" sx={{ color: ink }}>
         {section(
           "ABOUT",
-          <Paper
-            variant="outlined"
-            sx={{
-              p: { xs: 2.5, md: 4 },
-              borderRadius: 3,
-              ...surfaceSx,
-            }}
-          >
+          <Box sx={{ maxWidth: 800 }}>
             <Typography variant="h3" sx={titleSx}>
               About this event
             </Typography>
@@ -436,7 +425,7 @@ export function EventWebsiteShell(p: Props) {
                 stay in the loop.
               </Typography>
             )}
-          </Paper>,
+          </Box>,
         )}
         {section(
           "HIGHLIGHTS",
@@ -448,13 +437,12 @@ export function EventWebsiteShell(p: Props) {
               <Grid container spacing={2}>
                 {p.highlights.map((x) => (
                   <Grid key={x.id} size={{ xs: 12, sm: 6, md: 4 }}>
-                    <Paper
-                      variant="outlined"
+                    <Box
                       sx={{
-                        p: 2.5,
                         height: "100%",
-                        borderRadius: 3,
-                        ...surfaceSx,
+                        pr: { md: 2 },
+                        borderLeft: "2px solid #7CF5B6",
+                        pl: 2,
                       }}
                     >
                       <Typography sx={{ fontWeight: 750, mb: 0.75 }}>
@@ -465,7 +453,7 @@ export function EventWebsiteShell(p: Props) {
                           {x.description}
                         </Typography>
                       ) : null}
-                    </Paper>
+                    </Box>
                   </Grid>
                 ))}
               </Grid>
@@ -481,16 +469,15 @@ export function EventWebsiteShell(p: Props) {
               </Typography>
               <Stack spacing={1.25}>
                 {p.sessions.map((x) => (
-                  <Paper
+                  <Box
                     key={x.id}
                     component={Link}
                     href={`/${p.orgSlug}/${p.event.slug}/sessions/${x.slug}`}
-                    variant="outlined"
                     sx={{
-                      p: { xs: 2, sm: 2.5 },
-                      ...surfaceSx,
+                      py: { xs: 1.5, sm: 2 },
+                      borderBottom: "1px solid rgba(255,255,255,0.14)",
+                      color: ink,
                       textDecoration: "none",
-                      borderRadius: 3,
                       transition: "0.2s",
                       "&:hover": {
                         borderColor: "primary.main",
@@ -503,7 +490,7 @@ export function EventWebsiteShell(p: Props) {
                       {fmt(x.start, p.event.timezone)} · {x.room || "Room TBA"}{" "}
                       · {x.type}
                     </Typography>
-                  </Paper>
+                  </Box>
                 ))}
               </Stack>
             </>
@@ -567,18 +554,14 @@ export function EventWebsiteShell(p: Props) {
               <Grid container spacing={2}>
                 {p.sponsors.map((x) => (
                   <Grid key={x.id} size={{ xs: 12, sm: 6, md: 4 }}>
-                    <Paper
+                    <Box
                       component={x.websiteUrl ? "a" : "div"}
                       href={x.websiteUrl || undefined}
                       target="_blank"
                       rel="noreferrer"
-                      variant="outlined"
                       sx={{
-                        p: 2,
                         height: "100%",
-                        ...surfaceSx,
                         textDecoration: "none",
-                        borderRadius: 3,
                         transition: "0.2s",
                         "&:hover": x.websiteUrl
                           ? {
@@ -641,7 +624,7 @@ export function EventWebsiteShell(p: Props) {
                           {x.description}
                         </Typography>
                       ) : null}
-                    </Paper>
+                    </Box>
                   </Grid>
                 ))}
               </Grid>
@@ -651,12 +634,9 @@ export function EventWebsiteShell(p: Props) {
         {section(
           "VENUE",
           p.venue && !p.event.isOnline ? (
-            <Paper
-              variant="outlined"
+            <Box
               sx={{
                 overflow: "hidden",
-                borderRadius: 3,
-                ...surfaceSx,
               }}
             >
               <Grid container>
@@ -664,7 +644,8 @@ export function EventWebsiteShell(p: Props) {
                   <Stack
                     spacing={2}
                     sx={{
-                      p: { xs: 2.5, md: 4 },
+                      pr: { xs: 0, md: 5 },
+                      pb: { xs: 3, md: 0 },
                       height: "100%",
                       justifyContent: "center",
                     }}
@@ -732,7 +713,7 @@ export function EventWebsiteShell(p: Props) {
                   </Grid>
                 ) : null}
               </Grid>
-            </Paper>
+            </Box>
           ) : null,
         )}
         {section(
@@ -742,32 +723,22 @@ export function EventWebsiteShell(p: Props) {
               <Typography variant="h3" sx={titleSx}>
                 Frequently asked questions
               </Typography>
-              <Stack spacing={1}>
+              <Stack spacing={2.5}>
                 {p.faqs.map((x) => (
-                  <Accordion
+                  <Box
                     key={x.id}
-                    disableGutters
-                    elevation={0}
                     sx={{
-                      ...surfaceSx,
-                      border: 1,
-                      borderRadius: "12px !important",
-                      "&::before": { display: "none" },
+                      borderBottom: "1px solid rgba(255,255,255,0.14)",
+                      pb: 2.5,
                     }}
                   >
-                    <AccordionSummary
-                      expandIcon={<ExpandMoreIcon />}
-                      aria-controls={`faq-${x.id}-content`}
-                      id={`faq-${x.id}-header`}
-                    >
-                      <Typography sx={{ fontWeight: 750 }}>
-                        {x.question}
-                      </Typography>
-                    </AccordionSummary>
-                    <AccordionDetails id={`faq-${x.id}-content`}>
+                    <Typography sx={{ fontWeight: 750, mb: 1 }}>
+                      {x.question}
+                    </Typography>
+                    <Box>
                       <Rich html={x.answerHtml} />
-                    </AccordionDetails>
-                  </Accordion>
+                    </Box>
+                  </Box>
                 ))}
               </Stack>
             </>
@@ -782,25 +753,24 @@ export function EventWebsiteShell(p: Props) {
               </Typography>
               <Stack spacing={1.25}>
                 {p.resources.map((x) => (
-                  <Paper
+                  <Box
                     key={x.id}
                     component="a"
                     href={x.href}
                     target="_blank"
                     rel="noreferrer"
-                    variant="outlined"
                     sx={{
-                      p: 2.25,
-                      ...surfaceSx,
+                      py: 1.5,
+                      borderBottom: "1px solid rgba(255,255,255,0.14)",
+                      color: ink,
                       textDecoration: "none",
-                      borderRadius: 3,
                     }}
                   >
                     <Typography sx={{ fontWeight: 750 }}>{x.title}</Typography>
                     <Typography variant="body2" sx={{ color: muted }}>
                       {x.description}
                     </Typography>
-                  </Paper>
+                  </Box>
                 ))}
               </Stack>
             </>

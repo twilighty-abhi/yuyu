@@ -3,6 +3,7 @@
 import { useState, useTransition, type FormEvent } from "react";
 import {
   Alert,
+  Autocomplete,
   Button,
   Divider,
   MenuItem,
@@ -105,16 +106,19 @@ export function EventProgramScheduleManager({
   eventId,
   timeZone,
   sessions,
+  speakers,
 }: {
   organisationSlug: string;
   eventId: string;
   timeZone: string;
   sessions: ProgramScheduleRow[];
+  speakers: Array<{ id: string; name: string }>;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [editing, setEditing] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [selectedSpeakerIds, setSelectedSpeakerIds] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [removeTarget, setRemoveTarget] = useState<ProgramScheduleRow | null>(
     null,
@@ -141,9 +145,8 @@ export function EventProgramScheduleManager({
         await saveSession({
           organisationSlug,
           eventId,
-          ...(session
-            ? { id: session.id, speakerIds: session.speakerIds }
-            : { speakerIds: [] }),
+          ...(session ? { id: session.id } : {}),
+          speakerIds: selectedSpeakerIds,
           title: String(form.get("title") ?? ""),
           startDateTime: zonedInputToIso(
             String(form.get("start") ?? ""),
@@ -159,6 +162,7 @@ export function EventProgramScheduleManager({
         () => {
           setEditing(null);
           setAdding(false);
+          setSelectedSpeakerIds([]);
         },
       ),
     );
@@ -238,6 +242,27 @@ export function EventProgramScheduleManager({
           fullWidth
         />
       </Stack>
+      <Autocomplete
+        multiple
+        options={speakers}
+        value={speakers.filter((speaker) => selectedSpeakerIds.includes(speaker.id))}
+        onChange={(_, selected) =>
+          setSelectedSpeakerIds(selected.map((speaker) => speaker.id))
+        }
+        getOptionLabel={(speaker) => speaker.name}
+        isOptionEqualToValue={(option, value) => option.id === value.id}
+        renderInput={(params) => (
+          <TextField
+            {...params}
+            label="Speakers"
+            helperText={
+              speakers.length
+                ? "Select every speaker appearing in this session."
+                : "Add speakers from the Event Page tab before assigning them to a session."
+            }
+          />
+        )}
+      />
       <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
         <TextField
           name="visibility"
@@ -282,7 +307,10 @@ export function EventProgramScheduleManager({
             </div>
             <Button
               variant="contained"
-              onClick={() => setAdding(true)}
+              onClick={() => {
+                setSelectedSpeakerIds([]);
+                setAdding(true);
+              }}
               disabled={adding}
             >
               Add session
@@ -300,7 +328,7 @@ export function EventProgramScheduleManager({
                 <Button type="submit" variant="contained" disabled={pending}>
                   Add session
                 </Button>
-                <Button onClick={() => setAdding(false)} disabled={pending}>
+                <Button onClick={() => { setSelectedSpeakerIds([]); setAdding(false); }} disabled={pending}>
                   Cancel
                 </Button>
               </Stack>
@@ -333,7 +361,7 @@ export function EventProgramScheduleManager({
                         Save changes
                       </Button>
                       <Button
-                        onClick={() => setEditing(null)}
+                        onClick={() => { setSelectedSpeakerIds([]); setEditing(null); }}
                         disabled={pending}
                       >
                         Cancel
@@ -377,7 +405,7 @@ export function EventProgramScheduleManager({
                       <Stack direction="row" spacing={0.5}>
                         <Button
                           size="small"
-                          onClick={() => setEditing(session.id)}
+                          onClick={() => { setSelectedSpeakerIds(session.speakerIds); setEditing(session.id); }}
                         >
                           Edit
                         </Button>

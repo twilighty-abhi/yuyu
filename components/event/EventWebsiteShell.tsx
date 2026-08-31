@@ -178,13 +178,37 @@ export function EventWebsiteShell(p: Props) {
           }}
         >
           <Grid container>
-            <Grid size={{ xs: 12, md: 7 }}>
+            {p.event.coverImageUrl ? (
+              <Grid
+                size={{ xs: 12, md: 5 }}
+                sx={{
+                  display: "flex",
+                  alignItems: "stretch",
+                  minHeight: { xs: 280, sm: 400, md: 520 },
+                  bgcolor: "rgba(0,0,0,0.2)",
+                }}
+              >
+                <Box
+                  component="img"
+                  src={p.event.coverImageUrl}
+                  alt={`${p.event.title} poster`}
+                  sx={{
+                    display: "block",
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "contain",
+                    bgcolor: "rgba(0,0,0,0.35)",
+                  }}
+                />
+              </Grid>
+            ) : null}
+            <Grid size={{ xs: 12, md: p.event.coverImageUrl ? 7 : 12 }}>
               <Stack
                 spacing={2.5}
                 sx={{
                   position: "relative",
                   p: { xs: 3, sm: 5, md: 6 },
-                  minHeight: { md: 455 },
+                  minHeight: { md: 520 },
                   justifyContent: "center",
                 }}
               >
@@ -300,90 +324,61 @@ export function EventWebsiteShell(p: Props) {
                     />
                   ) : null}
                 </Stack>
-              </Stack>
-            </Grid>
-            <Grid
-              size={{ xs: 12, md: 5 }}
-              sx={{
-                position: "relative",
-                display: "flex",
-                alignItems: "center",
-                p: { xs: 2, sm: 3, md: 4 },
-                bgcolor: "rgba(0,0,0,0.12)",
-              }}
-            >
-              <Paper
-                elevation={0}
-                sx={{
-                  p: { xs: 2.5, sm: 3 },
-                  width: "100%",
-                  borderRadius: 3,
-                  boxShadow: "0 12px 30px rgba(0,0,0,0.14)",
-                  ...surfaceSx,
-                }}
-              >
-                <Typography variant="h5" sx={{ fontWeight: 800, mb: 0.75 }}>
-                  Join this event
-                </Typography>
-                <Typography variant="body2" sx={{ mb: 2.5, color: muted }}>
-                  Reserve your free place in a few moments.
-                </Typography>
-                {p.event.status === "CANCELLED" ? (
-                  <Alert severity="error">Event cancelled</Alert>
-                ) : (
-                  <Button
-                    variant="contained"
-                    size="large"
-                    fullWidth
-                    onClick={() => setOpen(true)}
-                  >
-                    Register now
-                  </Button>
-                )}
-                {p.event.capacity != null && p.confirmedCount != null ? (
-                  <Typography
-                    variant="body2"
-                    sx={{ mt: 2, textAlign: "center", color: muted }}
-                  >
-                    {p.confirmedCount} registered ·{" "}
-                    {p.event.capacity - p.confirmedCount > 0
-                      ? `${p.event.capacity - p.confirmedCount} places left`
-                      : "At capacity"}
-                  </Typography>
-                ) : null}
-                <Button
-                  onClick={share}
-                  variant="text"
-                  fullWidth
-                  sx={{ mt: 1.25 }}
+                <Paper
+                  elevation={0}
+                  sx={{
+                    p: { xs: 2.25, sm: 2.5 },
+                    width: "100%",
+                    borderRadius: 3,
+                    boxShadow: "0 12px 30px rgba(0,0,0,0.14)",
+                    ...surfaceSx,
+                  }}
                 >
-                  {shared ? "Link copied" : "Share event"}
-                </Button>
-              </Paper>
+                  <Stack spacing={1.5}>
+                    <Box>
+                      <Typography variant="h6" sx={{ fontWeight: 800 }}>
+                        Join this event
+                      </Typography>
+                      <Typography
+                        variant="body2"
+                        sx={{ mt: 0.25, color: muted }}
+                      >
+                        Reserve your free place in a few moments.
+                      </Typography>
+                    </Box>
+                    {p.event.status === "CANCELLED" ? (
+                      <Alert severity="error">Event cancelled</Alert>
+                    ) : (
+                      <Button
+                        variant="contained"
+                        size="large"
+                        fullWidth
+                        onClick={() => setOpen(true)}
+                      >
+                        Register now
+                      </Button>
+                    )}
+                    {p.event.capacity != null && p.confirmedCount != null ? (
+                      <Typography
+                        variant="body2"
+                        sx={{ textAlign: "center", color: muted }}
+                      >
+                        {p.confirmedCount} registered ·{" "}
+                        {p.event.capacity - p.confirmedCount > 0
+                          ? `${p.event.capacity - p.confirmedCount} places left`
+                          : "At capacity"}
+                      </Typography>
+                    ) : null}
+                    <Button onClick={share} variant="text" fullWidth>
+                      {shared ? "Link copied" : "Share event"}
+                    </Button>
+                  </Stack>
+                </Paper>
+              </Stack>
             </Grid>
           </Grid>
         </Box>
       </Container>
-      {p.event.coverImageUrl ? (
-        <Container maxWidth="lg" sx={{ mt: { xs: 2, md: 3 } }}>
-          <Paper
-            variant="outlined"
-            sx={{ ...surfaceSx, overflow: "hidden", borderRadius: 3 }}
-          >
-            <Box
-              component="img"
-              src={p.event.coverImageUrl}
-              alt={`${p.event.title} cover`}
-              sx={{
-                display: "block",
-                width: "100%",
-                height: { xs: 220, sm: 320, md: 420 },
-                objectFit: "cover",
-              }}
-            />
-          </Paper>
-        </Container>
-      ) : null}
       <Dialog
         open={open}
         onClose={() => setOpen(false)}

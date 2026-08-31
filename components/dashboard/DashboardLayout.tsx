@@ -28,8 +28,8 @@ export function DashboardLayout(props: {
             px: { xs: 1.5, sm: 2 },
             py: 1.25,
             borderRadius: "18px",
-            borderColor: "rgba(255, 255, 255, 0.09)",
-            backgroundColor: "rgba(28, 28, 30, 0.72)",
+            borderColor: "divider",
+            backgroundColor: "background.paper",
             backdropFilter: "blur(14px)",
           }}
         >

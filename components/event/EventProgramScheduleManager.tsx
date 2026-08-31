@@ -33,6 +33,7 @@ export type ProgramScheduleRow = {
   visibility: string;
   sortOrder: number;
   speakerIds: string[];
+  speakerNames: string[];
   delayMinutes: number;
   cumulativeDelayMinutes: number;
 };
@@ -401,6 +402,11 @@ export function EventProgramScheduleManager({
                             ? ` (${session.cumulativeDelayMinutes} min behind)`
                             : ""}
                         </Typography>
+                        {session.speakerNames.length ? (
+                          <Typography variant="body2" color="text.secondary">
+                            Speakers: {session.speakerNames.join(", ")}
+                          </Typography>
+                        ) : null}
                       </Stack>
                       <Stack direction="row" spacing={0.5}>
                         <Button

@@ -529,6 +529,11 @@ export function EventWebsiteShell(p: Props) {
                       {fmt(x.start, p.event.timezone)} · {x.room || x.track || "Room TBA"}{" "}
                       · {x.type}
                     </Typography>
+                    {x.speakers.length ? (
+                      <Typography variant="body2" sx={{ mt: 0.5, color: muted }}>
+                        Speakers: {x.speakers.map((speaker) => speaker.name).join(", ")}
+                      </Typography>
+                    ) : null}
                   </Box>
                 ))}
               </Stack>

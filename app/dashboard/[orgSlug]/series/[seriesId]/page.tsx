@@ -19,6 +19,9 @@ import { SeriesInvitePanel } from "@/components/invites/SeriesInvitePanel";
 import { AttendeeTable } from "@/components/attendees/AttendeeTable";
 import { ScheduleManager } from "@/components/schedule/ScheduleManager";
 import { EventReportDownloadButton } from "@/components/reports/EventReportDownloadButton";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Manage event series", robots: { index: false, follow: false } };
 
 type Props = { params: Promise<{ orgSlug: string; seriesId: string }> };
 const MAX_BROWSER_ATTENDEES = 250;

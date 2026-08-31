@@ -5,6 +5,9 @@ import { prisma } from "@/lib/db";
 import { CHECK_IN_STATION_COOKIE, hasValidCheckInStationProof } from "@/lib/checkInStation";
 import { EventCheckInClient } from "@/components/checkin/EventCheckInClient";
 import { CheckInStationUnlock } from "@/components/checkin/CheckInStationUnlock";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Venue check-in", robots: { index: false, follow: false }, referrer: "no-referrer" };
 
 type Props = { params: Promise<{ orgSlug: string; eventSlug: string }> };
 function label(r: { user: { name: string | null; email: string | null } | null; guestEmail: string | null }) { return r.user?.name?.trim() || r.user?.email || r.guestEmail || "Guest"; }

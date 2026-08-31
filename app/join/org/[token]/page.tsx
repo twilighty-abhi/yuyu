@@ -5,6 +5,9 @@ import Paper from "@mui/material/Paper";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { AcceptInviteButton } from "@/components/invites/AcceptInviteButton";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Join organisation", robots: { index: false, follow: false }, referrer: "no-referrer" };
 
 export default async function JoinOrganisationPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;

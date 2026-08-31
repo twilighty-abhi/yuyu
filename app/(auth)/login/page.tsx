@@ -7,6 +7,9 @@ import Typography from "@mui/material/Typography";
 import { connection } from "next/server";
 import { LoginForm } from "./ui";
 import { getGoogleSsoSettings, isNewUserRegistrationEnabled } from "@/lib/instanceSettings";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Sign in", robots: { index: false, follow: false } };
 
 export default async function LoginPage() {
   // The public registration policy is an instance setting and must be read

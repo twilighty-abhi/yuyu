@@ -3,6 +3,9 @@ import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import { VerifyEmailForm } from "@/components/account/VerifyEmailForm";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Verify email", robots: { index: false, follow: false }, referrer: "no-referrer" };
 
 export default async function VerifyEmailPage({
   searchParams,

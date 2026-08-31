@@ -5,6 +5,9 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { hashEventCollaboratorToken } from "@/lib/eventCollaboratorToken";
 import { AcceptInviteButton } from "@/components/invites/AcceptInviteButton";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Co-organizer invitation", robots: { index: false, follow: false }, referrer: "no-referrer" };
 
 export default async function JoinEventCollaboratorPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;

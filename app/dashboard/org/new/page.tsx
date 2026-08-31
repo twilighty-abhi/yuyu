@@ -5,6 +5,9 @@ import Box from "@mui/material/Box";
 import Divider from "@mui/material/Divider";
 import BusinessOutlinedIcon from "@mui/icons-material/BusinessOutlined";
 import { CreateOrgForm } from "@/components/org/CreateOrgForm";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Create organisation", robots: { index: false, follow: false } };
 
 export default function NewOrganisationPage() {
   return (

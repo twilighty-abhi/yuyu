@@ -161,7 +161,7 @@ export function EventWebsiteShell(p: Props) {
     <Box
       sx={{
         minHeight: "100vh",
-        bgcolor: isDark ? "#000000" : "#f2f2f7",
+        bgcolor: isDark ? "#181818" : "#f2f2f7",
         pb: { xs: 5, md: 8 },
       }}
     >

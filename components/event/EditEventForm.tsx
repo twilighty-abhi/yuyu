@@ -31,6 +31,7 @@ import { useToast } from "@/components/feedback/ToastProvider";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
 import { DateTimePicker } from "@mui/x-date-pickers/DateTimePicker";
+import { useUnsavedChangesGuard } from "@/components/forms/useUnsavedChangesGuard";
 
 const timezones = [
   "UTC",
@@ -58,6 +59,8 @@ export function EditEventForm(props: {
   const { showToast } = useToast();
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [dirty, setDirty] = useState(false);
+  useUnsavedChangesGuard(dirty && !pending);
   const [coverPreviewUrl, setCoverPreviewUrl] = useState(event.coverImageUrl ?? "");
   const [coverImageFile, setCoverImageFile] = useState<File | null>(null);
   const [isOnlinePreview, setIsOnlinePreview] = useState(event.isOnline);
@@ -148,6 +151,7 @@ export function EditEventForm(props: {
         return;
       }
       showToast("Event saved", "success");
+      setDirty(false);
       router.refresh();
     });
   }
@@ -187,7 +191,7 @@ export function EditEventForm(props: {
           Open event page
         </Button>
       </Paper>
-      <form onSubmit={onSubmit}>
+      <form onSubmit={onSubmit} onChangeCapture={() => setDirty(true)}>
         <Stack spacing={2.5}>
           {error ? <Alert severity="error">{error}</Alert> : null}
 

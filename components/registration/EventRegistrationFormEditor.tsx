@@ -35,6 +35,7 @@ import PreviewIcon from "@mui/icons-material/Preview";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/feedback/ToastProvider";
 import { ConfirmationDialog } from "@/components/feedback/ConfirmationDialog";
+import { useUnsavedChangesGuard } from "@/components/forms/useUnsavedChangesGuard";
 import {
   deleteEventRegistrationField,
   reorderEventRegistrationFields,
@@ -151,6 +152,7 @@ export function EventRegistrationFormEditor(props: {
   const [type, setType] = useState<RegistrationFieldType>("TEXT");
   const [required, setRequired] = useState(false);
   const [optionsCsv, setOptionsCsv] = useState("");
+  useUnsavedChangesGuard(open && !pending);
 
   const previewFields = useMemo(() => {
     if (!open || !label.trim()) return fields;

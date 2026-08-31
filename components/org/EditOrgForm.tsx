@@ -15,6 +15,7 @@ import ImageOutlinedIcon from "@mui/icons-material/ImageOutlined";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import { updateOrganisation } from "@/app/actions/org";
 import { useToast } from "@/components/feedback/ToastProvider";
+import { useUnsavedChangesGuard } from "@/components/forms/useUnsavedChangesGuard";
 
 export function EditOrgForm(props: {
   organisationSlug: string;
@@ -26,11 +27,14 @@ export function EditOrgForm(props: {
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [logoPreviewUrl, setLogoPreviewUrl] = useState(initial.logoUrl ?? "");
+  const [dirty, setDirty] = useState(false);
+  useUnsavedChangesGuard(dirty && !pending);
 
   return (
     <Stack
       component="form"
       spacing={2.5}
+      onChangeCapture={() => setDirty(true)}
       onSubmit={(e) => {
         e.preventDefault();
         setError(null);
@@ -48,6 +52,7 @@ export function EditOrgForm(props: {
             return;
           }
           showToast("Organisation saved", "success");
+          setDirty(false);
           router.refresh();
         });
       }}

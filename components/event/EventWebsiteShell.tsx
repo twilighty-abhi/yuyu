@@ -23,6 +23,7 @@ import {
 } from "@mui/material";
 import { RsvpForm } from "@/components/rsvp/RsvpForm";
 import type { RegistrationFieldDefinition } from "@/components/rsvp/registrationTypes";
+import { useAppColorMode } from "@/components/providers";
 
 type Props = {
   orgSlug: string;
@@ -91,12 +92,6 @@ const fmt = (value: string, zone: string) =>
     timeStyle: "short",
     timeZone: zone,
   });
-const ink = "#f4fff9";
-const muted = "#b8cbc1";
-const surface = "#102b21";
-const border = "rgba(255,255,255,0.12)";
-const titleSx = { fontSize: { xs: "2rem", md: "2.5rem" }, mb: 2, color: ink };
-const surfaceSx = { bgcolor: surface, color: ink, borderColor: border };
 function Rich({ html }: { html: string }) {
   return html ? (
     <Box
@@ -127,6 +122,14 @@ function mapSearchQuery(location: string, mapLinkUrl: string | null) {
 export function EventWebsiteShell(p: Props) {
   const [open, setOpen] = useState(false);
   const [shared, setShared] = useState(false);
+  const { mode } = useAppColorMode();
+  const isDark = mode === "dark";
+  const ink = isDark ? "#f4fff9" : "#102119";
+  const muted = isDark ? "#b8cbc1" : "#52665c";
+  const surface = isDark ? "#102b21" : "#f8fcf9";
+  const divider = isDark ? "rgba(255,255,255,0.14)" : "rgba(16,33,25,0.16)";
+  const titleSx = { fontSize: { xs: "2rem", md: "2.5rem" }, mb: 2, color: ink };
+  const surfaceSx = { bgcolor: surface, color: ink, borderColor: divider };
   const shown = new Set(
     p.page.sections.filter((x) => x.isVisible).map((x) => x.type),
   );
@@ -155,7 +158,13 @@ export function EventWebsiteShell(p: Props) {
     }
   };
   return (
-    <Box sx={{ minHeight: "100vh", bgcolor: "#061814", pb: { xs: 5, md: 8 } }}>
+    <Box
+      sx={{
+        minHeight: "100vh",
+        bgcolor: isDark ? "#061814" : "#f2f7f4",
+        pb: { xs: 5, md: 8 },
+      }}
+    >
       {p.preview ? (
         <Alert severity="info" sx={{ borderRadius: 0 }}>
           Preview mode — only authorized organizers can see draft content.
@@ -182,7 +191,7 @@ export function EventWebsiteShell(p: Props) {
                   alignItems: "stretch",
                   minHeight: { xs: 280, sm: 360, md: 460 },
                   p: { xs: 1.5, sm: 2 },
-                  bgcolor: "#0a231a",
+                  bgcolor: isDark ? "#0a231a" : "#dceee5",
                 }}
               >
                 <Box
@@ -195,7 +204,7 @@ export function EventWebsiteShell(p: Props) {
                     height: "100%",
                     objectFit: "contain",
                     borderRadius: 2,
-                    bgcolor: "#061814",
+                    bgcolor: isDark ? "#061814" : "#c9dfd4",
                   }}
                 />
               </Grid>
@@ -307,8 +316,8 @@ export function EventWebsiteShell(p: Props) {
                       label={`${p.sessions.length} session${p.sessions.length === 1 ? "" : "s"}`}
                       size="small"
                       sx={{
-                        bgcolor: "#1d4a3b",
-                        color: ink,
+                        bgcolor: isDark ? "#1d4a3b" : "#d7eee3",
+                        color: isDark ? ink : "#174a3b",
                       }}
                     />
                   ) : null}
@@ -317,8 +326,8 @@ export function EventWebsiteShell(p: Props) {
                       label={`${p.speakers.length} speaker${p.speakers.length === 1 ? "" : "s"}`}
                       size="small"
                       sx={{
-                        bgcolor: "#1d4a3b",
-                        color: ink,
+                        bgcolor: isDark ? "#1d4a3b" : "#d7eee3",
+                        color: isDark ? ink : "#174a3b",
                       }}
                     />
                   ) : null}
@@ -330,9 +339,9 @@ export function EventWebsiteShell(p: Props) {
                     width: "100%",
                     borderRadius: 3,
                     boxShadow: "none",
-                    bgcolor: "#16382c",
+                    bgcolor: isDark ? "#16382c" : "#e4f3eb",
                     color: ink,
-                    border: "1px solid rgba(124,245,182,0.2)",
+                    border: "1px solid rgba(52,199,89,0.28)",
                   }}
                 >
                   <Stack spacing={1.5}>
@@ -475,7 +484,7 @@ export function EventWebsiteShell(p: Props) {
                     href={`/${p.orgSlug}/${p.event.slug}/sessions/${x.slug}`}
                     sx={{
                       py: { xs: 1.5, sm: 2 },
-                      borderBottom: "1px solid rgba(255,255,255,0.14)",
+                      borderBottom: `1px solid ${divider}`,
                       color: ink,
                       textDecoration: "none",
                       transition: "0.2s",
@@ -728,7 +737,7 @@ export function EventWebsiteShell(p: Props) {
                   <Box
                     key={x.id}
                     sx={{
-                      borderBottom: "1px solid rgba(255,255,255,0.14)",
+                      borderBottom: `1px solid ${divider}`,
                       pb: 2.5,
                     }}
                   >
@@ -761,7 +770,7 @@ export function EventWebsiteShell(p: Props) {
                     rel="noreferrer"
                     sx={{
                       py: 1.5,
-                      borderBottom: "1px solid rgba(255,255,255,0.14)",
+                      borderBottom: `1px solid ${divider}`,
                       color: ink,
                       textDecoration: "none",
                     }}

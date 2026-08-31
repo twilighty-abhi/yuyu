@@ -189,25 +189,35 @@ export function EventWebsiteShell(p: Props) {
                 size={{ xs: 12, md: 4 }}
                 sx={{
                   display: "flex",
-                  alignItems: "stretch",
+                  alignItems: "center",
+                  justifyContent: "center",
                   minHeight: { xs: 280, sm: 360, md: 460 },
-                  p: { xs: 1.5, sm: 2 },
+                  p: { xs: 2, sm: 3 },
                   bgcolor: isDark ? "#0c1114" : "#e8eef1",
                 }}
               >
                 <Box
-                  component="img"
-                  src={p.event.coverImageUrl}
-                  alt={`${p.event.title} poster`}
                   sx={{
-                    display: "block",
                     width: "100%",
-                    height: "100%",
-                    objectFit: "contain",
+                    maxWidth: 380,
+                    aspectRatio: "1 / 1",
+                    overflow: "hidden",
                     borderRadius: 2,
                     bgcolor: isDark ? "#050709" : "#dbe4e7",
                   }}
-                />
+                >
+                  <Box
+                    component="img"
+                    src={p.event.coverImageUrl}
+                    alt={`${p.event.title} cover`}
+                    sx={{
+                      display: "block",
+                      width: "100%",
+                      height: "100%",
+                      objectFit: "cover",
+                    }}
+                  />
+                </Box>
               </Grid>
             ) : null}
             <Grid size={{ xs: 12, md: p.event.coverImageUrl ? 8 : 12 }}>

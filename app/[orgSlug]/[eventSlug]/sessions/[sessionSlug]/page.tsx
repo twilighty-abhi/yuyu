@@ -1,5 +1,4 @@
 import { notFound } from "next/navigation";
-import Link from "next/link";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import { ContentVisibility } from "@prisma/client";
@@ -7,6 +6,9 @@ import { prisma } from "@/lib/db";
 import { effectiveEventProgram } from "@/lib/eventProgram";
 import { resolvePublicEventAccess } from "@/lib/publicEventAccess";
 import { sanitizeRichText } from "@/lib/richText";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Event session" };
 
 export default async function SessionPage({ params }: { params: Promise<{ orgSlug: string; eventSlug: string; sessionSlug: string }> }) {
   const { orgSlug, eventSlug, sessionSlug } = await params;
@@ -23,5 +25,5 @@ export default async function SessionPage({ params }: { params: Promise<{ orgSlu
   if (!session) notFound();
   const effective = effectiveEventProgram(programme).find((item) => item.id === session.id);
   if (!effective) notFound();
-  return <Stack spacing={2} sx={{ maxWidth: 800, py: 4 }}><Typography component={Link} href={`/${org.slug}/${event.slug}`} color="primary">{event.title}</Typography><Typography variant="h3">{session.title}</Typography><Typography color="text.secondary">{effective.effectiveStartDateTime.toLocaleString(undefined, { timeZone: event.timezone })} · {session.room?.name ?? "Room TBA"}</Typography><Typography component="div" dangerouslySetInnerHTML={{ __html: sanitizeRichText(session.descriptionHtml) }} />{session.speakers.length ? <><Typography variant="h5">Speakers</Typography>{session.speakers.filter((item) => item.speaker.visibility === ContentVisibility.PUBLISHED).map(({ speaker }) => <Typography key={speaker.id} component={Link} href={`/${org.slug}/${event.slug}/speakers/${speaker.slug}`}>{speaker.name}</Typography>)}</> : null}</Stack>;
+  return <Stack spacing={2} sx={{ maxWidth: 800, py: 4 }}><Typography component="a" href={`/${org.slug}/${event.slug}`} color="primary">{event.title}</Typography><Typography variant="h3">{session.title}</Typography><Typography color="text.secondary">{effective.effectiveStartDateTime.toLocaleString(undefined, { timeZone: event.timezone })} · {session.room?.name ?? "Room TBA"}</Typography><Typography component="div" dangerouslySetInnerHTML={{ __html: sanitizeRichText(session.descriptionHtml) }} />{session.speakers.length ? <><Typography variant="h5">Speakers</Typography>{session.speakers.filter((item) => item.speaker.visibility === ContentVisibility.PUBLISHED).map(({ speaker }) => <Typography key={speaker.id} component="a" href={`/${org.slug}/${event.slug}/speakers/${speaker.slug}`}>{speaker.name}</Typography>)}</> : null}</Stack>;
 }

@@ -10,7 +10,6 @@ import Stack from "@mui/material/Stack";
 import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
-import Link from "next/link";
 import { headers } from "next/headers";
 import { prisma } from "@/lib/db";
 import {
@@ -171,7 +170,7 @@ export default async function OrgMembersPage({ params, searchParams }: Props) {
           </Table>
         </TableContainer>
       )}
-      {memberPages > 1 ? <Stack direction="row" spacing={1} sx={{ justifyContent: "flex-end", alignItems: "center" }}><Typography variant="body2" color="text.secondary">Page {memberPage} of {memberPages}</Typography><Button component={Link} href={`?page=${memberPage - 1}`} disabled={memberPage <= 1}>Previous</Button><Button component={Link} href={`?page=${memberPage + 1}`} disabled={memberPage >= memberPages}>Next</Button></Stack> : null}
+      {memberPages > 1 ? <Stack direction="row" spacing={1} sx={{ justifyContent: "flex-end", alignItems: "center" }}><Typography variant="body2" color="text.secondary">Page {memberPage} of {memberPages}</Typography><Button href={`?page=${memberPage - 1}`} disabled={memberPage <= 1}>Previous</Button><Button href={`?page=${memberPage + 1}`} disabled={memberPage >= memberPages}>Next</Button></Stack> : null}
     </Stack>
   );
 }

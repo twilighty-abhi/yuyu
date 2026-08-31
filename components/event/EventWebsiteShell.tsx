@@ -650,52 +650,58 @@ export function EventWebsiteShell(p: Props) {
             >
               <Grid container>
                 <Grid size={{ xs: 12, md: mapQuery ? 5 : 12 }}>
-                  <Stack
-                    spacing={2}
+                  <Paper
+                    variant="outlined"
                     sx={{
-                      pr: { xs: 0, md: 5 },
-                      pb: { xs: 3, md: 0 },
                       height: "100%",
-                      justifyContent: "center",
+                      minHeight: { xs: 220, md: 360 },
+                      p: { xs: 2.5, md: 4 },
+                      borderRadius: 3,
+                      ...surfaceSx,
                     }}
                   >
                     <Stack
-                      direction="row"
-                      spacing={1}
-                      sx={{ alignItems: "center", color: "primary.main" }}
+                      spacing={2}
+                      sx={{ height: "100%", justifyContent: "center" }}
                     >
-                      <LocationOnOutlinedIcon />
-                      <Typography
-                        variant="overline"
-                        sx={{ fontWeight: 700, letterSpacing: "0.1em" }}
+                      <Stack
+                        direction="row"
+                        spacing={1}
+                        sx={{ alignItems: "center", color: "primary.main" }}
                       >
-                        Venue
-                      </Typography>
+                        <LocationOnOutlinedIcon />
+                        <Typography
+                          variant="overline"
+                          sx={{ fontWeight: 700, letterSpacing: "0.1em" }}
+                        >
+                          Venue
+                        </Typography>
+                      </Stack>
+                      <Box>
+                        <Typography variant="h3" sx={{ ...titleSx, mb: 1 }}>
+                          {p.venue.location || "Venue details coming soon"}
+                        </Typography>
+                        <Typography sx={{ lineHeight: 1.7, color: muted }}>
+                          {p.venue.location
+                            ? "Use the map for directions and plan your journey."
+                            : "The organiser will share the venue shortly."}
+                        </Typography>
+                      </Box>
+                      {mapHref ? (
+                        <Button
+                          component="a"
+                          href={mapHref}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          variant="contained"
+                          endIcon={<OpenInNewIcon />}
+                          sx={{ alignSelf: "flex-start" }}
+                        >
+                          Get directions
+                        </Button>
+                      ) : null}
                     </Stack>
-                    <Box>
-                      <Typography variant="h3" sx={{ ...titleSx, mb: 1 }}>
-                        {p.venue.location || "Venue details coming soon"}
-                      </Typography>
-                      <Typography sx={{ lineHeight: 1.7, color: muted }}>
-                        {p.venue.location
-                          ? "Use the map for directions and plan your journey."
-                          : "The organiser will share the venue shortly."}
-                      </Typography>
-                    </Box>
-                    {mapHref ? (
-                      <Button
-                        component="a"
-                        href={mapHref}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        variant="contained"
-                        endIcon={<OpenInNewIcon />}
-                        sx={{ alignSelf: "flex-start" }}
-                      >
-                        Get directions
-                      </Button>
-                    ) : null}
-                  </Stack>
+                  </Paper>
                 </Grid>
                 {mapQuery ? (
                   <Grid

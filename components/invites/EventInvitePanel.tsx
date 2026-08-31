@@ -14,6 +14,7 @@ import ListItemText from "@mui/material/ListItemText";
 import DeleteOutlineOutlinedIcon from "@mui/icons-material/DeleteOutlineOutlined";
 import { addEventInvite, removeEventInvite } from "@/app/actions/invites";
 import { useToast } from "@/components/feedback/ToastProvider";
+import { ConfirmationDialog } from "@/components/feedback/ConfirmationDialog";
 
 export function EventInvitePanel(props: {
   organisationSlug: string;
@@ -26,6 +27,10 @@ export function EventInvitePanel(props: {
   const { showToast } = useToast();
   const [email, setEmail] = useState("");
   const [pending, startTransition] = useTransition();
+  const [removeTarget, setRemoveTarget] = useState<{
+    id: string;
+    email: string;
+  } | null>(null);
 
   return (
     <Stack spacing={2}>
@@ -34,7 +39,10 @@ export function EventInvitePanel(props: {
           ? "This event has ended, so no new invites can be sent."
           : "Required for invite-only events. Emails are matched case-insensitively."}
       </Typography>
-      <Stack direction={{ xs: "column", sm: "row" }} spacing={2} component="form"
+      <Stack
+        direction={{ xs: "column", sm: "row" }}
+        spacing={2}
+        component="form"
         onSubmit={(e) => {
           e.preventDefault();
           startTransition(async () => {
@@ -63,7 +71,11 @@ export function EventInvitePanel(props: {
           fullWidth
           size="small"
         />
-        <Button type="submit" variant="contained" disabled={eventHasEnded || pending}>
+        <Button
+          type="submit"
+          variant="contained"
+          disabled={eventHasEnded || pending}
+        >
           Add
         </Button>
       </Stack>
@@ -81,21 +93,7 @@ export function EventInvitePanel(props: {
                   edge="end"
                   aria-label="Remove"
                   disabled={pending}
-                  onClick={() => {
-                    startTransition(async () => {
-                      const res = await removeEventInvite({
-                        organisationSlug,
-                        eventId,
-                        inviteId: inv.id,
-                      });
-                      if (!res.ok) {
-                        showToast(res.error, "error");
-                        return;
-                      }
-                      showToast("Removed", "success");
-                      router.refresh();
-                    });
-                  }}
+                  onClick={() => setRemoveTarget(inv)}
                 >
                   <DeleteOutlineOutlinedIcon />
                 </IconButton>
@@ -109,6 +107,28 @@ export function EventInvitePanel(props: {
           ))}
         </List>
       )}
+      <ConfirmationDialog
+        open={Boolean(removeTarget)}
+        title="Remove event invite?"
+        message={`Remove ${removeTarget?.email ?? "this email"} from the event allowlist?`}
+        confirmLabel="Remove invite"
+        loading={pending}
+        onCancel={() => setRemoveTarget(null)}
+        onConfirm={() => {
+          if (!removeTarget) return;
+          startTransition(async () => {
+            const res = await removeEventInvite({
+              organisationSlug,
+              eventId,
+              inviteId: removeTarget.id,
+            });
+            if (!res.ok) return showToast(res.error, "error");
+            setRemoveTarget(null);
+            showToast("Invite removed", "success");
+            router.refresh();
+          });
+        }}
+      />
     </Stack>
   );
 }

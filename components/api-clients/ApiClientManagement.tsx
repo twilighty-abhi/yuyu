@@ -26,6 +26,7 @@ import {
 } from "@/app/actions/api-clients";
 import { API_SCOPES, type ApiScope } from "@/lib/api/v1/scopes";
 import { useToast } from "@/components/feedback/ToastProvider";
+import { ConfirmationDialog } from "@/components/feedback/ConfirmationDialog";
 
 type Credential = {
   id: string;
@@ -50,20 +51,38 @@ function expiryIso(value: FormDataEntryValue | null) {
 }
 
 function formatTimestamp(value: string) {
-  return new Date(value).toISOString().replace("T", " ").replace(".000Z", " UTC");
+  return new Date(value)
+    .toISOString()
+    .replace("T", " ")
+    .replace(".000Z", " UTC");
 }
 
 function SecretDialog(props: { token: string | null; onClose: () => void }) {
   const { showToast } = useToast();
   return (
-    <Dialog open={Boolean(props.token)} onClose={props.onClose} maxWidth="md" fullWidth>
+    <Dialog
+      open={Boolean(props.token)}
+      onClose={props.onClose}
+      maxWidth="md"
+      fullWidth
+    >
       <DialogTitle>Copy this credential now</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>
           <Alert severity="warning">
-            Yuyu cannot show this value again. Store it in the consuming application&apos;s secret manager.
+            Yuyu cannot show this value again. Store it in the consuming
+            application&apos;s secret manager.
           </Alert>
-          <Box component="code" sx={{ p: 2, borderRadius: 2, bgcolor: "rgba(255,255,255,0.06)", overflowWrap: "anywhere", userSelect: "all" }}>
+          <Box
+            component="code"
+            sx={{
+              p: 2,
+              borderRadius: 2,
+              bgcolor: "rgba(255,255,255,0.06)",
+              overflowWrap: "anywhere",
+              userSelect: "all",
+            }}
+          >
             {props.token}
           </Box>
         </Stack>
@@ -78,23 +97,44 @@ function SecretDialog(props: { token: string | null; onClose: () => void }) {
         >
           Copy
         </Button>
-        <Button variant="contained" onClick={props.onClose}>I have stored it</Button>
+        <Button variant="contained" onClick={props.onClose}>
+          I have stored it
+        </Button>
       </DialogActions>
     </Dialog>
   );
 }
 
-function ClientPanel(props: { organisationSlug: string; client: Client; referenceTime: string; reveal: (token: string) => void }) {
+function ClientPanel(props: {
+  organisationSlug: string;
+  client: Client;
+  referenceTime: string;
+  reveal: (token: string) => void;
+}) {
   const router = useRouter();
   const { showToast } = useToast();
   const [pending, startTransition] = useTransition();
-  const [selectedScopes, setSelectedScopes] = useState<ApiScope[]>(props.client.scopes);
+  const [selectedScopes, setSelectedScopes] = useState<ApiScope[]>(
+    props.client.scopes,
+  );
+  const [revokeTarget, setRevokeTarget] = useState<Credential | null>(null);
+  const [confirmDisable, setConfirmDisable] = useState(false);
 
-  function run(operation: () => Promise<{ ok: true; data?: unknown } | { ok: false; error: string }>) {
+  function run(
+    operation: () => Promise<
+      { ok: true; data?: unknown } | { ok: false; error: string }
+    >,
+  ) {
     startTransition(async () => {
       const result = await operation();
-      if (!result.ok) return showToast(result.error ?? "The change failed.", "error");
-      if (result.data && typeof result.data === "object" && "token" in result.data && typeof result.data.token === "string") {
+      if (!result.ok)
+        return showToast(result.error ?? "The change failed.", "error");
+      if (
+        result.data &&
+        typeof result.data === "object" &&
+        "token" in result.data &&
+        typeof result.data.token === "string"
+      ) {
         props.reveal(result.data.token);
       }
       showToast("API access updated", "success");
@@ -103,29 +143,71 @@ function ClientPanel(props: { organisationSlug: string; client: Client; referenc
   }
 
   return (
-    <Paper variant="outlined" sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: "16px", borderColor: "rgba(255,255,255,0.08)" }}>
+    <Paper
+      variant="outlined"
+      sx={{
+        p: { xs: 2, sm: 2.5 },
+        borderRadius: "16px",
+        borderColor: "rgba(255,255,255,0.08)",
+      }}
+    >
       <Stack spacing={2}>
-        <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ justifyContent: "space-between", alignItems: { sm: "center" } }}>
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          spacing={1}
+          sx={{ justifyContent: "space-between", alignItems: { sm: "center" } }}
+        >
           <Box>
-            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{props.client.name}</Typography>
-            <Chip size="small" color={props.client.status === "ACTIVE" ? "success" : "default"} label={props.client.status.toLowerCase()} />
+            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+              {props.client.name}
+            </Typography>
+            <Chip
+              size="small"
+              color={props.client.status === "ACTIVE" ? "success" : "default"}
+              label={props.client.status.toLowerCase()}
+            />
           </Box>
           <Button
             color={props.client.status === "ACTIVE" ? "warning" : "success"}
             disabled={pending}
-            onClick={() => run(() => setApiClientStatus({ organisationSlug: props.organisationSlug, apiClientId: props.client.id, status: props.client.status === "ACTIVE" ? "DISABLED" : "ACTIVE" }))}
+            onClick={() =>
+              props.client.status === "ACTIVE"
+                ? setConfirmDisable(true)
+                : run(() =>
+                    setApiClientStatus({
+                      organisationSlug: props.organisationSlug,
+                      apiClientId: props.client.id,
+                      status: "ACTIVE",
+                    }),
+                  )
+            }
           >
-            {props.client.status === "ACTIVE" ? "Disable client" : "Enable client"}
+            {props.client.status === "ACTIVE"
+              ? "Disable client"
+              : "Enable client"}
           </Button>
         </Stack>
         <Divider />
         <Box>
-          <Typography variant="subtitle2" sx={{ mb: 0.5 }}>Scopes</Typography>
+          <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+            Scopes
+          </Typography>
           <Stack direction="row" useFlexGap sx={{ flexWrap: "wrap" }}>
             {API_SCOPES.map((scope) => (
               <FormControlLabel
                 key={scope}
-                control={<Checkbox checked={selectedScopes.includes(scope)} onChange={(_, checked) => setSelectedScopes((current) => checked ? [...current, scope] : current.filter((item) => item !== scope))} />}
+                control={
+                  <Checkbox
+                    checked={selectedScopes.includes(scope)}
+                    onChange={(_, checked) =>
+                      setSelectedScopes((current) =>
+                        checked
+                          ? [...current, scope]
+                          : current.filter((item) => item !== scope),
+                      )
+                    }
+                  />
+                }
                 label={scope}
               />
             ))}
@@ -133,49 +215,167 @@ function ClientPanel(props: { organisationSlug: string; client: Client; referenc
           <Button
             size="small"
             disabled={pending || selectedScopes.length === 0}
-            onClick={() => run(() => updateApiClientScopes({ organisationSlug: props.organisationSlug, apiClientId: props.client.id, scopes: selectedScopes }))}
+            onClick={() =>
+              run(() =>
+                updateApiClientScopes({
+                  organisationSlug: props.organisationSlug,
+                  apiClientId: props.client.id,
+                  scopes: selectedScopes,
+                }),
+              )
+            }
           >
             Save scopes
           </Button>
         </Box>
         <Divider />
-        <Box component="form" onSubmit={(event) => {
-          event.preventDefault();
-          const form = new FormData(event.currentTarget);
-          run(() => createApiCredential({ organisationSlug: props.organisationSlug, apiClientId: props.client.id, name: String(form.get("name") ?? ""), expiresAt: expiryIso(form.get("expiresAt")) }));
-        }}>
-          <Typography variant="subtitle2" sx={{ mb: 1 }}>Create rotation credential</Typography>
+        <Box
+          component="form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const form = new FormData(event.currentTarget);
+            run(() =>
+              createApiCredential({
+                organisationSlug: props.organisationSlug,
+                apiClientId: props.client.id,
+                name: String(form.get("name") ?? ""),
+                expiresAt: expiryIso(form.get("expiresAt")),
+              }),
+            );
+          }}
+        >
+          <Typography variant="subtitle2" sx={{ mb: 1 }}>
+            Create rotation credential
+          </Typography>
           <Stack direction={{ xs: "column", md: "row" }} spacing={1.5}>
-            <TextField name="name" label="Credential label" size="small" required slotProps={{ htmlInput: { maxLength: 80 } }} />
-            <TextField name="expiresAt" label="Optional expiry" type="datetime-local" size="small" slotProps={{ inputLabel: { shrink: true } }} />
-            <Button type="submit" variant="outlined" disabled={pending}>Create credential</Button>
+            <TextField
+              name="name"
+              label="Credential label"
+              size="small"
+              required
+              slotProps={{ htmlInput: { maxLength: 80 } }}
+            />
+            <TextField
+              name="expiresAt"
+              label="Optional expiry"
+              type="datetime-local"
+              size="small"
+              slotProps={{ inputLabel: { shrink: true } }}
+            />
+            <Button type="submit" variant="outlined" disabled={pending}>
+              Create credential
+            </Button>
           </Stack>
         </Box>
         <Stack spacing={1}>
-          {props.client.credentials.length === 0 ? <Typography variant="body2" color="text.secondary">No credentials.</Typography> : props.client.credentials.map((credential) => {
-            const inactive = Boolean(credential.revokedAt) || Boolean(credential.expiresAt && credential.expiresAt <= props.referenceTime);
-            return (
-              <Stack key={credential.id} direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ justifyContent: "space-between", alignItems: { sm: "center" }, p: 1.25, borderRadius: 2, bgcolor: "rgba(255,255,255,0.025)" }}>
-                <Box>
-                  <Typography variant="body2" sx={{ fontWeight: 650 }}>{credential.name}</Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    Created {formatTimestamp(credential.createdAt)} · Last used {credential.lastUsedAt ? formatTimestamp(credential.lastUsedAt) : "never"}
-                    {credential.expiresAt ? ` · Expires ${formatTimestamp(credential.expiresAt)}` : ""}
-                  </Typography>
-                </Box>
-                {inactive ? <Chip size="small" label={credential.revokedAt ? "revoked" : "expired"} /> : (
-                  <Button color="error" size="small" disabled={pending} onClick={() => run(() => revokeApiCredential({ organisationSlug: props.organisationSlug, apiClientId: props.client.id, credentialId: credential.id }))}>Revoke</Button>
-                )}
-              </Stack>
-            );
-          })}
+          {props.client.credentials.length === 0 ? (
+            <Typography variant="body2" color="text.secondary">
+              No credentials.
+            </Typography>
+          ) : (
+            props.client.credentials.map((credential) => {
+              const inactive =
+                Boolean(credential.revokedAt) ||
+                Boolean(
+                  credential.expiresAt &&
+                  credential.expiresAt <= props.referenceTime,
+                );
+              return (
+                <Stack
+                  key={credential.id}
+                  direction={{ xs: "column", sm: "row" }}
+                  spacing={1}
+                  sx={{
+                    justifyContent: "space-between",
+                    alignItems: { sm: "center" },
+                    p: 1.25,
+                    borderRadius: 2,
+                    bgcolor: "rgba(255,255,255,0.025)",
+                  }}
+                >
+                  <Box>
+                    <Typography variant="body2" sx={{ fontWeight: 650 }}>
+                      {credential.name}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Created {formatTimestamp(credential.createdAt)} · Last
+                      used{" "}
+                      {credential.lastUsedAt
+                        ? formatTimestamp(credential.lastUsedAt)
+                        : "never"}
+                      {credential.expiresAt
+                        ? ` · Expires ${formatTimestamp(credential.expiresAt)}`
+                        : ""}
+                    </Typography>
+                  </Box>
+                  {inactive ? (
+                    <Chip
+                      size="small"
+                      label={credential.revokedAt ? "revoked" : "expired"}
+                    />
+                  ) : (
+                    <Button
+                      color="error"
+                      size="small"
+                      disabled={pending}
+                      onClick={() => setRevokeTarget(credential)}
+                    >
+                      Revoke
+                    </Button>
+                  )}
+                </Stack>
+              );
+            })
+          )}
         </Stack>
+        <ConfirmationDialog
+          open={confirmDisable}
+          title="Disable API client?"
+          message="All credentials for this client will stop working until it is enabled again."
+          confirmLabel="Disable client"
+          loading={pending}
+          onCancel={() => setConfirmDisable(false)}
+          onConfirm={() => {
+            setConfirmDisable(false);
+            run(() =>
+              setApiClientStatus({
+                organisationSlug: props.organisationSlug,
+                apiClientId: props.client.id,
+                status: "DISABLED",
+              }),
+            );
+          }}
+        />
+        <ConfirmationDialog
+          open={Boolean(revokeTarget)}
+          title="Revoke API credential?"
+          message={`“${revokeTarget?.name ?? "This credential"}” will stop working immediately. This cannot be undone.`}
+          confirmLabel="Revoke credential"
+          loading={pending}
+          onCancel={() => setRevokeTarget(null)}
+          onConfirm={() => {
+            if (!revokeTarget) return;
+            const id = revokeTarget.id;
+            setRevokeTarget(null);
+            run(() =>
+              revokeApiCredential({
+                organisationSlug: props.organisationSlug,
+                apiClientId: props.client.id,
+                credentialId: id,
+              }),
+            );
+          }}
+        />
       </Stack>
     </Paper>
   );
 }
 
-export function ApiClientManagement(props: { organisationSlug: string; clients: Client[]; referenceTime: string }) {
+export function ApiClientManagement(props: {
+  organisationSlug: string;
+  clients: Client[];
+  referenceTime: string;
+}) {
   const router = useRouter();
   const { showToast } = useToast();
   const [pending, startTransition] = useTransition();
@@ -185,35 +385,108 @@ export function ApiClientManagement(props: { organisationSlug: string; clients: 
   return (
     <Stack spacing={3}>
       <SecretDialog token={token} onClose={() => setToken(null)} />
-      <Paper component="form" variant="outlined" sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: "16px", borderColor: "rgba(255,255,255,0.08)" }} onSubmit={(event) => {
-        event.preventDefault();
-        const form = new FormData(event.currentTarget);
-        startTransition(async () => {
-          const result = await createApiClient({ organisationSlug: props.organisationSlug, name: String(form.get("name") ?? ""), credentialName: String(form.get("credentialName") ?? ""), expiresAt: expiryIso(form.get("expiresAt")), scopes });
-          if (!result.ok) return showToast(result.error, "error");
-          setToken(result.data?.token ?? null);
-          showToast("API client created", "success");
-          router.refresh();
-        });
-      }}>
+      <Paper
+        component="form"
+        variant="outlined"
+        sx={{
+          p: { xs: 2, sm: 2.5 },
+          borderRadius: "16px",
+          borderColor: "rgba(255,255,255,0.08)",
+        }}
+        onSubmit={(event) => {
+          event.preventDefault();
+          const form = new FormData(event.currentTarget);
+          startTransition(async () => {
+            const result = await createApiClient({
+              organisationSlug: props.organisationSlug,
+              name: String(form.get("name") ?? ""),
+              credentialName: String(form.get("credentialName") ?? ""),
+              expiresAt: expiryIso(form.get("expiresAt")),
+              scopes,
+            });
+            if (!result.ok) return showToast(result.error, "error");
+            setToken(result.data?.token ?? null);
+            showToast("API client created", "success");
+            router.refresh();
+          });
+        }}
+      >
         <Stack spacing={2}>
           <Box>
-            <Typography variant="h6" sx={{ fontWeight: 700 }}>Create API client</Typography>
-            <Typography variant="body2" color="text.secondary">The first credential is shown once after creation.</Typography>
+            <Typography variant="h6" sx={{ fontWeight: 700 }}>
+              Create API client
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              The first credential is shown once after creation.
+            </Typography>
           </Box>
           <Stack direction={{ xs: "column", md: "row" }} spacing={1.5}>
-            <TextField name="name" label="Application name" required fullWidth slotProps={{ htmlInput: { maxLength: 100 } }} />
-            <TextField name="credentialName" label="Credential label" required fullWidth slotProps={{ htmlInput: { maxLength: 80 } }} />
-            <TextField name="expiresAt" label="Optional expiry" type="datetime-local" fullWidth slotProps={{ inputLabel: { shrink: true } }} />
+            <TextField
+              name="name"
+              label="Application name"
+              required
+              fullWidth
+              slotProps={{ htmlInput: { maxLength: 100 } }}
+            />
+            <TextField
+              name="credentialName"
+              label="Credential label"
+              required
+              fullWidth
+              slotProps={{ htmlInput: { maxLength: 80 } }}
+            />
+            <TextField
+              name="expiresAt"
+              label="Optional expiry"
+              type="datetime-local"
+              fullWidth
+              slotProps={{ inputLabel: { shrink: true } }}
+            />
           </Stack>
           <Stack direction="row" useFlexGap sx={{ flexWrap: "wrap" }}>
-            {API_SCOPES.map((scope) => <FormControlLabel key={scope} control={<Checkbox checked={scopes.includes(scope)} onChange={(_, checked) => setScopes((current) => checked ? [...current, scope] : current.filter((item) => item !== scope))} />} label={scope} />)}
+            {API_SCOPES.map((scope) => (
+              <FormControlLabel
+                key={scope}
+                control={
+                  <Checkbox
+                    checked={scopes.includes(scope)}
+                    onChange={(_, checked) =>
+                      setScopes((current) =>
+                        checked
+                          ? [...current, scope]
+                          : current.filter((item) => item !== scope),
+                      )
+                    }
+                  />
+                }
+                label={scope}
+              />
+            ))}
           </Stack>
-          <Button type="submit" variant="contained" disabled={pending || scopes.length === 0} sx={{ alignSelf: "flex-start" }}>Create client</Button>
+          <Button
+            type="submit"
+            variant="contained"
+            disabled={pending || scopes.length === 0}
+            sx={{ alignSelf: "flex-start" }}
+          >
+            Create client
+          </Button>
         </Stack>
       </Paper>
       <Stack spacing={2}>
-        {props.clients.length === 0 ? <Alert severity="info">No machine clients have been created.</Alert> : props.clients.map((client) => <ClientPanel key={client.id} organisationSlug={props.organisationSlug} client={client} referenceTime={props.referenceTime} reveal={setToken} />)}
+        {props.clients.length === 0 ? (
+          <Alert severity="info">No machine clients have been created.</Alert>
+        ) : (
+          props.clients.map((client) => (
+            <ClientPanel
+              key={client.id}
+              organisationSlug={props.organisationSlug}
+              client={client}
+              referenceTime={props.referenceTime}
+              reveal={setToken}
+            />
+          ))
+        )}
       </Stack>
     </Stack>
   );

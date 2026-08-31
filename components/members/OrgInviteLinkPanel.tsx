@@ -13,6 +13,7 @@ import AddLinkOutlinedIcon from "@mui/icons-material/AddLinkOutlined";
 import DeleteOutlineOutlinedIcon from "@mui/icons-material/DeleteOutlineOutlined";
 import { createOrgInvite, revokeOrgInvite } from "@/app/actions/org-invites";
 import { useToast } from "@/components/feedback/ToastProvider";
+import { ConfirmationDialog } from "@/components/feedback/ConfirmationDialog";
 
 export type OrgInviteRow = {
   id: string;
@@ -30,6 +31,7 @@ export function OrgInviteLinkPanel(props: {
   const [invites, setInvites] = useState<OrgInviteRow[]>(props.invites);
   const [pending, startTransition] = useTransition();
   const { showToast } = useToast();
+  const [confirmRevoke, setConfirmRevoke] = useState(false);
 
   const latest = invites[0] ?? null;
   const latestUrl = useMemo(() => {
@@ -47,8 +49,8 @@ export function OrgInviteLinkPanel(props: {
           <Chip size="small" label="Single-use" variant="outlined" />
         </Stack>
         <Typography variant="body2" color="text.secondary">
-          Generate a one-time link to add someone as a member. Only admins and the
-          owner can create links.
+          Generate a one-time link to add someone as a member. Only admins and
+          the owner can create links.
         </Typography>
 
         <Divider />
@@ -112,26 +114,35 @@ export function OrgInviteLinkPanel(props: {
                 color="error"
                 disabled={pending}
                 startIcon={<DeleteOutlineOutlinedIcon />}
-                onClick={() => {
-                  startTransition(async () => {
-                    const res = await revokeOrgInvite({
-                      organisationSlug,
-                      inviteId: latest.id,
-                    });
-                    if (!res.ok) {
-                      showToast(res.error, "error");
-                      return;
-                    }
-                    setInvites((prev) => prev.filter((x) => x.id !== latest.id));
-                    showToast("Invite revoked", "success");
-                  });
-                }}
+                onClick={() => setConfirmRevoke(true)}
               >
                 Revoke latest
               </Button>
             ) : null}
           </Stack>
         </Stack>
+
+        <ConfirmationDialog
+          open={confirmRevoke}
+          title="Revoke invite link?"
+          message="Anyone who has this link will no longer be able to use it to join the organisation."
+          confirmLabel="Revoke link"
+          loading={pending}
+          onCancel={() => setConfirmRevoke(false)}
+          onConfirm={() => {
+            if (!latest) return;
+            startTransition(async () => {
+              const res = await revokeOrgInvite({
+                organisationSlug,
+                inviteId: latest.id,
+              });
+              if (!res.ok) return showToast(res.error, "error");
+              setInvites((prev) => prev.filter((x) => x.id !== latest.id));
+              setConfirmRevoke(false);
+              showToast("Invite revoked", "success");
+            });
+          }}
+        />
 
         {invites.length > 1 ? (
           <Stack spacing={1} sx={{ mt: 1 }}>
@@ -156,4 +167,3 @@ export function OrgInviteLinkPanel(props: {
     </Paper>
   );
 }
-

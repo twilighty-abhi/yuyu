@@ -14,6 +14,7 @@ import ListItemText from "@mui/material/ListItemText";
 import DeleteOutlineOutlinedIcon from "@mui/icons-material/DeleteOutlineOutlined";
 import { addSeriesInvite, removeSeriesInvite } from "@/app/actions/invites";
 import { useToast } from "@/components/feedback/ToastProvider";
+import { ConfirmationDialog } from "@/components/feedback/ConfirmationDialog";
 
 export function SeriesInvitePanel(props: {
   organisationSlug: string;
@@ -25,6 +26,10 @@ export function SeriesInvitePanel(props: {
   const { showToast } = useToast();
   const [email, setEmail] = useState("");
   const [pending, startTransition] = useTransition();
+  const [removeTarget, setRemoveTarget] = useState<{
+    id: string;
+    email: string;
+  } | null>(null);
 
   return (
     <Stack spacing={2}>
@@ -80,21 +85,7 @@ export function SeriesInvitePanel(props: {
                   edge="end"
                   aria-label="Remove"
                   disabled={pending}
-                  onClick={() => {
-                    startTransition(async () => {
-                      const res = await removeSeriesInvite({
-                        organisationSlug,
-                        eventSeriesId,
-                        inviteId: inv.id,
-                      });
-                      if (!res.ok) {
-                        showToast(res.error, "error");
-                        return;
-                      }
-                      showToast("Removed", "success");
-                      router.refresh();
-                    });
-                  }}
+                  onClick={() => setRemoveTarget(inv)}
                 >
                   <DeleteOutlineOutlinedIcon />
                 </IconButton>
@@ -108,6 +99,28 @@ export function SeriesInvitePanel(props: {
           ))}
         </List>
       )}
+      <ConfirmationDialog
+        open={Boolean(removeTarget)}
+        title="Remove series invite?"
+        message={`Remove ${removeTarget?.email ?? "this email"} from the series allowlist?`}
+        confirmLabel="Remove invite"
+        loading={pending}
+        onCancel={() => setRemoveTarget(null)}
+        onConfirm={() => {
+          if (!removeTarget) return;
+          startTransition(async () => {
+            const res = await removeSeriesInvite({
+              organisationSlug,
+              eventSeriesId,
+              inviteId: removeTarget.id,
+            });
+            if (!res.ok) return showToast(res.error, "error");
+            setRemoveTarget(null);
+            showToast("Invite removed", "success");
+            router.refresh();
+          });
+        }}
+      />
     </Stack>
   );
 }

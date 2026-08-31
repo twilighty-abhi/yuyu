@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { MembershipRole } from "@prisma/client";
 import Stack from "@mui/material/Stack";
@@ -11,6 +11,7 @@ import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
 import { updateMemberRole, removeMember } from "@/app/actions/membership";
 import { useToast } from "@/components/feedback/ToastProvider";
+import { ConfirmationDialog } from "@/components/feedback/ConfirmationDialog";
 
 export function MemberRoleActions(props: {
   organisationSlug: string;
@@ -22,6 +23,7 @@ export function MemberRoleActions(props: {
   const router = useRouter();
   const { showToast } = useToast();
   const [pending, startTransition] = useTransition();
+  const [confirmRemove, setConfirmRemove] = useState(false);
 
   const canEditRoles = actorRole === "OWNER" && role !== "OWNER";
   const canRemove =
@@ -31,10 +33,16 @@ export function MemberRoleActions(props: {
   if (!canEditRoles && !canRemove) {
     return (
       <Chip
-        label={role === "OWNER" ? "Owner" : role === "ADMIN" ? "Admin" : "Member"}
+        label={
+          role === "OWNER" ? "Owner" : role === "ADMIN" ? "Admin" : "Member"
+        }
         size="small"
         variant="outlined"
-        sx={{ borderColor: "rgba(10,132,255,0.4)", color: "#72B7FF", fontWeight: 650 }}
+        sx={{
+          borderColor: "rgba(10,132,255,0.4)",
+          color: "#72B7FF",
+          fontWeight: 650,
+        }}
       />
     );
   }
@@ -69,7 +77,10 @@ export function MemberRoleActions(props: {
               router.refresh();
             });
           }}
-          sx={{ minWidth: 120, "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
+          sx={{
+            minWidth: 120,
+            "& .MuiOutlinedInput-root": { borderRadius: 2 },
+          }}
         >
           <MenuItem value="ADMIN">ADMIN</MenuItem>
           <MenuItem value="MEMBER">MEMBER</MenuItem>
@@ -84,8 +95,23 @@ export function MemberRoleActions(props: {
         color="error"
         variant="outlined"
         disabled={pending}
-        sx={{ display: canRemove ? "inline-flex" : "none", textTransform: "none", borderRadius: 2 }}
-        onClick={() => {
+        sx={{
+          display: canRemove ? "inline-flex" : "none",
+          textTransform: "none",
+          borderRadius: 2,
+        }}
+        onClick={() => setConfirmRemove(true)}
+      >
+        Remove
+      </Button>
+      <ConfirmationDialog
+        open={confirmRemove}
+        title="Remove organisation member?"
+        message="This person will immediately lose access to the organisation and its events."
+        confirmLabel="Remove member"
+        loading={pending}
+        onCancel={() => setConfirmRemove(false)}
+        onConfirm={() => {
           startTransition(async () => {
             const res = await removeMember({
               organisationSlug,
@@ -95,13 +121,12 @@ export function MemberRoleActions(props: {
               showToast(res.error, "error");
               return;
             }
+            setConfirmRemove(false);
             showToast("Member removed", "success");
             router.refresh();
           });
         }}
-      >
-        Remove
-      </Button>
+      />
     </Stack>
   );
 }

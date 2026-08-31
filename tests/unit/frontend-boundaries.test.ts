@@ -37,4 +37,23 @@ describe("frontend production boundaries", () => {
     expect(worker).toContain("MAX_STATIC_ENTRIES");
     expect(worker).not.toContain("/api/");
   });
+
+  it("provides accessible navigation, reduced motion, and install metadata", () => {
+    const layout = source("app/layout.tsx");
+    const landing = source("components/landing/LandingPageClient.tsx");
+    const styles = source("app/globals.css");
+    const manifest = source("app/manifest.ts");
+    expect(layout).toContain('href="#main-content"');
+    expect(layout).toContain('id="main-content"');
+    expect(landing).toContain("useReducedMotion");
+    expect(styles).toContain("prefers-reduced-motion: reduce");
+    expect(manifest).toContain('display: "standalone"');
+    expect(manifest).toContain('start_url: "/dashboard"');
+  });
+
+  it("requires confirmations for destructive editor actions", () => {
+    expect(source("components/series/EditSeriesForm.tsx")).toContain('title="Delete event series?"');
+    expect(source("components/feedback/FeedbackFormEditor.tsx")).toContain('title="Delete feedback question?"');
+    expect(source("components/event/EventWebsiteManager.tsx")).toContain('title="Remove event-page content?"');
+  });
 });

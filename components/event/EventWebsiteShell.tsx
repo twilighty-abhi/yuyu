@@ -446,12 +446,19 @@ export function EventWebsiteShell(p: Props) {
               <Grid container spacing={2}>
                 {p.highlights.map((x) => (
                   <Grid key={x.id} size={{ xs: 12, sm: 6, md: 4 }}>
-                    <Box
+                    <Paper
+                      variant="outlined"
                       sx={{
                         height: "100%",
-                        pr: { md: 2 },
-                        borderLeft: "2px solid #7CF5B6",
-                        pl: 2,
+                        p: 2.5,
+                        borderTop: "2px solid #7CF5B6",
+                        transition:
+                          "transform 0.2s ease, border-color 0.2s ease",
+                        "&:hover": {
+                          transform: "translateY(-3px)",
+                          borderColor: "#7CF5B6",
+                        },
+                        ...surfaceSx,
                       }}
                     >
                       <Typography sx={{ fontWeight: 750, mb: 0.75 }}>
@@ -462,7 +469,7 @@ export function EventWebsiteShell(p: Props) {
                           {x.description}
                         </Typography>
                       ) : null}
-                    </Box>
+                    </Paper>
                   </Grid>
                 ))}
               </Grid>

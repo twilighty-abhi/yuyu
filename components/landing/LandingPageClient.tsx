@@ -139,7 +139,7 @@ export function LandingPageClient(props: { getStartedHref: string }) {
                 >
                   <StarsIcon sx={{ fontSize: 16, color: "#7CF5B6" }} />
                   <Typography variant="caption" sx={{ color: "#7CF5B6", fontWeight: 700, letterSpacing: 0.5 }}>
-                    OPEN SOURCE & SELF-HOSTED
+                    OPEN SOURCE & SELF-HOSTABLE
                   </Typography>
                 </Box>
               </motion.div>

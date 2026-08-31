@@ -95,9 +95,9 @@ const fmt = (value: string, zone: string) =>
     timeStyle: "short",
     timeZone: zone,
   });
-const ink = "#f8f9ff";
-const muted = "#c3c9dc";
-const surface = "#2a3765";
+const ink = "#f4fff9";
+const muted = "#b8cbc1";
+const surface = "#102b21";
 const border = "rgba(255,255,255,0.12)";
 const titleSx = { fontSize: { xs: "2rem", md: "2.5rem" }, mb: 2, color: ink };
 const surfaceSx = { bgcolor: surface, color: ink, borderColor: border };
@@ -134,7 +134,6 @@ export function EventWebsiteShell(p: Props) {
   const shown = new Set(
     p.page.sections.filter((x) => x.isVisible).map((x) => x.type),
   );
-  const accent = p.page.accentColor || "#245b4f";
   const section = (type: string, child: React.ReactNode) =>
     shown.has(type) ? (
       <Box component="section" sx={{ py: { xs: 3.5, md: 5 } }}>
@@ -160,7 +159,7 @@ export function EventWebsiteShell(p: Props) {
     }
   };
   return (
-    <Box sx={{ minHeight: "100vh", bgcolor: "#202a52", pb: { xs: 5, md: 8 } }}>
+    <Box sx={{ minHeight: "100vh", bgcolor: "#061814", pb: { xs: 5, md: 8 } }}>
       {p.preview ? (
         <Alert severity="info" sx={{ borderRadius: 0 }}>
           Preview mode — only authorized organizers can see draft content.
@@ -174,7 +173,7 @@ export function EventWebsiteShell(p: Props) {
             borderRadius: { xs: 3, md: 5 },
             minHeight: { md: 460 },
             boxShadow: "0 22px 60px rgba(21,21,21,0.12)",
-            borderTop: `4px solid ${accent}`,
+            borderTop: "4px solid #7CF5B6",
             ...surfaceSx,
           }}
         >
@@ -187,7 +186,7 @@ export function EventWebsiteShell(p: Props) {
                   alignItems: "stretch",
                   minHeight: { xs: 280, sm: 360, md: 460 },
                   p: { xs: 1.5, sm: 2 },
-                  bgcolor: "#182347",
+                  bgcolor: "#0a231a",
                 }}
               >
                 <Box
@@ -200,7 +199,7 @@ export function EventWebsiteShell(p: Props) {
                     height: "100%",
                     objectFit: "contain",
                     borderRadius: 2,
-                    bgcolor: "#101936",
+                    bgcolor: "#061814",
                   }}
                 />
               </Grid>
@@ -231,7 +230,7 @@ export function EventWebsiteShell(p: Props) {
                   <Typography
                     variant="overline"
                     sx={{
-                      color: "#c2ceff",
+                      color: "#7CF5B6",
                       fontWeight: 700,
                       letterSpacing: "0.12em",
                     }}
@@ -312,7 +311,7 @@ export function EventWebsiteShell(p: Props) {
                       label={`${p.sessions.length} session${p.sessions.length === 1 ? "" : "s"}`}
                       size="small"
                       sx={{
-                        bgcolor: "#3b4978",
+                        bgcolor: "#1d4a3b",
                         color: ink,
                       }}
                     />
@@ -322,7 +321,7 @@ export function EventWebsiteShell(p: Props) {
                       label={`${p.speakers.length} speaker${p.speakers.length === 1 ? "" : "s"}`}
                       size="small"
                       sx={{
-                        bgcolor: "#3b4978",
+                        bgcolor: "#1d4a3b",
                         color: ink,
                       }}
                     />
@@ -335,9 +334,9 @@ export function EventWebsiteShell(p: Props) {
                     width: "100%",
                     borderRadius: 3,
                     boxShadow: "none",
-                    bgcolor: "#303d6b",
+                    bgcolor: "#16382c",
                     color: ink,
-                    border: "1px solid rgba(255,255,255,0.13)",
+                    border: "1px solid rgba(124,245,182,0.2)",
                   }}
                 >
                   <Stack spacing={1.5}>
@@ -361,9 +360,9 @@ export function EventWebsiteShell(p: Props) {
                         fullWidth
                         onClick={() => setOpen(true)}
                         sx={{
-                          bgcolor: "#ffffff",
-                          color: "#1b2549",
-                          "&:hover": { bgcolor: "#eef1ff" },
+                          bgcolor: "#7CF5B6",
+                          color: "#061814",
+                          "&:hover": { bgcolor: "#90ffd0" },
                         }}
                       >
                         Register now
@@ -384,7 +383,7 @@ export function EventWebsiteShell(p: Props) {
                       onClick={share}
                       variant="text"
                       fullWidth
-                      sx={{ color: "#d4dcff" }}
+                      sx={{ color: "#B9AEFF" }}
                     >
                       {shared ? "Link copied" : "Share event"}
                     </Button>

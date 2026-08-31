@@ -56,6 +56,7 @@ type Props = {
     start: string;
     type: string;
     room: string | null;
+    track: string | null;
     speakers: Array<{ slug: string; name: string }>;
   }>;
   speakers: Array<{
@@ -533,7 +534,7 @@ export function EventWebsiteShell(p: Props) {
                   >
                     <Typography sx={{ fontWeight: 750 }}>{x.title}</Typography>
                     <Typography variant="body2" sx={{ mt: 0.5, color: muted }}>
-                      {fmt(x.start, p.event.timezone)} · {x.room || "Room TBA"}{" "}
+                      {fmt(x.start, p.event.timezone)} · {x.room || x.track || "Room TBA"}{" "}
                       · {x.type}
                     </Typography>
                   </Box>

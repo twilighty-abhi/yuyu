@@ -440,6 +440,7 @@ export function EventProgramScheduleManager({
                         type="number"
                         defaultValue={session.delayMinutes}
                         size="small"
+                        sx={{ width: { xs: "100%", sm: 280 }, flexShrink: 0 }}
                         slotProps={{ htmlInput: { min: 0, max: 1440 } }}
                         disabled={pending}
                         onBlur={(event) => {

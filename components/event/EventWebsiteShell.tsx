@@ -95,7 +95,12 @@ const fmt = (value: string, zone: string) =>
     timeStyle: "short",
     timeZone: zone,
   });
-const titleSx = { fontSize: { xs: "2rem", md: "2.5rem" }, mb: 2 };
+const ink = "#171817";
+const muted = "#5d635e";
+const surface = "#ffffff";
+const border = "rgba(23,24,23,0.12)";
+const titleSx = { fontSize: { xs: "2rem", md: "2.5rem" }, mb: 2, color: ink };
+const surfaceSx = { bgcolor: surface, color: ink, borderColor: border };
 function Rich({ html }: { html: string }) {
   return html ? (
     <Box
@@ -170,17 +175,6 @@ export function EventWebsiteShell(p: Props) {
             color: "primary.contrastText",
             bgcolor: accent,
             boxShadow: "0 22px 60px rgba(21,21,21,0.18)",
-            "&::before": p.event.coverImageUrl
-              ? {
-                  content: '""',
-                  position: "absolute",
-                  inset: 0,
-                  backgroundImage: `linear-gradient(90deg, ${accent} 12%, rgba(0,0,0,0.3)), url(${p.event.coverImageUrl})`,
-                  backgroundSize: "cover",
-                  backgroundPosition: "center",
-                  opacity: 0.65,
-                }
-              : undefined,
           }}
         >
           <Grid container>
@@ -325,16 +319,13 @@ export function EventWebsiteShell(p: Props) {
                   width: "100%",
                   borderRadius: 3,
                   boxShadow: "0 12px 30px rgba(0,0,0,0.14)",
+                  ...surfaceSx,
                 }}
               >
                 <Typography variant="h5" sx={{ fontWeight: 800, mb: 0.75 }}>
                   Join this event
                 </Typography>
-                <Typography
-                  variant="body2"
-                  color="text.secondary"
-                  sx={{ mb: 2.5 }}
-                >
+                <Typography variant="body2" sx={{ mb: 2.5, color: muted }}>
                   Reserve your free place in a few moments.
                 </Typography>
                 {p.event.status === "CANCELLED" ? (
@@ -352,8 +343,7 @@ export function EventWebsiteShell(p: Props) {
                 {p.event.capacity != null && p.confirmedCount != null ? (
                   <Typography
                     variant="body2"
-                    color="text.secondary"
-                    sx={{ mt: 2, textAlign: "center" }}
+                    sx={{ mt: 2, textAlign: "center", color: muted }}
                   >
                     {p.confirmedCount} registered ·{" "}
                     {p.event.capacity - p.confirmedCount > 0
@@ -374,6 +364,26 @@ export function EventWebsiteShell(p: Props) {
           </Grid>
         </Box>
       </Container>
+      {p.event.coverImageUrl ? (
+        <Container maxWidth="lg" sx={{ mt: { xs: 2, md: 3 } }}>
+          <Paper
+            variant="outlined"
+            sx={{ ...surfaceSx, overflow: "hidden", borderRadius: 3 }}
+          >
+            <Box
+              component="img"
+              src={p.event.coverImageUrl}
+              alt={`${p.event.title} cover`}
+              sx={{
+                display: "block",
+                width: "100%",
+                height: { xs: 220, sm: 320, md: 420 },
+                objectFit: "cover",
+              }}
+            />
+          </Paper>
+        </Container>
+      ) : null}
       <Dialog
         open={open}
         onClose={() => setOpen(false)}
@@ -394,7 +404,7 @@ export function EventWebsiteShell(p: Props) {
           </Box>
         </DialogContent>
       </Dialog>
-      <Container maxWidth="lg">
+      <Container maxWidth="lg" sx={{ color: ink }}>
         {section(
           "ABOUT",
           <Paper
@@ -402,7 +412,7 @@ export function EventWebsiteShell(p: Props) {
             sx={{
               p: { xs: 2.5, md: 4 },
               borderRadius: 3,
-              bgcolor: "background.paper",
+              ...surfaceSx,
             }}
           >
             <Typography variant="h3" sx={titleSx}>
@@ -411,7 +421,7 @@ export function EventWebsiteShell(p: Props) {
             {p.page.aboutHtml ? (
               <Rich html={p.page.aboutHtml} />
             ) : (
-              <Typography color="text.secondary" sx={{ lineHeight: 1.8 }}>
+              <Typography sx={{ lineHeight: 1.8, color: muted }}>
                 More event details will be shared soon. Save your place now to
                 stay in the loop.
               </Typography>
@@ -430,13 +440,18 @@ export function EventWebsiteShell(p: Props) {
                   <Grid key={x.id} size={{ xs: 12, sm: 6, md: 4 }}>
                     <Paper
                       variant="outlined"
-                      sx={{ p: 2.5, height: "100%", borderRadius: 3 }}
+                      sx={{
+                        p: 2.5,
+                        height: "100%",
+                        borderRadius: 3,
+                        ...surfaceSx,
+                      }}
                     >
                       <Typography sx={{ fontWeight: 750, mb: 0.75 }}>
                         {x.title}
                       </Typography>
                       {x.description ? (
-                        <Typography variant="body2" color="text.secondary">
+                        <Typography variant="body2" sx={{ color: muted }}>
                           {x.description}
                         </Typography>
                       ) : null}
@@ -463,7 +478,7 @@ export function EventWebsiteShell(p: Props) {
                     variant="outlined"
                     sx={{
                       p: { xs: 2, sm: 2.5 },
-                      color: "text.primary",
+                      ...surfaceSx,
                       textDecoration: "none",
                       borderRadius: 3,
                       transition: "0.2s",
@@ -474,11 +489,7 @@ export function EventWebsiteShell(p: Props) {
                     }}
                   >
                     <Typography sx={{ fontWeight: 750 }}>{x.title}</Typography>
-                    <Typography
-                      variant="body2"
-                      color="text.secondary"
-                      sx={{ mt: 0.5 }}
-                    >
+                    <Typography variant="body2" sx={{ mt: 0.5, color: muted }}>
                       {fmt(x.start, p.event.timezone)} · {x.room || "Room TBA"}{" "}
                       · {x.type}
                     </Typography>
@@ -509,7 +520,7 @@ export function EventWebsiteShell(p: Props) {
                       direction="row"
                       spacing={1.5}
                       sx={{
-                        color: "text.primary",
+                        color: ink,
                         textDecoration: "none",
                         alignItems: "center",
                       }}
@@ -523,7 +534,7 @@ export function EventWebsiteShell(p: Props) {
                         <Typography sx={{ fontWeight: 750 }}>
                           {x.name}
                         </Typography>
-                        <Typography variant="body2" color="text.secondary">
+                        <Typography variant="body2" sx={{ color: muted }}>
                           {[x.headline, x.organisation]
                             .filter(Boolean)
                             .join(" · ")}
@@ -555,7 +566,7 @@ export function EventWebsiteShell(p: Props) {
                       sx={{
                         p: 2,
                         height: "100%",
-                        color: "text.primary",
+                        ...surfaceSx,
                         textDecoration: "none",
                         borderRadius: 3,
                         transition: "0.2s",
@@ -608,16 +619,14 @@ export function EventWebsiteShell(p: Props) {
                       </Typography>
                       <Typography
                         variant="caption"
-                        color="text.secondary"
-                        sx={{ display: "block", mt: 0.25 }}
+                        sx={{ display: "block", mt: 0.25, color: muted }}
                       >
                         {x.tier.replaceAll("_", " ")}
                       </Typography>
                       {x.description ? (
                         <Typography
                           variant="body2"
-                          color="text.secondary"
-                          sx={{ mt: 1 }}
+                          sx={{ mt: 1, color: muted }}
                         >
                           {x.description}
                         </Typography>
@@ -637,7 +646,7 @@ export function EventWebsiteShell(p: Props) {
               sx={{
                 overflow: "hidden",
                 borderRadius: 3,
-                bgcolor: "background.paper",
+                ...surfaceSx,
               }}
             >
               <Grid container>
@@ -667,10 +676,7 @@ export function EventWebsiteShell(p: Props) {
                       <Typography variant="h3" sx={{ ...titleSx, mb: 1 }}>
                         {p.venue.location || "Venue details coming soon"}
                       </Typography>
-                      <Typography
-                        color="text.secondary"
-                        sx={{ lineHeight: 1.7 }}
-                      >
+                      <Typography sx={{ lineHeight: 1.7, color: muted }}>
                         {p.venue.location
                           ? "Use the map for directions and plan your journey."
                           : "The organiser will share the venue shortly."}
@@ -733,8 +739,8 @@ export function EventWebsiteShell(p: Props) {
                     disableGutters
                     elevation={0}
                     sx={{
+                      ...surfaceSx,
                       border: 1,
-                      borderColor: "divider",
                       borderRadius: "12px !important",
                       "&::before": { display: "none" },
                     }}
@@ -775,13 +781,13 @@ export function EventWebsiteShell(p: Props) {
                     variant="outlined"
                     sx={{
                       p: 2.25,
-                      color: "text.primary",
+                      ...surfaceSx,
                       textDecoration: "none",
                       borderRadius: 3,
                     }}
                   >
                     <Typography sx={{ fontWeight: 750 }}>{x.title}</Typography>
-                    <Typography variant="body2" color="text.secondary">
+                    <Typography variant="body2" sx={{ color: muted }}>
                       {x.description}
                     </Typography>
                   </Paper>

@@ -1,6 +1,8 @@
 # Yuyu Helm chart
 
-Use this chart only on Kubernetes. For a single VPS without Kubernetes, use the Docker deployment instructions instead.
+Use this chart only on Kubernetes. For a single VPS or another container host
+without Kubernetes, use the
+[production Docker deployment guide](../../docs/DEPLOYMENT_DOCKER.md) instead.
 
 ## Images
 
@@ -8,10 +10,13 @@ Publish two images from the same commit and use immutable tags:
 
 ```bash
 docker build --target migrator -t registry.example.com/yuyu-migrator:VERSION .
-docker build -t registry.example.com/yuyu:VERSION .
+docker build --target runner \
+  --build-arg NEXT_SERVER_ACTIONS_ENCRYPTION_KEY="$NEXT_SERVER_ACTIONS_ENCRYPTION_KEY" \
+  -t registry.example.com/yuyu:VERSION .
 ```
 
-Pass `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` to both build commands as required by the Dockerfile. It must also be present at runtime with the same value.
+The Server Actions key is required by the application build, not the migrator
+build. It must be present at application runtime with the same stable value.
 
 ## Runtime secret
 

@@ -21,6 +21,7 @@ This directory is the source of truth for the current product, its operation, an
 | --- | --- |
 | [Production release](PRODUCTION_RELEASE.md) | Mandatory pre-deployment checklist |
 | [Production operations](production-operations.md) | Deployments, probes, schedulers, backups, incidents, and privacy operations |
+| [Production Docker deployment](DEPLOYMENT_DOCKER.md) | Current single-host/container deployment, migrations, upgrades, and image limitations |
 | [Isolated staging deployment](DEPLOYMENT_STAGING.md) | Single-VM Docker Compose staging/test setup behind host Nginx |
 | [Helm chart](../charts/yuyu/README.md) | Kubernetes installation, migration hook, secrets, probes, and ingress configuration |
 | [Future phases](FUTURE_PHASES.md) | Work that is not currently implemented |

@@ -12,6 +12,12 @@
 
 ## Deploy procedure
 
+For a non-Kubernetes container host, follow the current
+[production Docker deployment guide](DEPLOYMENT_DOCKER.md). The repository's
+root Compose file is development-only, and `compose.staging.yml` is not a
+production topology. Kubernetes operators should use the
+[Helm chart](../charts/yuyu/README.md).
+
 1. Build and test the immutable image in CI.
 2. Run `npm run db:status`, then `npm run db:deploy` once as a release job using the migration database role. Run `npm run storage:migrate` when legacy database assets remain.
 3. Deploy application instances using a least-privileged runtime database role and production secrets from a secrets manager.

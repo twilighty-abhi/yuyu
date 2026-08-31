@@ -28,6 +28,7 @@ The project handbook lives in [`docs/`](docs/README.md):
 - [Testing and quality gates](docs/TESTING.md)
 - [Production release checklist](docs/PRODUCTION_RELEASE.md)
 - [Production operations](docs/production-operations.md)
+- [Production Docker deployment](docs/DEPLOYMENT_DOCKER.md)
 - [Future work](docs/FUTURE_PHASES.md)
 
 ## Common commands

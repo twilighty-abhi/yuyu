@@ -357,15 +357,12 @@ export function EventWebsiteShell(p: Props) {
                         Register now
                       </Button>
                     )}
-                    {p.event.capacity != null && p.confirmedCount != null ? (
+                    {p.confirmedCount != null ? (
                       <Typography
                         variant="body2"
                         sx={{ textAlign: "center", color: muted }}
                       >
-                        {p.confirmedCount} registered ·{" "}
-                        {p.event.capacity - p.confirmedCount > 0
-                          ? `${p.event.capacity - p.confirmedCount} places left`
-                          : "At capacity"}
+                        {p.confirmedCount} registered
                       </Typography>
                     ) : null}
                     <Button

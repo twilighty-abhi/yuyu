@@ -129,6 +129,7 @@ model User {
   eventCollaborations EventCollaborator[]
   eventCollaboratorInvitesUsed EventCollaboratorInvite[] @relation("EventCollaboratorInviteUsedBy")
   eventBroadcasts   EventBroadcast[]
+  broadcastDrafts   EventBroadcastDraft[]
   mobileSessions    MobileSession[]
 }
 
@@ -356,6 +357,7 @@ model Event {
   faqs             EventFaq[]
   resources        EventResource[]
   broadcasts       EventBroadcast[]
+  broadcastDrafts  EventBroadcastDraft[]
 
   @@unique([organisationId, slug])
   @@index([organisationId])
@@ -385,6 +387,34 @@ model EventBroadcast {
   createdBy User? @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
 
   @@index([eventId, createdAt])
+}
+
+/// One organiser's unsent email in an event's Emails tab, autosaved while
+/// they write. Private to its author (unique on event and user) and removed
+/// when that organiser sends from the dashboard. Holds only what the organiser
+/// entered: the body is sanitised exactly as the send path does.
+model EventBroadcastDraft {
+  id         String                    @id @default(cuid())
+  eventId    String
+  userId     String
+  subject    String                    @default("")
+  /// Sanitised HTML template with {{placeholders}}, as it would be sent.
+  body       String                    @default("")
+  /// Visual design id from lib/email/broadcastDesigns.ts.
+  design     String                    @default("classic")
+  /// Selected registration statuses; may be empty while the draft is being written.
+  statuses   RsvpStatus[]              @default([])
+  attendance BroadcastAttendanceFilter @default(ANY)
+  /// Starter template the draft began from (lib/broadcastTemplate.ts), if any.
+  templateId String?
+  createdAt  DateTime                  @default(now())
+  updatedAt  DateTime                  @updatedAt
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@index([userId])
 }
 
 model EventInvite {

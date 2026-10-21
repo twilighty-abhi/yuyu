@@ -57,4 +57,16 @@ describe("production migration safety contracts", () => {
     expect(sql).toContain('REFERENCES "Event"("id") ON DELETE CASCADE');
     expect(sql).toContain('REFERENCES "User"("id") ON DELETE SET NULL');
   });
+
+  it("adds broadcast drafts as a new table that cascades with its event and author", () => {
+    const sql = readFileSync(resolve(root, "prisma/migrations/20261022000000_event_broadcast_drafts/migration.sql"), "utf8");
+    expect(sql).not.toMatch(/\bDROP\b/i);
+    expect(sql).not.toMatch(/ALTER TABLE "(?!EventBroadcastDraft")/);
+    expect(sql).not.toMatch(/^\s*(UPDATE|DELETE FROM|INSERT INTO)\b/m);
+    expect(sql).toContain('CREATE TABLE "EventBroadcastDraft"');
+    expect(sql).toContain('CREATE UNIQUE INDEX "EventBroadcastDraft_eventId_userId_key" ON "EventBroadcastDraft"("eventId", "userId")');
+    expect(sql).toContain('CHECK (char_length("subject") <= 150)');
+    expect(sql).toContain('FOREIGN KEY ("eventId") REFERENCES "Event"("id") ON DELETE CASCADE');
+    expect(sql).toContain('FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE');
+  });
 });

@@ -1,17 +1,26 @@
 "use client";
 
 import { DotLoader } from "@/components/brand/DotLoader";
-import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import type { BroadcastAttendanceFilter, RsvpStatus } from "@prisma/client";
-import { ChevronDown, FlaskConical, Monitor, Send, Smartphone } from "lucide-react";
+import { ChevronDown, FlaskConical, Monitor, Save, Send, Smartphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/choice";
 import { Callout } from "@/components/ui/display";
+import { ConfirmDialog } from "@/components/ui/dialog";
 import { Field, Input } from "@/components/ui/field";
 import { Tooltip } from "@/components/ui/menu";
 import { cn } from "@/lib/cn";
-import { countBroadcastRecipients, previewEventBroadcast, sendEventBroadcast, sendEventBroadcastTest } from "@/app/actions/broadcasts";
+import {
+  countBroadcastRecipients,
+  discardEventBroadcastDraft,
+  previewEventBroadcast,
+  saveEventBroadcastDraft,
+  sendEventBroadcast,
+  sendEventBroadcastTest,
+} from "@/app/actions/broadcasts";
+import { DraftAutosave, draftStatusText, type BroadcastDraftContent, type DraftAutosaveState, type EventBroadcastDraftDto } from "@/lib/broadcastDraftAutosave";
 import {
   BROADCAST_PLACEHOLDERS,
   BROADCAST_STARTER_TEMPLATES,
@@ -80,7 +89,30 @@ function StepHeading({ step, id, title, aside }: { step: number; id: string; tit
 const cardClass = "flex min-w-0 flex-col gap-4 rounded-xl border border-line bg-canvas p-4 sm:p-5";
 
 const UNDO_SECONDS = 5;
-type SendPayload = { statuses: RsvpStatus[]; attendance: BroadcastAttendanceFilter; subject: string; body: string; design: BroadcastDesignId; count: number };
+type SendPayload = { statuses: RsvpStatus[]; attendance: BroadcastAttendanceFilter; subject: string; body: string; design: BroadcastDesignId; count: number; templateId: string | null };
+
+/** The composer as it opens without a saved draft: the first starter template. */
+function startingContent(): BroadcastDraftContent & { design: BroadcastDesignId } {
+  const template = BROADCAST_STARTER_TEMPLATES[0]!;
+  const initial = defaultBroadcastTemplate();
+  return {
+    subject: initial.subject,
+    body: initial.body,
+    design: DEFAULT_BROADCAST_DESIGN,
+    statuses: [...template.audience.statuses],
+    attendance: template.audience.attendance,
+    templateId: template.id,
+  };
+}
+
+const noopSubscribe = () => () => {};
+const timeFormatter = () => new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
+
+/** What replacing the composer would overwrite, asked before a template, a reused email, or a discard. */
+type PendingReplace =
+  | { kind: "template"; id: string; name: string }
+  | { kind: "history"; row: BroadcastHistoryRow }
+  | { kind: "discard" };
 
 export function EventBroadcastPanel(props: {
   organisationSlug: string;
@@ -89,28 +121,83 @@ export function EventBroadcastPanel(props: {
   history: BroadcastHistoryRow[];
   /** Event branding for the design thumbnails; the server renders the real thing. */
   brand: { accentColor: string | null; coverImageUrl: string | null };
+  /** The signed-in organiser's own saved draft for this event, restored into the composer. */
+  draft: EventBroadcastDraftDto | null;
 }) {
-  const { organisationSlug, eventId, statusCounts, history, brand } = props;
+  const { organisationSlug, eventId, statusCounts, history, brand, draft } = props;
   const router = useRouter();
   const { showToast } = useToast();
-  const initial = useMemo(() => defaultBroadcastTemplate(), []);
+  // Only the first render's draft matters: later server renders (after a send)
+  // must not overwrite what the organiser is editing.
+  const [initial] = useState<BroadcastDraftContent & { design: BroadcastDesignId }>(() =>
+    draft
+      ? { subject: draft.subject, body: draft.body, design: draft.design, statuses: [...draft.statuses], attendance: draft.attendance, templateId: draft.templateId }
+      : startingContent(),
+  );
 
-  const [templateId, setTemplateId] = useState<string>(BROADCAST_STARTER_TEMPLATES[0]!.id);
+  const [templateId, setTemplateId] = useState<string>(initial.templateId ?? "");
   const [showAllTemplates, setShowAllTemplates] = useState(false);
-  const [statuses, setStatuses] = useState<RsvpStatus[]>([...BROADCAST_STARTER_TEMPLATES[0]!.audience.statuses]);
-  const [attendance, setAttendance] = useState<BroadcastAttendanceFilter>(BROADCAST_STARTER_TEMPLATES[0]!.audience.attendance);
+  const [statuses, setStatuses] = useState<RsvpStatus[]>([...initial.statuses]);
+  const [attendance, setAttendance] = useState<BroadcastAttendanceFilter>(initial.attendance);
   const [subject, setSubject] = useState(initial.subject);
   const [body, setBody] = useState(initial.body);
   const [countState, setCountState] = useState<{ key: string; count: number; error: string | null }>({ key: "", count: 0, error: null });
   const [preview, setPreview] = useState<{ key: string; subject: string; html: string; error: string | null }>({ key: "", subject: "", html: "", error: null });
   const [previewWidth, setPreviewWidth] = useState<"desktop" | "mobile">("desktop");
-  const [design, setDesign] = useState<BroadcastDesignId>(DEFAULT_BROADCAST_DESIGN);
+  const [design, setDesign] = useState<BroadcastDesignId>(initial.design);
   const [confirmOpen, setConfirmOpen] = useState(false);
   // After confirming, sending waits UNDO_SECONDS so a mistake can still be undone.
   const [countdown, setCountdown] = useState<{ left: number; count: number } | null>(null);
   const sendTimer = useRef<{ interval: ReturnType<typeof setInterval>; payload: SendPayload } | null>(null);
   const [pending, startTransition] = useTransition();
   const subjectRef = useRef<HTMLInputElement | null>(null);
+
+  // Draft autosave: the controller owns the timing; React only mirrors its state.
+  const content = useMemo<BroadcastDraftContent>(
+    () => ({ subject, body, design, statuses, attendance, templateId: templateId || null }),
+    [subject, body, design, statuses, attendance, templateId],
+  );
+  const contentRef = useRef(content);
+  const [draftState, setDraftState] = useState<DraftAutosaveState>(() => ({
+    dirty: false, saving: false, hasDraft: draft !== null, savedAt: draft?.updatedAt ?? null, error: null,
+  }));
+  const [autosave] = useState(() => new DraftAutosave({
+    initial,
+    savedAt: draft?.updatedAt ?? null,
+    onChange: setDraftState,
+    save: async (next) => {
+      const result = await saveEventBroadcastDraft({ organisationSlug, eventId, ...next, statuses: [...next.statuses] });
+      return result.ok ? { ok: true, updatedAt: result.data?.updatedAt ?? new Date().toISOString() } : { ok: false, error: result.error };
+    },
+  }));
+  const [pendingReplace, setPendingReplace] = useState<PendingReplace | null>(null);
+  const [replacing, setReplacing] = useState(false);
+  const hydrated = useSyncExternalStore(noopSubscribe, () => true, () => false);
+  const formatSavedTime = useMemo(() => {
+    const formatter = timeFormatter();
+    return (iso: string) => formatter.format(new Date(iso));
+  }, []);
+
+  useEffect(() => {
+    contentRef.current = content;
+    autosave.edit(content);
+  }, [autosave, content]);
+
+  // Switching dashboard tabs unmounts the composer: save what is left once.
+  useEffect(() => () => autosave.leave(), [autosave]);
+
+  // Closing or reloading the tab with unsaved work asks first. Client-side
+  // navigation is covered by the save on unmount above.
+  const unsaved = draftState.dirty || draftState.saving;
+  useEffect(() => {
+    if (!unsaved) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [unsaved]);
 
   const audienceText = describeBroadcastAudience(statuses, attendance);
   const audienceKey = `${[...statuses].sort().join(",")}|${attendance}`;
@@ -167,15 +254,62 @@ export function EventBroadcastPanel(props: {
     setStatuses((current) => (current.includes(value) ? current.filter((status) => status !== value) : [...current, value]));
   }
 
+  /** Puts new content in the composer as a fresh starting point, removing the saved draft if there is one. */
+  async function replaceComposer(next: BroadcastDraftContent & { design: BroadcastDesignId }): Promise<boolean> {
+    const hadDraft = autosave.state.hasDraft;
+    setTemplateId(next.templateId ?? "");
+    setSubject(next.subject);
+    setBody(next.body);
+    setStatuses([...next.statuses]);
+    setAttendance(next.attendance);
+    setDesign(next.design);
+    contentRef.current = next;
+    autosave.reset(next, { hasDraft: hadDraft, savedAt: autosave.state.savedAt });
+    if (!hadDraft) return true;
+    const result = await discardEventBroadcastDraft({ organisationSlug, eventId });
+    if (!result.ok) {
+      // The old draft is still on the server; saving the new content replaces it.
+      autosave.markUnsaved();
+      showToast(result.error, "error");
+      return false;
+    }
+    autosave.reset(next, { hasDraft: false, savedAt: null });
+    autosave.edit(contentRef.current);
+    return true;
+  }
+
+  /** Templates, reuse, and discard overwrite the composer, so they ask first when there is work to lose. */
+  function requestReplace(request: PendingReplace) {
+    if (autosave.state.dirty || autosave.state.hasDraft) return setPendingReplace(request);
+    void performReplace(request);
+  }
+
+  async function performReplace(request: PendingReplace) {
+    if (request.kind === "template") {
+      const template = BROADCAST_STARTER_TEMPLATES.find((candidate) => candidate.id === request.id);
+      if (!template) return;
+      await replaceComposer({
+        subject: template.subject,
+        body: template.bodyHtml,
+        design,
+        statuses: [...template.audience.statuses],
+        attendance: template.audience.attendance,
+        templateId: template.id,
+      });
+      showToast(`Loaded the “${template.name}” template. Edit anything before sending.`, "success");
+    } else if (request.kind === "history") {
+      const { row } = request;
+      await replaceComposer({ subject: row.subject, body: row.body, design: row.design, statuses: [...row.statuses], attendance: row.attendance, templateId: null });
+      showToast("Loaded the previous email into the editor", "success");
+    } else {
+      if (await replaceComposer(startingContent())) showToast("Draft discarded", "success");
+    }
+  }
+
   function applyTemplate(id: string) {
     const template = BROADCAST_STARTER_TEMPLATES.find((candidate) => candidate.id === id);
     if (!template) return;
-    setTemplateId(id);
-    setSubject(template.subject);
-    setBody(template.bodyHtml);
-    setStatuses([...template.audience.statuses]);
-    setAttendance(template.audience.attendance);
-    showToast(`Loaded the “${template.name}” template. Edit anything before sending.`, "success");
+    requestReplace({ kind: "template", id, name: template.name });
   }
 
   function insertSubjectPlaceholder(token: string) {
@@ -192,19 +326,15 @@ export function EventBroadcastPanel(props: {
   }
 
   function loadFromHistory(row: BroadcastHistoryRow) {
-    setTemplateId("");
-    setSubject(row.subject);
-    setBody(row.body);
-    setStatuses(row.statuses);
-    setAttendance(row.attendance);
-    setDesign(row.design);
-    showToast("Loaded the previous email into the editor", "success");
+    requestReplace({ kind: "history", row });
   }
 
   // Sending waits for the preview of the current edit, so the review step
   // always shows the subject and design that will actually go out.
   const canSend = !pending && statuses.length > 0 && hasContent && (recipientCount ?? 0) > 0 && previewReady && !preview.error;
   function startCountdown(payload: SendPayload) {
+    // No autosave while the email is about to go: the send clears the draft.
+    autosave.suspend();
     let left = UNDO_SECONDS;
     setCountdown({ left, count: payload.count });
     const interval = setInterval(() => {
@@ -215,7 +345,15 @@ export function EventBroadcastPanel(props: {
       setCountdown(null);
       startTransition(async () => {
         const result = await sendEventBroadcast({ organisationSlug, eventId, statuses: payload.statuses, attendance: payload.attendance, subject: payload.subject, body: payload.body, design: payload.design });
-        if (!result.ok) return showToast(result.error, "error");
+        if (!result.ok) {
+          autosave.resume();
+          return showToast(result.error, "error");
+        }
+        // The server removed the draft with the send. What was sent is the new
+        // starting point; edits made during the countdown stay unsaved and autosave.
+        autosave.reset({ ...payload }, { hasDraft: false, savedAt: null });
+        autosave.resume();
+        autosave.edit(contentRef.current);
         showToast(`Queued for ${result.data?.recipientCount ?? 0} recipients`, "success");
         router.refresh();
       });
@@ -227,6 +365,7 @@ export function EventBroadcastPanel(props: {
     if (sendTimer.current) clearInterval(sendTimer.current.interval);
     sendTimer.current = null;
     setCountdown(null);
+    autosave.resume();
     showToast("Sending cancelled. Nothing was sent.", "success");
   }
 
@@ -361,6 +500,35 @@ export function EventBroadcastPanel(props: {
               ))}
             </div>
             <BroadcastEmailEditor value={body} onChange={setBody} disabled={pending} />
+            <div className="flex flex-col gap-2 border-t border-line pt-3 min-[420px]:flex-row min-[420px]:items-center">
+              <p role="status" aria-live="polite" aria-atomic="true" className="flex flex-1 flex-wrap items-center gap-x-1.5 text-caption text-ink-muted">
+                <span>{draftStatusText(draftState, hydrated ? formatSavedTime : null)}</span>
+                {draftState.error && draftState.dirty && !draftState.saving ? (
+                  <>
+                    <span aria-hidden>·</span>
+                    <Button variant="quiet" size="sm" className="min-h-0 px-0 font-semibold text-ink" onClick={() => void autosave.saveNow()}>
+                      Retry
+                    </Button>
+                  </>
+                ) : null}
+              </p>
+              <div className="flex items-center gap-2">
+                {draftState.hasDraft || draftState.dirty ? (
+                  <Button variant="dangerQuiet" size="sm" disabled={pending || countdown !== null || replacing} onClick={() => requestReplace({ kind: "discard" })}>
+                    Discard draft…
+                  </Button>
+                ) : null}
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  startIcon={<Save />}
+                  disabled={!draftState.dirty || draftState.saving || pending || countdown !== null}
+                  onClick={() => void autosave.saveNow()}
+                >
+                  Save draft
+                </Button>
+              </div>
+            </div>
           </section>
         </div>
 
@@ -470,6 +638,32 @@ export function EventBroadcastPanel(props: {
       </div>
       )}
 
+      <ConfirmDialog
+        open={pendingReplace !== null}
+        title={pendingReplace?.kind === "discard" ? "Discard this draft?" : "Replace your draft?"}
+        message={
+          pendingReplace?.kind === "discard"
+            ? "Your saved subject, message, design, and audience will be removed, and the editor starts again from the first template. This can't be undone."
+            : pendingReplace?.kind === "template"
+              ? `Loading the “${pendingReplace.name}” template replaces what you've written, and your saved draft is removed.`
+              : "Reusing this email replaces what you've written, and your saved draft is removed."
+        }
+        confirmLabel={pendingReplace?.kind === "discard" ? "Discard draft" : "Replace draft"}
+        cancelLabel={pendingReplace?.kind === "discard" ? "Keep draft" : "Keep my draft"}
+        destructive
+        loading={replacing}
+        onCancel={() => setPendingReplace(null)}
+        onConfirm={() => {
+          const request = pendingReplace;
+          if (!request) return;
+          setReplacing(true);
+          void performReplace(request).finally(() => {
+            setReplacing(false);
+            setPendingReplace(null);
+          });
+        }}
+      />
+
       <SendConfirmDialog
         open={confirmOpen}
         recipientCount={recipientCount ?? 0}
@@ -479,7 +673,7 @@ export function EventBroadcastPanel(props: {
         onConfirm={() => {
           setConfirmOpen(false);
           // Snapshot what was reviewed; later edits during the countdown don't change it.
-          startCountdown({ statuses, attendance, subject, body, design, count: recipientCount ?? 0 });
+          startCountdown({ statuses, attendance, subject, body, design, count: recipientCount ?? 0, templateId: templateId || null });
         }}
       />
     </div>

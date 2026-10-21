@@ -8,15 +8,14 @@ const mocks = vi.hoisted(() => ({
     eventInstance: { findFirst: vi.fn() },
     rSVP: { findFirst: vi.fn() },
   },
-  getMembership: vi.fn(),
-  canManageEvents: vi.fn(),
+  canManageRegistrationsFor: vi.fn(),
   isActionRateLimited: vi.fn(),
   recordAuditEvent: vi.fn(),
   confirmRsvpWithinCapacity: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({ prisma: mocks.prisma }));
-vi.mock("@/lib/permissions", () => ({ getMembership: mocks.getMembership, canManageEvents: mocks.canManageEvents }));
+vi.mock("@/lib/eventAccess", () => ({ canManageRegistrationsFor: mocks.canManageRegistrationsFor }));
 vi.mock("@/lib/actionRateLimit", () => ({ isActionRateLimited: mocks.isActionRateLimited }));
 vi.mock("@/lib/audit", () => ({ recordAuditEvent: mocks.recordAuditEvent }));
 vi.mock("@/lib/rsvpCapacity", () => ({ confirmRsvpWithinCapacity: mocks.confirmRsvpWithinCapacity }));
@@ -32,8 +31,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.isActionRateLimited.mockResolvedValue(false);
   mocks.prisma.organisation.findUnique.mockResolvedValue({ id: "org_1", slug: "acme" });
-  mocks.getMembership.mockResolvedValue({ role: "ADMIN" });
-  mocks.canManageEvents.mockReturnValue(true);
+  mocks.canManageRegistrationsFor.mockResolvedValue(true);
   mocks.prisma.event.findFirst.mockResolvedValue({ id: "event_1", slug: "meetup", title: "Meetup" });
   mocks.prisma.rSVP.findFirst.mockResolvedValue(rejected);
 });
@@ -54,9 +52,10 @@ describe("reacceptRsvpForUser", () => {
     expect(mocks.isActionRateLimited).toHaveBeenCalledWith("rsvp", "user_1");
   });
 
-  it("uses the approval permission", async () => {
-    mocks.canManageEvents.mockReturnValue(false);
+  it("uses the approval permission (owner/admin or the MANAGE_REGISTRATIONS grant)", async () => {
+    mocks.canManageRegistrationsFor.mockResolvedValue(false);
     await expect(reacceptRsvpForUser("user_1", input)).resolves.toEqual({ ok: false, error: "You do not have permission to manage attendees." });
+    expect(mocks.canManageRegistrationsFor).toHaveBeenCalledWith(expect.objectContaining({ userId: "user_1", organisationId: "org_1", eventId: "event_1" }));
     expect(mocks.confirmRsvpWithinCapacity).not.toHaveBeenCalled();
   });
 

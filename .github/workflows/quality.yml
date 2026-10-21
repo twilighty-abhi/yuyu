@@ -70,7 +70,13 @@ jobs:
             -e NEXT_SERVER_ACTIONS_ENCRYPTION_KEY -e MFA_ENCRYPTION_KEY \
             -e EMAIL_FROM -e SMTP_SERVICE -e SMTP_ALLOW_UNAUTHENTICATED \
             -e TRUSTED_PROXY_IP_HEADER -e S3_BUCKET -e S3_REGION yuyu:ci
-          curl --fail --retry 15 --retry-delay 2 http://127.0.0.1:3000/api/health
+          # The server needs a few seconds to boot; a refused connection is retried too.
+          if ! curl --fail --silent --show-error --retry 30 --retry-delay 2 --retry-connrefused http://127.0.0.1:3000/api/health; then
+            docker logs yuyu-ci
+            docker rm -f yuyu-ci
+            exit 1
+          fi
+          docker exec yuyu-ci node -e "require('sharp'); console.log('sharp loads in the image')"
           docker rm -f yuyu-ci
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e:production

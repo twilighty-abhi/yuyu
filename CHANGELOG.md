@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Re-accept a declined registration.** Organisers can reverse a decline from the Guests list (**Re-accept**) or the mobile API (`POST /api/mobile/v1/orgs/:orgSlug/events/:eventId/guests/:rsvpId/reaccept`, additive). The guest is confirmed when there is room and waitlisted otherwise, in the same capacity transaction as an approval, with the matching outbox email and a `RSVP_REACCEPTED` audit event. `approve` is unchanged.
+
 ## [1.0.0] - 2026-10-21
 
 The V1 release: everything the `v1-design-overhaul` integration branch adds on top of production `main`. See the upgrade notes before deploying.

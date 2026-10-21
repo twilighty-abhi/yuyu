@@ -2,7 +2,7 @@
 
 import { auth } from "@/lib/auth";
 import type { ActionResult } from "./org";
-import { approveRsvpForUser, promoteFromWaitlistForUser, rejectRsvpForUser } from "@/lib/core/rsvpLifecycle";
+import { approveRsvpForUser, promoteFromWaitlistForUser, reacceptRsvpForUser, rejectRsvpForUser } from "@/lib/core/rsvpLifecycle";
 
 /*
  * Thin Server Action wrappers. The RSVP lifecycle rules live in
@@ -20,6 +20,11 @@ export async function approveRsvp(input: unknown): Promise<ActionResult> {
 
 export async function rejectRsvp(input: unknown): Promise<ActionResult> {
   return rejectRsvpForUser(await currentUserId(), input);
+}
+
+/** Reverses a decline: confirmed when there is room, otherwise waitlisted. */
+export async function reacceptRsvp(input: unknown): Promise<ActionResult<{ status: "CONFIRMED" | "WAITLISTED" }>> {
+  return reacceptRsvpForUser(await currentUserId(), input);
 }
 
 export async function promoteFromWaitlist(input: unknown): Promise<ActionResult> {

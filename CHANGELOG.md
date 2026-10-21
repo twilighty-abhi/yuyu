@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Re-accept a declined registration.** Organisers can reverse a decline from the Guests list (**Re-accept**) or the mobile API (`POST /api/mobile/v1/orgs/:orgSlug/events/:eventId/guests/:rsvpId/reaccept`, additive). The guest is confirmed when there is room and waitlisted otherwise, in the same capacity transaction as an approval, with the matching outbox email and a `RSVP_REACCEPTED` audit event. `approve` is unchanged.
 ### Fixed
 
 - **Co-organiser permissions.** Collaborators no longer see owner/admin-only controls (Delete event, clone, event address, embed, publishing, the registration form, emails, feedback settings and the certificate builder, the series details form, and series invites or schedule without the grant), and the event and series dashboards now show each grant's own controls: `EDIT_DETAILS` the event page content editor, `MANAGE_REGISTRATIONS` the guest list with approvals, manual guests, edits, removals, the attendee CSV and registration numbers, and `MANAGE_INVITATIONS` the invite list. Server-side, `MANAGE_INVITATIONS` now authorises event and series invites and `MANAGE_REGISTRATIONS` the RSVP lifecycle and guest-management cores (on the event, or on the series for occurrences), which were owner/admin only although the dashboard offered them; delete, clone, collaborator management, publishing and short links stay owner/admin only. Visibility comes from one capability object (`lib/eventDashboard/capabilities.ts`); the matrix is in `docs/PERMISSIONS.md`.

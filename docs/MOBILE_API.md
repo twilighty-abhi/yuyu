@@ -295,6 +295,14 @@ ticket tokens.
 - `POST …/guests/:rsvpId/approve` · `…/reject` · `…/promote` → the updated
   `Guest`. Same rules, capacity transaction, emails and audit as `approveRsvp`
   / `rejectRsvp` / `promoteFromWaitlist` (organisation admins).
+- `POST …/guests/:rsvpId/reaccept` → the updated `Guest`. Reverses a decline
+  (as `reacceptRsvp`; organisation admins): only a `REJECTED` guest, and only
+  while the event is open. The guest becomes `CONFIRMED` when there is room
+  and `WAITLISTED` otherwise (check the returned `status`), with the approval
+  or waitlist email and a `RSVP_REACCEPTED` audit event. Any other status is
+  `CONFLICT` ("Only declined registrations can be re-accepted."). Older apps
+  that do not call it are unaffected; `approve` still accepts only pending
+  requests.
 - `POST …/guests` `{ "name", "email", "answers"? }` → `201` `Guest` (as `addManualRsvp`).
 - `DELETE …/guests/:rsvpId` → `{ "undoId" }` (as `deleteRsvp`; the undo lasts five minutes).
 - `POST …/guests/restore` `{ "undoId" }` → `null` (as `restoreRsvp`). `NOT_FOUND`

@@ -53,6 +53,7 @@ inherit the application's database. Files run one at a time.
 | `ops-alerts.db.test.ts` | Alert webhook settings (encrypted URL, audit without values, test message), `POST /api/client-errors` (same-origin, size cap, redaction, 10/min per IP), panel SMTP replacing the environment and **Send test email**, and outbox failure alerts with requeue |
 | `publish-event.db.test.ts` | `publishEvent` releases an existing unreleased page, creates a released page when none exists, and leaves a member's attempt untouched |
 | `rsvp-lifecycle.db.test.ts` | No registration for an unreleased website, final-slot races, mandatory approval when full, and per-occurrence capacity |
+| `rsvp-reaccept.db.test.ts` | Re-accepting a declined registration: confirmed with room, waitlisted when full, the last-place race, the audit row and outbox email, a `MEMBER` denied, cross-organisation not-found, and an ended event |
 | `rsvpCapacity.db.test.ts` | No overselling, waitlist promotion, and promotion that respects a concurrent status change |
 | `schema-invariants.db.test.ts` | Database CHECK constraints for event times and capacity, collaborator targets, feedback identity, and outbox states |
 | `short-links.db.test.ts` | Owner/admin-only creation, cross-tenant rejection, idempotent and concurrent creation, regeneration, the unique index, and resolution for every non-published status |
@@ -103,6 +104,7 @@ disposable database in CI.
 | `collaborator-permissions.spec.ts` | A `CHECK_IN`-only co-organiser and one with every grant open the event dashboard: neither sees Delete event, clone, embed, the event address, publishing or short-link creation; the full-grant co-organiser sees the guest list, invites, page content editor, schedule and check-in desk |
 | `short-links.spec.ts` | Short-link 307 redirect, not-found for unknown and unpublished codes, and owner/member permissions in the dashboard |
 | `api-v1.spec.ts` | Machine API credentials, tenant scoping, participant privacy, attendance scope, rotation, and revocation |
+| `guest-reaccept.spec.ts` | Declining a pending guest by mistake and re-accepting from the Guests list: confirmed while there is room, waitlisted once the event is full, with toasts, row states and the Declined count |
 | `redesign-journeys.spec.ts` | A serial organiser and attendee story: create an organisation, the three-step Create Event dialog, all eight dashboard tabs, publishing from the Overview checklist and the released public page, registration and waitlist, the guest list, check-in, the account area, dark mode, the sidebar and phone drawer, and responsive widths. Each test allows 120 seconds for first-visit compilation on a cold dev server |
 
 ## Static and dependency checks

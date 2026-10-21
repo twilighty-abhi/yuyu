@@ -6,7 +6,8 @@ const prismaMock = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/db", () => ({ prisma: prismaMock }));
-vi.mock("@/lib/outbox", () => ({ enqueueRsvpStatusNotification: vi.fn() }));
+const outboxMock = vi.hoisted(() => ({ enqueueRsvpStatusNotification: vi.fn(), enqueueRsvpConfirmation: vi.fn() }));
+vi.mock("@/lib/outbox", () => outboxMock);
 
 import { confirmRsvpWithinCapacity, hasCapacityToRestoreConfirmedRsvp } from "@/lib/rsvpCapacity";
 
@@ -81,5 +82,58 @@ describe("confirmRsvpWithinCapacity", () => {
 
     await expect(confirmRsvpWithinCapacity({ ...params, requireOpen: true })).resolves.toBe("closed");
     expect(tx.rSVP.updateMany).not.toHaveBeenCalled();
+  });
+
+  describe("re-accepting a declined RSVP (whenFull: waitlist)", () => {
+    const reaccept = {
+      rsvpId: "rsvp_1",
+      eventId: "event_1",
+      expectedStatuses: [RsvpStatus.REJECTED],
+      requireOpen: true,
+      whenFull: "waitlist" as const,
+      notification: { to: "guest@example.test", eventTitle: "Meetup", checkInToken: "token_1" },
+    };
+
+    it("confirms and queues the approval email when there is room", async () => {
+      tx.rSVP.count.mockResolvedValue(1);
+      tx.rSVP.updateMany.mockResolvedValue({ count: 1 });
+
+      await expect(confirmRsvpWithinCapacity(reaccept)).resolves.toBe("confirmed");
+      expect(tx.rSVP.updateMany).toHaveBeenCalledWith({
+        where: { id: "rsvp_1", eventId: "event_1", status: { in: [RsvpStatus.REJECTED] } },
+        data: { status: RsvpStatus.CONFIRMED },
+      });
+      expect(outboxMock.enqueueRsvpStatusNotification).toHaveBeenCalledWith(tx, { ...reaccept.notification, approved: true });
+      expect(outboxMock.enqueueRsvpConfirmation).not.toHaveBeenCalled();
+    });
+
+    it("waitlists inside the same lock and queues the waitlist email when full", async () => {
+      tx.rSVP.count.mockResolvedValue(2);
+      tx.rSVP.updateMany.mockResolvedValue({ count: 1 });
+
+      await expect(confirmRsvpWithinCapacity(reaccept)).resolves.toBe("waitlisted");
+      expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
+      expect(tx.rSVP.updateMany).toHaveBeenCalledWith({
+        where: { id: "rsvp_1", eventId: "event_1", status: { in: [RsvpStatus.REJECTED] } },
+        data: { status: RsvpStatus.WAITLISTED },
+      });
+      expect(outboxMock.enqueueRsvpConfirmation).toHaveBeenCalledWith(tx, { ...reaccept.notification, status: RsvpStatus.WAITLISTED });
+      expect(outboxMock.enqueueRsvpStatusNotification).not.toHaveBeenCalled();
+    });
+
+    it("sends nothing when another organiser changed the RSVP first", async () => {
+      tx.rSVP.count.mockResolvedValue(2);
+      tx.rSVP.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(confirmRsvpWithinCapacity(reaccept)).resolves.toBe("changed");
+      expect(outboxMock.enqueueRsvpConfirmation).not.toHaveBeenCalled();
+    });
+
+    it("does not re-accept after the event has closed", async () => {
+      tx.$queryRaw.mockResolvedValue([{ capacity: 2, status: "PUBLISHED", endDateTime: new Date("2000-01-01T00:00:00.000Z") }]);
+
+      await expect(confirmRsvpWithinCapacity(reaccept)).resolves.toBe("closed");
+      expect(tx.rSVP.updateMany).not.toHaveBeenCalled();
+    });
   });
 });

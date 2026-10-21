@@ -1,6 +1,6 @@
 import { EventStatus, Prisma, RsvpStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { enqueueRsvpStatusNotification } from "@/lib/outbox";
+import { enqueueRsvpConfirmation, enqueueRsvpStatusNotification } from "@/lib/outbox";
 
 export async function countConfirmedForEvent(eventId: string): Promise<number> {
   return prisma.rSVP.count({
@@ -52,7 +52,14 @@ export async function confirmRsvpWithinCapacity(params: {
   /** Approval requests must not be confirmed after their event has ended or been unpublished. */
   requireOpen?: boolean;
   notification?: { to: string; eventTitle: string; checkInToken: string };
-}): Promise<"confirmed" | "full" | "changed" | "closed"> {
+  /**
+   * What to do when there is no room. By default the RSVP is left unchanged
+   * and "full" is returned. "waitlist" instead moves it to WAITLISTED in the
+   * same locked transaction and queues the waitlist email, so an organiser can
+   * later promote it like any other waitlisted guest.
+   */
+  whenFull?: "reject" | "waitlist";
+}): Promise<"confirmed" | "waitlisted" | "full" | "changed" | "closed"> {
   const target = params.eventId ? { eventId: params.eventId } : { eventInstanceId: params.eventInstanceId! };
   return prisma.$transaction(async (tx) => {
     let capacity: number | null;
@@ -80,7 +87,17 @@ export async function confirmRsvpWithinCapacity(params: {
     }
     if (params.requireOpen && !isOpen) return "closed";
     const confirmed = await tx.rSVP.count({ where: { ...target, status: RsvpStatus.CONFIRMED } });
-    if (capacity != null && confirmed >= capacity) return "full";
+    if (capacity != null && confirmed >= capacity) {
+      if (params.whenFull !== "waitlist") return "full";
+      const waitlisted = await tx.rSVP.updateMany({
+        where: { id: params.rsvpId, ...target, status: { in: params.expectedStatuses } },
+        data: { status: RsvpStatus.WAITLISTED },
+      });
+      if (waitlisted.count === 1 && params.notification) {
+        await enqueueRsvpConfirmation(tx, { ...params.notification, status: RsvpStatus.WAITLISTED });
+      }
+      return waitlisted.count === 1 ? "waitlisted" : "changed";
+    }
     const updated = await tx.rSVP.updateMany({
       where: { id: params.rsvpId, ...target, status: { in: params.expectedStatuses } },
       data: { status: RsvpStatus.CONFIRMED },

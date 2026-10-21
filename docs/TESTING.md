@@ -44,6 +44,7 @@ inherit the application's database. Files run one at a time.
 | --- | --- |
 | `api-v1.db.test.ts` | Machine API: persisted credential hashes, cross-tenant event access, participant privacy, bounded collections |
 | `auth-hardening.db.test.ts` | Single use of a TOTP across replicas, concurrent MFA enrollment, stale pending setup after revocation, and password recovery racing a password change |
+| `broadcast-drafts.db.test.ts` | Emails-tab drafts: save/load/update, one private draft per organiser, cross-tenant `NOT_FOUND`, member denial, body sanitising and length limits, cascade on event and user deletion, and clearing by a real send (not a test send or a failed send) |
 | `check-in.db.test.ts` | One history entry for concurrent scans and undo; eligibility enforced in the conditional write |
 | `feedback.db.test.ts` | Anonymous and certificate-linked feedback, waitlisted exclusion, and immutable answers after a field is removed |
 | `invite-acceptance.db.test.ts` | Concurrent organisation invite and collaborator invite acceptance |
@@ -103,6 +104,7 @@ disposable database in CI.
 | `short-links.spec.ts` | Short-link 307 redirect, not-found for unknown and unpublished codes, and owner/member permissions in the dashboard |
 | `api-v1.spec.ts` | Machine API credentials, tenant scoping, participant privacy, attendance scope, rotation, and revocation |
 | `guest-reaccept.spec.ts` | Declining a pending guest by mistake and re-accepting from the Guests list: confirmed while there is room, waitlisted once the event is full, with toasts, row states and the Declined count |
+| `broadcast-drafts.spec.ts` | A custom email autosaves, guards leaving while unsaved, survives a reload, asks before a template replaces it, and is cleared by a real send after the undo window; **Discard draft…** removes it |
 | `redesign-journeys.spec.ts` | A serial organiser and attendee story: create an organisation, the three-step Create Event dialog, all eight dashboard tabs, publishing from the Overview checklist and the released public page, registration and waitlist, the guest list, check-in, the account area, dark mode, the sidebar and phone drawer, and responsive widths. Each test allows 120 seconds for first-visit compilation on a cold dev server |
 
 ## Static and dependency checks

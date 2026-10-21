@@ -9,6 +9,9 @@ import { EmailTransportUnavailableError, getEmailTransport } from "@/lib/email/t
 describe("production SMTP configuration", () => {
   beforeEach(() => {
     vi.stubEnv("NODE_ENV", "production");
+    // CI itself sets the TLS bypass pair; tests opt in to it explicitly.
+    vi.stubEnv("CI", "");
+    vi.stubEnv("ALLOW_INSECURE_PRODUCTION_TESTS", "");
     vi.spyOn(nodemailer, "createTransport");
   });
   afterEach(() => {

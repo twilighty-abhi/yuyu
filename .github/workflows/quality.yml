@@ -80,3 +80,7 @@ jobs:
           docker rm -f yuyu-ci
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e:production
+        env:
+          # The specs give each browser context its own client IP through
+          # cf-connecting-ip so per-IP limits (10 sign-ins/min) don't couple tests.
+          TRUSTED_PROXY_IP_HEADER: cf-connecting-ip

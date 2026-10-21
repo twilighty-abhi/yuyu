@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Re-accept a declined registration.** Organisers can reverse a decline from the Guests list (**Re-accept**) or the mobile API (`POST /api/mobile/v1/orgs/:orgSlug/events/:eventId/guests/:rsvpId/reaccept`, additive). The guest is confirmed when there is room and waitlisted otherwise, in the same capacity transaction as an approval, with the matching outbox email and a `RSVP_REACCEPTED` audit event. `approve` is unchanged.
 - **Saved email drafts** in the event Emails tab: a custom email autosaves (about 1.5 s after typing stops, plus **Save draft**) to the new `EventBroadcastDraft` table, one private draft per organiser and event, is restored when the tab opens, asks before a template or reused email replaces it, can be discarded, warns before leaving with unsaved changes, and is cleared when the email is sent. New `broadcastDraft` rate-limit bucket (60 per minute). Migration `20261022000000_event_broadcast_drafts` is additive.
 
 ## [1.0.0] - 2026-10-21

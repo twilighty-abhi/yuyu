@@ -65,6 +65,7 @@ Google OAuth users rely on the Google account's MFA policy; the application TOTP
 - Duplicate RSVP prevention per event or instance.
 - Capacity-aware confirmation and waitlisting.
 - Pending approval, approval, rejection, cancellation, and waitlist promotion.
+- Re-accepting a declined registration (**Re-accept** on a declined guest in the Guests list, or `POST …/guests/:rsvpId/reaccept` in the mobile API): organisation admins can reverse a decline while the event or occurrence is still open. It takes the same locked capacity check as an approval: the guest is confirmed when there is room and otherwise moved to the waitlist (never oversold), gets the approval or waitlist email through the outbox, and the change is audited as `RSVP_REACCEPTED`.
 - Removing an RSVP creates a short-lived, server-owned undo snapshot.
 - Confirmation and lifecycle emails are queued through a durable outbox.
 - Confirmed RSVP emails include an `.ics` calendar invitation with the event or occurrence time and location.

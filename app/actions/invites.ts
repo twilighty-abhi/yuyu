@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { canManageEvents, getMembership } from "@/lib/permissions";
+import { EventPermission } from "@prisma/client";
+import { canAccessEvent } from "@/lib/eventAccess";
 import {
   addEventInviteSchema,
   addSeriesInviteSchema,
@@ -46,8 +47,8 @@ export async function addEventInvite(input: unknown): Promise<ActionResult> {
   });
   if (!org) return { ok: false, error: "Organisation not found." };
 
-  const membership = await getMembership(session.user.id, org.id);
-  if (!canManageEvents(membership)) {
+  // Organisation OWNER/ADMIN or the exact MANAGE_INVITATIONS grant on this event.
+  if (!(await canAccessEvent({ userId: session.user.id, organisationId: org.id, eventId, permission: EventPermission.MANAGE_INVITATIONS }))) {
     return { ok: false, error: "You do not have permission to manage invites." };
   }
 
@@ -118,8 +119,7 @@ export async function removeEventInvite(input: unknown): Promise<ActionResult> {
   });
   if (!org) return { ok: false, error: "Organisation not found." };
 
-  const membership = await getMembership(session.user.id, org.id);
-  if (!canManageEvents(membership)) {
+  if (!(await canAccessEvent({ userId: session.user.id, organisationId: org.id, eventId, permission: EventPermission.MANAGE_INVITATIONS }))) {
     return { ok: false, error: "You do not have permission." };
   }
 
@@ -164,8 +164,8 @@ export async function addSeriesInvite(input: unknown): Promise<ActionResult> {
   });
   if (!org) return { ok: false, error: "Organisation not found." };
 
-  const membership = await getMembership(session.user.id, org.id);
-  if (!canManageEvents(membership)) {
+  // Organisation OWNER/ADMIN or the exact MANAGE_INVITATIONS grant on this series.
+  if (!(await canAccessEvent({ userId: session.user.id, organisationId: org.id, eventSeriesId, permission: EventPermission.MANAGE_INVITATIONS }))) {
     return { ok: false, error: "You do not have permission to manage invites." };
   }
 
@@ -219,8 +219,7 @@ export async function removeSeriesInvite(input: unknown): Promise<ActionResult> 
   });
   if (!org) return { ok: false, error: "Organisation not found." };
 
-  const membership = await getMembership(session.user.id, org.id);
-  if (!canManageEvents(membership)) {
+  if (!(await canAccessEvent({ userId: session.user.id, organisationId: org.id, eventSeriesId, permission: EventPermission.MANAGE_INVITATIONS }))) {
     return { ok: false, error: "You do not have permission." };
   }
 

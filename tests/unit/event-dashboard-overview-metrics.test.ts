@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { eventPhase, readinessHeading, readinessItems, signupTrend, type ReadinessInput } from "@/components/event-dashboard/overview/readiness";
+import { eventCapabilities } from "@/lib/eventDashboard/capabilities";
 import { busiestDay, capacityStatus, funnelSentence, funnelSteps, percentOf, signupsLastWeek, signupTimeline } from "@/components/event-dashboard/analytics/metrics";
 
 const DAY = 86_400_000;
-const admin = { isAdmin: true, canEditDetails: true, canManageSchedule: true, canManageRegistrations: true };
+const admin = eventCapabilities("ADMIN", []);
 const base: ReadinessInput = {
   published: true,
   hasCoverImage: true,
@@ -51,9 +52,17 @@ describe("readinessItems", () => {
   });
 
   it("shows collaborators only what they can act on", () => {
-    const items = readinessItems({ ...base, permissions: { isAdmin: false, canEditDetails: false, canManageSchedule: true, canManageRegistrations: false }, pendingApprovals: 5 });
+    const items = readinessItems({ ...base, permissions: eventCapabilities(null, ["PUBLISH_AND_SCHEDULE"]), pendingApprovals: 5 });
     expect(items.map((item) => item.key)).toEqual(["programme"]);
-    expect(readinessItems({ ...base, permissions: { isAdmin: false, canEditDetails: false, canManageSchedule: false, canManageRegistrations: false } })).toEqual([]);
+    expect(readinessItems({ ...base, permissions: eventCapabilities("MEMBER", []) })).toEqual([]);
+    expect(readinessItems({ ...base, permissions: eventCapabilities(null, ["CHECK_IN", "EDIT_DETAILS", "MANAGE_INVITATIONS"]) })).toEqual([]);
+  });
+
+  it("never offers publishing to a collaborator, even with every grant", () => {
+    const all = eventCapabilities(null, ["EDIT_DETAILS", "MANAGE_REGISTRATIONS", "MANAGE_INVITATIONS", "CHECK_IN", "PUBLISH_AND_SCHEDULE"]);
+    const items = readinessItems({ ...base, published: false, pendingApprovals: 2, emailsSent: 0, permissions: all });
+    expect(items.map((item) => item.key)).toEqual(["programme", "approvals"]);
+    expect(items.some((item) => item.action?.kind === "publish")).toBe(false);
   });
 });
 

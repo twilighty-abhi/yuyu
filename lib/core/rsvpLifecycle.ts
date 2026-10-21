@@ -4,7 +4,7 @@ import { RsvpStatus } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { enqueueRsvpStatusNotification } from "@/lib/outbox";
-import { canManageEvents, getMembership } from "@/lib/permissions";
+import { canManageRegistrationsFor } from "@/lib/eventAccess";
 import { confirmRsvpWithinCapacity } from "@/lib/rsvpCapacity";
 import { rsvpTransitionSchema } from "@/lib/validators";
 import type { ActionResult } from "@/app/actions/org";
@@ -42,8 +42,8 @@ async function loadRsvpContext(
   });
   if (!org) return { error: "Organisation not found." as const };
 
-  const membership = await getMembership(userId, org.id);
-  if (!canManageEvents(membership)) {
+  // Organisation OWNER/ADMIN, or the exact MANAGE_REGISTRATIONS grant on the event or series.
+  if (!(await canManageRegistrationsFor({ userId, organisationId: org.id, eventId, eventInstanceId }))) {
     return { error: "You do not have permission to manage attendees." as const };
   }
 

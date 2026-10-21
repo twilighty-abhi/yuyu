@@ -1,8 +1,5 @@
 import "server-only";
 
-import { EventPermission } from "@prisma/client";
-import { prisma } from "@/lib/db";
-import { getMembership } from "@/lib/permissions";
 import type { EventDashboardContext } from "@/lib/eventDashboard/context";
 import { loadRsvpStatusCounts } from "@/lib/eventDashboard/data";
 
@@ -19,36 +16,21 @@ export type CheckInDesk = {
   stationEnabled: boolean;
   /** Station PIN actions are organisation-admin operations (app/actions/checkin-station.ts). */
   canManageStation: boolean;
-  /** Mirrors /api/exports/events/[eventId]/attendees: org admins, or non-member collaborators with MANAGE_REGISTRATIONS. */
+  /** Mirrors /api/exports/events/[eventId]/attendees: org admins or the MANAGE_REGISTRATIONS grant. */
   canExportAttendance: boolean;
   /** The public station path for this event; the PIN is what protects it. */
   stationUrl: string;
 };
 
-/** The export route only honours a MANAGE_REGISTRATIONS grant for people who are not organisation members. */
-async function canCollaboratorExport(eventId: string, organisationId: string, userId: string) {
-  const [membership, grant] = await Promise.all([
-    getMembership(userId, organisationId),
-    prisma.eventCollaborator.findFirst({
-      where: { eventId, userId, permissions: { has: EventPermission.MANAGE_REGISTRATIONS } },
-      select: { id: true },
-    }),
-  ]);
-  return !membership && Boolean(grant);
-}
-
 export async function loadCheckInDesk(ctx: EventDashboardContext): Promise<CheckInDesk> {
-  const { event, permissions, organisation, userId, origin } = ctx;
-  const [counts, exportGrant] = await Promise.all([
-    loadRsvpStatusCounts(event.id),
-    permissions.isAdmin ? Promise.resolve(false) : canCollaboratorExport(event.id, organisation.id, userId),
-  ]);
+  const { event, permissions, organisation, origin } = ctx;
+  const counts = await loadRsvpStatusCounts(event.id);
   return {
     confirmed: counts.confirmed,
     checkedIn: counts.checkedIn,
     stationEnabled: Boolean(event.checkInStationPinHash),
-    canManageStation: permissions.isAdmin,
-    canExportAttendance: permissions.isAdmin || Boolean(exportGrant),
+    canManageStation: permissions.canManageCheckInStation,
+    canExportAttendance: permissions.canExportAttendees,
     stationUrl: `${origin}/${organisation.slug}/${event.slug}/check-in`,
   };
 }

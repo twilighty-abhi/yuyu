@@ -41,8 +41,8 @@ deployment changes, follow the stronger checks listed in `AGENTS.md` and
 explicit paths only, and commit the user manual only when asked.
 
 Every new feature goes on its own branch (`feat/<short-name>`, or
-`fix/<short-name>` for a bug fix) created from the integration branch
-(currently `v1-design-overhaul`), and is merged back with `git merge --no-ff`
-once checks pass. Never commit a feature directly to the integration branch;
-don't touch `main` or `staging`, push, or delete branches unless asked. See
-"Branching" in `AGENTS.md`.
+`fix/<short-name>` for a bug fix) created from `main`, gets a GitHub pull
+request into `main`, and is merged (merge commit, never squash or rebase) only
+after the full checks pass locally and the PR's CI and Quality gate are green.
+Never commit a feature directly to `main`; don't touch `staging` or delete
+branches unless asked. See "Branching" in `AGENTS.md`.

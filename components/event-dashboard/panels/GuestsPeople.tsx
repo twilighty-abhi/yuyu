@@ -60,6 +60,7 @@ export function GuestsPeople({
   attendees,
   truncated,
   registrationFields,
+  canUndoCheckIn = true,
 }: {
   organisationSlug: string;
   target: GuestListTarget;
@@ -70,6 +71,8 @@ export function GuestsPeople({
   attendees: AttendeeRow[];
   truncated: boolean;
   registrationFields: RegistrationFieldRow[];
+  /** Undo check-in is a CHECK_IN operation, separate from managing registrations. */
+  canUndoCheckIn?: boolean;
 }) {
   const router = useRouter();
   const { showToast } = useToast();
@@ -123,7 +126,7 @@ export function GuestsPeople({
       }
     },
     edit: (guest) => setEditGuest(guest),
-    undoCheckIn: eventId ? (guest) => setUndoGuest(guest) : undefined,
+    undoCheckIn: eventId && canUndoCheckIn ? (guest) => setUndoGuest(guest) : undefined,
     remove: (guest) => setRemoveGuest(guest),
   };
 

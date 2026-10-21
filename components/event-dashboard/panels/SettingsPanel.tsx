@@ -3,9 +3,17 @@ import { toEventClientDto } from "@/lib/eventDto";
 import type { EventDashboardContext } from "@/lib/eventDashboard/context";
 import { CollaboratorInvitePanel } from "@/components/event/CollaboratorInvitePanel";
 import { EventManageMore } from "@/components/dashboard/EventManageMore";
+import { NoPermission } from "./shared";
 
 export async function SettingsPanel({ ctx }: { ctx: EventDashboardContext }) {
   const { event, permissions, organisation } = ctx;
+  const settings = {
+    changeAddress: permissions.canChangeEventAddress,
+    clone: permissions.canCloneEvent,
+    embed: permissions.canEmbedEvent,
+    delete: permissions.canDeleteEvent,
+  };
+  const anySetting = settings.changeAddress || settings.clone || settings.embed || settings.delete;
   const [collaborators, pending] = permissions.canManageCollaborators
     ? await Promise.all([
         prisma.eventCollaborator.findMany({ where: { eventId: event.id }, include: { user: { select: { name: true, email: true } } }, orderBy: { createdAt: "asc" } }),
@@ -24,7 +32,12 @@ export async function SettingsPanel({ ctx }: { ctx: EventDashboardContext }) {
           pendingInvites={pending.map((invite) => ({ id: invite.id, email: invite.email, expiresAt: invite.expiresAt.toISOString(), permissions: invite.permissions }))}
         />
       ) : null}
-      <EventManageMore organisationSlug={organisation.slug} event={toEventClientDto(event)} />
+      {anySetting ? (
+        <EventManageMore organisationSlug={organisation.slug} event={toEventClientDto(event)} can={settings} />
+      ) : null}
+      {!permissions.canManageCollaborators && !anySetting ? (
+        <NoPermission>Only organisation owners and admins can change this event&apos;s settings, co-organisers, or delete it.</NoPermission>
+      ) : null}
     </div>
   );
 }

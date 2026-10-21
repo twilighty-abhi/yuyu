@@ -23,7 +23,7 @@ Google OAuth users rely on the Google account's MFA policy; the application TOTP
 - Member role changes and removals with owner-protection rules.
 - Expiring, revocable organisation invitation links.
 - Organisation deletion (the owner types the organisation's exact name to confirm) and audited administrative changes.
-- Event collaborators (co-organisers) invited per event through expiring links (`/join/event-collaborator/:token`), with exact grants: `EDIT_DETAILS`, `MANAGE_REGISTRATIONS`, `MANAGE_INVITATIONS`, `CHECK_IN`, and `PUBLISH_AND_SCHEDULE`. Collaborators reach only the events they were granted. `PUBLISH_AND_SCHEDULE` covers event-page content and the programme; setting the event Live, short links, and organisation settings stay with owners and admins.
+- Event collaborators (co-organisers) invited per event through expiring links (`/join/event-collaborator/:token`), with exact grants: `EDIT_DETAILS`, `MANAGE_REGISTRATIONS`, `MANAGE_INVITATIONS`, `CHECK_IN`, and `PUBLISH_AND_SCHEDULE`. Collaborators reach only the events they were granted. `EDIT_DETAILS` covers event-page content (page settings, highlights, speakers, sponsors, resources, FAQs), `MANAGE_REGISTRATIONS` the guest list (approvals, waitlist, manual guests, edits, removals, attendee CSV, registration numbers), `MANAGE_INVITATIONS` the invite list, `CHECK_IN` the check-in desk and badges, and `PUBLISH_AND_SCHEDULE` the programme schedule; the same grants apply on a series page. Setting the event Live, short links, the Details form, the registration form, emails, feedback, reports, the check-in station PIN, cloning, embedding, deleting, co-organisers, and organisation settings stay with owners and admins (see [Permissions](PERMISSIONS.md)).
 
 ## Events
 

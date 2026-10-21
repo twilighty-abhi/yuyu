@@ -11,9 +11,9 @@ import { ShortLinkControl } from "../overview/ShortLinkControl";
 import { eventPhase, readinessHeading, readinessItems, signupTrend } from "../overview/readiness";
 
 /**
- * Overview tab. Guest data (sign-ups, approvals, counts) is organisation-admin
- * only, matching the RSVP server actions; collaborators get a reduced view
- * with only the checklist items they can act on.
+ * Overview tab. Guest data (sign-ups, approvals, counts) needs
+ * `canManageRegistrations`, matching the RSVP server actions; everyone else
+ * gets a reduced view with only the checklist items they can act on.
  */
 export async function OverviewPanel({ ctx }: { ctx: EventDashboardContext }) {
   const { event, permissions, organisation, now } = ctx;
@@ -57,22 +57,22 @@ export async function OverviewPanel({ ctx }: { ctx: EventDashboardContext }) {
         path={path}
         title={event.title}
         published={event.status === "PUBLISHED"}
-        canEmbed
+        canEmbed={permissions.canEmbedEvent}
         shortLink={
-          event.shortCode || permissions.isAdmin ? (
+          event.shortCode || permissions.canManageShortLink ? (
             <ShortLinkControl
               organisationSlug={organisation.slug}
               eventId={event.id}
               title={event.title}
               origin={ctx.origin}
               initialCode={event.shortCode}
-              canManage={permissions.isAdmin}
+              canManage={permissions.canManageShortLink}
               published={event.status === "PUBLISHED"}
             />
           ) : undefined
         }
       />
-      <GlanceCard event={event} now={now} canEditDetails={permissions.canEditDetails} />
+      <GlanceCard event={event} now={now} canEditDetails={permissions.canEditEventDetails} />
       {team ? <TeamCard team={team} /> : null}
     </>
   );
@@ -84,7 +84,7 @@ export async function OverviewPanel({ ctx }: { ctx: EventDashboardContext }) {
           tone="success"
           title="This event has ended"
           action={
-            permissions.isAdmin ? (
+            permissions.canViewAnalytics ? (
               <OpenTabButton tab="analytics" className="inline-flex min-h-9 items-center gap-1 text-sm font-semibold underline-offset-4 hover:underline">
                 See how it went <ArrowRight aria-hidden className="size-4" />
               </OpenTabButton>

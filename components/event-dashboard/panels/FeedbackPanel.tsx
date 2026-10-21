@@ -10,6 +10,8 @@ const MAX_BROWSER_FEEDBACK_RESPONSES = 250;
 
 export async function FeedbackPanel({ ctx }: { ctx: EventDashboardContext }) {
   const { event, permissions, organisation } = ctx;
+  // The form, its settings and the certificate builder are organisation-admin actions.
+  if (!permissions.canManageFeedback) return <NoPermission>You do not have permission to manage feedback for this event.</NoPermission>;
   const record = await prisma.eventFeedbackForm.findUnique({ where: { eventId: event.id }, include: { fields: { orderBy: { sortOrder: "asc" } } } });
   const form = record ? { isOpen: record.isOpen, title: record.title, thankYouMessage: record.thankYouMessage, certificateEnabled: record.certificateEnabled, certificateTemplate: record.certificateTemplate } : null;
   const fields = (record?.fields ?? []).map((field) => ({
@@ -19,7 +21,7 @@ export async function FeedbackPanel({ ctx }: { ctx: EventDashboardContext }) {
 
   // Responses are organisation-admin only. Only answer values are read: never
   // the RSVP, attendee identity or certificate token.
-  const canViewResponses = permissions.canEditDetails;
+  const canViewResponses = permissions.canViewFeedbackResponses;
   const [responseRecords, insights] = canViewResponses && record
     ? await Promise.all([
         prisma.eventFeedbackResponse.findMany({

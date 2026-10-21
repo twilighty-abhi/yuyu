@@ -5,6 +5,7 @@
  */
 import { dailyCounts, relativeDayPhrase, toDotLevels, weekOverWeek } from "@/lib/dashboardHomeMetrics";
 import { formatRelativeDay } from "@/lib/format/datetime";
+import type { EventCapabilities } from "@/lib/eventDashboard/capabilities";
 
 export type ReadinessAction =
   | { kind: "tab"; label: string; tab: string; sub?: string }
@@ -23,12 +24,10 @@ export type ReadinessInput = {
   approvalRequired: boolean;
   pendingApprovals: number;
   emailsSent: number;
-  permissions: {
-    isAdmin: boolean;
-    canEditDetails: boolean;
-    canManageSchedule: boolean;
-    canManageRegistrations: boolean;
-  };
+  permissions: Pick<
+    EventCapabilities,
+    "canPublish" | "canEditEventDetails" | "canManageSchedule" | "canEditRegistrationForm" | "canManageCheckInStation" | "canManageRegistrations" | "canSendEmails"
+  >;
 };
 
 function plural(count: number, one: string, many = `${one}s`) {
@@ -43,12 +42,15 @@ export function readinessItems(input: ReadinessInput): ReadinessItem[] {
   const { permissions: can } = input;
   const items: ReadinessItem[] = [];
 
-  if (can.canEditDetails) {
+  if (can.canPublish) {
     items.push(
       input.published
         ? { key: "published", label: "Published", done: true }
         : { key: "published", label: "Not published yet", done: false, action: { kind: "publish", label: "Publish" } },
     );
+  }
+
+  if (can.canEditEventDetails) {
     const look = input.hasCoverImage ? "Cover image" : input.hasAccent ? "Page accent colour" : null;
     items.push(
       look
@@ -65,7 +67,7 @@ export function readinessItems(input: ReadinessInput): ReadinessItem[] {
     );
   }
 
-  if (can.canManageRegistrations) {
+  if (can.canEditRegistrationForm) {
     items.push(
       input.registrationFieldCount > 0
         ? { key: "form", label: `Registration form · ${plural(input.registrationFieldCount, "question")}`, done: true }
@@ -75,7 +77,7 @@ export function readinessItems(input: ReadinessInput): ReadinessItem[] {
   }
 
   // The venue station PIN is an organisation-admin setting and only matters in person.
-  if (can.isAdmin && !input.isOnline) {
+  if (can.canManageCheckInStation && !input.isOnline) {
     items.push(
       input.stationPinSet
         ? { key: "pin", label: "Check-in station PIN", done: true }
@@ -94,6 +96,9 @@ export function readinessItems(input: ReadinessInput): ReadinessItem[] {
     } else if (input.approvalRequired) {
       items.push({ key: "approvals", label: "No one waiting for approval", done: true });
     }
+  }
+
+  if (can.canSendEmails) {
     items.push(
       input.emailsSent > 0
         ? { key: "email", label: `${plural(input.emailsSent, "email")} sent to guests`, done: true }

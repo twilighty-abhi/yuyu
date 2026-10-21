@@ -10,7 +10,7 @@ import { DEFAULT_BROADCAST_DESIGN, isBroadcastDesign } from "@/lib/email/broadca
 
 export async function EmailsPanel({ ctx }: { ctx: EventDashboardContext }) {
   const { event, permissions, organisation, now, userId } = ctx;
-  if (!permissions.canManageRegistrations) return <NoPermission>You do not have permission to email attendees.</NoPermission>;
+  if (!permissions.canSendEmails) return <NoPermission>You do not have permission to email attendees.</NoPermission>;
   const [records, counts, branding, savedDraft] = await Promise.all([
     prisma.eventBroadcast.findMany({
       where: { eventId: event.id },

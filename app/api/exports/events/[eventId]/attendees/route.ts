@@ -58,12 +58,15 @@ export async function GET(_request: Request, context: RouteContext) {
   });
   if (!event) return missing();
 
+  // Organisation owners/admins, or anyone (member or not) holding the exact
+  // MANAGE_REGISTRATIONS grant on this event, as in lib/eventDashboard/capabilities.ts.
   const membership = await getMembership(session.user.id, event.organisationId);
-  const collaborator = membership ? null : await prisma.eventCollaborator.findFirst({
+  const isAdmin = Boolean(membership && isOrgAdmin(membership.role));
+  const collaborator = isAdmin ? null : await prisma.eventCollaborator.findFirst({
     where: { eventId: event.id, userId: session.user.id, permissions: { has: EventPermission.MANAGE_REGISTRATIONS } },
     select: { id: true },
   });
-  if ((!membership || !isOrgAdmin(membership.role)) && !collaborator) return missing();
+  if (!isAdmin && !collaborator) return missing();
 
   const fields = event.registrationForm?.fields ?? [];
   const origin = await getRequestOrigin();

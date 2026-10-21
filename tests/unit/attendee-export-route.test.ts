@@ -65,6 +65,17 @@ describe("full attendee CSV export route", () => {
     expect(mocks.audit).not.toHaveBeenCalled();
   });
 
+  it("lets an organisation member who holds the MANAGE_REGISTRATIONS grant export", async () => {
+    mocks.membership.mockResolvedValue({ role: "MEMBER" });
+    mocks.isAdmin.mockReturnValue(false);
+    mocks.collaborator.mockResolvedValue({ id: "grant_1" });
+
+    const response = await GET(new Request("https://events.example.test/api/exports/events/event_1/attendees"), routeContext);
+
+    expect(response.status).toBe(200);
+    expect(mocks.collaborator).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ eventId: "event_1", permissions: { has: "MANAGE_REGISTRATIONS" } }) }));
+  });
+
   it("returns an audited, private CSV containing every fetched page", async () => {
     const response = await GET(new Request("https://events.example.test/api/exports/events/event_1/attendees"), routeContext);
 

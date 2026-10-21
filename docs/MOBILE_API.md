@@ -260,9 +260,12 @@ without the needed permission is `FORBIDDEN`.
 derived exactly as the event dashboard does: `checkIn` = organisation
 OWNER/ADMIN or the event `CHECK_IN` grant; `schedule` = OWNER/ADMIN or
 `PUBLISH_AND_SCHEDULE`; `manageRegistrations`, `sendEmails`, `manageFeedback`
-and `manageRegistrationWindow` = organisation OWNER/ADMIN (the website's RSVP,
-email, feedback-settings and event-edit actions are admin-only). The flags only
-hide controls; every mutation is re-checked server-side.
+and `manageRegistrationWindow` = organisation OWNER/ADMIN (the website's email,
+feedback-settings and event-edit actions are admin-only). The shared RSVP cores
+also accept the event's `MANAGE_REGISTRATIONS` grant, as the web guest list
+does, but `manageRegistrations` stays admin-only in this contract version (see
+[Permissions](PERMISSIONS.md#mobile-api)). The flags only hide controls; every
+mutation is re-checked server-side.
 
 `EventCounts = { "confirmed", "waitlisted", "pending", "checkedIn", "capacity|null" }`,
 returned only when the caller has `manageRegistrations` or `checkIn`, else `null`.

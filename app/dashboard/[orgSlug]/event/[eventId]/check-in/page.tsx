@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { EventPermission } from "@prisma/client";
 import { isOrgAdmin, requireOrgDashboardAccess } from "@/lib/permissions";
 import { canAccessEvent } from "@/lib/eventAccess";
+import { eventCapabilities } from "@/lib/eventDashboard/capabilities";
 import { EventCheckInClient } from "@/components/checkin/EventCheckInClient";
 import { CheckInStationSettings } from "@/components/checkin/CheckInStationSettings";
 import { getRequestOrigin } from "@/lib/publicUrl";
@@ -92,7 +93,7 @@ export default async function EventCheckInPage({ params }: Props) {
         stats={{ confirmed, checkedIn: checkedInCount }}
         recent={recent}
       />
-      {isAdmin ? <CheckInStationSettings organisationSlug={organisation.slug} eventId={event.id} stationUrl={stationUrl} enabled={Boolean(event.checkInStationPinHash)} /> : null}
+      {eventCapabilities(access.membership?.role, []).canManageCheckInStation ? <CheckInStationSettings organisationSlug={organisation.slug} eventId={event.id} stationUrl={stationUrl} enabled={Boolean(event.checkInStationPinHash)} /> : null}
     </div>
   );
 }

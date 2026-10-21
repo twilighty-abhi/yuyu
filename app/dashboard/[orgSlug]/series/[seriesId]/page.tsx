@@ -1,10 +1,10 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { prisma } from "@/lib/db";
-import { EventPermission } from "@prisma/client";
 import { getRequestOrigin } from "@/lib/publicUrl";
 import { isOrgAdmin, requireOrgDashboardAccess } from "@/lib/permissions";
 import { canViewEventDashboard } from "@/lib/eventAccess";
+import { seriesCapabilities } from "@/lib/eventDashboard/capabilities";
 import { EditSeriesForm } from "@/components/series/EditSeriesForm";
 import { SeriesInvitePanel } from "@/components/invites/SeriesInvitePanel";
 import { GuestsPeople } from "@/components/event-dashboard/panels/GuestsPeople";
@@ -49,12 +49,16 @@ export default async function SeriesManagePage({ params }: Props) {
     where: { eventSeriesId: series.id, userId: access.userId },
     select: { permissions: true },
   });
-  const canManageRegistrations = isAdmin || Boolean(currentGrant?.permissions.includes(EventPermission.MANAGE_REGISTRATIONS));
+  // One capability object drives every control below; the actions re-check it.
+  const can = seriesCapabilities(access.membership?.role ?? null, currentGrant?.permissions ?? []);
+  const canManageRegistrations = can.canManageRegistrations;
 
-  const invites = await prisma.seriesInvite.findMany({
-    where: { eventSeriesId: series.id },
-    orderBy: { createdAt: "desc" },
-  });
+  const invites = can.canManageInvitations
+    ? await prisma.seriesInvite.findMany({
+        where: { eventSeriesId: series.id },
+        orderBy: { createdAt: "desc" },
+      })
+    : [];
 
   const firstInstanceId = series.instances[0]?.id;
   const rsvps = firstInstanceId && canManageRegistrations
@@ -68,7 +72,7 @@ export default async function SeriesManagePage({ params }: Props) {
 
   const origin = await getRequestOrigin();
   const now = new Date();
-  const canDownloadReports = Boolean(access.membership && isOrgAdmin(access.membership.role));
+  const canDownloadReports = can.canDownloadReports;
   const finishedInstances = series.instances.filter((instance) => instance.endDateTime < now);
   const attendeesTruncated = rsvps.length > MAX_BROWSER_ATTENDEES;
   const attendees = rsvps.slice(0, MAX_BROWSER_ATTENDEES).map((r) => ({
@@ -88,33 +92,39 @@ export default async function SeriesManagePage({ params }: Props) {
     <div className="flex flex-col gap-8">
       <PageHeader title={series.title} description="Manage this recurring event and its upcoming occurrences." />
 
-      <Card as="section" padding="lg" aria-labelledby="series-details-title">
-        <h2 id="series-details-title" className="mb-4 text-h4 text-ink">Series details</h2>
-        <EditSeriesForm organisationSlug={organisation.slug} series={{
-          id: series.id,
-          title: series.title,
-          description: series.description,
-          recurrenceRule: series.recurrenceRule,
-          timezone: series.timezone,
-          capacity: series.capacity,
-          status: series.status,
-          privacyType: series.privacyType,
-        }} />
-      </Card>
+      {can.canEditSeries ? (
+        <Card as="section" padding="lg" aria-labelledby="series-details-title">
+          <h2 id="series-details-title" className="mb-4 text-h4 text-ink">Series details</h2>
+          <EditSeriesForm organisationSlug={organisation.slug} series={{
+            id: series.id,
+            title: series.title,
+            description: series.description,
+            recurrenceRule: series.recurrenceRule,
+            timezone: series.timezone,
+            capacity: series.capacity,
+            status: series.status,
+            privacyType: series.privacyType,
+          }} />
+        </Card>
+      ) : null}
 
-      <section aria-labelledby="series-invites-title" className="flex flex-col gap-3">
-        <h2 id="series-invites-title" className="text-h4 text-ink">Invites</h2>
-        <SeriesInvitePanel
-          organisationSlug={organisation.slug}
-          eventSeriesId={series.id}
-          invites={invites.map((i) => ({
-            ...i,
-            createdAt: i.createdAt.toISOString(),
-          }))}
-        />
-      </section>
+      {can.canManageInvitations ? (
+        <section aria-labelledby="series-invites-title" className="flex flex-col gap-3">
+          <h2 id="series-invites-title" className="text-h4 text-ink">Invites</h2>
+          <SeriesInvitePanel
+            organisationSlug={organisation.slug}
+            eventSeriesId={series.id}
+            invites={invites.map((i) => ({
+              ...i,
+              createdAt: i.createdAt.toISOString(),
+            }))}
+          />
+        </section>
+      ) : null}
 
-      <ScheduleManager organisationSlug={organisation.slug} eventSeriesId={series.id} items={series.scheduleItems.map((item) => ({ ...item, startDateTime: item.startDateTime.toISOString(), endDateTime: item.endDateTime.toISOString() }))} defaultDate={series.instances[0] ? eventDateInput(series.instances[0].startDateTime, series.timezone) : ""} />
+      {can.canManageSchedule ? (
+        <ScheduleManager organisationSlug={organisation.slug} eventSeriesId={series.id} items={series.scheduleItems.map((item) => ({ ...item, startDateTime: item.startDateTime.toISOString(), endDateTime: item.endDateTime.toISOString() }))} defaultDate={series.instances[0] ? eventDateInput(series.instances[0].startDateTime, series.timezone) : ""} />
+      ) : null}
 
       <section aria-labelledby="series-instances-title" className="flex flex-col gap-3">
         <h2 id="series-instances-title" className="text-h4 text-ink">Upcoming instances</h2>

@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Saved email drafts** in the event Emails tab: a custom email autosaves (about 1.5 s after typing stops, plus **Save draft**) to the new `EventBroadcastDraft` table, one private draft per organiser and event, is restored when the tab opens, asks before a template or reused email replaces it, can be discarded, warns before leaving with unsaved changes, and is cleared when the email is sent. New `broadcastDraft` rate-limit bucket (60 per minute). Migration `20261022000000_event_broadcast_drafts` is additive.
+
 ## [1.0.0] - 2026-10-21
 
 The V1 release: everything the `v1-design-overhaul` integration branch adds on top of production `main`. See the upgrade notes before deploying.

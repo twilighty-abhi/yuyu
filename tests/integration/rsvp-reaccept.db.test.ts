@@ -139,8 +139,10 @@ describe.sequential("re-accepting a declined registration", () => {
   it("answers NOT_FOUND across organisations", async () => {
     const event = await createEvent(ids.orgA, null);
     const declined = await createRsvp(event.id, "cross", RsvpStatus.REJECTED);
-    // An owner of another organisation, using their own slug, cannot reach this event...
-    await expect(reacceptRsvpForUser(ids.outsider, { organisationSlug: orgSlugB, eventId: event.id, rsvpId: declined.id })).resolves.toEqual({ ok: false, error: "Event not found." });
+    // An owner of another organisation, using their own slug, cannot reach this event. Access is
+    // checked before the lookup (as for approve), so a foreign event reads exactly like a missing one.
+    await expect(reacceptRsvpForUser(ids.outsider, { organisationSlug: orgSlugB, eventId: event.id, rsvpId: declined.id })).resolves.toEqual({ ok: false, error: "You do not have permission to manage attendees." });
+    await expect(reacceptRsvpForUser(ids.outsider, { organisationSlug: orgSlugB, eventId: "c00000000000000000000000", rsvpId: declined.id })).resolves.toEqual({ ok: false, error: "You do not have permission to manage attendees." });
     // ...nor this organisation's slug.
     await expect(reacceptRsvpForUser(ids.outsider, { organisationSlug: orgSlugA, eventId: event.id, rsvpId: declined.id })).resolves.toEqual({ ok: false, error: "You do not have permission to manage attendees." });
     // And an RSVP id from another event is not found even for this organisation's owner.

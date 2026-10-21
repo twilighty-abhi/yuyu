@@ -26,7 +26,7 @@ import {
 import { createEventShortLink } from "@/app/actions/shortLink";
 import { deleteEventSeries } from "@/app/actions/series";
 import { addEventInvite, addSeriesInvite, removeEventInvite } from "@/app/actions/invites";
-import { approveRsvp } from "@/app/actions/rsvp-lifecycle";
+import { approveRsvp, reacceptRsvp } from "@/app/actions/rsvp-lifecycle";
 import { deleteRsvp, restoreRsvp } from "@/app/actions/rsvp-admin";
 
 const suffix = randomUUID().replace(/-/g, "");
@@ -215,6 +215,20 @@ describe("each grant reaches its own actions", () => {
     const rsvp = await pendingRsvp({ eventId });
     as(memberId);
     expect(await approveRsvp({ organisationSlug: orgSlug, eventId, rsvpId: rsvp.id })).toMatchObject({ ok: false });
+  });
+
+  it("lets MANAGE_REGISTRATIONS (alone or with every grant) re-accept a declined RSVP, and nobody else", async () => {
+    for (const [name, userId] of everyCollaborator()) {
+      const rsvp = await prisma.rSVP.update({ where: { id: (await pendingRsvp({ eventId })).id }, data: { status: RsvpStatus.REJECTED } });
+      as(userId);
+      const allowed = name === "MANAGE_REGISTRATIONS" || name === "all grants";
+      expect((await reacceptRsvp({ organisationSlug: orgSlug, eventId, rsvpId: rsvp.id })).ok, name).toBe(allowed);
+      const status = (await prisma.rSVP.findUniqueOrThrow({ where: { id: rsvp.id } })).status;
+      expect(status, name).toBe(allowed ? RsvpStatus.CONFIRMED : RsvpStatus.REJECTED);
+    }
+    const declined = await prisma.rSVP.update({ where: { id: (await pendingRsvp({ eventId })).id }, data: { status: RsvpStatus.REJECTED } });
+    as(memberId);
+    expect(await reacceptRsvp({ organisationSlug: orgSlug, eventId, rsvpId: declined.id })).toMatchObject({ ok: false });
   });
 
   it("applies a series MANAGE_REGISTRATIONS grant to that series' occurrences only", async () => {

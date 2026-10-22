@@ -5,6 +5,7 @@ import crypto from "node:crypto";
 import { z } from "zod";
 import type { ActionResult } from "@/app/actions/org";
 import { prisma } from "@/lib/db";
+import { emitWebhookEvent } from "@/lib/webhooks/emit";
 import {
   isValidInternationalPhone,
   normalizeInternationalPhone,
@@ -105,8 +106,9 @@ export async function submitFeedback(input: unknown): Promise<ActionResult<{ cer
   });
   if (!event?.feedbackForm) return { ok: false, error: "Feedback is not open for this event." };
   const formId = event.feedbackForm.id;
+  let createdResponseId: string | null = null;
   try {
-    return await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx): Promise<ActionResult<{ certificateToken: string | null }>> => {
       await tx.$queryRaw`SELECT "id" FROM "Event" WHERE "id" = ${event.id} FOR UPDATE`;
       await tx.$queryRaw`SELECT "id" FROM "EventFeedbackForm" WHERE "id" = ${formId} FOR UPDATE`;
       const currentEvent = await tx.event.findUnique({ where: { id: event.id }, select: { status: true } });
@@ -136,7 +138,7 @@ export async function submitFeedback(input: unknown): Promise<ActionResult<{ cer
         rsvpId = rsvp.id;
       }
       const certificateToken = form.certificateEnabled ? crypto.randomBytes(32).toString("hex") : null;
-      await tx.eventFeedbackResponse.create({
+      const created = await tx.eventFeedbackResponse.create({
         data: {
           formId: form.id,
           rsvpId,
@@ -146,8 +148,11 @@ export async function submitFeedback(input: unknown): Promise<ActionResult<{ cer
         },
         select: { id: true },
       });
+      createdResponseId = created.id;
       return { ok: true, data: { certificateToken } };
     });
+    if (result.ok && createdResponseId) emitWebhookEvent({ type: "feedback.submitted", feedbackResponseId: createdResponseId });
+    return result;
   } catch {
     console.error("[feedback] submission failed");
     return { ok: false, error: "Could not submit feedback. Please try again." };

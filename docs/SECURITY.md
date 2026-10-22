@@ -62,7 +62,7 @@ This page documents implemented controls and security boundaries. It is not a su
 ## Abuse protection
 
 - Password login applies account and IP limits inside the credential verifier, in addition to proxy limits. Missing and OAuth-only identities perform dummy bcrypt work; signup returns the same response for existing and newly created accounts. Auth.js errors are logged without exception payloads.
-- Redis-backed limits cover APIs, authentication mutations, RSVP, feedback, search/discovery, uploads, Server Actions, object creation, invitations, broadcasts, check-in, personal data exports (per user), public ticket status and event streams (per IP), short-link lookups (per IP), mobile token refresh (`mobileAuth`, per IP) and mobile API traffic (`mobileApi`, per user), and browser crash reports (`clientError`, per IP). Bucket sizes live in `lib/rateLimit.ts`.
+- Redis-backed limits cover organisation webhook changes (`webhookManage`, 30 per minute) and test sends/redeliveries (`webhookTest`, 20 per hour), APIs, authentication mutations, RSVP, feedback, search/discovery, uploads, Server Actions, object creation, invitations, broadcasts, check-in, personal data exports (per user), public ticket status and event streams (per IP), short-link lookups (per IP), mobile token refresh (`mobileAuth`, per IP) and mobile API traffic (`mobileApi`, per user), and browser crash reports (`clientError`, per IP). Bucket sizes live in `lib/rateLimit.ts`.
 - Machine API traffic has an additional per-client limit so credential rotation cannot multiply request capacity.
 - Security-sensitive production traffic fails closed when Redis is unavailable.
 - Process-local fallback exists for development and an explicit CI-only production-build test mode.
@@ -85,6 +85,8 @@ This page documents implemented controls and security boundaries. It is not a su
   is category-only. Attendee answers and ticket capabilities require the exact
   registration-management permission; the check-in surface requires the
   separate exact check-in permission.
+- Organisation webhooks (`docs/WEBHOOKS.md`) are managed by owners and admins only (`canManageWebhooks`). Payloads are strict DTOs with ids, statuses, timestamps, event title/slug and attendee display names only: no email addresses, user ids, registration or feedback answers, or ticket, check-in, certificate or invitation tokens. Signing secrets are generated server-side, shown once, stored with AES-256-GCM under their own HKDF label from `MFA_ENCRYPTION_KEY`, and never logged or audited; audit metadata records the target host only.
+- Webhook targets are SSRF-restricted: `https` on 443/8443 without URL credentials, no local or internal host names, and every resolved address must be public unicast (private, loopback, link-local and metadata, CGNAT, multicast, reserved, documentation, IPv6 ULA/link-local, and IPv4-mapped/NAT64/6to4 forms of blocked IPv4 are refused). The check runs at save time and before every delivery, and the socket is pinned to the vetted address so DNS rebinding cannot redirect it. Redirects are never followed, requests time out after 10 s, bodies are capped at 256 KB, and only a short redacted response excerpt is stored. `WEBHOOKS_ALLOW_PRIVATE_TARGETS=1` relaxes this for development and tests only; production ignores it outside CI test mode and `production:check` refuses it.
 - Machine participant responses intentionally exclude contact data, registration answers, user IDs, and ticket/check-in/certificate capabilities. Attendance filtering does not reveal check-in data; the nullable check-in timestamp requires the separate `participants:attendance:read` scope and an explicit `include=attendance` request.
 - Asset buckets are private; only generated organisation-bound WebP derivatives
   are delivered through the application key allowlist. Uploads are signature-
@@ -96,8 +98,8 @@ This page documents implemented controls and security boundaries. It is not a su
   transitions. Protected scheduler/readiness routes require one exact bearer.
 - Retention cleanup covers expired sessions, expired or long-revoked mobile
   sessions, unused expired organisation and collaborator invitations,
-  verification tokens, undo snapshots, and old sent/failed non-capability
-  outbox records. Deployment
+  verification tokens, undo snapshots, old sent/failed non-capability
+  outbox records, and webhook delivery history older than 30 days. Deployment
   operators must define broader legal retention and deletion procedures.
 
 ## Audit trail

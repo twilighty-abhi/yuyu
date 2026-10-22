@@ -55,6 +55,11 @@ export function canPublishEvents(m: Membership | null): boolean {
   return canManageEvents(m);
 }
 
+/** Outgoing webhooks: endpoints, secrets, tests and delivery logs — OWNER/ADMIN only. */
+export function canManageWebhooks(m: Membership | null): boolean {
+  return m != null && isOrgAdmin(m.role);
+}
+
 export function canManageMembers(m: Membership | null): boolean {
   return m?.role === "OWNER";
 }

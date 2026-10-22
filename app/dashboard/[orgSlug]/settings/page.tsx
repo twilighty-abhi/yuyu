@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ExternalLink, KeyRound } from "lucide-react";
+import { ExternalLink, KeyRound, Webhook } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { canDeleteOrg, requireOrgRole } from "@/lib/permissions";
 import { EditOrgForm } from "@/components/org/EditOrgForm";
@@ -9,6 +9,7 @@ import { OrgPageHeader } from "@/components/dashboard/org/OrgPageHeader";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/display";
 import { cn } from "@/lib/cn";
+import { countWebhookEndpoints } from "@/lib/webhooks/management";
 
 import type { Metadata } from "next";
 
@@ -52,6 +53,8 @@ export default async function OrgSettingsPage({ params }: Props) {
         }),
       ])
     : [0, 0];
+  // The page itself is OWNER/ADMIN only, and so are webhooks (canManageWebhooks).
+  const webhooks = await countWebhookEndpoints(organisation.id);
 
   return (
     <div className="flex flex-col gap-7">
@@ -113,6 +116,28 @@ export default async function OrgSettingsPage({ params }: Props) {
             </div>
           </section>
         ) : null}
+
+        <section id="webhooks" aria-labelledby="webhooks-title" className={cn(sectionCard, "flex flex-col gap-4 md:flex-row md:items-center")}>
+          <div className="min-w-0 flex-1">
+            <h2 id="webhooks-title" className="text-h4 text-ink">Webhooks</h2>
+            <p className="mt-0.5 text-body-ui text-ink-muted">Send registrations, check-ins and other events to your own systems as they happen.</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <Chip tone={webhooks.enabled > 0 ? "success" : "neutral"}>
+              {webhooks.total === 0
+                ? "No endpoints yet"
+                : webhooks.enabled === 0
+                  ? "No active endpoints"
+                  : `${webhooks.enabled} active ${webhooks.enabled === 1 ? "endpoint" : "endpoints"}`}
+            </Chip>
+            <Button asChild variant="secondary">
+              <Link href={`/dashboard/${org.slug}/settings/webhooks`}>
+                <Webhook aria-hidden className="size-4" />
+                Manage webhooks
+              </Link>
+            </Button>
+          </div>
+        </section>
 
         {canDelete ? (
           <section

@@ -7,7 +7,8 @@ import { recordAuditEvent } from "@/lib/audit";
 import type { ActionResult } from "@/app/actions/org";
 import { z } from "zod";
 import { isActionRateLimited } from "@/lib/actionRateLimit";
-import { EventPrivacyType } from "@prisma/client";
+import { EventPrivacyType, RsvpStatus } from "@prisma/client";
+import { emitWebhookEvent, type RsvpWebhookSnapshot } from "@/lib/webhooks/emit";
 
 const cancelRsvpSchema = z.object({ checkInToken: z.string().trim().min(8).max(256) }).strict();
 
@@ -74,6 +75,7 @@ export async function cancelRsvpForUser(actorUserId: string | null, input: unkno
     const current = await tx.rSVP.findUnique({ where: { id: rsvp.id } });
     if (!current) return { error: "RSVP not found." };
     if (current.checkedInAt) return { error: "Cannot cancel — you have already checked in." };
+    let promotedId: string | null = null;
     await tx.rSVP.delete({ where: { id: current.id } });
     const privacyType = rsvp.event?.privacyType ?? rsvp.eventInstance?.series.privacyType;
     if (current.status === "CONFIRMED" && privacyType !== EventPrivacyType.APPROVAL_REQUIRED) {
@@ -88,6 +90,7 @@ export async function cancelRsvpForUser(actorUserId: string | null, input: unkno
           where: { id: nextWaitlisted.id, status: "WAITLISTED" },
           data: { status: "CONFIRMED" },
         });
+        if (promoted.count === 1) promotedId = nextWaitlisted.id;
         const to = nextWaitlisted.user?.email?.trim() || nextWaitlisted.guestEmail;
         if (promoted.count === 1 && to) {
           await enqueueRsvpStatusNotification(tx, {
@@ -99,9 +102,16 @@ export async function cancelRsvpForUser(actorUserId: string | null, input: unkno
         }
       }
     }
-    return { error: null };
+    const snapshot: RsvpWebhookSnapshot = { id: current.id, eventId: current.eventId, eventInstanceId: current.eventInstanceId, userId: current.userId, guestName: current.guestName, createdAt: current.createdAt, checkedInAt: current.checkedInAt };
+    return { error: null, snapshot, previousStatus: current.status, promotedId };
   });
   if (cancellation.error) return { ok: false, error: cancellation.error };
+  if (cancellation.snapshot && cancellation.previousStatus) {
+    emitWebhookEvent({ type: "registration.status_changed", rsvpId: cancellation.snapshot.id, status: "CANCELLED", previousStatus: cancellation.previousStatus, snapshot: cancellation.snapshot });
+  }
+  if (cancellation.promotedId) {
+    emitWebhookEvent({ type: "registration.status_changed", rsvpId: cancellation.promotedId, status: RsvpStatus.CONFIRMED, previousStatus: RsvpStatus.WAITLISTED });
+  }
 
   await recordAuditEvent({
     action: "RSVP_CANCELLED",

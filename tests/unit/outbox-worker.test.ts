@@ -6,8 +6,10 @@ const mocks = vi.hoisted(() => ({
   started: vi.fn(),
   success: vi.fn(),
   failure: vi.fn(),
+  webhooks: vi.fn(),
 }));
 vi.mock("@/lib/outbox", () => ({ deliverOutboxBatch: mocks.deliver }));
+vi.mock("@/lib/webhooks/delivery", () => ({ deliverWebhookBatch: mocks.webhooks }));
 vi.mock("@/lib/retention", () => ({ purgeExpiredOperationalData: mocks.purge }));
 vi.mock("@/lib/operationalHeartbeat", () => ({
   recordOutboxSchedulerStarted: mocks.started,
@@ -25,6 +27,7 @@ describe("outbox scheduler", () => {
     mocks.failure.mockResolvedValue(undefined);
     mocks.deliver.mockResolvedValue({ sent: 2, failed: 0 });
     mocks.purge.mockResolvedValue({ verificationTokens: 1 });
+    mocks.webhooks.mockResolvedValue({ delivered: 1, failed: 0 });
   });
 
   it("does not make heartbeat observability a delivery dependency", async () => {
@@ -41,5 +44,13 @@ describe("outbox scheduler", () => {
     await expect(runOutboxScheduler()).rejects.toBe(error);
     expect(mocks.failure).toHaveBeenCalledWith(error);
     expect(mocks.purge).not.toHaveBeenCalled();
+  });
+
+  it("runs organisation webhook deliveries in the same pass without letting them fail it", async () => {
+    await expect(runOutboxScheduler()).resolves.toMatchObject({ sent: 2, webhooks: { delivered: 1, failed: 0 } });
+    mocks.webhooks.mockRejectedValue(new Error("webhook table unavailable"));
+    await expect(runOutboxScheduler()).resolves.toMatchObject({ sent: 2, webhooks: { delivered: 0, failed: 0 } });
+    expect(mocks.purge).toHaveBeenCalledTimes(2);
+    expect(mocks.failure).not.toHaveBeenCalled();
   });
 });

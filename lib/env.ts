@@ -58,6 +58,8 @@ export const envSchema = z.object({
   S3_SECRET_ACCESS_KEY: z.string().min(1).optional(),
   S3_FORCE_PATH_STYLE: z.enum(["0", "1"]).optional(),
   ALLOW_INSECURE_PRODUCTION_TESTS: z.enum(["0", "1"]).optional(),
+  // Development/test only; ignored by a production server outside CI test mode (lib/webhooks/urlSafety.ts).
+  WEBHOOKS_ALLOW_PRIVATE_TARGETS: z.enum(["0", "1"]).optional(),
   ALLOWED_ACTION_ORIGINS: z.string().optional(),
   ALLOWED_EMBED_ORIGINS: z.string().optional(),
   TRUSTED_PROXY_IP_HEADER: z.enum(["cf-connecting-ip", "x-forwarded-for", "x-real-ip"]).optional(),

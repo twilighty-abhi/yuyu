@@ -11,6 +11,7 @@ import type { ActionResult } from "@/app/actions/org";
 import { flattenZodErrors } from "@/app/actions/utils";
 import { recordAuditEvent } from "@/lib/audit";
 import { isActionRateLimited } from "@/lib/actionRateLimit";
+import { emitWebhookEvent } from "@/lib/webhooks/emit";
 
 function revalidateRsvpPaths(params: {
   orgSlug: string;
@@ -307,6 +308,7 @@ export async function rejectRsvpForUser(actorUserId: string | null, input: unkno
     return result;
   });
   if (rejected.count !== 1) return { ok: false, error: "This RSVP was changed by another organiser." };
+  emitWebhookEvent({ type: "registration.status_changed", rsvpId: rsvp.id, status: RsvpStatus.REJECTED, previousStatus: rsvp.status });
 
   await recordAuditEvent({ action: "RSVP_REJECTED", actorUserId: session.user.id, organisationId: org.id, targetType: "RSVP", targetId: rsvp.id });
 

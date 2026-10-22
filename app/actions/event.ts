@@ -27,6 +27,7 @@ import { recordAuditEvent } from "@/lib/audit";
 import { z } from "zod";
 import { isOrganisationUploadUrl } from "@/lib/uploadUrl";
 import { richTextToPlainText, sanitizeRichText } from "@/lib/richText";
+import { emitWebhookEvent } from "@/lib/webhooks/emit";
 
 const MAX_COVER_IMAGE_BYTES = 5 * 1024 * 1024;
 const publishEventSchema = z
@@ -224,6 +225,9 @@ export async function createEvent(
       metadata: { status: created.status },
     });
 
+    if (created.status === EventStatus.PUBLISHED || created.status === EventStatus.CANCELLED) {
+      emitWebhookEvent({ type: created.status === EventStatus.PUBLISHED ? "event.published" : "event.cancelled", eventId: created.id, previousStatus: null });
+    }
     revalidateEventPaths(org.slug, slug, created.id);
     return { ok: true, data: { id: created.id, slug: created.slug } };
   } catch {
@@ -304,6 +308,7 @@ export async function updateEvent(input: unknown): Promise<ActionResult> {
         });
         if (confirmed > data.capacity) return false;
       }
+      const locked = await tx.event.findUnique({ where: { id: event.id }, select: { status: true } });
       await tx.event.update({
         where: { id: event.id },
         data: {
@@ -352,7 +357,7 @@ export async function updateEvent(input: unknown): Promise<ActionResult> {
             : {}),
         },
       });
-      return true;
+      return { previousStatus: locked?.status ?? event.status };
     });
     if (!saved)
       return {
@@ -370,6 +375,9 @@ export async function updateEvent(input: unknown): Promise<ActionResult> {
       metadata: { status: data.status },
     });
 
+    if (data.status !== saved.previousStatus && (data.status === EventStatus.PUBLISHED || data.status === EventStatus.CANCELLED)) {
+      emitWebhookEvent({ type: data.status === EventStatus.PUBLISHED ? "event.published" : "event.cancelled", eventId: event.id, previousStatus: saved.previousStatus });
+    }
     revalidateEventPaths(org.slug, event.slug, event.id);
     return { ok: true };
   } catch {
@@ -645,6 +653,9 @@ export async function publishEvent(input: unknown): Promise<ActionResult> {
     }),
   ]);
 
+  if (event.status !== EventStatus.PUBLISHED) {
+    emitWebhookEvent({ type: "event.published", eventId: event.id, previousStatus: event.status });
+  }
   await recordAuditEvent({
     action: "EVENT_PUBLISHED",
     actorUserId: session.user.id,

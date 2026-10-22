@@ -8,6 +8,7 @@ import {
 } from "@/lib/operationalHeartbeat";
 import { purgeExpiredOperationalData } from "@/lib/retention";
 import { logOpsError } from "@/lib/opsAlerts";
+import { deliverWebhookBatch } from "@/lib/webhooks/delivery";
 
 const OUTBOX_WORKER_INTERVAL_MS = 60_000;
 
@@ -28,9 +29,14 @@ export async function runOutboxScheduler() {
   await recordOutboxSchedulerStarted().catch(() => undefined);
   try {
     const result = await deliverOutboxBatch();
+    // Organisation webhooks share this cadence but never fail the email pass.
+    const webhooks = await deliverWebhookBatch().catch((error: unknown) => {
+      logOpsError("[webhooks] delivery pass failed", { level: "error", source: "webhooks", title: "Webhook delivery pass failed", error });
+      return { delivered: 0, failed: 0 };
+    });
     const purged = await purgeExpiredOperationalData();
     await recordOutboxSchedulerSuccess(result).catch(() => undefined);
-    return { ...result, purged };
+    return { ...result, webhooks, purged };
   } catch (error) {
     await recordOutboxSchedulerFailure(error).catch(() => undefined);
     throw error;

@@ -16,6 +16,7 @@ import {
 import type { ActionResult } from "@/app/actions/org";
 import { flattenZodErrors } from "@/app/actions/utils";
 import { enqueueRsvpConfirmation } from "@/lib/outbox";
+import { emitWebhookEvent } from "@/lib/webhooks/emit";
 import { isRegistrationClosed } from "@/lib/registrationCutoff";
 import {
   isValidInternationalPhone,
@@ -66,7 +67,7 @@ async function reserveRsvp(params: {
   afterCreate?: (tx: Prisma.TransactionClient, rsvpId: string) => Promise<void>;
   enforceOpen?: boolean;
 }) {
-  return prisma.$transaction(async (tx) => {
+  const reservation = await prisma.$transaction(async (tx) => {
     let capacity = params.capacity;
     let privacyType = params.privacyType;
     if ("eventId" in params.target) {
@@ -118,6 +119,8 @@ async function reserveRsvp(params: {
     const count = await tx.rSVP.count({ where: params.target });
     return { ...rsvp, status, count };
   });
+  emitWebhookEvent({ type: "registration.created", rsvpId: reservation.id });
+  return reservation;
 }
 
 async function resolveAttendeeEmail(

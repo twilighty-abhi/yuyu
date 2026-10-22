@@ -3,6 +3,7 @@ import "server-only";
 import type { RsvpStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { publishTicketCheckedIn } from "@/lib/ticketCheckInEvents";
+import { emitWebhookEvent } from "@/lib/webhooks/emit";
 
 /** Must match the `CheckInEvent_known_source` database constraint. */
 export type CheckInSource = "online" | "offline-sync" | "venue-station" | "mobile-scan" | "mobile-manual";
@@ -57,16 +58,17 @@ export async function commitCheckInProjection(params: {
   });
   if (result.state === "checked-in") {
     publishTicketCheckedIn({ rsvpId: params.rsvpId, checkedInAt: result.checkedInAt });
+    emitWebhookEvent({ type: "checkin.created", rsvpId: params.rsvpId, checkedInAt: result.checkedInAt });
   }
   return result;
 }
 
-export function commitUndoCheckInProjection(params: {
+export async function commitUndoCheckInProjection(params: {
   rsvpId: string;
   actorUserId: string | null;
   source: "online" | "venue-station" | "mobile-scan" | "mobile-manual";
 }) {
-  return prisma.$transaction(async (tx) => {
+  const undone = await prisma.$transaction(async (tx) => {
     const changed = await tx.rSVP.updateMany({
       where: { id: params.rsvpId, checkedInAt: { not: null } },
       data: { checkedInAt: null },
@@ -82,4 +84,6 @@ export function commitUndoCheckInProjection(params: {
     });
     return true;
   });
+  if (undone) emitWebhookEvent({ type: "checkin.undone", rsvpId: params.rsvpId, undoneAt: new Date() });
+  return undone;
 }

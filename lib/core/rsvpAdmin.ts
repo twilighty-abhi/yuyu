@@ -13,6 +13,7 @@ import { submitManualGuestRsvpCore } from "@/lib/rsvpCore";
 import { validateAndNormalizeAnswers } from "@/lib/rsvpCore";
 import { isActionRateLimited } from "@/lib/actionRateLimit";
 import { hasCapacityToRestoreConfirmedRsvp } from "@/lib/rsvpCapacity";
+import { emitWebhookEvent } from "@/lib/webhooks/emit";
 
 const UNDO_TTL_MS = 5 * 60_000;
 
@@ -226,6 +227,13 @@ export async function deleteRsvpForUser(actorUserId: string | null, input: unkno
     return created;
   });
 
+  emitWebhookEvent({
+    type: "registration.status_changed",
+    rsvpId: rsvp.id,
+    status: "REMOVED",
+    previousStatus: rsvp.status,
+    snapshot: { id: rsvp.id, eventId: rsvp.eventId, eventInstanceId: rsvp.eventInstanceId, userId: rsvp.userId, guestName: rsvp.guestName, createdAt: rsvp.createdAt, checkedInAt: rsvp.checkedInAt },
+  });
   await recordAuditEvent({ action: "RSVP_DELETED", actorUserId: session.user.id, organisationId: org.id, targetType: "RSVP", targetId: rsvp.id });
 
   revalidateRsvpPaths(org.slug, { eventId: rsvp.eventId, eventInstanceId: rsvp.eventInstanceId, eventSlug: rsvp.event?.slug });
@@ -298,6 +306,7 @@ export async function restoreRsvpForUser(actorUserId: string | null, input: unkn
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
     if (!restored) return { ok: false, error: "This RSVP cannot be restored because the event is now at capacity." };
     restoredId = restored.id;
+    emitWebhookEvent({ type: "registration.status_changed", rsvpId: restored.id, status: restored.status, previousStatus: "REMOVED" });
   } catch (error) {
     if (typeof error === "object" && error !== null && "code" in error && (error as { code?: string }).code === "P2002") {
       return { ok: false, error: "This RSVP can no longer be restored because a conflicting registration exists." };

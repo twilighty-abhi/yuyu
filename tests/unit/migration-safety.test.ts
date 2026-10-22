@@ -69,4 +69,18 @@ describe("production migration safety contracts", () => {
     expect(sql).toContain('FOREIGN KEY ("eventId") REFERENCES "Event"("id") ON DELETE CASCADE');
     expect(sql).toContain('FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE');
   });
+
+  it("adds organisation webhooks as new tables only, cascading with the organisation", () => {
+    const sql = readFileSync(resolve(root, "prisma/migrations/20261022030000_org_webhooks/migration.sql"), "utf8");
+    expect(sql).not.toMatch(/\bDROP\b/i);
+    expect(sql).not.toMatch(/ALTER TABLE "(?!WebhookEndpoint"|WebhookDelivery")/);
+    expect(sql).not.toMatch(/^\s*(UPDATE|DELETE FROM|INSERT INTO)\b/m);
+    expect(sql).toContain('CREATE TABLE "WebhookEndpoint"');
+    expect(sql).toContain('CREATE TABLE "WebhookDelivery"');
+    expect(sql).toContain('CREATE UNIQUE INDEX "WebhookDelivery_endpointId_eventId_key"');
+    expect(sql).toContain('FOREIGN KEY ("organisationId") REFERENCES "Organisation"("id") ON DELETE CASCADE');
+    expect(sql).toContain('FOREIGN KEY ("endpointId") REFERENCES "WebhookEndpoint"("id") ON DELETE CASCADE');
+    expect(sql).toContain('CHECK (("status" = \'PROCESSING\') = ("lockedAt" IS NOT NULL))');
+  });
 });
+

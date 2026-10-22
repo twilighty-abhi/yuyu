@@ -102,9 +102,19 @@ series grant never reaches a standalone event.
 ## Organisation-level screens
 
 Creating events and series, organisation settings, members and invitations,
-API access (`app/actions/api-clients.ts`, owner only), and deleting the
-organisation are owner/admin (or owner) operations that no collaborator grant
-reaches. Collaborators who are not members see only the list of events they
+API access (`app/actions/api-clients.ts`, owner only), outgoing webhooks, and
+deleting the organisation are owner/admin (or owner) operations that no
+collaborator grant reaches.
+
+| Control | Server check | Owner | Admin | Member | Collaborator (any grants) |
+| --- | --- | --- | --- | --- | --- |
+| Settings → Webhooks section and pages | `requireOrgRole(ADMIN)`; others are redirected to the organisation | Yes | Yes | — | — |
+| Add, edit, delete endpoint; rotate secret; enable/disable | `app/actions/webhooks.ts`: `canManageWebhooks` (`lib/permissions.ts`), `webhookManage` rate limit, audited | Yes | Yes | — | — |
+| Send test, Redeliver, delivery log | `app/actions/webhooks.ts`: `canManageWebhooks`, `webhookTest` rate limit | Yes | Yes | — | — |
+
+Every webhook query includes the organisation, so an endpoint or delivery id
+from another organisation is "not found" (a 404 page, or the action error
+"Webhook endpoint not found."). See [Organisation webhooks](WEBHOOKS.md). Collaborators who are not members see only the list of events they
 co-organise on `/dashboard/:orgSlug`.
 
 ## Mobile API

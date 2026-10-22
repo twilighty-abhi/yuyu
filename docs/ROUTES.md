@@ -50,6 +50,8 @@ Dynamic segments are shown as `:name` for readability.
 | `/dashboard/:orgSlug/event/:eventId/check-in` | Online/offline check-in station; organisation admin or exact event `CHECK_IN` grant |
 | `/dashboard/:orgSlug/series/:seriesId` | Recurring-series management |
 | `/dashboard/:orgSlug/settings/api` | Machine API clients (owners; fresh re-authentication for mutations) |
+| `/dashboard/:orgSlug/settings/webhooks` | Outgoing webhook endpoints (owners and admins); add, and the secret shown once |
+| `/dashboard/:orgSlug/settings/webhooks/:endpointId` | One endpoint: edit, rotate secret, send test, enable/disable, delete, and the last 50 deliveries with Redeliver (owners and admins; another organisation's id is a 404) |
 
 Dashboard pages require authentication and enforce membership/role permissions on the server.
 

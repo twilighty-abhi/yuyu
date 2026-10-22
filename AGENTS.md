@@ -173,6 +173,12 @@ field, constraint, or cascade from a component alone.
   `lib/opsAlerts.ts`, keep the webhook URL write-only and encrypted, and keep
   the public `POST /api/client-errors` same-origin, size-capped, rate limited,
   and answering an empty `204`.
+- Organisation webhooks (`lib/webhooks/*`, `docs/WEBHOOKS.md`) are owner/admin
+  only. Emit only after a transaction commits, through `emitWebhookEvent`
+  (background enqueue, never throws); keep payloads to the strict DTOs (no
+  emails, answers, or tokens), signing secrets write-only and encrypted, and
+  every target SSRF-checked at save and delivery time with the pinned lookup.
+  `WEBHOOKS_ALLOW_PRIVATE_TARGETS` is for development and tests only.
 - Machine API clients are tenant-bound bearer identities, not Auth.js users.
   Require explicit scopes, resolve the tenant solely from the credential, use
   explicit DTOs/selects, and never log or persist a raw credential.

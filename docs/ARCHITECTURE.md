@@ -73,6 +73,7 @@ The super-admin boundary is separate: access requires an authenticated email mat
 - Operations: `OutboxMessage`, `OperationalHeartbeat`, `AuditEvent`, `CheckInEvent`, `RsvpDeletionUndo`, and `Asset`.
 - Instance administration: the singleton `InstanceSetting` holds the new-account policy, encrypted SMTP and Google SSO secrets, the encrypted operational alerts webhook URL with its enabled and include-warnings flags, and non-secret backup posture. It is readable and mutable only through the super-admin boundary.
 - Machine access: `ApiClient`, `ApiClientScope`, and hashed, rotatable `ApiCredential` records.
+- Outgoing webhooks: `WebhookEndpoint` (per organisation, at most 10; URL, subscribed event types, encrypted signing secret, enabled/auto-disabled state and failure counter) and `WebhookDelivery` (the durable queue and delivery log, one row per endpoint and event, unique on `endpointId`/`eventId`). See [Organisation webhooks](WEBHOOKS.md).
 
 ### Event publication
 
@@ -82,7 +83,7 @@ Refer to `prisma/schema.prisma` for the authoritative fields, constraints, index
 
 ## Background and scheduled work
 
-Request handlers enqueue transactional messages in `OutboxMessage`; they do not wait for SMTP delivery. Every self-hosted Node.js instance starts a singleton one-minute worker that claims and sends a batch, retries failures, purges expired operational records, and updates a one-row `OperationalHeartbeat`. Queue row claims keep concurrent replicas safe. The protected `POST /api/internal/outbox` endpoint remains available as an external scheduler or recovery trigger.
+Request handlers enqueue transactional messages in `OutboxMessage`; they do not wait for SMTP delivery. Every self-hosted Node.js instance starts a singleton one-minute worker that claims and sends a batch, retries failures, purges expired operational records, and updates a one-row `OperationalHeartbeat`. Queue row claims keep concurrent replicas safe. The same pass delivers organisation webhooks (`lib/webhooks/delivery.ts`): rows are claimed with `FOR UPDATE SKIP LOCKED`, posted with a pinned, SSRF-checked connection, retried with jittered backoff (8 attempts over about a day), and a failing endpoint is switched off after 20 consecutive failures; a webhook failure never fails the email pass. Webhook events are emitted at the commit points (`reserveRsvp` in `lib/rsvpCore.ts`, `confirmRsvpWithinCapacity`, the RSVP lifecycle/cancel/admin cores, `commitCheckInProjection` and `commitUndoCheckInProjection`, the event publish paths in `app/actions/event.ts`, and `submitFeedback`) after their transactions commit, through `emitWebhookEvent` (`lib/webhooks/emit.ts`), which only inserts queue rows in the background and never throws. The protected `POST /api/internal/outbox` endpoint remains available as an external scheduler or recovery trigger for both.
 
 ## Realtime ticket check-in
 

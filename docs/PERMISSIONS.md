@@ -26,10 +26,10 @@ would be allowed. `tests/unit/event-capabilities.test.ts` pins this table.
 
 | Grant | Covers |
 | --- | --- |
-| `EDIT_DETAILS` | Event page content: page settings (tagline, logo, accent, sections, about), highlights, speakers, sponsors, resources, FAQs, venue, and their uploads |
+| `EDIT_DETAILS` | Event page content: page settings (tagline, logo, accent, sections, about), highlights, speakers, sponsors, resources, FAQs, venue, and their uploads; creating, renaming, reordering, archiving and restoring custom check-in lists |
 | `MANAGE_REGISTRATIONS` | The guest list: approve, decline, give a waitlist place, add a guest, edit and remove (with undo) registrations, the attendee CSV, registration numbers in the header, Overview and Analytics |
 | `MANAGE_INVITATIONS` | The event's (or series') invite list: add and remove invited emails |
-| `CHECK_IN` | The check-in desk and page: scan, search, preview, check in, undo, offline roster and sync, badge (ID card) printing |
+| `CHECK_IN` | The check-in desk and page: scan, search, preview, check in, undo, offline roster and sync, badge (ID card) printing; checking guests into and out of custom check-in lists |
 | `PUBLISH_AND_SCHEDULE` | The programme: schedule tracks, sessions and live delays (standalone events), and series schedule items. Despite the name, setting an event Live stays with owners and admins |
 
 ## Event dashboard
@@ -66,6 +66,8 @@ would be allowed. `tests/unit/event-capabilities.test.ts` pins this table.
 | Event page · Registration form | `app/actions/registration-form.ts`: `requireOrgRole(ADMIN)` | Yes | — | — | — | — | — | — | — |
 | Emails: compose, test, send, history | `lib/core/broadcasts.ts`: admin | Yes | — | — | — | — | — | — | — |
 | Check-in: desk, counts, ID cards | `lib/core/checkin.ts`: `CHECK_IN` | Yes | — | — | — | — | Yes | — | Yes |
+| Check-in: check-in lists card, list switcher, scan/search into a list, undo, list guest view | `lib/core/checkinLists.ts` (`checkInToListForUser`, `undoListCheckInForUser`, `lookupListAttendeesForUser`): `CHECK_IN` (`canCheckInToLists`) | Yes | — | — | — | — | Yes | — | Yes |
+| Check-in: Manage lists (create, rename, reorder, archive, restore, requires entry check-in) | `lib/core/checkinLists.ts` (`createCheckInListForUser`, `updateCheckInListForUser`, `reorderCheckInListsForUser`): `EDIT_DETAILS` (`canManageCheckInLists`) | Yes | — | Yes² | — | — | — | — | Yes |
 | Check-in: door station PIN on/reveal/rotate/off | `app/actions/checkin-station.ts`: admin + fresh sign-in | Yes | — | — | — | — | — | — | — |
 | Check-in: Export attendance | attendee CSV route | Yes | — | — | —¹ | — | — | — | Yes |
 | Feedback: form, settings, certificate builder | `app/actions/feedback-form.ts`, `app/actions/certificate.ts`: admin | Yes | — | — | — | — | — | — | — |
@@ -83,6 +85,15 @@ would be allowed. `tests/unit/event-capabilities.test.ts` pins this table.
 ¹ The Check-in tab needs `CHECK_IN`, so this button needs both grants; a
 `MANAGE_REGISTRATIONS`-only co-organiser downloads the same CSV from
 Guests · People.
+
+² An `EDIT_DETAILS`-only co-organiser sees the Check-in tab's lists card with
+**Manage lists** and the counts, but not the desk or scanning, which need
+`CHECK_IN`. Lists are set up like page content, ahead of the event, so they
+follow `EDIT_DETAILS`; door staff with only `CHECK_IN` scan into the lists
+they are given but cannot add, rename or archive them, which keeps one
+volunteer from reshaping what every desk tracks. An event outside the
+caller's organisation, or one they cannot open at all, answers
+"Event not found."; a list of another event answers "List not found.".
 
 ## Series page
 
@@ -127,3 +138,7 @@ for a mobile release. Mobile collaborations list standalone-event grants only.
   co-organiser edits page content but not the title or dates. Splitting the
   form would let the grant cover the descriptive fields.
 - The registration form questions are owner/admin only; no grant covers them.
+- Custom check-in lists are web-only for now: the mobile API, offline check-in,
+  the venue station and series occurrences do not reach them. The cores in
+  `lib/core/checkinLists.ts` already take a `source` (`mobile-scan`,
+  `mobile-manual`) so the mobile API can reuse them unchanged.

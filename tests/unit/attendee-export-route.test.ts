@@ -34,6 +34,7 @@ describe("full attendee CSV export route", () => {
       title: "Test Event",
       organisationId: "org_1",
       registrationForm: { fields: [{ id: "field_1", label: "Company" }] },
+      checkInLists: [],
     });
     mocks.membership.mockResolvedValue({ role: "ADMIN" });
     mocks.isAdmin.mockReturnValue(true);
@@ -49,6 +50,7 @@ describe("full attendee CSV export route", () => {
         checkInToken: "secret-token",
         user: null,
         answers: [{ fieldId: "field_1", valueText: "Analytical Engines", valueBool: null, valueNumber: null, valueDate: null }],
+        checkInListRecords: [],
       }])
       .mockResolvedValueOnce([]);
   });
@@ -86,5 +88,40 @@ describe("full attendee CSV export route", () => {
     await expect(response.text()).resolves.toContain("Ada Lovelace,ada@example.test,CONFIRMED,2030-01-02T03:04:05.000Z,,https://events.example.test/ticket/secret-token,Analytical Engines");
     expect(mocks.audit).toHaveBeenCalledWith(expect.objectContaining({ action: "ATTENDEE_LIST_EXPORTED", organisationId: "org_1", targetId: "event_1" }));
     expect(mocks.rsvps).toHaveBeenCalledTimes(2);
+  });
+
+  it("adds one column per check-in list after the answers, with the time or blank", async () => {
+    mocks.event.mockResolvedValue({
+      id: "event_1",
+      title: "Test Event",
+      organisationId: "org_1",
+      registrationForm: { fields: [{ id: "field_1", label: "Company" }] },
+      checkInLists: [
+        { id: "list_swag", name: "Swag", archived: false },
+        { id: "list_lunch", name: "Lunch", archived: false },
+        { id: "list_old", name: "=Old", archived: true },
+      ],
+    });
+    mocks.rsvps.mockReset();
+    mocks.rsvps
+      .mockResolvedValueOnce([{
+        id: "rsvp_1",
+        status: "CONFIRMED",
+        guestName: "Ada Lovelace",
+        guestEmail: "ada@example.test",
+        createdAt: new Date("2030-01-02T03:04:05.000Z"),
+        checkedInAt: null,
+        checkInToken: "secret-token",
+        user: null,
+        answers: [],
+        checkInListRecords: [{ listId: "list_lunch", checkedInAt: new Date("2030-01-03T12:00:00.000Z") }],
+      }])
+      .mockResolvedValueOnce([]);
+
+    const response = await GET(new Request("https://events.example.test/api/exports/events/event_1/attendees"), routeContext);
+    const [header, row] = (await response.text()).replace(/^\uFEFF/, "").split("\n");
+
+    expect(header).toBe("Name,Email,Status,Registration Date,Checked In At,Ticket URL,Company,Check-in: Swag,Check-in: Lunch,Check-in: =Old (archived)");
+    expect(row).toBe("Ada Lovelace,ada@example.test,CONFIRMED,2030-01-02T03:04:05.000Z,,https://events.example.test/ticket/secret-token,,,2030-01-03T12:00:00.000Z,");
   });
 });

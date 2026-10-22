@@ -13,6 +13,7 @@ import { submitManualGuestRsvpCore } from "@/lib/rsvpCore";
 import { validateAndNormalizeAnswers } from "@/lib/rsvpCore";
 import { isActionRateLimited } from "@/lib/actionRateLimit";
 import { hasCapacityToRestoreConfirmedRsvp } from "@/lib/rsvpCapacity";
+import { CHECK_IN_LIST_SOURCES, MAX_CHECK_IN_LISTS } from "@/lib/checkInLists";
 
 const UNDO_TTL_MS = 5 * 60_000;
 
@@ -145,6 +146,12 @@ const snapshotSchema = z.object({
     valueNumber: z.number().finite().nullable(),
     valueDate: z.string().datetime().nullable(),
   })).max(200),
+  /** Custom check-in list records, restored for lists that still belong to the event. */
+  listCheckIns: z.array(z.object({
+    listId: z.string().min(1).max(128),
+    checkedInAt: z.string().datetime(),
+    source: z.enum(CHECK_IN_LIST_SOURCES),
+  })).max(MAX_CHECK_IN_LISTS).optional(),
 }).refine(
   (value) => Boolean(value.eventId) !== Boolean(value.eventInstanceId),
   { message: "Invalid RSVP target." },
@@ -185,6 +192,7 @@ export async function deleteRsvpForUser(actorUserId: string | null, input: unkno
     include: {
       answers: true,
       event: { select: { slug: true } },
+      checkInListRecords: { select: { listId: true, checkedInAt: true, source: true } },
     },
   });
   if (!rsvp) return { ok: false, error: "RSVP not found." };
@@ -206,6 +214,11 @@ export async function deleteRsvpForUser(actorUserId: string | null, input: unkno
       valueBool: answer.valueBool,
       valueNumber: answer.valueNumber,
       valueDate: answer.valueDate?.toISOString() ?? null,
+    })),
+    listCheckIns: rsvp.checkInListRecords.map((record) => ({
+      listId: record.listId,
+      checkedInAt: record.checkedInAt.toISOString(),
+      source: record.source,
     })),
   };
 
@@ -293,6 +306,21 @@ export async function restoreRsvpForUser(actorUserId: string | null, input: unkn
           })) },
         },
       });
+      const listCheckIns = snapshot.data.listCheckIns ?? [];
+      if (snapshot.data.eventId && listCheckIns.length > 0) {
+        // Only lists that still exist on the same event; history is not rewritten.
+        const lists = await tx.checkInList.findMany({ where: { eventId: snapshot.data.eventId, id: { in: listCheckIns.map((entry) => entry.listId) } }, select: { id: true } });
+        const live = new Set(lists.map((list) => list.id));
+        await tx.checkInListRecord.createMany({
+          data: listCheckIns.filter((entry) => live.has(entry.listId)).map((entry) => ({
+            listId: entry.listId,
+            rsvpId: created.id,
+            source: entry.source,
+            checkedInAt: new Date(entry.checkedInAt),
+          })),
+          skipDuplicates: true,
+        });
+      }
       await tx.rsvpDeletionUndo.delete({ where: { id: undo.id } });
       return created;
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });

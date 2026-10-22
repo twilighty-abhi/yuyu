@@ -8,9 +8,13 @@ import { EventCheckInClient } from "@/components/checkin/EventCheckInClient";
 import { CheckInStationSettings } from "@/components/checkin/CheckInStationSettings";
 import { getRequestOrigin } from "@/lib/publicUrl";
 import { EventManageHeader } from "@/components/dashboard/EventManageHeader";
+import { CheckInListDesk } from "@/components/checkin/CheckInListDesk";
+import { CheckInListSwitcher } from "@/components/checkin/CheckInListSwitcher";
+import { loadCheckInListRoster, loadCheckInLists } from "@/lib/eventDashboard/checkInLists";
 
 type Props = {
   params: Promise<{ orgSlug: string; eventId: string }>;
+  searchParams: Promise<{ list?: string | string[] }>;
 };
 
 export const metadata = { title: "Event check-in", robots: { index: false, follow: false } };
@@ -25,8 +29,9 @@ function labelAttendee(r: {
   return email ?? "Guest";
 }
 
-export default async function EventCheckInPage({ params }: Props) {
+export default async function EventCheckInPage({ params, searchParams }: Props) {
   const { orgSlug, eventId } = await params;
+  const { list: listParam } = await searchParams;
   const access = await requireOrgDashboardAccess(orgSlug);
   const { organisation } = access;
 
@@ -43,6 +48,52 @@ export default async function EventCheckInPage({ params }: Props) {
   if (!event) notFound();
   const isAdmin = Boolean(access.membership && isOrgAdmin(access.membership.role));
   if (!isAdmin && !(await canAccessEvent({ userId: access.userId, organisationId: organisation.id, eventId: event.id, permission: EventPermission.CHECK_IN }))) notFound();
+
+  const grant = isAdmin
+    ? null
+    : await prisma.eventCollaborator.findFirst({ where: { eventId: event.id, userId: access.userId }, select: { permissions: true } });
+  const capabilities = eventCapabilities(access.membership?.role ?? null, grant?.permissions ?? []);
+  const header = (
+    <EventManageHeader
+      back={{ href: `/dashboard/${organisation.slug}/event/${event.id}`, label: "Back to event" }}
+      event={{ title: event.title, status: event.status, privacyType: event.privacyType, startDateTime: event.startDateTime, timezone: event.timezone, accentColor: event.page?.accentColor }}
+    />
+  );
+
+  // Custom check-in lists: "Entry" is the unchanged desk below; a selected
+  // open list swaps in its own desk. Archived lists are hidden from the desk.
+  const lists = await loadCheckInLists(event.id);
+  const openLists = lists.filter((list) => !list.archived);
+  const selectedId = typeof listParam === "string" ? listParam : null;
+  const selectedList = selectedId ? openLists.find((list) => list.id === selectedId) ?? null : null;
+  const deskPath = `/dashboard/${organisation.slug}/event/${event.id}/check-in`;
+  const switcher = openLists.length > 0 || capabilities.canManageCheckInLists ? (
+    <CheckInListSwitcher
+      deskPath={deskPath}
+      lists={openLists}
+      selectedId={selectedList?.id ?? null}
+      manage={capabilities.canManageCheckInLists ? { organisationSlug: organisation.slug, eventId: event.id, lists } : null}
+    />
+  ) : null;
+
+  if (selectedList) {
+    const roster = await loadCheckInListRoster(event.id, selectedList);
+    return (
+      <div className="flex flex-col gap-6">
+        {header}
+        {switcher}
+        <CheckInListDesk
+          key={selectedList.id}
+          organisationSlug={organisation.slug}
+          eventId={event.id}
+          timeZone={event.timezone}
+          list={selectedList}
+          roster={roster.rows}
+          rosterTruncated={roster.truncated}
+        />
+      </div>
+    );
+  }
 
   const [confirmed, checkedInCount, recentRsvps, registrationForm] = await Promise.all([
     prisma.rSVP.count({
@@ -79,10 +130,8 @@ export default async function EventCheckInPage({ params }: Props) {
   const stationUrl = `${origin}/${organisation.slug}/${event.slug}/check-in`;
   return (
     <div className="flex flex-col gap-6">
-      <EventManageHeader
-        back={{ href: `/dashboard/${organisation.slug}/event/${event.id}`, label: "Back to event" }}
-        event={{ title: event.title, status: event.status, privacyType: event.privacyType, startDateTime: event.startDateTime, timezone: event.timezone, accentColor: event.page?.accentColor }}
-      />
+      {header}
+      {switcher}
       <EventCheckInClient
         organisationSlug={organisation.slug}
         organisationName={organisation.name}
@@ -93,7 +142,7 @@ export default async function EventCheckInPage({ params }: Props) {
         stats={{ confirmed, checkedIn: checkedInCount }}
         recent={recent}
       />
-      {eventCapabilities(access.membership?.role, []).canManageCheckInStation ? <CheckInStationSettings organisationSlug={organisation.slug} eventId={event.id} stationUrl={stationUrl} enabled={Boolean(event.checkInStationPinHash)} /> : null}
+      {capabilities.canManageCheckInStation ? <CheckInStationSettings organisationSlug={organisation.slug} eventId={event.id} stationUrl={stationUrl} enabled={Boolean(event.checkInStationPinHash)} /> : null}
     </div>
   );
 }

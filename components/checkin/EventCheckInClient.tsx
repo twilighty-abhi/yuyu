@@ -42,6 +42,7 @@ import { IdCardPrintDialog } from "@/components/checkin/IdCardPrintDialog";
 import { shouldRefreshCheckIn } from "@/lib/checkInRefresh";
 import { buildCsv } from "@/lib/csv";
 import { InstallCheckInAppButton } from "@/components/checkin/InstallCheckInAppButton";
+import { playSuccessFeedback } from "@/components/checkin/checkInFeedback";
 
 export type CheckInRecentRow = {
   rsvpId: string;
@@ -92,29 +93,6 @@ function StatusChip({ status }: { status: string }) {
 function CheckInTimestamp({ value }: { value: string }) {
   const isClient = useSyncExternalStore(() => () => {}, () => true, () => false);
   return <>{isClient ? new Date(value).toLocaleString() : `${value.slice(0, 16).replace("T", " ")} UTC`}</>;
-}
-
-function playSuccessFeedback() {
-  if (typeof window === "undefined") return;
-  try {
-    const ctx = new AudioContext();
-    const o = ctx.createOscillator();
-    const g = ctx.createGain();
-    o.connect(g);
-    g.connect(ctx.destination);
-    o.frequency.value = 880;
-    g.gain.value = 0.08;
-    o.start();
-    setTimeout(() => {
-      o.stop();
-      ctx.close();
-    }, 120);
-  } catch {
-    /* ignore */
-  }
-  if (typeof navigator !== "undefined" && navigator.vibrate) {
-    navigator.vibrate(40);
-  }
 }
 
 export function EventCheckInClient(props: {

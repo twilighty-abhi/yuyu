@@ -69,4 +69,18 @@ describe("production migration safety contracts", () => {
     expect(sql).toContain('FOREIGN KEY ("eventId") REFERENCES "Event"("id") ON DELETE CASCADE');
     expect(sql).toContain('FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE');
   });
+
+  it("adds check-in lists as new tables without touching entry check-in", () => {
+    const sql = readFileSync(resolve(root, "prisma/migrations/20261023000000_check_in_lists/migration.sql"), "utf8");
+    expect(sql).not.toMatch(/\bDROP\b/i);
+    expect(sql).not.toMatch(/ALTER TABLE "(?!CheckInList(Record|Event)?")/);
+    expect(sql).not.toMatch(/^\s*(UPDATE|DELETE FROM|INSERT INTO)\b/m);
+    expect(sql).toContain('CREATE UNIQUE INDEX "CheckInList_eventId_active_name_key" ON "CheckInList"("eventId", lower("name")) WHERE NOT "archived"');
+    expect(sql).toContain('CREATE UNIQUE INDEX "CheckInListRecord_listId_rsvpId_key" ON "CheckInListRecord"("listId", "rsvpId")');
+    expect(sql).toContain('FOREIGN KEY ("eventId") REFERENCES "Event"("id") ON DELETE CASCADE');
+    expect(sql).toContain('"CheckInListRecord_rsvpId_fkey" FOREIGN KEY ("rsvpId") REFERENCES "RSVP"("id") ON DELETE CASCADE');
+    expect(sql).toContain('"CheckInListRecord_actorUserId_fkey" FOREIGN KEY ("actorUserId") REFERENCES "User"("id") ON DELETE SET NULL');
+    expect(sql).toContain('"CheckInListEvent_rsvpId_fkey" FOREIGN KEY ("rsvpId") REFERENCES "RSVP"("id") ON DELETE SET NULL');
+    expect(sql).toContain(`CHECK ("source" IN ('online', 'mobile-scan', 'mobile-manual'))`);
+  });
 });

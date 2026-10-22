@@ -22,6 +22,10 @@ export type EventCapabilities = {
   canManageInvitations: boolean;
   /** Check-in desk, scanner, offline roster, undo check-in and badge printing (`CHECK_IN`). */
   canCheckIn: boolean;
+  /** Check guests into or out of custom check-in lists (`CHECK_IN`, the same rule as entry check-in). */
+  canCheckInToLists: boolean;
+  /** Create, rename, reorder, archive and restore custom check-in lists (`EDIT_DETAILS`). */
+  canManageCheckInLists: boolean;
   /** Venue station PIN: on, reveal, rotate, off. */
   canManageCheckInStation: boolean;
   /** Event page content: page settings, highlights, speakers, sponsors, resources, FAQs (`EDIT_DETAILS`). */
@@ -89,6 +93,8 @@ export function eventCapabilities(
     canViewAnalytics: registrations,
     canManageInvitations: has(EventPermission.MANAGE_INVITATIONS),
     canCheckIn: has(EventPermission.CHECK_IN),
+    canCheckInToLists: has(EventPermission.CHECK_IN),
+    canManageCheckInLists: has(EventPermission.EDIT_DETAILS),
     canManageCheckInStation: isAdmin,
     canEditPageContent: has(EventPermission.EDIT_DETAILS),
     canEditEventDetails: isAdmin,

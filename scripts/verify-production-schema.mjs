@@ -38,7 +38,7 @@ try {
         'EventPage', 'EventPageSection', 'EventHighlight', 'EventVenue',
         'EventVenueRoom', 'EventSession', 'EventSpeaker',
         'EventSessionSpeaker', 'EventSponsor', 'EventFaq', 'EventResource',
-        'EventBroadcast'
+        'EventBroadcast', 'CheckInList', 'CheckInListRecord', 'CheckInListEvent'
       )
     `,
     prisma.$queryRaw`
@@ -78,13 +78,14 @@ try {
         'CheckInEvent_known_source', 'EventFeedbackAnswer_fieldId_fkey',
         'EventFeedbackResponse_identity_capability_pair',
         'EventFeedbackAnswer_typed_value', 'OutboxMessage_attempts_nonnegative',
-        'OutboxMessage_state_shape'
+        'OutboxMessage_state_shape', 'CheckInListRecord_known_source',
+        'CheckInListEvent_known_action', 'CheckInListEvent_known_source'
       )
     `,
     prisma.$queryRaw`
       SELECT indexname
       FROM pg_indexes
-      WHERE schemaname = 'public' AND indexname IN ('Asset_key_key', 'RSVP_event_attendee_unique', 'RSVP_instance_attendee_unique', 'ApiClient_organisationId_status_idx', 'ApiCredential_apiClientId_revokedAt_idx')
+      WHERE schemaname = 'public' AND indexname IN ('Asset_key_key', 'RSVP_event_attendee_unique', 'RSVP_instance_attendee_unique', 'ApiClient_organisationId_status_idx', 'ApiCredential_apiClientId_revokedAt_idx', 'CheckInList_eventId_active_name_key', 'CheckInListRecord_listId_rsvpId_key')
     `,
     prisma.$queryRaw`
       SELECT trigger_name
@@ -122,14 +123,14 @@ try {
     ...["fieldKey", "fieldLabel", "fieldType"].filter((column) => !feedbackAnswerColumnNames.has(column)),
     ...["fieldId"].filter((column) => !nullableFeedbackAnswerColumns.has(column)),
     ...["secretHash", "revokedAt", "expiresAt", "lastUsedAt"].filter((column) => !apiCredentialColumnNames.has(column)),
-    ...["EventCollaborator", "EventCollaboratorInvite", "EventScheduleItem", "EventPage", "EventPageSection", "EventHighlight", "EventVenue", "EventVenueRoom", "EventSession", "EventSpeaker", "EventSessionSpeaker", "EventSponsor", "EventFaq", "EventResource"].filter((table) => !featureTableNames.has(table)),
+    ...["EventCollaborator", "EventCollaboratorInvite", "EventScheduleItem", "EventPage", "EventPageSection", "EventHighlight", "EventVenue", "EventVenueRoom", "EventSession", "EventSpeaker", "EventSessionSpeaker", "EventSponsor", "EventFaq", "EventResource", "CheckInList", "CheckInListRecord", "CheckInListEvent"].filter((table) => !featureTableNames.has(table)),
     ...["registrationClosesAt", "registrationLeadMinutes", "checkInStationPinHash", "checkInStationPinEncrypted", "checkInStationSecretVersion"].filter((column) => !eventColumnNames.has(column)),
     ...["isPublished"].filter((column) => !eventPageColumnNames.has(column)),
     ...["delayMinutes"].filter((column) => !eventSessionColumnNames.has(column)),
     ...["smtpPasswordEncrypted", "googleClientSecretEncrypted", "opsWebhookUrlEncrypted", "opsWebhookEnabled", "opsWebhookIncludeWarnings"].filter((column) => !instanceSettingColumnNames.has(column)).map((column) => `InstanceSetting.${column}`),
-    ...["RSVP_exactly_one_target", "CheckInEvent_rsvpId_fkey", "AuditEvent_organisationId_fkey", "ApiClient_organisationId_fkey", "AuditEvent_actorApiClientId_fkey", "ApiCredential_secret_hash_length", "AuditEvent_single_actor", "Event_registration_cutoff_mode", "EventCollaborator_one_target", "EventCollaboratorInvite_one_target", "EventResource_one_parent", "EventResource_one_source", "Event_valid_time_range", "Event_positive_capacity", "EventSeries_positive_duration", "EventInstance_valid_time_range", "EventSession_valid_time_range", "OrganisationInvite_usage_pair", "EventCollaboratorInvite_usage_pair", "CheckInEvent_known_action", "CheckInEvent_known_source", "EventFeedbackAnswer_fieldId_fkey", "EventFeedbackResponse_identity_capability_pair", "EventFeedbackAnswer_typed_value", "OutboxMessage_attempts_nonnegative", "OutboxMessage_state_shape"].filter((name) => !constraintNames.has(name)),
+    ...["RSVP_exactly_one_target", "CheckInEvent_rsvpId_fkey", "AuditEvent_organisationId_fkey", "ApiClient_organisationId_fkey", "AuditEvent_actorApiClientId_fkey", "ApiCredential_secret_hash_length", "AuditEvent_single_actor", "Event_registration_cutoff_mode", "EventCollaborator_one_target", "EventCollaboratorInvite_one_target", "EventResource_one_parent", "EventResource_one_source", "Event_valid_time_range", "Event_positive_capacity", "EventSeries_positive_duration", "EventInstance_valid_time_range", "EventSession_valid_time_range", "OrganisationInvite_usage_pair", "EventCollaboratorInvite_usage_pair", "CheckInEvent_known_action", "CheckInEvent_known_source", "EventFeedbackAnswer_fieldId_fkey", "EventFeedbackResponse_identity_capability_pair", "EventFeedbackAnswer_typed_value", "OutboxMessage_attempts_nonnegative", "OutboxMessage_state_shape", "CheckInListRecord_known_source", "CheckInListEvent_known_action", "CheckInListEvent_known_source"].filter((name) => !constraintNames.has(name)),
     ...(constraints.some((row) => row.conname === "EventFeedbackAnswer_fieldId_fkey" && row.confdeltype === "n") ? [] : ["EventFeedbackAnswer_fieldId_fkey:ON DELETE SET NULL"]),
-    ...["Asset_key_key", "RSVP_event_attendee_unique", "RSVP_instance_attendee_unique", "ApiClient_organisationId_status_idx", "ApiCredential_apiClientId_revokedAt_idx"].filter((name) => !indexNames.has(name)),
+    ...["Asset_key_key", "RSVP_event_attendee_unique", "RSVP_instance_attendee_unique", "ApiClient_organisationId_status_idx", "ApiCredential_apiClientId_revokedAt_idx", "CheckInList_eventId_active_name_key", "CheckInListRecord_listId_rsvpId_key"].filter((name) => !indexNames.has(name)),
     ...["audit_fallback_organisation", "audit_fallback_membership", "audit_fallback_event", "audit_fallback_eventseries", "audit_fallback_organisationinvite", "audit_fallback_eventinvite", "audit_fallback_seriesinvite", "audit_fallback_rsvp", "audit_fallback_eventcollaborator", "audit_fallback_eventcollaboratorinvite", "audit_fallback_apiclient", "audit_fallback_apiclientscope", "audit_fallback_apicredential"].filter((name) => !triggerNames.has(name)),
   ];
   if (missing.length > 0) {

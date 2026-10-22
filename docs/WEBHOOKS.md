@@ -184,6 +184,6 @@ Webhook URLs are entered by tenant admins, so Yuyu only sends to the public inte
 ## Operations
 
 - Webhooks need outbound HTTPS (443 and 8443) from every app process to your receivers.
-- Migration `20261022030000_org_webhooks` adds the `WebhookEndpoint` and `WebhookDelivery` tables; it is additive.
+- Migration `20261023010000_org_webhooks` adds the `WebhookEndpoint` and `WebhookDelivery` tables; it is additive.
 - If `MFA_ENCRYPTION_KEY` changes without re-encryption, deliveries fail with "Signing secret unreadable" (not counted against the endpoint); rotate each endpoint's secret.
 - Not yet available: webhook management in the mobile API, more event types (series status, invitations, schedule changes), per-endpoint ordering guarantees, and email notification of an automatic disable.

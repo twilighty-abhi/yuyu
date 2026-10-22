@@ -15,6 +15,8 @@ const EVENT_MATRIX: Record<keyof EventCapabilities, EventPermission | null> = {
   canViewAnalytics: EventPermission.MANAGE_REGISTRATIONS,
   canManageInvitations: EventPermission.MANAGE_INVITATIONS,
   canCheckIn: EventPermission.CHECK_IN,
+  canCheckInToLists: EventPermission.CHECK_IN,
+  canManageCheckInLists: EventPermission.EDIT_DETAILS,
   canManageCheckInStation: null,
   canEditPageContent: EventPermission.EDIT_DETAILS,
   canEditEventDetails: null,
@@ -95,6 +97,13 @@ describe("eventCapabilities", () => {
         canManageSchedule: true,
       });
     }
+  });
+
+  it("lets CHECK_IN scan into lists but only EDIT_DETAILS (or admins) manage them", () => {
+    expect(eventCapabilities(null, [EventPermission.CHECK_IN])).toMatchObject({ canCheckInToLists: true, canManageCheckInLists: false });
+    expect(eventCapabilities(null, [EventPermission.EDIT_DETAILS])).toMatchObject({ canCheckInToLists: false, canManageCheckInLists: true });
+    expect(eventCapabilities(MembershipRole.MEMBER, [])).toMatchObject({ canCheckInToLists: false, canManageCheckInLists: false });
+    expect(eventCapabilities(MembershipRole.ADMIN, [])).toMatchObject({ canCheckInToLists: true, canManageCheckInLists: true });
   });
 
   it("treats a missing grant like an empty one", () => {

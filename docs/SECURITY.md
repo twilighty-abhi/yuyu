@@ -104,7 +104,7 @@ This page documents implemented controls and security boundaries. It is not a su
 
 ## Audit trail
 
-Application code creates descriptive business/security audit events. PostgreSQL triggers add a minimal PII-free fallback record for important organisation, membership, event, invitation, RSVP, and series mutations, including mutations that bypass ordinary application paths. Check-in and undo actions also have an immutable event history.
+Application code creates descriptive business/security audit events. PostgreSQL triggers add a minimal PII-free fallback record for important organisation, membership, event, invitation, RSVP, and series mutations, including mutations that bypass ordinary application paths. Check-in and undo actions also have an immutable event history, and custom check-in lists keep their own (`CheckInListEvent`); creating, renaming, archiving, restoring and reordering lists is audited (`CHECK_IN_LIST_*`).
 
 ## Transport and secrets
 

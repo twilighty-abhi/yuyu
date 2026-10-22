@@ -137,6 +137,8 @@ model User {
   eventCollaboratorInvitesUsed EventCollaboratorInvite[] @relation("EventCollaboratorInviteUsedBy")
   eventBroadcasts   EventBroadcast[]
   broadcastDrafts   EventBroadcastDraft[]
+  checkInListRecords CheckInListRecord[]
+  checkInListEvents  CheckInListEvent[]
   mobileSessions    MobileSession[]
   webhookEndpointsCreated WebhookEndpoint[] @relation("WebhookEndpointCreatedBy")
 }
@@ -367,6 +369,7 @@ model Event {
   resources        EventResource[]
   broadcasts       EventBroadcast[]
   broadcastDrafts  EventBroadcastDraft[]
+  checkInLists     CheckInList[]
 
   @@unique([organisationId, slug])
   @@index([organisationId])
@@ -762,6 +765,8 @@ model RSVP {
   answers           RsvpAnswer[]
   feedbackResponses EventFeedbackResponse[]
   checkInEvents     CheckInEvent[]
+  checkInListRecords CheckInListRecord[]
+  checkInListEvents  CheckInListEvent[]
 
   @@index([eventId])
   /// "Your registrations" and the personal data export look RSVPs up by user.
@@ -960,6 +965,73 @@ model CheckInEvent {
   rsvp  RSVP? @relation(fields: [rsvpId], references: [id], onDelete: SetNull)
   actor User? @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
 
+  @@index([rsvpId, occurredAt])
+  @@index([actorUserId, occurredAt])
+}
+
+/// An organiser-defined check-in list beyond venue entry ("Swag collection",
+/// "Lunch – Day 1", "Workshop B"). Standalone events only. Names are unique per
+/// event among non-archived lists, case-insensitively, through the partial
+/// index `CheckInList_eventId_active_name_key` (declared in the migration,
+/// because Prisma cannot model it). Archived lists are read-only.
+model CheckInList {
+  id                   String   @id @default(cuid())
+  eventId              String
+  name                 String
+  sortOrder            Int      @default(0)
+  archived             Boolean  @default(false)
+  /// Guests must already be checked in at entry before they can be marked here.
+  requiresEntryCheckIn Boolean  @default(false)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  event   Event               @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  records CheckInListRecord[]
+  history CheckInListEvent[]
+
+  @@index([eventId, archived, sortOrder])
+}
+
+/// One person checked into one custom list. Unique on (listId, rsvpId), so a
+/// guest is in a list at most once; undo deletes the row. Independent of
+/// entry check-in (`RSVP.checkedInAt`), which list check-ins never change.
+model CheckInListRecord {
+  id          String   @id @default(cuid())
+  listId      String
+  rsvpId      String
+  actorUserId String?
+  /// `online`, `mobile-scan` or `mobile-manual` (`CheckInListRecord_known_source`).
+  source      String
+  checkedInAt DateTime @default(now())
+
+  list  CheckInList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  rsvp  RSVP        @relation(fields: [rsvpId], references: [id], onDelete: Cascade)
+  actor User?       @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@unique([listId, rsvpId])
+  @@index([rsvpId])
+  @@index([actorUserId])
+}
+
+/// Immutable history of list check-ins and undos, kept apart from
+/// `CheckInEvent` so entry reports and check-in source counts never include
+/// list activity. Like `CheckInEvent`, a deleted RSVP or actor leaves the row
+/// with a null reference; deleting the event (and so the list) removes it.
+model CheckInListEvent {
+  id          String   @id @default(cuid())
+  listId      String
+  rsvpId      String?
+  actorUserId String?
+  /// `CHECKED_IN` or `CHECK_IN_UNDONE` (`CheckInListEvent_known_action`).
+  action      String
+  source      String
+  occurredAt  DateTime @default(now())
+
+  list  CheckInList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  rsvp  RSVP?       @relation(fields: [rsvpId], references: [id], onDelete: SetNull)
+  actor User?       @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([listId, occurredAt])
   @@index([rsvpId, occurredAt])
   @@index([actorUserId, occurredAt])
 }

@@ -42,11 +42,18 @@ export function NextUpCard({ next, now }: { next: NonNullable<DashboardHome["nex
         <div className="flex flex-col gap-2">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <p className="text-label text-ink">
-              {next.confirmed} going{next.capacity ? <span className="font-normal text-ink-muted"> of {next.capacity}</span> : null}
+              {next.confirmed} going
+              {next.capacityUnits ? (
+                <span className="font-normal text-ink-muted">
+                  {" "}· {next.capacity ? `${next.capacityUnits.used} of ${next.capacity}` : next.capacityUnits.used} {next.capacityUnits.noun}
+                </span>
+              ) : next.capacity ? (
+                <span className="font-normal text-ink-muted"> of {next.capacity}</span>
+              ) : null}
             </p>
             {next.signupsLastDay > 0 ? <Chip tone="success" size="sm">+{next.signupsLastDay} in the last day</Chip> : null}
           </div>
-          {next.capacity ? <DotMeter filled={meterDots(next.confirmed, next.capacity, 25)} total={25} color={next.accent} dot={11} className="!gap-[5px]" /> : null}
+          {next.capacity ? <DotMeter filled={meterDots(next.capacityUnits?.used ?? next.confirmed, next.capacity, 25)} total={25} color={next.accent} dot={11} className="!gap-[5px]" /> : null}
         </div>
         {names.length ? (
           <div className="flex items-center gap-3">

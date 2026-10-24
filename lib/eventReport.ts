@@ -34,6 +34,23 @@ export type ReportBroadcast = { subject: string; sentAt: Date; recipientCount: n
 export type ReportCheckInSources = { organiser: number; offline: number; station: number };
 
 /**
+ * TEAM events (docs/TEAMS.md): team and solo counts only. Never team names,
+ * members or "looking for a team" profiles.
+ */
+export type ReportTeamMetrics = {
+  /** Teams with at least one registration. */
+  teams: number;
+  /** Teams that had a place (confirmed). */
+  confirmedTeams: number;
+  /** Registrations without a team. */
+  soloRegistrants: number;
+  /** Solo registrants who had a place; with `confirmedTeams`, the units filled. */
+  confirmedSoloRegistrants: number;
+  /** Average people per team, one decimal; 0 with no teams. */
+  averageTeamSize: number;
+};
+
+/**
  * Everything the PDF shows. Attendee data is reduced to counts and timestamps
  * before it gets here: no names, emails, tickets or written answers.
  */
@@ -72,6 +89,8 @@ export type EventReportMetrics = ReportRsvpMetrics & {
   resourceCount?: number;
   broadcasts?: ReportBroadcast[];
   coOrganiserCount?: number;
+  /** Set for TEAM events only. */
+  teams?: ReportTeamMetrics | null;
 };
 
 export function calculateReportRsvpMetrics(rsvps: ReportRsvp[]): ReportRsvpMetrics {
@@ -99,6 +118,32 @@ export function calculateReportRsvpMetrics(rsvps: ReportRsvp[]): ReportRsvpMetri
   }
   metrics.noShows = Math.max(0, metrics.confirmed - metrics.checkedIn);
   return metrics;
+}
+
+/** Team counts from each registration's team and status. Rejected registrations are left out. */
+export function calculateReportTeamMetrics(rsvps: Array<{ status: RsvpStatus; teamId: string | null }>): ReportTeamMetrics {
+  const sizes = new Map<string, number>();
+  const confirmed = new Set<string>();
+  let soloRegistrants = 0;
+  let confirmedSoloRegistrants = 0;
+  for (const rsvp of rsvps) {
+    if (rsvp.status === "REJECTED") continue;
+    if (!rsvp.teamId) {
+      soloRegistrants += 1;
+      if (rsvp.status === "CONFIRMED") confirmedSoloRegistrants += 1;
+      continue;
+    }
+    sizes.set(rsvp.teamId, (sizes.get(rsvp.teamId) ?? 0) + 1);
+    if (rsvp.status === "CONFIRMED") confirmed.add(rsvp.teamId);
+  }
+  const members = [...sizes.values()].reduce((sum, size) => sum + size, 0);
+  return {
+    teams: sizes.size,
+    confirmedTeams: confirmed.size,
+    soloRegistrants,
+    confirmedSoloRegistrants,
+    averageTeamSize: sizes.size ? Math.round((members / sizes.size) * 10) / 10 : 0,
+  };
 }
 
 export function isReportAvailable(endDateTime: Date, now = new Date()) {
@@ -177,6 +222,7 @@ export async function getEventReportMetrics(eventId: string): Promise<EventRepor
       privacyType: true,
       tags: true,
       registrationClosesAt: true,
+      registrationMode: true,
       organisation: { select: { id: true, name: true } },
       page: { select: { accentColor: true, tagline: true } },
       venue: { select: { name: true, visibility: true } },
@@ -186,6 +232,7 @@ export async function getEventReportMetrics(eventId: string): Promise<EventRepor
           status: true,
           checkedInAt: true,
           createdAt: true,
+          teamId: true,
           answers: { select: { fieldId: true, valueText: true, valueBool: true } },
           checkInEvents: { where: { action: "CHECKED_IN" }, orderBy: { occurredAt: "desc" }, take: 1, select: { source: true } },
         },
@@ -267,6 +314,7 @@ export async function getEventReportMetrics(eventId: string): Promise<EventRepor
     resourceCount: event.resources.length,
     broadcasts: event.broadcasts.map((broadcast) => ({ subject: broadcast.subject, sentAt: broadcast.createdAt, recipientCount: broadcast.recipientCount })),
     coOrganiserCount: event._count.collaborators,
+    teams: event.registrationMode === "TEAM" ? calculateReportTeamMetrics(event.rsvps) : null,
     ...calculateReportRsvpMetrics(event.rsvps),
   };
 }

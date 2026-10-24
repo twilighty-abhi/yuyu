@@ -8,7 +8,7 @@ import {
   type IdCardLayoutElement,
   type IdCardPrintSettings,
 } from "@/lib/idCardPrint";
-import { printableFields, safeLogoUrl, type IdCardAttendee, type PrintableField } from "./shared";
+import { printableFields, safeLogoUrl, withMergeFields, type IdCardAttendee, type PrintableField } from "./shared";
 
 function escapeHtml(value: string) {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
@@ -53,7 +53,8 @@ function detailsHtml(fields: PrintableField[], settings: IdCardPrintSettings) {
  * browser. Black and white only, for laser and thermal printers.
  */
 export async function printCard(params: { settings: IdCardPrintSettings; attendee: IdCardAttendee; organisationLogoUrl: string | null }) {
-  const { settings, attendee, organisationLogoUrl } = params;
+  const { attendee, organisationLogoUrl } = params;
+  const settings = withMergeFields(params.settings, attendee);
   const printWindow = window.open("", "_blank");
   if (!printWindow) return false;
   printWindow.opener = null;

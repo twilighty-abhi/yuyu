@@ -58,6 +58,7 @@ would be allowed. `tests/unit/event-capabilities.test.ts` pins this table.
 | Guests · People: list, filters, ticket links | `loadAttendees` only for `canManageRegistrations` | Yes | — | — | Yes | — | — | — | Yes |
 | Guests · People: approve, decline, give spot, add, edit, remove, undo remove | `lib/core/rsvpLifecycle.ts`, `lib/core/rsvpAdmin.ts`: `canManageRegistrationsFor` | Yes | — | — | Yes | — | — | — | Yes |
 | Guests · People: undo check-in | `lib/core/checkin.ts`: `CHECK_IN` | Yes | — | — | — | — | — | — | Yes |
+| Guests · Teams (TEAM events): list, approve, decline, give spot, rename, move member, delete and undo | `app/actions/team-admin.ts` via `resolveOrganiserEvent` (`lib/core/teams.ts`): `canManageRegistrationsFor` | Yes | — | — | Yes | — | — | — | Yes |
 | Guests · People: Download CSV / export emails | `GET /api/exports/events/:id/attendees`: admin or `MANAGE_REGISTRATIONS` | Yes | — | — | Yes | — | — | — | Yes |
 | Guests · Invites | `app/actions/invites.ts`: `MANAGE_INVITATIONS` | Yes | — | — | — | Yes | — | — | Yes |
 | Event page · Details (title, dates, venue, capacity, privacy, discovery, registration window, cover, logo) | `updateEvent`, `uploadEventCoverImage`: admin | Yes | — | — | — | — | — | — | — |

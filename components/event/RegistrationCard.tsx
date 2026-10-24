@@ -2,14 +2,17 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { RsvpStatus } from "@prisma/client";
 import { ArrowRight, Share2 } from "lucide-react";
 import { RsvpForm } from "@/components/rsvp/RsvpForm";
 import type { RegistrationFieldDefinition } from "@/components/rsvp/registrationTypes";
+import type { TeamRegistrationConfig } from "@/components/rsvp/TeamRegistrationFields";
 import { Button } from "@/components/ui/button";
 import { Callout, Chip, OrgLogo, ProgressBar } from "@/components/ui/display";
 import { Dialog, DialogBody, DialogContent, DialogHeader } from "@/components/ui/dialog";
 import { accentStyle } from "@/lib/theme/accent";
+import { registrationActionLabel } from "@/lib/registrationLabel";
 
 type RegistrationState = {
   cancelled: boolean;
@@ -65,9 +68,12 @@ export function RegistrationCard(props: {
   title?: string;
   /** The event's accent. The sign-up dialog renders in a portal outside the page's accent scope, so it re-applies it. */
   accentColor?: string | null;
+  /** Team event settings (docs/TEAMS.md): counts become places (one per team or solo entrant). */
+  team?: TeamRegistrationConfig | null;
 }) {
-  const { orgSlug, eventSlug, eventInstanceId, eventTitle, organisation, registrationFields, confirmedCount, capacity, state, accentColor } = props;
+  const { orgSlug, eventSlug, eventInstanceId, eventTitle, organisation, registrationFields, confirmedCount, capacity, state, accentColor, team } = props;
   const storageKey = eventInstanceId ? `yuyu:rsvp:${orgSlug}:i:${eventInstanceId}` : `yuyu:rsvp:${orgSlug}:e:${eventSlug ?? ""}`;
+  const router = useRouter();
   const [saved, setSaved] = useSavedRsvp(storageKey);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [shared, setShared] = useState(false);
@@ -93,7 +99,7 @@ export function RegistrationCard(props: {
   };
 
   const savedLabel = saved ? statusLabels[saved.status ?? "CONFIRMED"] ?? { chip: "Registered", tone: "neutral" as const, action: "View registration" } : null;
-  const registerLabel = state.full ? "Join the waitlist" : state.approvalRequired ? "Request to join" : "Register — it's free";
+  const registerLabel = registrationActionLabel(state, team ?? null);
   const spotsLeft = capacity != null && confirmedCount != null ? Math.max(0, capacity - confirmedCount) : null;
 
   const primaryAction = state.cancelled ? null : saved && savedLabel ? (
@@ -120,10 +126,11 @@ export function RegistrationCard(props: {
         {confirmedCount != null ? (
           <div className="flex flex-col gap-2">
             <div className="flex items-baseline justify-between gap-3 text-sm">
-              <span className="font-semibold text-ink">{confirmedCount} going</span>
-              {spotsLeft != null ? <span className="text-ink-muted">{spotsLeft} {spotsLeft === 1 ? "spot" : "spots"} left</span> : null}
+              <span className="font-semibold text-ink">{team ? `${confirmedCount} ${confirmedCount === 1 ? "place" : "places"} taken` : `${confirmedCount} going`}</span>
+              {spotsLeft != null ? <span className="text-ink-muted">{spotsLeft} {team ? (spotsLeft === 1 ? "place" : "places") : spotsLeft === 1 ? "spot" : "spots"} left</span> : null}
             </div>
             {capacity != null ? <ProgressBar value={confirmedCount} max={capacity} label="Places taken" /> : null}
+            {team ? <p className="text-caption text-ink-muted">{team.soloPolicy === "TEAMS_ONLY" ? "Each team takes one place." : "Each team, and each solo entrant, takes one place."}</p> : null}
           </div>
         ) : null}
         {state.cancelled ? <Callout tone="danger" title="Event cancelled" /> : null}
@@ -152,17 +159,32 @@ export function RegistrationCard(props: {
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent size="md" style={accentStyle(accentColor)} className="yy-accent-scope">
-          <DialogHeader title={`Register for ${eventTitle}`} description="Free to attend. We'll email your ticket." />
+          <DialogHeader
+            title={`Register for ${eventTitle}`}
+            description={
+              team
+                ? team.soloPolicy === "TEAMS_ONLY"
+                  ? "Create a team or join one with its link. Each team takes one place. We'll email your ticket."
+                  : "Create a team, join one with its link, or take part on your own. We'll email your ticket."
+                : "Free to attend. We'll email your ticket."
+            }
+          />
           <DialogBody className="pb-6">
             <RsvpForm
               orgSlug={orgSlug}
               eventSlug={eventSlug}
               eventInstanceId={eventInstanceId}
               registrationFields={registrationFields}
-              onRsvpSaved={({ ticketToken, status }) => {
-                // Same as before: close the dialog and let the card switch to the ticket link.
+              team={team}
+              onRsvpSaved={({ ticketToken, status, teamMode }) => {
                 if (ticketToken) setSaved({ token: ticketToken, status });
-                setDialogOpen(false);
+                // A new team leader needs the form's done message (the team page
+                // link is on its way by email), so that dialog stays open.
+                // Otherwise close it and let the card switch to the ticket link.
+                if (teamMode !== "create") setDialogOpen(false);
+                // `/api/rsvp` revalidates this page; refresh so the going/places
+                // count updates now. Client state (an open dialog) is kept.
+                router.refresh();
               }}
             />
           </DialogBody>

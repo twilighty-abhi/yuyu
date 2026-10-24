@@ -100,10 +100,53 @@ function audienceLine(privacyType: string, listedPublicly: boolean): string {
 }
 
 /** One line for the top of the section: "Live. Listed publicly, anyone can sign up · 120 spots · closes 2 hours before." */
-export function publishingSummary(input: { status: string; privacyType: string; listedPublicly?: boolean; capacity: number | null; closing: string }): { headline: string; detail: string } {
+export function publishingSummary(input: { status: string; privacyType: string; listedPublicly?: boolean; capacity: number | null; closing: string; teamMode?: boolean }): { headline: string; detail: string } {
   if (input.status === "DRAFT") return { headline: "Draft.", detail: "Only your team can see this event. Make it live when you're ready." };
   if (input.status === "HIDDEN") return { headline: "Offline.", detail: "The event page is taken down and sign-ups are closed." };
   if (input.status === "CANCELLED") return { headline: "Cancelled.", detail: "Guests can't sign up." };
-  const parts = [audienceLine(input.privacyType, input.listedPublicly ?? false), input.capacity ? `${input.capacity} spots` : "unlimited spots", input.closing].filter(Boolean);
+  const spots = input.teamMode
+    ? input.capacity ? `${input.capacity} places for teams and solo registrants` : "unlimited teams"
+    : input.capacity ? `${input.capacity} spots` : "unlimited spots";
+  const parts = [audienceLine(input.privacyType, input.listedPublicly ?? false), spots, input.teamMode ? "team registration" : "", input.closing].filter(Boolean);
   return { headline: "Live.", detail: `${parts.join(" · ")}.` };
+}
+
+/* ---------- Team registration (docs/TEAMS.md) ---------- */
+
+export type SoloPolicyChoice = "TEAMS_ONLY" | "SOLO_ALLOWED" | "SOLO_WITH_MATCHING";
+
+/** The three solo policies in plain words, in the order the form lists them. */
+export const SOLO_POLICY_OPTIONS: ReadonlyArray<{ value: SoloPolicyChoice; label: string; description: string }> = [
+  { value: "SOLO_ALLOWED", label: "Teams or on their own", description: "People can also sign up without a team." },
+  { value: "SOLO_WITH_MATCHING", label: "On their own, and help them find a team", description: "Solo sign-ups can list themselves as looking for a team, and team leaders can invite them." },
+  { value: "TEAMS_ONLY", label: "Teams only", description: "Everyone must create or join a team." },
+];
+
+/** Label next to the capacity input: TEAM events count teams and solo registrants, not people. */
+export function capacityUnitLabel(teamMode: boolean) {
+  return teamMode ? "teams and solo registrants" : "spots";
+}
+
+/**
+ * Checks the team size inputs the way the server does, so the form can say
+ * what is wrong before saving. Blank minimum means "no minimum".
+ */
+export function teamSizeProblem(input: { minSize: string; maxSize: string; largestTeam?: number }): string | null {
+  const max = input.maxSize.trim() === "" ? null : Number(input.maxSize);
+  const min = input.minSize.trim() === "" ? null : Number(input.minSize);
+  if (max == null) return "Set a maximum team size.";
+  if (!Number.isInteger(max) || max < 2) return "Teams need room for at least 2 people.";
+  if (max > 100) return "Teams can have at most 100 people.";
+  if (min != null && (!Number.isInteger(min) || min < 1)) return "The minimum team size must be a whole number of at least 1.";
+  if (min != null && min > max) return "The minimum team size can't be above the maximum.";
+  if (input.largestTeam != null && max < input.largestTeam) return `The largest team already has ${input.largestTeam} people.`;
+  return null;
+}
+
+/** "Teams of 2 to 5 people", "Teams of up to 4 people", "Teams of exactly 3 people". */
+export function teamSizeSummary(minSize: number | null, maxSize: number | null): string {
+  if (maxSize == null) return "Teams";
+  if (minSize != null && minSize > 1 && minSize === maxSize) return `Teams of exactly ${maxSize} people`;
+  if (minSize != null && minSize > 1) return `Teams of ${minSize} to ${maxSize} people`;
+  return `Teams of up to ${maxSize} people`;
 }

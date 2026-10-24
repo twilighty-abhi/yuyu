@@ -81,6 +81,9 @@ async function loadRsvpContext(
   return { error: "Event not found." as const };
 }
 
+/** Team registrations change status only as a whole team (docs/TEAMS.md). */
+const TEAM_MEMBER_TRANSITION_ERROR = "This registration belongs to a team. Approve, reject or promote the whole team from the Teams view.";
+
 function attendeeEmail(rsvp: {
   guestEmail: string | null;
   user: { email: string | null } | null;
@@ -123,6 +126,7 @@ export async function approveRsvpForUser(actorUserId: string | null, input: unkn
   if (!("rsvp" in ctx)) return { ok: false, error: "Invalid state." };
 
   const { org, rsvp } = ctx;
+  if (rsvp.teamId) return { ok: false, error: TEAM_MEMBER_TRANSITION_ERROR };
   if (rsvp.status !== RsvpStatus.PENDING_APPROVAL) {
     return { ok: false, error: "Only pending requests can be approved." };
   }
@@ -215,6 +219,8 @@ export async function reacceptRsvpForUser(
   if (!("rsvp" in ctx)) return { ok: false, error: "Invalid state." };
 
   const { org, rsvp } = ctx;
+  // A declined team stays declined as a whole; its members are not re-accepted one by one.
+  if (rsvp.teamId) return { ok: false, error: "This registration belongs to a declined team. Team members cannot be re-accepted one by one." };
   if (rsvp.status !== RsvpStatus.REJECTED) {
     return { ok: false, error: "Only declined registrations can be re-accepted." };
   }
@@ -284,6 +290,7 @@ export async function rejectRsvpForUser(actorUserId: string | null, input: unkno
   if (!("rsvp" in ctx)) return { ok: false, error: "Invalid state." };
 
   const { org, rsvp } = ctx;
+  if (rsvp.teamId) return { ok: false, error: TEAM_MEMBER_TRANSITION_ERROR };
   if (
     rsvp.status !== RsvpStatus.PENDING_APPROVAL &&
     rsvp.status !== RsvpStatus.WAITLISTED
@@ -294,7 +301,8 @@ export async function rejectRsvpForUser(actorUserId: string | null, input: unkno
   const to = attendeeEmail(rsvp);
   const rejected = await prisma.$transaction(async (tx) => {
     const result = await tx.rSVP.updateMany({
-      where: { id: rsvp.id, status: { in: [RsvpStatus.PENDING_APPROVAL, RsvpStatus.WAITLISTED] } },
+      // `teamId: null`: an RSVP that joined a team meanwhile moves only with its team.
+      where: { id: rsvp.id, teamId: null, status: { in: [RsvpStatus.PENDING_APPROVAL, RsvpStatus.WAITLISTED] } },
       data: { status: RsvpStatus.REJECTED },
     });
     if (result.count === 1 && to) {
@@ -357,6 +365,7 @@ export async function promoteFromWaitlistForUser(actorUserId: string | null, inp
   if (!("rsvp" in ctx)) return { ok: false, error: "Invalid state." };
 
   const { org, rsvp } = ctx;
+  if (rsvp.teamId) return { ok: false, error: TEAM_MEMBER_TRANSITION_ERROR };
   if (rsvp.status !== RsvpStatus.WAITLISTED) {
     return { ok: false, error: "Only waitlisted attendees can be promoted." };
   }

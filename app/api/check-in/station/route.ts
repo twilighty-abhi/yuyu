@@ -26,10 +26,10 @@ function failure(error = "Station access is unavailable.", status = 400) { retur
 function attendeeLabel(r: { user: { name: string | null; email: string | null } | null; guestName: string | null; guestEmail: string | null }) {
   return r.user?.name?.trim() || r.guestName?.trim() || r.user?.email || r.guestEmail || "Guest";
 }
-const rsvpInclude = { user: { select: { name: true, email: true } }, answers: { include: { field: { select: { key: true, label: true } } } } } as const;
+const rsvpInclude = { user: { select: { name: true, email: true } }, team: { select: { name: true } }, answers: { include: { field: { select: { key: true, label: true } } } } } as const;
 type StationRsvp = Prisma.RSVPGetPayload<{ include: typeof rsvpInclude }>;
 function toData(rsvp: StationRsvp, force = false) {
-  return { rsvpId: rsvp.id, displayName: attendeeLabel(rsvp), email: rsvp.user?.email ?? rsvp.guestEmail, status: rsvp.status, alreadyCheckedIn: Boolean(rsvp.checkedInAt), checkedInAt: rsvp.checkedInAt?.toISOString() ?? null, checkInQrToken: rsvp.checkInToken, checkInDetails: getCheckInDetails(rsvp.answers), registrationDetails: getRegistrationDetails(rsvp.answers), gate: gateCheckInForStatus(rsvp.status, force) };
+  return { rsvpId: rsvp.id, displayName: attendeeLabel(rsvp), email: rsvp.user?.email ?? rsvp.guestEmail, status: rsvp.status, alreadyCheckedIn: Boolean(rsvp.checkedInAt), checkedInAt: rsvp.checkedInAt?.toISOString() ?? null, checkInQrToken: rsvp.checkInToken, checkInDetails: getCheckInDetails(rsvp.answers), registrationDetails: getRegistrationDetails(rsvp.answers), teamName: rsvp.team?.name ?? null, gate: gateCheckInForStatus(rsvp.status, force) };
 }
 
 export async function POST(request: Request) {
@@ -72,8 +72,8 @@ export async function POST(request: Request) {
     rsvp = await prisma.rSVP.findFirst({ where: { id: input.rsvpId, eventId: event.id }, include: rsvpInclude });
   }
   if (input.action === "lookup") {
-    const rows = await prisma.rSVP.findMany({ where: { eventId: event.id, OR: [{ guestName: { contains: input.query!, mode: "insensitive" } }, { guestEmail: { contains: input.query!, mode: "insensitive" } }, { user: { name: { contains: input.query!, mode: "insensitive" } } }, { user: { email: { contains: input.query!, mode: "insensitive" } } }] }, take: 12, orderBy: { createdAt: "desc" }, include: { user: { select: { name: true, email: true } } } });
-    return NextResponse.json({ ok: true, data: { rows: rows.map((r) => ({ rsvpId: r.id, displayName: attendeeLabel({ ...r, guestName: r.guestName }), email: r.user?.email ?? r.guestEmail, status: r.status, checkedInAt: r.checkedInAt?.toISOString() ?? null })) } });
+    const rows = await prisma.rSVP.findMany({ where: { eventId: event.id, OR: [{ guestName: { contains: input.query!, mode: "insensitive" } }, { guestEmail: { contains: input.query!, mode: "insensitive" } }, { user: { name: { contains: input.query!, mode: "insensitive" } } }, { user: { email: { contains: input.query!, mode: "insensitive" } } }] }, take: 12, orderBy: { createdAt: "desc" }, include: { user: { select: { name: true, email: true } }, team: { select: { name: true } } } });
+    return NextResponse.json({ ok: true, data: { rows: rows.map((r) => ({ rsvpId: r.id, displayName: attendeeLabel({ ...r, guestName: r.guestName }), email: r.user?.email ?? r.guestEmail, status: r.status, checkedInAt: r.checkedInAt?.toISOString() ?? null, teamName: r.team?.name ?? null })) } });
   }
   if (!rsvp) return failure("RSVP not found.");
   if (input.action === "undo") {

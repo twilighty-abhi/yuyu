@@ -35,6 +35,8 @@ export type CheckInResultData = {
   checkInQrToken: string;
   checkInDetails: CheckInDetail[];
   registrationDetails: RegistrationDetail[];
+  /** TEAM events: the attendee's team name, shown at the desk and on badges. Not part of any API DTO. */
+  teamName?: string | null;
 };
 
 /** Where a check-in came from; recorded in the immutable check-in history. */
@@ -128,6 +130,7 @@ async function resolveRsvpForToken(
     where: { checkInToken: token },
     include: {
       user: { select: { name: true, email: true } },
+      team: { select: { name: true } },
       answers: { include: { field: { select: { key: true, label: true } } } },
       event: { select: { id: true, organisationId: true, slug: true } },
       eventInstance: {
@@ -188,6 +191,7 @@ export async function previewCheckInByTokenForUser(
       checkInQrToken: rsvp.checkInToken,
       checkInDetails: getCheckInDetails(rsvp.answers),
       registrationDetails: getRegistrationDetails(rsvp.answers),
+      teamName: rsvp.team?.name ?? null,
       gate,
     },
   };
@@ -240,6 +244,7 @@ export async function checkInByTokenForUser(
         checkInQrToken: rsvp.checkInToken,
         checkInDetails: getCheckInDetails(rsvp.answers),
         registrationDetails: getRegistrationDetails(rsvp.answers),
+        teamName: rsvp.team?.name ?? null,
       },
     };
   }
@@ -270,6 +275,7 @@ export async function checkInByTokenForUser(
         checkInQrToken: rsvp.checkInToken,
         checkInDetails: getCheckInDetails(rsvp.answers),
         registrationDetails: getRegistrationDetails(rsvp.answers),
+        teamName: rsvp.team?.name ?? null,
       },
     };
   }
@@ -292,6 +298,7 @@ export async function checkInByTokenForUser(
       checkInQrToken: rsvp.checkInToken,
       checkInDetails: getCheckInDetails(rsvp.answers),
       registrationDetails: getRegistrationDetails(rsvp.answers),
+      teamName: rsvp.team?.name ?? null,
     },
   };
 }
@@ -352,6 +359,8 @@ export type LookupRow = {
   /** Registration time and account/guest flag, used by the mobile API's guest DTO. */
   registeredAt?: string;
   isGuest?: boolean;
+  /** TEAM events: the attendee's team name (web desk only; the mobile DTO omits it). */
+  teamName?: string | null;
 };
 
 export type OfflineCheckInRosterRow = LookupRow & {
@@ -377,6 +386,7 @@ export async function downloadOfflineCheckInRosterForUser(
     where: { eventId: ctx.event.id, status: { in: ["CONFIRMED", "WAITLISTED", "PENDING_APPROVAL"] } },
     include: {
       user: { select: { name: true, email: true } },
+      team: { select: { name: true } },
       answers: { include: { field: { select: { key: true, label: true } } } },
     },
     orderBy: { createdAt: "desc" },
@@ -397,6 +407,7 @@ export async function downloadOfflineCheckInRosterForUser(
         isGuest: r.userId == null,
         checkInDetails: getCheckInDetails(r.answers),
         registrationDetails: getRegistrationDetails(r.answers),
+        teamName: r.team?.name ?? null,
       })),
     },
   };
@@ -510,10 +521,13 @@ export async function lookupAttendeesForCheckInForUser(
         { guestName: { contains: q, mode: "insensitive" } },
         { user: { email: { contains: q, mode: "insensitive" } } },
         { user: { name: { contains: q, mode: "insensitive" } } },
+        // TEAM events: typing a team name lists its members. The team is
+        // matched inside this event only.
+        { team: { eventId: ctx.event.id, name: { contains: q, mode: "insensitive" } } },
       ],
     },
     take: 12,
-    include: { user: { select: { name: true, email: true } } },
+    include: { user: { select: { name: true, email: true } }, team: { select: { name: true } } },
     orderBy: { createdAt: "desc" },
   });
 
@@ -525,6 +539,7 @@ export async function lookupAttendeesForCheckInForUser(
     checkedInAt: r.checkedInAt?.toISOString() ?? null,
     registeredAt: r.createdAt.toISOString(),
     isGuest: r.userId == null,
+    teamName: r.team?.name ?? null,
   }));
 
   return { ok: true, data: { rows } };
@@ -555,6 +570,7 @@ export async function previewCheckInByRsvpIdForUser(
     where: { id: rsvpId, eventId: ctx.event.id },
     include: {
       user: { select: { name: true, email: true } },
+      team: { select: { name: true } },
       answers: { include: { field: { select: { key: true, label: true } } } },
     },
   });
@@ -572,6 +588,7 @@ export async function previewCheckInByRsvpIdForUser(
       checkInQrToken: rsvp.checkInToken,
       checkInDetails: getCheckInDetails(rsvp.answers),
       registrationDetails: getRegistrationDetails(rsvp.answers),
+      teamName: rsvp.team?.name ?? null,
       gate: gateCheckInForStatus(rsvp.status, Boolean(force)),
     },
   };
@@ -600,6 +617,7 @@ export async function checkInByRsvpIdForUser(
     where: { id: rsvpId, eventId: ctx.event.id },
     include: {
       user: { select: { name: true, email: true } },
+      team: { select: { name: true } },
       answers: { include: { field: { select: { key: true, label: true } } } },
       event: { select: { slug: true } },
       eventInstance: { select: { id: true } },
@@ -632,6 +650,7 @@ export async function checkInByRsvpIdForUser(
         checkInQrToken: rsvp.checkInToken,
         checkInDetails: getCheckInDetails(rsvp.answers),
         registrationDetails: getRegistrationDetails(rsvp.answers),
+        teamName: rsvp.team?.name ?? null,
       },
     };
   }
@@ -662,6 +681,7 @@ export async function checkInByRsvpIdForUser(
         checkInQrToken: rsvp.checkInToken,
         checkInDetails: getCheckInDetails(rsvp.answers),
         registrationDetails: getRegistrationDetails(rsvp.answers),
+        teamName: rsvp.team?.name ?? null,
       },
     };
   }
@@ -684,6 +704,7 @@ export async function checkInByRsvpIdForUser(
       checkInQrToken: rsvp.checkInToken,
       checkInDetails: getCheckInDetails(rsvp.answers),
       registrationDetails: getRegistrationDetails(rsvp.answers),
+      teamName: rsvp.team?.name ?? null,
     },
   };
 }

@@ -9,6 +9,7 @@ import { Avatar, Chip } from "@/components/ui/display";
 import { formatDayLong, formatTimeRange } from "@/lib/format/datetime";
 import { cn } from "@/lib/cn";
 import type { EventTeam } from "@/lib/eventDashboard/overview";
+import { teamUnitNoun } from "@/lib/teamCapacityDisplay";
 import { OpenTabButton } from "../EventDashboardTabs";
 import type { ReadinessItem, SignupTrend } from "./readiness";
 
@@ -131,7 +132,7 @@ export function GlanceCard({
   now,
   canEditDetails,
 }: {
-  event: { startDateTime: Date; endDateTime: Date; timezone: string; isOnline: boolean; location: string; privacyType: EventPrivacyType; capacity: number | null; status: EventStatus };
+  event: { startDateTime: Date; endDateTime: Date; timezone: string; isOnline: boolean; location: string; privacyType: EventPrivacyType; capacity: number | null; status: EventStatus; registrationMode?: string; soloPolicy?: string };
   now: Date;
   canEditDetails: boolean;
 }) {
@@ -147,7 +148,15 @@ export function GlanceCard({
     },
     { label: "Where", value: event.isOnline ? "Online" : event.location.trim() || "Location to be confirmed" },
     { label: "Who can join", value: PRIVACY[event.privacyType] },
-    { label: "Capacity", value: event.capacity != null ? `${event.capacity} places` : "No limit" },
+    {
+      label: "Capacity",
+      value:
+        event.capacity == null
+          ? "No limit"
+          : event.registrationMode === "TEAM"
+            ? `${event.capacity} ${teamUnitNoun(event.soloPolicy ?? "SOLO_ALLOWED", event.capacity)}`
+            : `${event.capacity} places`,
+    },
     ...(event.status !== "PUBLISHED" ? [{ label: "Status", value: STATUS[event.status] }] : []),
   ];
   return (

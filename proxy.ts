@@ -37,6 +37,11 @@ function allowedEmbedAncestors() {
   ));
 }
 
+/** Pages whose URL is itself the credential: `/ticket/{token}`, `/team/{token}`, `/{org}/{event}/team/{joinToken}`. */
+function isCapabilityPage(pathname: string): boolean {
+  return /^\/(?:ticket|team)\/[^/]+\/?$/.test(pathname) || /^\/[^/]+\/[^/]+\/team\/[^/]+\/?$/.test(pathname);
+}
+
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   // Only the dedicated, public embed route may be placed in another site's
@@ -138,7 +143,10 @@ export async function proxy(request: NextRequest) {
   // after this CSP has been generated. Its script is intentionally blocked by
   // the per-request nonce policy, so instruct intermediaries not to transform
   // application HTML.
-  response.headers.set("Cache-Control", "no-transform");
+  // Bearer-capability pages (ticket, team management and team join links;
+  // docs/TEAMS.md) must never be stored by a browser or shared cache. This
+  // header replaces Next's own `private, no-store` in production, so say it here.
+  response.headers.set("Cache-Control", isCapabilityPage(pathname) ? "private, no-cache, no-store, max-age=0, must-revalidate, no-transform" : "no-transform");
   if (!isEmbedPage) response.headers.set("X-Frame-Options", "DENY");
   return response;
 }

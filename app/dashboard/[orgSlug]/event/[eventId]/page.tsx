@@ -14,7 +14,8 @@ import { FeedbackPanel } from "@/components/event-dashboard/panels/FeedbackPanel
 import { AnalyticsPanel } from "@/components/event-dashboard/panels/AnalyticsPanel";
 import { SettingsPanel } from "@/components/event-dashboard/panels/SettingsPanel";
 import { loadEventDashboard } from "@/lib/eventDashboard/context";
-import { loadRsvpStatusCounts } from "@/lib/eventDashboard/data";
+import { loadCapacityUsed, loadRsvpStatusCounts } from "@/lib/eventDashboard/data";
+import { peopleCount, teamUnitNoun } from "@/lib/teamCapacityDisplay";
 
 type Props = {
   params: Promise<{ orgSlug: string; eventId: string }>;
@@ -28,10 +29,23 @@ export default async function EventManagePage({ params }: Props) {
   const { organisation, event, permissions } = ctx;
 
   // Live numbers in the header are registration data (admins and MANAGE_REGISTRATIONS).
-  const counts = permissions.canManageRegistrations ? await loadRsvpStatusCounts(event.id) : null;
+  const teamMode = event.registrationMode === "TEAM";
+  const [counts, capacityUsed] = permissions.canManageRegistrations
+    ? await Promise.all([loadRsvpStatusCounts(event.id), teamMode ? loadCapacityUsed(event.id, event.registrationMode) : null])
+    : [null, null];
+  // TEAM events: capacity counts units (teams plus solo registrants), people are shown beside it.
+  const placesStat: EventHeaderStat | null =
+    counts && teamMode && capacityUsed != null
+      ? {
+          label: "Places taken",
+          value: event.capacity ? `${capacityUsed} / ${event.capacity}` : capacityUsed,
+          detail: `${teamUnitNoun(event.soloPolicy, event.capacity ?? capacityUsed)} · ${peopleCount(counts.confirmed)} going`,
+          meter: event.capacity ? { filled: capacityUsed, total: event.capacity, tone: "accent" } : undefined,
+        }
+      : null;
   const stats: EventHeaderStat[] | undefined = counts
     ? [
-        { label: "Going", value: event.capacity ? `${counts.confirmed} / ${event.capacity}` : counts.confirmed, meter: event.capacity ? { filled: counts.confirmed, total: event.capacity, tone: "accent" } : undefined },
+        placesStat ?? { label: "Going", value: event.capacity ? `${counts.confirmed} / ${event.capacity}` : counts.confirmed, meter: event.capacity ? { filled: counts.confirmed, total: event.capacity, tone: "accent" } : undefined },
         { label: "Waitlist", value: counts.waitlisted },
         { label: "To approve", value: counts.pendingApproval },
         { label: "Checked in", value: counts.checkedIn, meter: counts.confirmed ? { filled: counts.checkedIn, total: counts.confirmed, tone: "success" } : undefined },

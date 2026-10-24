@@ -4,6 +4,7 @@ import { accentStyle } from "@/lib/theme/accent";
 import { formatDateBlock, formatDayLong, formatTime, formatTimeRange, formatTimeZoneName } from "@/lib/format/datetime";
 import { Avatar, Callout, Chip, DateBlock } from "@/components/ui/display";
 import type { RegistrationFieldDefinition } from "@/components/rsvp/registrationTypes";
+import type { TeamRegistrationConfig } from "@/components/rsvp/TeamRegistrationFields";
 import { RegistrationCard } from "./RegistrationCard";
 import { SectionNav } from "./SectionNav";
 
@@ -54,6 +55,8 @@ type Props = {
   /** At capacity: new registrations join the waitlist. Derived server-side. */
   registrationFull: boolean;
   approvalRequired: boolean;
+  /** Team event settings (docs/TEAMS.md); null for individual registration. */
+  team?: TeamRegistrationConfig | null;
 };
 
 const SECTION_LABELS: Record<string, string> = {
@@ -177,6 +180,7 @@ export function EventWebsiteShell(p: Props) {
               capacity={p.event.capacity}
               state={{ cancelled: p.event.status === "CANCELLED", open: p.registrationOpen, full: p.registrationFull, approvalRequired: p.approvalRequired }}
               accentColor={p.page.accentColor}
+              team={p.team}
             />
           </div>
         </aside>

@@ -58,9 +58,9 @@
     "ioredis": "^6.0.0",
     "jose": "^6.2.12",
     "lucide-react": "1.49.0",
-    "next": "^16.3.8",
+    "next": "^16.4.2",
     "next-auth": "^5.0.0-beta.32",
-    "nodemailer": "10.0.10",
+    "nodemailer": "10.2.1",
     "otpauth": "^9.5.1",
     "pdf-lib": "^1.17.1",
     "qrcode": "^1.5.4",
@@ -71,7 +71,7 @@
     "sanitize-html": "^2.17.7",
     "sharp": "^0.35.4",
     "tailwind-merge": "3.7.0",
-    "zod": "^4.3.6"
+    "zod": "^4.6.7"
   },
   "overrides": {
     "deepmerge-ts": "^8.0.0"
@@ -87,7 +87,7 @@
     "@types/react-dom": "^19",
     "@vitest/coverage-v8": "^4.1.11",
     "eslint": "^9",
-    "eslint-config-next": "^16.3.8",
+    "eslint-config-next": "^16.4.2",
     "fontkit": "2.0.4",
     "js-yaml": "^4.3.2",
     "prisma": "6.19.3",

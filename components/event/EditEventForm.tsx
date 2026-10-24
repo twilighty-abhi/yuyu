@@ -60,8 +60,10 @@ export function EditEventForm(props: {
     logoUrl: string | null;
     aboutHtml: string;
   } | null;
+  /** Existing registrations lock the registration mode; the largest team bounds the maximum size. */
+  registrations?: { total: number; largestTeam: number };
 }) {
-  const { organisationSlug, event, page } = props;
+  const { organisationSlug, event, page, registrations } = props;
   const router = useRouter();
   const { showToast } = useToast();
   const [error, setError] = useState<string | null>(null);
@@ -207,6 +209,10 @@ export function EditEventForm(props: {
         pageTagline: String(fd.get("pageTagline") ?? ""),
         pageLogoUrl,
         pageAboutHtml: String(fd.get("pageAboutHtml") ?? ""),
+        registrationMode: String(fd.get("registrationMode") ?? ""),
+        teamMinSize: String(fd.get("teamMinSize") ?? ""),
+        teamMaxSize: String(fd.get("teamMaxSize") ?? ""),
+        soloPolicy: String(fd.get("soloPolicy") ?? ""),
       });
       if (!res.ok) {
         setError(res.error);
@@ -371,6 +377,14 @@ export function EditEventForm(props: {
             start={start}
             timeZone={timezone}
             onDirty={() => setDirty(true)}
+            initialTeam={{
+              registrationMode: event.registrationMode,
+              teamMinSize: event.teamMinSize,
+              teamMaxSize: event.teamMaxSize,
+              soloPolicy: event.soloPolicy,
+            }}
+            teamModeLocked={(registrations?.total ?? 0) > 0}
+            largestTeam={registrations?.largestTeam ?? 0}
           />
         </FormCard>
 

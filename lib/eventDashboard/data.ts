@@ -1,8 +1,9 @@
 import "server-only";
 
 import { cache } from "react";
-import type { RegistrationFieldType } from "@prisma/client";
+import type { RegistrationFieldType, RegistrationMode } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { countConfirmedForEvent } from "@/lib/rsvpCapacity";
 import { toFieldDefinition, type FieldSettings } from "@/lib/registrationFields";
 
 /*
@@ -30,6 +31,12 @@ export const loadRsvpStatusCounts = cache(async (eventId: string): Promise<RsvpS
   };
 });
 
+/**
+ * The number compared with `Event.capacity`: confirmed RSVPs on INDIVIDUAL
+ * events, confirmed units (teams plus solo registrants) on TEAM events.
+ */
+export const loadCapacityUsed = cache(async (eventId: string, registrationMode: RegistrationMode): Promise<number> => countConfirmedForEvent(eventId, registrationMode));
+
 export type RegistrationFieldRow = { id: string; key: string; label: string; type: RegistrationFieldType; required: boolean; sortOrder: number; options: string[]; helpText: string; placeholder: string; settings: FieldSettings };
 
 export const loadRegistrationFields = cache(async (eventId: string): Promise<RegistrationFieldRow[]> => {
@@ -46,6 +53,7 @@ export const loadAttendees = cache(async (eventId: string, origin: string) => {
     include: {
       user: { select: { id: true, name: true, email: true } },
       answers: { include: { field: true } },
+      team: { select: { id: true, name: true, leaderRsvpId: true } },
       checkInListRecords: { select: { checkedInAt: true, list: { select: { name: true, archived: true } } }, orderBy: { list: { sortOrder: "asc" } } },
     },
     orderBy: { createdAt: "desc" },
@@ -65,6 +73,8 @@ export const loadAttendees = cache(async (eventId: string, origin: string) => {
       checkedInAt: record.checkedInAt.toISOString(),
     })),
     ticketUrl: `${origin}/ticket/${rsvp.checkInToken}`,
+    // TEAM events: the team this registration belongs to (null when solo).
+    team: rsvp.team ? { id: rsvp.team.id, name: rsvp.team.name, isLeader: rsvp.team.leaderRsvpId === rsvp.id } : null,
     rawAnswers: rsvp.answers.map((answer) => ({
       fieldId: answer.fieldId,
       valueText: answer.valueText,

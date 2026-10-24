@@ -11,7 +11,7 @@ import {
   type IdCardPrintSettings,
 } from "@/lib/idCardPrint";
 import { nameSizePt } from "./printCards";
-import { ELEMENT_LABELS, printableFields, SAFE_MARGIN_MM, type IdCardAttendee } from "./shared";
+import { ELEMENT_LABELS, printableFields, SAFE_MARGIN_MM, withMergeFields, type IdCardAttendee } from "./shared";
 
 export type CanvasInteraction = {
   selected: IdCardLayoutElement | null;
@@ -28,7 +28,7 @@ export type CanvasInteraction = {
  * keys (Shift for bigger steps); without it, it is a static preview.
  */
 export function BadgeCanvas({
-  settings,
+  settings: designSettings,
   attendee,
   logoUrl,
   pxPerMm,
@@ -40,6 +40,8 @@ export function BadgeCanvas({
   pxPerMm: number;
   interaction?: CanvasInteraction;
 }) {
+  // `{{team}}` is filled per attendee; geometry is unchanged, so dragging still edits the design.
+  const settings = withMergeFields(designSettings, attendee);
   const [drag, setDrag] = useState<{ element: IdCardLayoutElement; startX: number; startY: number; origin: { xMm: number; yMm: number } } | null>(null);
   const px = (mm: number) => `${mm * pxPerMm}px`;
   const ptPx = (pt: number) => `${pt * PT_TO_MM * pxPerMm}px`;

@@ -33,7 +33,8 @@ limits, emails and audit behaviour are identical.
   sign-in only), `FORBIDDEN` (403), `NOT_FOUND` (404; also every id outside
   what the caller can see, including other organisations'), `CONFLICT` (409),
   `NEEDS_FORCE` (409, check-in status override available), `RATE_LIMITED`
-  (429, with `Retry-After`), `INTERNAL_ERROR` (500).
+  (429, with `Retry-After`), `TEAM_REQUIRED` (409, `POST /rsvp` on an event
+  that registers teams only), `INTERNAL_ERROR` (500).
 - Error messages are the same UI-safe texts as the website (for example
   "Only pending requests can be approved."); show them as-is.
 - Timestamps are ISO-8601 UTC strings. Event times come with the IANA `timezone`.
@@ -232,6 +233,13 @@ With a valid bearer the signed-in flow applies (`guestEmail` is ignored and
 Success: `{ "rsvpId", "status": "CONFIRMED|WAITLISTED|PENDING_APPROVAL", "ticketToken|null" }`,
 with `ticketToken` only when `CONFIRMED`.
 
+Team events ([Team registration](TEAMS.md)): the app cannot create or join a
+team yet, so this endpoint always registers solo. That works when the event
+allows solo registrants (the registration counts as one unit against
+capacity); an event that registers teams only answers `TEAM_REQUIRED` (409).
+Send people to the event website to create a team or open a team join link.
+Any `team` field in the body is ignored.
+
 ### `GET /public/events/:orgSlug/:eventSlug/feedback`
 
 `{ "title", "intro": null, "thankYouMessage", "open": true, "certificatesEnabled", "fields": [RegistrationField] }`
@@ -267,8 +275,12 @@ does, but `manageRegistrations` stays admin-only in this contract version (see
 [Permissions](PERMISSIONS.md#mobile-api)). The flags only hide controls; every
 mutation is re-checked server-side.
 
-`EventCounts = { "confirmed", "waitlisted", "pending", "checkedIn", "capacity|null" }`,
+`EventCounts = { "confirmed", "waitlisted", "pending", "checkedIn", "capacity|null", "capacityUsed" }`,
 returned only when the caller has `manageRegistrations` or `checkIn`, else `null`.
+`capacityUsed` is what `capacity` is compared with: it equals `confirmed` on
+individual events, and on team events counts confirmed teams plus confirmed
+solo registrants (`confirmed` stays a count of people). Show
+`capacityUsed / capacity` for fill, not `confirmed / capacity`.
 
 ### `GET /orgs/:orgSlug/events?filter=upcoming|past|all`
 
@@ -319,6 +331,8 @@ ticket tokens.
   waitlist override is possible (retry with `force: true`).
 - `POST …/check-in/undo` `{ "rsvpId" }` → `null`.
 - `GET …/check-in/lookup?q=` (min 2 chars, max 12 rows) → `{ "rows": [Guest] }`.
+  Matches guest names and emails and, on team events, team names (teams of the
+  same event only, listing their members). `Guest` has no team field yet.
 - `GET …/check-in/stats` → `{ "confirmed", "checkedIn", "recent": [{ "rsvpId", "displayName", "checkedInAt" }] }` (ten latest).
 - `GET …/check-in/roster` → `{ "generatedAt", "rows": [Guest & { "ticketToken", "checkInDetails", "registrationDetails" }] }`
   (as `downloadOfflineCheckInRoster`: confirmed, waitlisted and pending). Keep it

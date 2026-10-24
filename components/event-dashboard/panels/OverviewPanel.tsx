@@ -3,6 +3,7 @@ import { Callout } from "@/components/ui/display";
 import type { EventDashboardContext } from "@/lib/eventDashboard/context";
 import { loadRegistrationFields, loadRsvpStatusCounts } from "@/lib/eventDashboard/data";
 import { loadBroadcastCount, loadEventTeam, loadPendingRequests, loadRecentSignupDates } from "@/lib/eventDashboard/overview";
+import { loadPendingUnits } from "@/lib/eventDashboard/teams";
 import { cn } from "@/lib/cn";
 import { OpenTabButton } from "../EventDashboardTabs";
 import { GlanceCard, ReadinessCard, ShareCard, SignupsCard, TeamCard } from "../overview/OverviewSections";
@@ -18,15 +19,19 @@ import { eventPhase, readinessHeading, readinessItems, signupTrend } from "../ov
 export async function OverviewPanel({ ctx }: { ctx: EventDashboardContext }) {
   const { event, permissions, organisation, now } = ctx;
   const guests = permissions.canManageRegistrations;
+  // TEAM events count pending requests in units: each team once, plus each solo registrant.
+  const teamMode = event.registrationMode === "TEAM";
 
-  const [counts, fields, emailsSent, signupDates, requests, team] = await Promise.all([
+  const [counts, fields, emailsSent, signupDates, requests, team, pendingUnits] = await Promise.all([
     guests ? loadRsvpStatusCounts(event.id) : null,
     guests ? loadRegistrationFields(event.id) : null,
     guests ? loadBroadcastCount(event.id) : 0,
     guests ? loadRecentSignupDates(event.id, now) : null,
-    guests ? loadPendingRequests(event.id) : null,
+    guests ? (teamMode ? loadPendingUnits(event.id).then((pending) => pending.units) : loadPendingRequests(event.id)) : null,
     permissions.canManageCollaborators ? loadEventTeam(organisation.id, event.id) : null,
+    guests && teamMode ? loadPendingUnits(event.id) : null,
   ]);
+  const pendingTotal = pendingUnits?.total ?? counts?.pendingApproval ?? 0;
 
   const phase = eventPhase(event.startDateTime, event.endDateTime, now);
   const approvalRequired = event.privacyType === "APPROVAL_REQUIRED";
@@ -40,14 +45,16 @@ export async function OverviewPanel({ ctx }: { ctx: EventDashboardContext }) {
     // Only whether a PIN exists; the hash itself never leaves the server.
     stationPinSet: Boolean(event.checkInStationPinHash),
     approvalRequired,
-    pendingApprovals: counts?.pendingApproval ?? 0,
+    pendingApprovals: pendingTotal,
+    teamMode,
+    pendingTeams: pendingUnits?.teams ?? 0,
     emailsSent,
     permissions,
   });
   const heading = readinessHeading({ items, start: event.startDateTime, end: event.endDateTime, now, timeZone: event.timezone });
 
   const path = `/${organisation.slug}/${event.slug}`;
-  const showWaiting = Boolean(requests && counts && (counts.pendingApproval > 0 || approvalRequired));
+  const showWaiting = Boolean(requests && counts && (pendingTotal > 0 || approvalRequired));
   const hasMain = guests;
 
   const aside = (
@@ -102,7 +109,7 @@ export async function OverviewPanel({ ctx }: { ctx: EventDashboardContext }) {
           <div className="flex min-w-0 flex-col gap-6">
             {signupDates ? <SignupsCard trend={signupTrend(signupDates, now)} /> : null}
             {showWaiting && requests && counts ? (
-              <WaitingForYou organisationSlug={organisation.slug} eventId={event.id} timeZone={event.timezone} referenceTime={now.toISOString()} requests={requests} pendingTotal={counts.pendingApproval} />
+              <WaitingForYou organisationSlug={organisation.slug} eventId={event.id} timeZone={event.timezone} referenceTime={now.toISOString()} requests={requests} pendingTotal={pendingTotal} />
             ) : null}
           </div>
           <aside className="flex min-w-0 flex-col gap-5">{aside}</aside>

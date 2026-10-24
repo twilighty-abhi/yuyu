@@ -88,6 +88,7 @@ export async function loadPublicEvent(params: { orgSlug: string; eventSlug: stri
       privacyType: true,
       registrationClosesAt: true,
       registrationLeadMinutes: true,
+      registrationMode: true,
       page: { select: { accentColor: true, isPublished: true } },
       feedbackForm: { select: { isOpen: true } },
     },
@@ -126,7 +127,8 @@ export async function loadPublicEvent(params: { orgSlug: string; eventSlug: stri
       where: { eventId: event.id },
       select: { fields: { orderBy: { sortOrder: "asc" }, select: { id: true, key: true, label: true, type: true, required: true, options: true, helpText: true, placeholder: true, settings: true } } },
     }),
-    countConfirmedForEvent(event.id),
+    // TEAM events count registration units (teams plus solo entrants) against capacity.
+    countConfirmedForEvent(event.id, event.registrationMode),
     params.viewerUserId
       ? prisma.rSVP.findFirst({ where: { eventId: event.id, userId: params.viewerUserId }, select: { id: true, status: true, checkInToken: true } })
       : Promise.resolve(null),

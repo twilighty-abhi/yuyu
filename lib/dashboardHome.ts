@@ -4,6 +4,7 @@ import type { EventStatus, Prisma, RsvpStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { isOrgAdmin } from "@/lib/permissions";
 import { getAccentTokens } from "@/lib/theme/accent";
+import { teamUnitNoun, teamUnitShortNoun } from "@/lib/teamCapacityDisplay";
 import { dailyCounts, eventFillStatus, forwardDailyCounts, homeSummary, intervalCounts, nowAndNext, toDotLevels, weekOverWeek, type FillStatus } from "@/lib/dashboardHomeMetrics";
 
 /*
@@ -75,7 +76,7 @@ export type DashboardHome = {
   organisations: HomeOrganisation[];
   adminOrganisations: { slug: string; name: string }[];
   needsYou: { pendingApprovals: number; approvalsHref: string | null; drafts: number; draftHref: string | null } | null;
-  next: (HomeEventRow & { location: string; startDateTime: Date; timezone: string; confirmed: number; capacity: number | null; signupsLastDay: number; checkInHref: string | null; recentNames: string[]; publicPath: string | null }) | null;
+  next: (HomeEventRow & { location: string; startDateTime: Date; timezone: string; confirmed: number; capacity: number | null; capacityUnits: { used: number; noun: string } | null; signupsLastDay: number; checkInHref: string | null; recentNames: string[]; publicPath: string | null }) | null;
   stats: HomeStat[];
   upcoming: HomeEventRow[];
   drafts: HomeEventRow[];
@@ -125,6 +126,8 @@ export const eventSelect = {
   location: true,
   isOnline: true,
   capacity: true,
+  registrationMode: true,
+  soloPolicy: true,
   status: true,
   organisation: { select: { slug: true, name: true } },
   page: { select: { accentColor: true } },
@@ -132,18 +135,34 @@ export const eventSelect = {
 
 export type EventForRow = Prisma.EventGetPayload<{ select: typeof eventSelect }>;
 
-export type RsvpCounts = { event: Map<string, CountTriple>; instance: Map<string, CountTriple> };
+export type RsvpCounts = { event: Map<string, CountTriple>; instance: Map<string, CountTriple>; units: Map<string, number> };
 type CountTriple = { confirmed: number; waitlisted: number; pending: number };
 const EMPTY_COUNTS: CountTriple = { confirmed: 0, waitlisted: 0, pending: 0 };
 
-/** Confirmed / waitlisted / pending counts for the listed events and series dates. */
+/**
+ * Confirmed / waitlisted / pending counts for the listed events and series
+ * dates, plus confirmed units per event for TEAM events (docs/TEAMS.md):
+ * confirmed people minus those in teams, plus confirmed teams.
+ */
 export async function loadRsvpCounts(eventIds: string[], instanceIds: string[]): Promise<RsvpCounts> {
   const uniqueEvents = [...new Set(eventIds)];
-  const [eventGroups, instanceGroups] = await Promise.all([
+  const [eventGroups, instanceGroups, teamedGroups, teamGroups] = await Promise.all([
     uniqueEvents.length ? prisma.rSVP.groupBy({ by: ["eventId", "status"], where: { eventId: { in: uniqueEvents } }, _count: { _all: true } }) : Promise.resolve([]),
     instanceIds.length ? prisma.rSVP.groupBy({ by: ["eventInstanceId", "status"], where: { eventInstanceId: { in: instanceIds } }, _count: { _all: true } }) : Promise.resolve([]),
+    uniqueEvents.length ? prisma.rSVP.groupBy({ by: ["eventId"], where: { eventId: { in: uniqueEvents }, status: "CONFIRMED", teamId: { not: null } }, _count: { _all: true } }) : Promise.resolve([]),
+    uniqueEvents.length ? prisma.team.groupBy({ by: ["eventId"], where: { eventId: { in: uniqueEvents }, status: "CONFIRMED" }, _count: { _all: true } }) : Promise.resolve([]),
   ]);
-  return { event: tally(eventGroups, "eventId"), instance: tally(instanceGroups, "eventInstanceId") };
+  const event = tally(eventGroups, "eventId");
+  const teamed = new Map(teamedGroups.map((group) => [group.eventId as string, group._count._all]));
+  const teams = new Map(teamGroups.map((group) => [group.eventId, group._count._all]));
+  const units = new Map(uniqueEvents.map((id) => [id, (event.get(id)?.confirmed ?? 0) - (teamed.get(id) ?? 0) + (teams.get(id) ?? 0)]));
+  return { event, instance: tally(instanceGroups, "eventInstanceId"), units };
+}
+
+/** What fills `capacity` on a TEAM event (units); undefined for INDIVIDUAL events, where people fill it. */
+function teamUnits(event: EventForRow, counts: RsvpCounts): { used: number; noun: string } | undefined {
+  if (event.registrationMode !== "TEAM") return undefined;
+  return { used: counts.units.get(event.id) ?? 0, noun: teamUnitShortNoun(event.soloPolicy) };
 }
 
 export function countsFor(counts: RsvpCounts, eventId: string): CountTriple {
@@ -158,6 +177,7 @@ export function countsFor(counts: RsvpCounts, eventId: string): CountTriple {
 export function toEventRow(event: EventForRow, counts: RsvpCounts, canManage: boolean): HomeEventRow {
   const all = countsFor(counts, event.id);
   const tallies = canManage ? all : { ...all, pending: 0 };
+  const units = teamUnits(event, counts);
   const draft = event.status === "DRAFT";
   return {
     key: `event-${event.id}`,
@@ -169,8 +189,8 @@ export function toEventRow(event: EventForRow, counts: RsvpCounts, canManage: bo
     accent: accentOf(event.page?.accentColor),
     isSeries: false,
     isDraft: draft,
-    status: draft ? { label: "Finish & publish", tone: "warning" } : eventFillStatus(tallies, event.capacity),
-    fill: !draft && event.capacity ? { filled: tallies.confirmed, total: event.capacity } : null,
+    status: draft ? { label: "Finish & publish", tone: "warning" } : eventFillStatus(tallies, event.capacity, units),
+    fill: !draft && event.capacity ? { filled: units?.used ?? tallies.confirmed, total: event.capacity } : null,
   };
 }
 
@@ -220,6 +240,7 @@ export async function loadNextUp(event: EventForRow, counts: RsvpCounts, canMana
     timezone: event.timezone,
     confirmed: countsFor(counts, event.id).confirmed,
     capacity: event.capacity,
+    capacityUnits: event.registrationMode === "TEAM" ? { used: counts.units.get(event.id) ?? 0, noun: teamUnitNoun(event.soloPolicy, event.capacity ?? 0) } : null,
     signupsLastDay,
     checkInHref: canManage ? `/dashboard/${event.organisation.slug}/event/${event.id}/check-in` : null,
     recentNames: recent.map((rsvp) => displayName(rsvp)).filter((name) => name !== "A guest").map(firstName),

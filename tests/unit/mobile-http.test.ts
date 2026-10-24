@@ -28,8 +28,15 @@ describe("mobile envelope", () => {
     [{ ok: false as const, error: "Only pending requests can be approved." }, "CONFLICT"],
     [{ ok: false as const, error: "Event is at capacity. Free a spot or promote from waitlist first." }, "CONFLICT"],
     [{ ok: false as const, error: "Could not queue the email. Please try again." }, "INTERNAL_ERROR"],
+    [{ ok: false as const, error: "This event registers teams only. Create a team or join one with a team link.", code: "TEAM_REQUIRED" as const }, "TEAM_REQUIRED"],
   ])("classifies %j as %s", (result, code) => {
     expect(classifyActionError(result)).toBe(code);
+  });
+
+  it("answers TEAM_REQUIRED with 409 and the core's message", async () => {
+    const response = mobileActionError({ ok: false, error: "This event registers teams only.", code: "TEAM_REQUIRED" });
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ ok: false, error: { code: "TEAM_REQUIRED", message: "This event registers teams only." } });
   });
 
   it("passes the UI-safe action message and field errors through", async () => {

@@ -13,6 +13,7 @@ import { effectiveEventProgram } from "@/lib/eventProgram";
 import { plainTextToSafeHtml, sanitizeRichText } from "@/lib/richText";
 import { isRegistrationClosed } from "@/lib/registrationCutoff";
 import { toFieldDefinition } from "@/lib/registrationFields";
+import { publicTeamRegistrationConfig } from "@/lib/publicTeamConfig";
 
 type Props = { params: Promise<{ orgSlug: string; eventSlug: string }> };
 
@@ -134,7 +135,7 @@ export default async function EventPage({ params }: Props) {
       where: { eventId: event.id },
       include: { fields: { orderBy: { sortOrder: "asc" } } },
     }),
-    countConfirmedForEvent(event.id),
+    countConfirmedForEvent(event.id, event.registrationMode),
   ]);
   const defaults = [
     "HERO",
@@ -215,6 +216,7 @@ export default async function EventPage({ params }: Props) {
       }
       registrationFull={event.capacity != null && confirmed >= event.capacity}
       approvalRequired={event.privacyType === EventPrivacyType.APPROVAL_REQUIRED}
+      team={publicTeamRegistrationConfig(event)}
     />
   );
 }

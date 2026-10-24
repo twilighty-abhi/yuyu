@@ -22,7 +22,7 @@ Creating, editing, rotating, enabling, disabling, deleting and automatic disabli
 | Type | Sent when |
 | --- | --- |
 | `registration.created` | Someone registers (any status: confirmed, waitlisted, or pending approval), or an organiser adds a guest |
-| `registration.status_changed` | A registration is approved, declined (`REJECTED`), re-accepted, promoted from the waitlist (by an organiser or automatically after a cancellation), cancelled by the attendee (`CANCELLED`), removed by an organiser (`REMOVED`), or restored with **Undo** |
+| `registration.status_changed` | A registration is approved, declined (`REJECTED`), re-accepted, promoted from the waitlist (by an organiser or automatically after a cancellation), cancelled by the attendee (`CANCELLED`), removed by an organiser (`REMOVED`), or restored with **Undo**. On team events, whole-team changes send one event per member (`docs/TEAMS.md`) |
 | `checkin.created` | An attendee is checked in at the entrance (desk, scan, door station, offline sync, or the mobile app) |
 | `checkin.undone` | An entrance check-in is undone |
 | `event.published` | An event goes live (create, edit, or the Overview **Publish event** button) |

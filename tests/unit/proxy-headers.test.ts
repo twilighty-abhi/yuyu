@@ -24,3 +24,18 @@ describe("embedding response headers", () => {
     expect(eventPage.headers.get("cache-control")).toContain("no-transform");
   });
 });
+
+describe("capability page caching", () => {
+  it("marks ticket and team links no-store and leaves other pages alone", async () => {
+    for (const path of ["/ticket/abc123", "/team/" + "t".repeat(43), "/acme/launch/team/" + "j".repeat(43)]) {
+      const response = await proxy(new NextRequest(`https://events.example.test${path}`));
+      expect(response.headers.get("cache-control"), path).toContain("no-store");
+      expect(response.headers.get("cache-control"), path).toContain("private");
+      expect(response.headers.get("cache-control"), path).toContain("no-transform");
+    }
+    for (const path of ["/acme/launch", "/acme/launch/team", "/acme/launch/schedule"]) {
+      const response = await proxy(new NextRequest(`https://events.example.test${path}`));
+      expect(response.headers.get("cache-control"), path).toBe("no-transform");
+    }
+  });
+});

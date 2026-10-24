@@ -22,7 +22,7 @@
 | `app/` | Pages, layouts, Server Actions, and route handlers |
 | `components/` | Client and server UI components grouped by product area |
 | `lib/` | Authentication, authorization, validation, RSVP logic, storage, email, rate limiting, and shared services |
-| `lib/core/` | Mutation cores (check-in, RSVP lifecycle/admin/cancel, broadcasts, programme delays, feedback settings, registration window, account profile and security) shared by Server Actions and `/api/mobile/v1` |
+| `lib/core/` | Mutation cores (check-in, RSVP lifecycle/admin/cancel, team registration, broadcasts, programme delays, feedback settings, registration window, account profile and security) shared by Server Actions and `/api/mobile/v1` |
 | `lib/mobile/` | Mobile API tokens, sessions, permissions, Zod schemas, and DTOs |
 | `prisma/` | Data model and ordered production migrations |
 | `scripts/` | Environment, schema, asset migration, and standalone-build helpers |
@@ -68,6 +68,8 @@ The super-admin boundary is separate: access requires an authenticated email mat
 - Events: `Event` (including `listedPublicly` for listed approval-required events, an optional unique `shortCode`, the venue check-in station PIN fields, and the manual sign-up close snapshot `registrationManuallyClosedAt`/`registrationCutoffBeforeManualClose`/`registrationLeadBeforeManualClose`), `EventInvite`, `EventSeries`, `SeriesInvite`, and `EventInstance`.
 - Event websites: `EventPage` (release flag `isPublished`, tagline, logo, accent) with `EventPageSection`, `EventHighlight`, `EventVenue`/`EventVenueRoom`, `EventScheduleTrack`, `EventSession`, `EventSpeaker`/`EventSessionSpeaker`, `EventSponsor`, `EventFaq`, `EventResource`, and `EventScheduleItem`.
 - Registration: `RSVP`, registration forms, fields (with help text, placeholder, and validated `settings` JSON), and typed answers.
+- Teams: `Event.registrationMode`, `teamMinSize`, `teamMaxSize` and `soloPolicy`; `Team` (status mirroring every member RSVP, unique per-event `nameKey`, join token, SHA-256 `manageTokenHash`, leader RSVP); `RSVP.teamId`; `TeamSeekerProfile` for solo registrants looking for a team; and `TeamJoinRequest` invitations and requests, at most one pending per team and RSVP. See [Team registration](TEAMS.md).
+- Communications: `EventBroadcast` records each organiser email, including its chosen `design`; each recipient is a separate `OutboxMessage`.
 - Communications: `EventBroadcast` records each organiser email, including its chosen `design`; each recipient is a separate `OutboxMessage`. `EventBroadcastDraft` holds one organiser's unsent Emails-tab composer per event (unique on event and user, private to that user, cascading with both); the dashboard send deletes it in the send transaction.
 - Feedback: feedback forms, fields, responses, typed answers, and optional certificate linkage.
 - Operations: `OutboxMessage`, `OperationalHeartbeat`, `AuditEvent`, `CheckInEvent`, `RsvpDeletionUndo`, and `Asset`.
@@ -79,6 +81,10 @@ The super-admin boundary is separate: access requires an authenticated email mat
 ### Event publication
 
 `Event.status` is the single publication switch. The event page's release flag, `EventPage.isPublished`, always mirrors `Event.status = PUBLISHED`: `createEvent`, `updateEvent`, and `publishEvent` (`app/actions/event.ts`) write both in one transaction, and `publishEvent` (the Overview **Publish event** button) upserts the page row so a draft without one is released too. Saving the event page for an event that has no page row creates it released exactly when the event is published. Public pages (`lib/publicEventAccess.ts`), RSVP (`lib/rsvpCore.ts`), and short links (`lib/shortLinkResolve.ts`) all require both. Migration `20260915000000_unify_event_publication` first aligned existing rows, and `20261021010000_realign_event_publication` repairs events that were published before `publishEvent` released the page.
+
+### Team registration and capacity units
+
+On a `TEAM` event `Event.capacity` counts units: each team and each solo RSVP is one unit. Every path that changes capacity (`reserveRsvp` in `lib/rsvpCore.ts`, `lib/rsvpCapacity.ts`, cancellation, organiser delete and restore, the capacity check in `updateEvent`) and every team mutation in `lib/core/teams.ts` takes the same `SELECT ... FOR UPDATE` lock on the `Event` row first, then counts with `countConfirmedUnits` (`lib/teamUnits.ts`). `INDIVIDUAL` events keep the plain confirmed-RSVP query. Team status changes update the `Team` row with a conditional `updateMany` guarded by the expected status and move every member RSVP in the same transaction, so each member's status always equals the team's. A team id from the browser is always re-read with its `eventId`, and leader authority (a management-token hash or the signed-in leader) is re-checked under the lock. Server Actions in `app/actions/teams.ts` and `app/actions/team-admin.ts` authenticate, rate limit, audit, and revalidate around these cores. The `team-created` and `team-member-added` outbox kinds carry capabilities and are deleted after delivery.
 
 Refer to `prisma/schema.prisma` for the authoritative fields, constraints, indexes, and cascading behavior.
 

@@ -2,11 +2,15 @@ import "server-only";
 
 import type { EventStatus, JudgingStatus, SubmissionStatus } from "@prisma/client";
 import {
-  listEligibleJudges,
   listSubmissionsForOrganiser,
-  loadJudgingResults,
+  loadJudgeProgress,
+  loadJudgingResultsPage,
   loadJudgingSetup,
-  type EligibleJudgeDto,
+  type AwardCandidateDto,
+  type JudgeProgressRowDto,
+  type JudgingResultsPageDto,
+  type OrganiserSubmissionsPage,
+  type ResultRowDto,
 } from "@/lib/core/judging";
 import type { JudgingOrganiserContext } from "@/lib/judgingAccess";
 import { prisma } from "@/lib/db";
@@ -76,22 +80,46 @@ export type JudgingDashboardResultRow = {
   criterionAverages: Array<{ criterionId: string; average: number | null }>;
 };
 
-export type JudgingDashboardJudge = EligibleJudgeDto & {
-  /** Submissions this judge can see (assignment rule and conflicts applied); null before anyone is counted. */
-  visible: number | null;
-  reviewsSubmitted: number;
-  assigned: number;
+/** One "Load more" page of Judging → Submissions (bounded; see lib/judgingOrganiserPaging.ts). */
+export type JudgingDashboardSubmissionsPage = {
+  submissions: JudgingDashboardSubmission[];
+  nextCursor: string | null;
 };
+
+/** One numbered page of the ranked table; ranks are computed over every project. */
+export type JudgingDashboardResultsPage = {
+  rows: JudgingDashboardResultRow[];
+  page: number;
+  totalPages: number;
+  /** Rows matching the search across every page. */
+  total: number;
+  /** 0-based index of this page's first row. */
+  start: number;
+  pageSize: number;
+  query: string;
+  /** Rows in the whole ranking, before any search. */
+  rankedTotal: number;
+};
+
+/** A project the Awards winner picker offers (SUBMITTED only). */
+export type JudgingDashboardAwardCandidate = AwardCandidateDto;
+
+export type JudgingDashboardJudge = JudgeProgressRowDto;
 
 export type JudgingDashboardData = {
   scope: { organisationSlug: string; eventId: string };
   settings: JudgingDashboardSettings;
   criteria: JudgingDashboardCriterion[];
   awards: JudgingDashboardAward[];
+  /** Projects per status over the whole event (the Submissions chips and tab count). */
   counts: Record<SubmissionStatus, number>;
-  submissions: JudgingDashboardSubmission[];
+  /** Every project of the event, whatever its status. */
+  submissionsTotal: number;
+  /** The first page of Judging → Submissions; further pages come from `loadSubmissionsPage`. */
+  submissions: JudgingDashboardSubmissionsPage;
   judges: JudgingDashboardJudge[];
-  results: JudgingDashboardResultRow[];
+  /** The first page of the ranked table; other pages come from `loadResultsPage`. */
+  results: JudgingDashboardResultsPage;
   exportHref: string;
   resultsUrl: string;
 };
@@ -153,42 +181,9 @@ export async function loadJudgingSettingsCard(
   return { scope: { organisationSlug: ctx.organisation.slug, eventId: ctx.event.id }, settings: settingsView(setup.settings, ctx.event.status) };
 }
 
-/** Everything the organiser Judging tab renders. Null without permission or when the event is gone. */
-export async function loadJudgingDashboard(ctx: EventDashboardContext): Promise<JudgingDashboardData | null> {
-  const organiser = judgingOrganiserContext(ctx);
-  if (!organiser) return null;
-  const [setup, submissions, eligible, results] = await Promise.all([
-    loadJudgingSetup(organiser),
-    listSubmissionsForOrganiser(organiser),
-    listEligibleJudges(organiser),
-    loadJudgingResults(organiser),
-  ]);
-  if (!setup || !results) return null;
-
-  const progress = new Map(results.judges.map((judge) => [judge.userId, judge]));
-  const assignedCount = new Map<string, number>();
-  for (const submission of submissions) {
-    for (const judgeId of submission.assignedJudgeIds) assignedCount.set(judgeId, (assignedCount.get(judgeId) ?? 0) + 1);
-  }
-  const judges: JudgingDashboardJudge[] = eligible.map((judge) => ({
-    ...judge,
-    visible: progress.get(judge.userId)?.visible ?? null,
-    reviewsSubmitted: progress.get(judge.userId)?.reviewsSubmitted ?? 0,
-    assigned: assignedCount.get(judge.userId) ?? 0,
-  }));
-  // A judge whose grant was revoked after scoring stays listed for the record; their reviews no longer count.
-  for (const judge of results.judges) {
-    if (judges.some((row) => row.userId === judge.userId)) continue;
-    judges.push({ userId: judge.userId, name: judge.name, email: null, kind: "judge", visible: judge.visible, reviewsSubmitted: judge.reviewsSubmitted, assigned: assignedCount.get(judge.userId) ?? 0 });
-  }
-
+export function toDashboardSubmissionsPage(page: OrganiserSubmissionsPage): JudgingDashboardSubmissionsPage {
   return {
-    scope: { organisationSlug: ctx.organisation.slug, eventId: ctx.event.id },
-    settings: settingsView(setup.settings, ctx.event.status),
-    criteria: setup.criteria.map((criterion) => ({ ...criterion })),
-    awards: setup.awards.map((award) => ({ ...award, winners: award.winners.map((winner) => ({ ...winner })) })),
-    counts: setup.counts,
-    submissions: submissions.map((row) => ({
+    submissions: page.submissions.map((row) => ({
       id: row.id,
       title: row.title,
       summary: row.summary,
@@ -203,17 +198,62 @@ export async function loadJudgingDashboard(ctx: EventDashboardContext): Promise<
       disqualifiedReason: row.disqualifiedReason,
       assignedJudgeIds: row.assignedJudgeIds,
     })),
-    judges,
-    results: results.rows.map((row) => ({
-      submissionId: row.submissionId,
-      title: row.title,
-      entrantName: row.entrantName,
-      status: row.status,
-      score: row.score,
-      judgesCounted: row.judgesCounted,
-      rank: row.rank,
-      criterionAverages: row.criterionAverages.map((average) => ({ ...average })),
-    })),
+    nextCursor: page.nextCursor,
+  };
+}
+
+function toDashboardResultRow(row: ResultRowDto): JudgingDashboardResultRow {
+  return {
+    submissionId: row.submissionId,
+    title: row.title,
+    entrantName: row.entrantName,
+    status: row.status,
+    score: row.score,
+    judgesCounted: row.judgesCounted,
+    rank: row.rank,
+    criterionAverages: row.criterionAverages.map((average) => ({ ...average })),
+  };
+}
+
+export function toDashboardResultsPage(page: JudgingResultsPageDto): JudgingDashboardResultsPage {
+  return {
+    rows: page.rows.map(toDashboardResultRow),
+    page: page.page,
+    totalPages: page.totalPages,
+    total: page.total,
+    start: page.start,
+    pageSize: page.pageSize,
+    query: page.query,
+    rankedTotal: page.rankedTotal,
+  };
+}
+
+/**
+ * Everything the organiser Judging tab renders, bounded: the first page of
+ * submissions and of the ranked table, per-status counts and per-judge
+ * progress from aggregates. Null without permission or when the event is gone.
+ */
+export async function loadJudgingDashboard(ctx: EventDashboardContext): Promise<JudgingDashboardData | null> {
+  const organiser = judgingOrganiserContext(ctx);
+  if (!organiser) return null;
+  const [setup, submissions, judges, results] = await Promise.all([
+    loadJudgingSetup(organiser),
+    listSubmissionsForOrganiser(organiser),
+    loadJudgeProgress(organiser),
+    loadJudgingResultsPage(organiser),
+  ]);
+  if (!setup || !judges || !results) return null;
+
+  return {
+    scope: { organisationSlug: ctx.organisation.slug, eventId: ctx.event.id },
+    settings: settingsView(setup.settings, ctx.event.status),
+    criteria: setup.criteria.map((criterion) => ({ ...criterion })),
+    awards: setup.awards.map((award) => ({ ...award, winners: award.winners.map((winner) => ({ ...winner })) })),
+    counts: setup.counts,
+    submissionsTotal: Object.values(setup.counts).reduce((sum, count) => sum + count, 0),
+    submissions: toDashboardSubmissionsPage(submissions),
+    judges: judges.map((judge) => ({ ...judge })),
+    results: toDashboardResultsPage(results),
     exportHref: `/api/exports/events/${ctx.event.id}/judging`,
     resultsUrl: `${ctx.origin}${resultsPath(ctx.organisation.slug, ctx.event.slug)}`,
   };

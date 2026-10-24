@@ -1,27 +1,38 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Download, ExternalLink } from "lucide-react";
 import type { JudgingStatus } from "@prisma/client";
-import { publishJudgingResults, unpublishJudgingResults } from "@/app/actions/judging-admin";
+import { loadResultsPage, publishJudgingResults, unpublishJudgingResults } from "@/app/actions/judging-admin";
 import { ConfirmationDialog } from "@/components/feedback/ConfirmationDialog";
 import { Button } from "@/components/ui/button";
 import { Callout, Card, CardHeader, Chip, EmptyState, ProgressBar } from "@/components/ui/display";
+import { SearchInput } from "@/components/ui/field";
+import { Spinner } from "@/components/ui/spinner";
 import { TBody, TD, TH, THead, TR, Table } from "@/components/ui/table";
 import { formatDayTime } from "@/lib/format/datetime";
+import { numberedPageLabel } from "@/lib/judgingOrganiserPaging";
 import { OpenTabButton } from "../EventDashboardTabs";
-import type { JudgingDashboardCriterion, JudgingDashboardJudge, JudgingDashboardResultRow } from "@/lib/eventDashboard/judging";
+import type { JudgingDashboardCriterion, JudgingDashboardJudge, JudgingDashboardResultsPage } from "@/lib/eventDashboard/judging";
 import { resultsPublishHint } from "./judgingCopy";
+import { PageNumberPager } from "@/components/ui/page-number-pager";
 import { formatScore, useJudgingAction, type JudgingScope } from "./JudgingPanelShared";
+
+const SEARCH_DELAY_MS = 300;
 
 /**
  * Judging → Results: the ranked score table (score, judges counted,
  * per-criterion averages), CSV export, and publishing. Scores and comments
  * stay organiser-only; the public results page shows awards and winners.
+ *
+ * The ranking is computed on the server over every project, so ranks and
+ * ties are the same on every page; the table shows one numbered page at a
+ * time (`loadResultsPage`), and a search filters the ranked rows without
+ * renumbering them. The CSV export always has every row.
  */
 export function JudgingPanelResults({
   scope,
-  rows,
+  initialPage,
   criteria,
   judgingStatus,
   resultsPublishedAt,
@@ -30,7 +41,7 @@ export function JudgingPanelResults({
   timezone,
 }: {
   scope: JudgingScope;
-  rows: JudgingDashboardResultRow[];
+  initialPage: JudgingDashboardResultsPage;
   criteria: JudgingDashboardCriterion[];
   judgingStatus: JudgingStatus;
   resultsPublishedAt: string | null;
@@ -38,6 +49,60 @@ export function JudgingPanelResults({
   exportHref: string;
   timezone: string;
 }) {
+  const { organisationSlug, eventId } = scope;
+  const [data, setData] = useState<JudgingDashboardResultsPage>(initialPage);
+  const [query, setQuery] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const requestSeq = useRef(0);
+  const view = useRef({ query: "", page: 1 });
+
+  const fetchPage = useCallback(
+    async (next: { query: string; page: number }) => {
+      const seq = ++requestSeq.current;
+      view.current = next;
+      setLoading(true);
+      setError(null);
+      const res = await loadResultsPage({ organisationSlug, eventId, query: next.query.trim(), page: next.page });
+      if (seq !== requestSeq.current) return;
+      setLoading(false);
+      if (!res.ok || !res.data) {
+        setError(res.ok ? "Could not load the ranking." : res.error);
+        return;
+      }
+      setData(res.data);
+      view.current = { query: next.query, page: res.data.page };
+    },
+    [organisationSlug, eventId],
+  );
+
+  // A search fetches its first page once typing pauses. A refresh after a
+  // change (new `initialPage`) re-reads the page and search showing.
+  const firstRun = useRef(true);
+  const lastQuery = useRef(query);
+  useEffect(() => {
+    if (firstRun.current) {
+      firstRun.current = false;
+      return;
+    }
+    const queryChanged = lastQuery.current !== query;
+    lastQuery.current = query;
+    const target = queryChanged ? { query, page: 1 } : view.current;
+    const timer = window.setTimeout(() => {
+      if (!target.query.trim() && target.page === 1) {
+        requestSeq.current += 1;
+        view.current = { query: target.query, page: 1 };
+        setLoading(false);
+        setError(null);
+        setData(initialPage);
+        return;
+      }
+      void fetchPage(target);
+    }, queryChanged && query.trim() ? SEARCH_DELAY_MS : 0);
+    return () => window.clearTimeout(timer);
+  }, [query, fetchPage, initialPage]);
+
+  const searching = Boolean(query.trim());
   return (
     <div className="flex flex-col gap-5">
       <PublishCard scope={scope} judgingStatus={judgingStatus} resultsPublishedAt={resultsPublishedAt} resultsUrl={resultsUrl} timezone={timezone} />
@@ -54,51 +119,78 @@ export function JudgingPanelResults({
             </Button>
           }
         />
-        {rows.length === 0 ? (
+        {initialPage.rankedTotal === 0 ? (
           <EmptyState title="No submitted projects">The ranking fills in as judges submit their reviews.</EmptyState>
         ) : (
-          <Table label="Ranked projects">
-            <THead>
-              <tr>
-                <TH>Rank</TH>
-                <TH>Project</TH>
-                <TH className="text-right">Score</TH>
-                <TH className="text-right">Judges</TH>
-                {criteria.map((criterion) => (
-                  <TH key={criterion.id} className="text-right" title={`Average out of ${criterion.maxScore}`}>
-                    {criterion.name}
-                    <span className="block font-normal">/ {criterion.maxScore}</span>
-                  </TH>
-                ))}
-              </tr>
-            </THead>
-            <TBody>
-              {rows.map((row) => {
-                const averages = new Map(row.criterionAverages.map((average) => [average.criterionId, average.average]));
-                return (
-                  <TR key={row.submissionId}>
-                    <TD className="font-semibold">{row.rank ?? "—"}</TD>
-                    <TD className="min-w-[200px]">
-                      <span className="block font-semibold">{row.title}</span>
-                      <span className="block text-caption text-ink-muted">{row.entrantName}</span>
-                      {row.status === "DISQUALIFIED" ? (
-                        <Chip size="sm" tone="danger" className="mt-1">
-                          Disqualified
-                        </Chip>
-                      ) : null}
-                    </TD>
-                    <TD className="text-right font-semibold tabular-nums">{formatScore(row.score)}</TD>
-                    <TD className="text-right tabular-nums">{row.judgesCounted}</TD>
-                    {criteria.map((criterion) => (
-                      <TD key={criterion.id} className="text-right tabular-nums">
-                        {formatScore(averages.get(criterion.id) ?? null)}
-                      </TD>
-                    ))}
-                  </TR>
-                );
-              })}
-            </TBody>
-          </Table>
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-caption text-ink-muted" aria-live="polite">
+                {numberedPageLabel({ start: data.start, total: data.total, shown: data.rows.length }, searching ? "matching projects" : "ranked projects")}
+              </p>
+              <div className="sm:w-[260px]">
+                <SearchInput placeholder="Search projects" aria-label="Search ranked projects" value={query} onChange={(event) => setQuery(event.target.value)} onClear={() => setQuery("")} />
+              </div>
+            </div>
+            {error ? (
+              <Callout tone="danger" role="alert">
+                {error}
+              </Callout>
+            ) : null}
+            {loading && data.rows.length === 0 ? (
+              <div className="flex justify-center py-6">
+                <Spinner className="size-5" />
+                <span className="sr-only">Loading the ranking</span>
+              </div>
+            ) : data.rows.length === 0 ? (
+              <EmptyState title="No matching projects">Try another search.</EmptyState>
+            ) : (
+              <div aria-busy={loading} className={loading ? "opacity-60 transition-opacity" : undefined}>
+                <Table label="Ranked projects">
+                  <THead>
+                    <tr>
+                      <TH>Rank</TH>
+                      <TH>Project</TH>
+                      <TH className="text-right">Score</TH>
+                      <TH className="text-right">Judges</TH>
+                      {criteria.map((criterion) => (
+                        <TH key={criterion.id} className="text-right" title={`Average out of ${criterion.maxScore}`}>
+                          {criterion.name}
+                          <span className="block font-normal">/ {criterion.maxScore}</span>
+                        </TH>
+                      ))}
+                    </tr>
+                  </THead>
+                  <TBody>
+                    {data.rows.map((row) => {
+                      const averages = new Map(row.criterionAverages.map((average) => [average.criterionId, average.average]));
+                      return (
+                        <TR key={row.submissionId}>
+                          <TD className="font-semibold">{row.rank ?? "—"}</TD>
+                          <TD className="min-w-[200px]">
+                            <span className="block font-semibold">{row.title}</span>
+                            <span className="block text-caption text-ink-muted">{row.entrantName}</span>
+                            {row.status === "DISQUALIFIED" ? (
+                              <Chip size="sm" tone="danger" className="mt-1">
+                                Disqualified
+                              </Chip>
+                            ) : null}
+                          </TD>
+                          <TD className="text-right font-semibold tabular-nums">{formatScore(row.score)}</TD>
+                          <TD className="text-right tabular-nums">{row.judgesCounted}</TD>
+                          {criteria.map((criterion) => (
+                            <TD key={criterion.id} className="text-right tabular-nums">
+                              {formatScore(averages.get(criterion.id) ?? null)}
+                            </TD>
+                          ))}
+                        </TR>
+                      );
+                    })}
+                  </TBody>
+                </Table>
+              </div>
+            )}
+            <PageNumberPager label="Ranking pages" page={data.page} totalPages={data.totalPages} disabled={loading} onPage={(page) => void fetchPage({ query, page })} />
+          </div>
         )}
       </Card>
     </div>

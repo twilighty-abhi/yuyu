@@ -104,7 +104,7 @@ describe("Results publish hint (2)", () => {
       renderToString(
         createElement(JudgingPanelResults, {
           scope,
-          rows: [],
+          initialPage: { rows: [], page: 1, totalPages: 1, total: 0, start: 0, pageSize: 50, query: "", rankedTotal: 0 },
           criteria: [],
           judgingStatus: "NOT_STARTED",
           resultsPublishedAt: null,
@@ -128,7 +128,7 @@ describe("Score tab copy for organisers (3)", () => {
   });
 
   it("links organisers to the rubric editor and keeps judges' copy", () => {
-    const base = { ...scope, judgingStatus: "NOT_STARTED" as const, criteria: [], submissions: [] };
+    const base = { ...scope, judgingStatus: "NOT_STARTED" as const, criteria: [], initialPage: { submissions: [], nextCursor: null, counts: { all: 0, todo: 0, in_progress: 0, reviewed: 0 } } };
     const organiser = text(renderToString(createElement(JudgeWorkspaceClient, { ...base, audience: "organiser" })));
     expect(organiser).toContain("Edit the rubric");
     expect(organiser).not.toContain("The organisers have not added");

@@ -8,11 +8,11 @@ const source = (path: string) => readFileSync(resolve(root, path), "utf8");
 describe("frontend production boundaries", () => {
   it("uses explicit bounded public and attendee browser collections", () => {
     const publicPage = source("app/[orgSlug]/page.tsx");
-    // The event dashboard loads attendees through its shared, request-cached loader.
-    const eventDashboard = source("lib/eventDashboard/data.ts");
+    // The event dashboard pages attendees on the server through one shared loader.
+    const eventDashboard = source("lib/eventDashboard/attendees.ts");
     expect(publicPage).toContain("select: publicOrgEventSelect");
     expect(publicPage).toContain("take: PUBLIC_COLLECTION_LIMIT + 1");
-    expect(eventDashboard).toContain("take: MAX_BROWSER_ATTENDEES + 1");
+    expect(eventDashboard).toContain("take: ATTENDEES_PAGE_SIZE + 1");
     expect(eventDashboard).toContain("user: { select: { id: true, name: true, email: true } }");
   });
 

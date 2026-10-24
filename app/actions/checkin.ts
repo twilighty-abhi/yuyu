@@ -6,6 +6,7 @@ import {
   checkInByRsvpIdForUser,
   checkInByTokenForUser,
   downloadOfflineCheckInRosterForUser,
+  loadRecentCheckInsForUser,
   lookupAttendeesForCheckInForUser,
   previewCheckInByRsvpIdForUser,
   previewCheckInByTokenForUser,
@@ -16,6 +17,7 @@ import {
   type LookupRow,
   type OfflineCheckInRosterRow,
 } from "@/lib/core/checkin";
+import type { RecentCheckInsPage } from "@/lib/checkInRecent";
 
 /*
  * Thin Server Action wrappers. The check-in rules live in lib/core/checkin.ts
@@ -63,4 +65,8 @@ export async function previewCheckInByRsvpId(input: unknown): Promise<ActionResu
 
 export async function checkInByRsvpId(input: unknown): Promise<ActionResult<CheckInResultData>> {
   return checkInByRsvpIdForUser(await currentUserId(), input);
+}
+
+export async function loadRecentCheckIns(input: unknown): Promise<ActionResult<RecentCheckInsPage>> {
+  return loadRecentCheckInsForUser(await currentUserId(), input);
 }

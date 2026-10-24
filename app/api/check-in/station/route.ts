@@ -9,12 +9,15 @@ import { CHECK_IN_STATION_COOKIE, createCheckInStationProof, hasValidCheckInStat
 import { gateCheckInForStatus, parseCheckInPayload } from "@/lib/checkIn";
 import { getCheckInDetails, getRegistrationDetails } from "@/lib/checkInDetails";
 import { commitCheckInProjection, commitUndoCheckInProjection } from "@/lib/checkInMutations";
+import { listRecentCheckIns } from "@/lib/checkInRecent";
 
 const bodySchema = z.object({
   organisationSlug: z.string().trim().min(1).max(120), eventSlug: z.string().trim().min(1).max(160),
-  action: z.enum(["unlock", "bootstrap", "previewToken", "previewRsvp", "checkInRsvp", "lookup", "undo"]),
+  action: z.enum(["unlock", "bootstrap", "recent", "previewToken", "previewRsvp", "checkInRsvp", "lookup", "undo"]),
   pin: z.string().trim().regex(/^\d{8}$/).optional(), rawInput: z.string().trim().min(1).max(2048).optional(),
   rsvpId: z.string().trim().min(1).max(128).optional(), query: z.string().trim().min(2).max(200).optional(), force: z.boolean().optional(),
+  /** "recent": the keyset cursor from the previous page of Recent check-ins. */
+  cursor: z.string().trim().min(1).max(160).optional(),
 }).strict().superRefine((value, ctx) => {
   if (value.action === "unlock" && !value.pin) ctx.addIssue({ code: "custom", path: ["pin"], message: "PIN is required." });
   if (value.action === "previewToken" && !value.rawInput) ctx.addIssue({ code: "custom", path: ["rawInput"], message: "Ticket input is required." });
@@ -56,12 +59,17 @@ export async function POST(request: Request) {
   if (!hasValidCheckInStationProof(proof, event.id, event.checkInStationSecretVersion, event.startDateTime, event.endDateTime)) return failure("Station access has expired.", 401);
   if (!(await checkRateLimitById("checkin", `station:${event.id}:${getClientIpFromHeaders(request.headers)}`))) return failure("Too many check-in requests. Please try again shortly.", 429);
   if (input.action === "bootstrap") {
-    const [confirmed, checkedIn, recentRsvps, form] = await Promise.all([
+    const [confirmed, checkedIn, recent, form] = await Promise.all([
       prisma.rSVP.count({ where: { eventId: event.id, status: "CONFIRMED" } }), prisma.rSVP.count({ where: { eventId: event.id, checkedInAt: { not: null } } }),
-      prisma.rSVP.findMany({ where: { eventId: event.id, checkedInAt: { not: null } }, orderBy: { checkedInAt: "desc" }, take: 200, include: { user: { select: { name: true, email: true } } } }),
+      listRecentCheckIns(event.id),
       prisma.eventRegistrationForm.findUnique({ where: { eventId: event.id }, select: { fields: { select: { key: true, label: true }, orderBy: { sortOrder: "asc" } } } }),
     ]);
-    return NextResponse.json({ ok: true, data: { organisationName: event.organisation.name, organisationLogoUrl: event.organisation.logoUrl, eventId: event.id, eventTitle: event.title, registrationFields: form?.fields ?? [], stats: { confirmed, checkedIn }, recent: recentRsvps.map((r) => ({ rsvpId: r.id, displayName: attendeeLabel({ ...r, guestName: null }), email: r.user?.email ?? r.guestEmail, checkedInAt: r.checkedInAt!.toISOString() })) } });
+    return NextResponse.json({ ok: true, data: { organisationName: event.organisation.name, organisationLogoUrl: event.organisation.logoUrl, eventId: event.id, eventTitle: event.title, registrationFields: form?.fields ?? [], stats: { confirmed, checkedIn }, recent: recent.rows, recentNextCursor: recent.nextCursor } });
+  }
+  if (input.action === "recent") {
+    // The next page of Recent check-ins for this station's event only.
+    const page = await listRecentCheckIns(event.id, input.cursor ?? null);
+    return NextResponse.json({ ok: true, data: page });
   }
   let rsvp: StationRsvp | null = null;
   if (input.action === "previewToken") {

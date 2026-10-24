@@ -61,7 +61,7 @@ export async function JudgingPanel({ ctx }: { ctx: EventDashboardContext }) {
       </div>
     ),
   };
-  if (!settings.submissionsEnabled && data.submissions.length === 0 && settings.judgingStatus === "NOT_STARTED" && !settings.resultsPublishedAt) {
+  if (!settings.submissionsEnabled && data.submissionsTotal === 0 && settings.judgingStatus === "NOT_STARTED" && !settings.resultsPublishedAt) {
     // Nothing to judge yet: only the settings needed to turn submissions on.
     return <SubTabs label="Judging sections" items={[setup]} />;
   }
@@ -74,11 +74,13 @@ export async function JudgingPanel({ ctx }: { ctx: EventDashboardContext }) {
         {
           value: "judging-submissions",
           label: "Submissions",
-          count: data.submissions.length,
+          count: data.submissionsTotal,
           content: (
             <JudgingPanelSubmissions
               scope={scope}
-              submissions={data.submissions}
+              initialPage={data.submissions}
+              counts={data.counts}
+              total={data.submissionsTotal}
               judges={data.judges}
               criteria={data.criteria}
               judgesSeeAll={settings.judgesSeeAll}
@@ -107,7 +109,7 @@ export async function JudgingPanel({ ctx }: { ctx: EventDashboardContext }) {
           content: (
             <JudgingPanelResults
               scope={scope}
-              rows={data.results}
+              initialPage={data.results}
               criteria={data.criteria}
               judgingStatus={settings.judgingStatus}
               resultsPublishedAt={settings.resultsPublishedAt}
@@ -121,7 +123,7 @@ export async function JudgingPanel({ ctx }: { ctx: EventDashboardContext }) {
           value: "judging-awards",
           label: "Awards",
           count: data.awards.length,
-          content: <JudgingPanelAwards scope={scope} awards={data.awards} ranking={data.results} resultsPublished={Boolean(settings.resultsPublishedAt)} limits={LIMITS} />,
+          content: <JudgingPanelAwards scope={scope} awards={data.awards} submittedCount={data.counts.SUBMITTED} resultsPublished={Boolean(settings.resultsPublishedAt)} limits={LIMITS} />,
         },
       ]}
     />

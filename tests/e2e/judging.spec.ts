@@ -306,7 +306,8 @@ test("the organiser closes judging, ranks, awards and publishes once", async ({ 
   await page.getByRole("dialog").getByRole("button", { name: "Add award" }).click();
   await page.getByRole("button", { name: "Pick a winner" }).click();
   const picker = page.getByRole("dialog", { name: "Pick a winner" });
-  await expect(picker.getByRole("combobox", { name: "Project" })).toContainText(teams.alpha.project);
+  // The picker searches the ranking on the server and preselects the top-ranked project.
+  await expect(picker.getByRole("radio", { name: new RegExp(teams.alpha.project) })).toBeChecked();
   await picker.getByRole("button", { name: "Save winner" }).click();
   await expect.poll(() => prisma.eventAwardWinner.count({ where: { award: { eventId } } })).toBe(1);
 

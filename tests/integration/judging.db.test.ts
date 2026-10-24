@@ -47,7 +47,9 @@ import {
   listSubmissionsForJudge,
   listSubmissionsForOrganiser,
   loadEntrantSubmission,
+  loadJudgeProgress,
   loadJudgingResults,
+  loadJudgingResultsPage,
   loadProjectGallery,
   loadPublicResults,
   loadSubmissionForJudge,
@@ -59,6 +61,7 @@ import {
   resolveEntrantForUser,
   saveJudgeScores,
   saveSubmissionDraft,
+  searchAwardCandidates,
   setAwardWinner,
   setJudgingStatus,
   submitJudgeReview,
@@ -418,7 +421,10 @@ describe.sequential("hackathon judging integration", () => {
     expect(await publishResults(forged)).toMatchObject({ ok: false });
     expect(await loadJudgingResults(forged)).toBeNull();
     expect(await buildJudgingExportRows(forged)).toBeNull();
-    expect(await listSubmissionsForOrganiser(forged)).toEqual([]);
+    expect(await listSubmissionsForOrganiser(forged)).toEqual({ submissions: [], nextCursor: null });
+    expect(await loadJudgeProgress(forged)).toBeNull();
+    expect(await loadJudgingResultsPage(forged)).toBeNull();
+    expect(await searchAwardCandidates(forged)).toBeNull();
     expect((await prisma.event.findUniqueOrThrow({ where: { id: foreign.id } })).submissionsEnabled).toBe(true);
 
     // Ids from another event of the same organisation are refused.
@@ -794,8 +800,9 @@ describe.sequential("hackathon judging integration", () => {
       [s4, null, null, 0],
     ]);
     expect(row(s1)?.criterionAverages).toEqual([{ criterionId: design, average: 4 }, { criterionId: impact, average: 7 }]);
-    expect(results?.judges.find((j) => j.userId === j1.userId)).toMatchObject({ visible: 4, reviewsSubmitted: 2 });
-    expect(results?.judges.find((j) => j.userId === j3.userId)).toMatchObject({ reviewsSubmitted: 0 });
+    const progress = await loadJudgeProgress(ctx);
+    expect(progress?.find((j) => j.userId === j1.userId)).toMatchObject({ visible: 4, reviewsSubmitted: 2 });
+    expect(progress?.find((j) => j.userId === j3.userId)).toMatchObject({ reviewsSubmitted: 0 });
 
     // The CSV rows carry the result and per-judge scores, never comments or emails.
     const csv = await buildJudgingExportRows(ctx);
@@ -1096,8 +1103,10 @@ describe.sequential("hackathon judging integration", () => {
     await joinTeam(event, teamId, { userId: conflicted.userId });
     const results = await loadJudgingResults(ctx);
     expect(results?.rows[0]).toMatchObject({ submissionId, score: 80, judgesCounted: 1 });
-    expect(results?.judges.find((j) => j.userId === revoked.userId)).toMatchObject({ visible: 0, reviewsSubmitted: 0 });
-    expect(results?.judges.find((j) => j.userId === conflicted.userId)).toMatchObject({ visible: 0, reviewsSubmitted: 0 });
+    const progress = await loadJudgeProgress(ctx);
+    expect(progress?.find((j) => j.userId === revoked.userId)).toMatchObject({ visible: 0, reviewsSubmitted: 0 });
+    expect(progress?.find((j) => j.userId === conflicted.userId)).toMatchObject({ visible: 0, reviewsSubmitted: 0 });
+    expect(progress?.find((j) => j.userId === stays.userId)).toMatchObject({ visible: 1, reviewsSubmitted: 1 });
     // Their reviews stay on record, marked as not counted in the export.
     const csv = await buildJudgingExportRows(ctx);
     const counted = csv?.slice(1).map((line) => [line[6], line[8]]).sort();

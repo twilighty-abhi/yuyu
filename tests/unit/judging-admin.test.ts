@@ -14,6 +14,9 @@ const mocks = vi.hoisted(() => ({
   publish: vi.fn(),
   reviews: vi.fn(),
   exportRows: vi.fn(),
+  listSubmissions: vi.fn(),
+  resultsPage: vi.fn(),
+  awardCandidates: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ auth: mocks.auth }));
@@ -30,14 +33,20 @@ vi.mock("@/lib/core/judging", () => ({
   publishResults: mocks.publish,
   loadSubmissionReviewsForOrganiser: mocks.reviews,
   buildJudgingExportRows: mocks.exportRows,
+  listSubmissionsForOrganiser: mocks.listSubmissions,
+  loadJudgingResultsPage: mocks.resultsPage,
+  searchAwardCandidates: mocks.awardCandidates,
 }));
 
 import {
   changeJudgingStatus,
   disqualifyProject,
   loadProjectReviews,
+  loadResultsPage,
+  loadSubmissionsPage,
   publishJudgingResults,
   saveJudgingSettings,
+  searchAwardCandidates,
   setEventAwardWinner,
 } from "@/app/actions/judging-admin";
 import { GET } from "@/app/api/exports/events/[eventId]/judging/route";
@@ -119,6 +128,55 @@ describe("organiser judging actions", () => {
     const res = await loadProjectReviews({ ...scope, submissionId: "sub_1" });
     expect(res).toEqual({ ok: true, data: [{ judgeName: "Ada", submittedAt: "2030-01-01T00:00:00.000Z", comment: "Nice", scores: [{ criterionId: "c1", score: 4 }] }] });
     expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+});
+
+describe("organiser judging paged reads", () => {
+  it("refuses non-organisers before reading any page", async () => {
+    mocks.resolveOrganiser.mockResolvedValue(null);
+    for (const read of [loadSubmissionsPage, loadResultsPage, searchAwardCandidates]) {
+      expect(await read({ ...scope, query: "x" })).toEqual({ ok: false, error: expect.stringContaining("permission") });
+    }
+    expect(mocks.listSubmissions).not.toHaveBeenCalled();
+    expect(mocks.resultsPage).not.toHaveBeenCalled();
+    expect(mocks.awardCandidates).not.toHaveBeenCalled();
+  });
+
+  it("uses the search rate-limit bucket and never revalidates", async () => {
+    mocks.listSubmissions.mockResolvedValue({ submissions: [], nextCursor: null });
+    await loadSubmissionsPage({ ...scope, status: "SUBMITTED" });
+    expect(mocks.rateLimit).toHaveBeenCalledWith("search", "user_1");
+    mocks.rateLimit.mockResolvedValue(true);
+    expect(await loadResultsPage({ ...scope, page: 2 })).toEqual({ ok: false, error: "Too many searches. Try again shortly." });
+    expect(mocks.resultsPage).not.toHaveBeenCalled();
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("passes only the paging fields to the cores and serialises the rows", async () => {
+    mocks.listSubmissions.mockResolvedValue({
+      submissions: [
+        { id: "sub_1", title: "Byte", summary: "", entrantName: "Ada L.", isTeam: false, repoUrl: null, demoUrl: null, videoUrl: null, status: "SUBMITTED", submittedAt: new Date("2030-01-01T00:00:00.000Z"), updatedAt: new Date("2030-01-02T00:00:00.000Z"), disqualifiedReason: null, assignedJudgeIds: ["j1"] },
+      ],
+      nextCursor: "1.sub_1",
+    });
+    const res = await loadSubmissionsPage({ ...scope, status: "SUBMITTED", query: "byte", cursor: "0.sub_0", eventSlug: "ignored" });
+    expect(mocks.listSubmissions).toHaveBeenCalledWith(organiser, { query: "byte", status: "SUBMITTED", cursor: "0.sub_0" });
+    expect(res).toMatchObject({ ok: true, data: { nextCursor: "1.sub_1", submissions: [{ id: "sub_1", submittedAt: "2030-01-01T00:00:00.000Z", updatedAt: "2030-01-02T00:00:00.000Z" }] } });
+
+    mocks.resultsPage.mockResolvedValue({ rows: [], page: 2, totalPages: 2, total: 60, start: 50, pageSize: 50, query: "", rankedTotal: 60, criteria: [] });
+    expect(await loadResultsPage({ ...scope, page: 2 })).toEqual({ ok: true, data: { rows: [], page: 2, totalPages: 2, total: 60, start: 50, pageSize: 50, query: "", rankedTotal: 60 } });
+    expect(mocks.resultsPage).toHaveBeenCalledWith(organiser, { query: "", page: 2 });
+
+    mocks.awardCandidates.mockResolvedValue({ rows: [{ submissionId: "sub_1", title: "Byte", entrantName: "Ada L.", rank: 1, score: 80 }], total: 21, nextOffset: 20 });
+    expect(await searchAwardCandidates({ ...scope, query: "by" })).toEqual({ ok: true, data: { candidates: [{ submissionId: "sub_1", title: "Byte", entrantName: "Ada L.", rank: 1, score: 80 }], total: 21, nextOffset: 20 } });
+    expect(mocks.awardCandidates).toHaveBeenCalledWith(organiser, { query: "by", offset: 0 });
+  });
+
+  it("reports invalid paging input", async () => {
+    mocks.resultsPage.mockResolvedValue(null);
+    mocks.awardCandidates.mockResolvedValue(null);
+    expect(await loadResultsPage({ ...scope, page: -1 })).toEqual({ ok: false, error: "Invalid input." });
+    expect(await searchAwardCandidates({ ...scope, offset: "x" })).toEqual({ ok: false, error: "Invalid input." });
   });
 });
 

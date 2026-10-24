@@ -1,4 +1,5 @@
 import type { JudgingStatus, SubmissionStatus } from "@prisma/client";
+import type { JudgeSubmissionCounts } from "@/lib/judgingPaging";
 
 /*
  * Read-model DTOs for hackathon judging (docs/HACKATHON.md). Each mapper
@@ -75,7 +76,16 @@ export type PublicAwardDto = { name: string; description: string; winners: Publi
 
 export type PublicResultsDto = { publishedAt: Date; awards: PublicAwardDto[] };
 
-export type PublicGalleryDto = { projects: PublicGalleryItemDto[] };
+/** One page of the public gallery. `total` counts every submitted project; `matched` those matching `query`. */
+export type PublicGalleryDto = {
+  projects: PublicGalleryItemDto[];
+  total: number;
+  matched: number;
+  query: string;
+  page: number;
+  totalPages: number;
+  pageSize: number;
+};
 
 /** A submission as a judge sees it. */
 export type JudgeSubmissionDto = ProjectLinks & {
@@ -104,10 +114,16 @@ export function judgingCriterionDto(row: JudgingCriterionDto): JudgingCriterionD
   return { id: row.id, name: row.name, description: row.description, weight: row.weight, maxScore: row.maxScore };
 }
 
-export type JudgeWorkspaceDto = {
+/** One page of the judge's list (`submissions`), plus totals over everything this judge may see. */
+export type JudgeSubmissionsPageDto = {
+  submissions: JudgeSubmissionDto[];
+  nextCursor: string | null;
+  counts: JudgeSubmissionCounts;
+};
+
+export type JudgeWorkspaceDto = JudgeSubmissionsPageDto & {
   judgingStatus: JudgingStatus;
   criteria: JudgingCriterionDto[];
-  submissions: JudgeSubmissionDto[];
 };
 
 export type JudgeSubmissionDetailDto = {

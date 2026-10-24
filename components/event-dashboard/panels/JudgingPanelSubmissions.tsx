@@ -1,11 +1,20 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { Ban, ExternalLink, Eye, MessageSquareText, MoreHorizontal, RotateCcw, UserCheck } from "lucide-react";
 import type { SubmissionStatus } from "@prisma/client";
-import { assignProjectJudge, disqualifyProject, loadProjectReviews, reinstateProject, unassignProjectJudge, type SubmissionReviewView } from "@/app/actions/judging-admin";
+import {
+  assignProjectJudge,
+  disqualifyProject,
+  loadProjectReviews,
+  loadSubmissionsPage,
+  reinstateProject,
+  unassignProjectJudge,
+  type SubmissionReviewView,
+} from "@/app/actions/judging-admin";
 import { useToast } from "@/components/feedback/ToastProvider";
 import { Button, IconButton } from "@/components/ui/button";
+import { useLoadMoreFocus } from "@/components/ui/use-load-more-focus";
 import { CheckboxField, FilterChip } from "@/components/ui/choice";
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader } from "@/components/ui/dialog";
 import { Callout, Chip, EmptyState } from "@/components/ui/display";
@@ -14,7 +23,15 @@ import { Field, Input, SearchInput } from "@/components/ui/field";
 import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { Spinner } from "@/components/ui/spinner";
 import { formatDayTime } from "@/lib/format/datetime";
-import type { JudgingDashboardAward, JudgingDashboardCriterion, JudgingDashboardJudge, JudgingDashboardSubmission } from "@/lib/eventDashboard/judging";
+import { showingLabel } from "@/lib/keysetCursor";
+import type { OrganiserSubmissionFilter } from "@/lib/judgingOrganiserPaging";
+import type {
+  JudgingDashboardAward,
+  JudgingDashboardCriterion,
+  JudgingDashboardJudge,
+  JudgingDashboardSubmission,
+  JudgingDashboardSubmissionsPage,
+} from "@/lib/eventDashboard/judging";
 import { awardsHeldBy, disqualifyImpact, reinstateImpact } from "./judgingCopy";
 import {
   SUBMISSION_STATUS_LABELS,
@@ -25,7 +42,8 @@ import {
   type JudgingScope,
 } from "./JudgingPanelShared";
 
-type Filter = "all" | SubmissionStatus;
+type Filter = OrganiserSubmissionFilter;
+type View = { query: string; status: Filter };
 
 const FILTERS: Array<{ value: Filter; label: string }> = [
   { value: "all", label: "All" },
@@ -35,14 +53,23 @@ const FILTERS: Array<{ value: Filter; label: string }> = [
   { value: "DISQUALIFIED", label: "Disqualified" },
 ];
 
+const SEARCH_DELAY_MS = 300;
+
 /**
  * Judging → Submissions: every project with its status, organiser-only
  * disqualification reason, judge assignments, and the judges' reviews. Entrant
  * emails and ticket links never reach this view.
+ *
+ * The list is paged on the server, oldest first, like Guests → Teams: the
+ * first page comes with the panel, and status filters, searches and "Load
+ * more" fetch bounded pages through `loadSubmissionsPage`. The chip counts
+ * are per-status totals for the whole event.
  */
 export function JudgingPanelSubmissions({
   scope,
-  submissions,
+  initialPage,
+  counts,
+  total,
   judges,
   criteria,
   judgesSeeAll,
@@ -52,7 +79,10 @@ export function JudgingPanelSubmissions({
   limits,
 }: {
   scope: JudgingScope;
-  submissions: JudgingDashboardSubmission[];
+  initialPage: JudgingDashboardSubmissionsPage;
+  counts: Record<SubmissionStatus, number>;
+  /** Every project of the event, whatever its status. */
+  total: number;
   judges: JudgingDashboardJudge[];
   criteria: JudgingDashboardCriterion[];
   judgesSeeAll: boolean;
@@ -75,6 +105,96 @@ export function JudgingPanelSubmissions({
   const [, startLoading] = useTransition();
   const { showToast } = useToast();
 
+  const [submissions, setSubmissions] = useState<JudgingDashboardSubmission[]>(initialPage.submissions);
+  const loadMoreFocus = useLoadMoreFocus(submissions.length);
+  const [nextCursor, setNextCursor] = useState<string | null>(initialPage.nextCursor);
+  const [loadingList, setLoadingList] = useState<"replace" | "more" | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
+  const requestSeq = useRef(0);
+  const { organisationSlug, eventId } = scope;
+  // How many pages the current view holds, so a refresh after a change
+  // reloads the same stretch instead of dropping pages added with "Load more".
+  const pagesLoaded = useRef(1);
+
+  const fetchPage = useCallback(
+    async (view: View, cursor: string | null) => {
+      const seq = ++requestSeq.current;
+      setLoadingList(cursor ? "more" : "replace");
+      setListError(null);
+      const res = await loadSubmissionsPage({ organisationSlug, eventId, query: view.query.trim(), status: view.status, cursor });
+      if (seq !== requestSeq.current) return;
+      setLoadingList(null);
+      if (!res.ok || !res.data) {
+        setListError(res.ok ? "Could not load projects." : res.error);
+        return;
+      }
+      const page = res.data;
+      setSubmissions((current) => (cursor ? [...current, ...page.submissions.filter((row) => !current.some((other) => other.id === row.id))] : page.submissions));
+      setNextCursor(page.nextCursor);
+      pagesLoaded.current = cursor ? pagesLoaded.current + 1 : 1;
+    },
+    [organisationSlug, eventId],
+  );
+
+  /** Re-read the first `pages` pages of a view in place (after a change). */
+  const reloadPages = useCallback(
+    async (view: View, pages: number) => {
+      const seq = ++requestSeq.current;
+      setListError(null);
+      const collected: JudgingDashboardSubmission[] = [];
+      let cursor: string | null = null;
+      let loaded = 0;
+      do {
+        const res = await loadSubmissionsPage({ organisationSlug, eventId, query: view.query.trim(), status: view.status, cursor });
+        if (seq !== requestSeq.current) return;
+        if (!res.ok || !res.data) {
+          setListError(res.ok ? "Could not load projects." : res.error);
+          return;
+        }
+        for (const row of res.data.submissions) if (!collected.some((other) => other.id === row.id)) collected.push(row);
+        cursor = res.data.nextCursor;
+        loaded += 1;
+      } while (cursor && loaded < pages);
+      setSubmissions(collected);
+      setNextCursor(cursor);
+      pagesLoaded.current = loaded;
+    },
+    [organisationSlug, eventId],
+  );
+
+  // A filter or a search fetches its first page (a search waits for typing to
+  // pause; the unfiltered view uses the first page that came with the panel).
+  // A refresh after a change (new `initialPage`) reloads the pages showing.
+  const firstRun = useRef(true);
+  const lastView = useRef<View>({ query, status: filter });
+  useEffect(() => {
+    if (firstRun.current) {
+      firstRun.current = false;
+      return;
+    }
+    const view: View = { query, status: filter };
+    const unfiltered = filter === "all" && !query.trim();
+    const viewChanged = lastView.current.query !== query || lastView.current.status !== filter;
+    lastView.current = view;
+    if (!viewChanged && pagesLoaded.current > 1) {
+      void reloadPages(view, pagesLoaded.current);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      if (!unfiltered) {
+        void fetchPage(view, null);
+        return;
+      }
+      requestSeq.current += 1;
+      pagesLoaded.current = 1;
+      setLoadingList(null);
+      setListError(null);
+      setSubmissions(initialPage.submissions);
+      setNextCursor(initialPage.nextCursor);
+    }, viewChanged && !unfiltered && query.trim() ? SEARCH_DELAY_MS : 0);
+    return () => window.clearTimeout(timer);
+  }, [query, filter, fetchPage, reloadPages, initialPage]);
+
   function openReviews(submission: JudgingDashboardSubmission) {
     setReviewing(submission);
     setReviews(null);
@@ -90,23 +210,11 @@ export function JudgingPanelSubmissions({
   }
 
   const judgeNames = useMemo(() => new Map(judges.map((judge) => [judge.userId, judge.name])), [judges]);
-  const counts = useMemo(() => {
-    const result: Record<Filter, number> = { all: submissions.length, DRAFT: 0, SUBMITTED: 0, WITHDRAWN: 0, DISQUALIFIED: 0 };
-    for (const submission of submissions) result[submission.status] += 1;
-    return result;
-  }, [submissions]);
-  const visible = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    return submissions.filter(
-      (submission) =>
-        (filter === "all" || submission.status === filter) &&
-        (!needle || submission.title.toLowerCase().includes(needle) || submission.entrantName.toLowerCase().includes(needle)),
-    );
-  }, [submissions, filter, query]);
-  // Re-read from the refreshed list so the assignment dialog shows current state.
+  const chipCounts: Record<Filter, number> = { all: total, ...counts };
+  // Re-read from the loaded rows so the assignment dialog shows current state.
   const assigning = assigningId ? submissions.find((submission) => submission.id === assigningId) ?? null : null;
 
-  if (submissions.length === 0) {
+  if (total === 0) {
     return <EmptyState title="No projects yet">Projects appear here once confirmed entrants start a submission.</EmptyState>;
   }
 
@@ -116,7 +224,7 @@ export function JudgingPanelSubmissions({
         <div className="flex flex-wrap gap-2" role="group" aria-label="Filter by status">
           {FILTERS.map((item) => (
             <FilterChip key={item.value} selected={filter === item.value} onClick={() => setFilter(item.value)}>
-              {item.label} <span className="font-medium opacity-80">{counts[item.value]}</span>
+              {item.label} <span className="font-medium opacity-80">{chipCounts[item.value]}</span>
             </FilterChip>
           ))}
         </div>
@@ -127,11 +235,21 @@ export function JudgingPanelSubmissions({
       {judgesSeeAll ? null : (
         <Callout tone="info">Judges only see the projects assigned to them. Use Assign judges on each submitted project.</Callout>
       )}
-      {visible.length === 0 ? (
+      {listError ? (
+        <Callout tone="danger" role="alert">
+          {listError}
+        </Callout>
+      ) : null}
+      {loadingList === "replace" ? (
+        <div className="flex justify-center py-6">
+          <Spinner className="size-5" />
+          <span className="sr-only">Loading projects</span>
+        </div>
+      ) : submissions.length === 0 ? (
         <EmptyState title="No matching projects">Try another filter or search.</EmptyState>
       ) : (
-        <ul className="flex flex-col divide-y divide-line rounded-lg border border-line bg-canvas">
-          {visible.map((submission) => (
+        <ul id={loadMoreFocus.listId} aria-label="Projects" aria-busy={loadingList != null} className="flex flex-col divide-y divide-line rounded-lg border border-line bg-canvas">
+          {submissions.map((submission) => (
             <li key={submission.id} className="flex flex-col gap-2 px-4 py-3.5 sm:flex-row sm:items-start sm:gap-4">
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
@@ -197,6 +315,21 @@ export function JudgingPanelSubmissions({
           ))}
         </ul>
       )}
+      {loadingList !== "replace" && submissions.length > 0 && !query.trim() ? (
+        <p className="text-center text-caption text-ink-muted" aria-live="polite">
+          {showingLabel(submissions.length, chipCounts[filter], "projects")}
+        </p>
+      ) : null}
+      {nextCursor && loadingList !== "replace" ? (
+        <div className="flex justify-center">
+          <Button variant="secondary" loading={loadingList === "more"} loadingLabel="Loading…" onClick={() => {
+            loadMoreFocus.beforeLoadMore();
+            void fetchPage({ query, status: filter }, nextCursor);
+          }}>
+            Load more projects
+          </Button>
+        </div>
+      ) : null}
 
       <ProjectDialog submission={viewing} onClose={() => setViewing(null)} />
       <AssignDialog scope={scope} submission={assigning} judges={judges} onClose={() => setAssigningId(null)} />

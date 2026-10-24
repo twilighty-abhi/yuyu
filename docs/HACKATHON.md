@@ -113,6 +113,19 @@ that lost awards are not given back (reassign them on the Awards tab).
   server-side).
 - Judges see the submission content (title, summary, links, team name). They
   never see entrant emails, answers, or ticket links.
+- The **Score** list is paged on the server: 25 at a time with **Load more**
+  (keyset cursor on `submittedAt, id`), filters **All**, **To score** (no
+  submitted review yet), **In progress** and **Reviewed**, and a search on
+  project title, team name, or a solo entrant's first name (the surname is
+  never shown, so it is never matched). Visibility (status, assignment,
+  conflict of interest) is applied in the same query, and the progress totals
+  come from separate counts over everything the judge may see.
+  `loadJudgeSubmissionsPage` re-resolves the judge on every call.
+- The public gallery shows 24 projects per page with page numbers in the URL
+  (`?page=N`, clamped to the last page by redirect) and an optional `?q=`
+  search on the same fields. Each page is its own canonical URL; searches are
+  not indexed. The public results page is bounded by the award limits
+  (`EVENT_AWARDS_LIMIT` awards, places up to `EVENT_AWARD_PLACE_MAX`).
 
 ## Rubric and scoring
 
@@ -145,6 +158,15 @@ that lost awards are not given back (reassign them on the Awards tab).
   publish card's hint follows the judging status: open judging first (not
   started), close judging to finalise the scores (open), or pick winners and
   publish (closed).
+- **Organiser paging** (`lib/judgingOrganiserPaging.ts`): Submissions loads
+  50 projects at a time, oldest first (keyset on `createdAt, id`), with "Load
+  more". Its status filter and search (title, team name or registrant name)
+  run on the server, and the chip and tab counts are per-status totals. The
+  ranking is computed over every project, then Results shows numbered pages
+  of 50, so a rank and a tie are the same on every page. A search filters the
+  ranked rows without renumbering them. The Awards winner picker searches the
+  ranked `SUBMITTED` projects on the server, 20 at a time. The Judges view
+  takes its counts from aggregates. The CSV export always holds every row.
 - **Publishing results** sets `resultsPublishedAt`, shows
   `/{orgSlug}/{eventSlug}/results` (awards, winners' project titles, team or
   entrant display names, and links), and queues one `results-published` email
@@ -177,7 +199,14 @@ that lost awards are not given back (reassign them on the Awards tab).
   with older snapshot formats still restoring; a `JUDGE`-only collaborator
   refused by registration, check-in list, email draft, webhook, and attendee
   export surfaces; CSV review times in the event timezone with an offset.
-- Unit tests: `tests/unit/event-capabilities.test.ts` (judging flags for every
+  `tests/integration/judging-paging.db.test.ts`: the judge list and the
+  gallery paged end to end with ties on `submittedAt` (no gaps or repeats),
+  progress filters and totals, search (wildcards literal, surnames never
+  matched), assignments, conflict of interest, event scoping, forged cursors,
+  page clamping, and every winner kept on the results page.
+- Unit tests: `tests/unit/judging-paging.test.ts` (cursor, query bounds,
+  `?page=`/`?q=` parsing, page clamping, gallery links),
+  `tests/unit/event-capabilities.test.ts` (judging flags for every
   role and grant), validators (URLs `https:` only), the score formula, DTOs for
   public results, gallery, and judge views (forbidden fields), the outbox
   payloads, and `tests/unit/judging-panel-copy.test.ts` (not-live warnings,

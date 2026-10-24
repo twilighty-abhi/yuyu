@@ -1,6 +1,6 @@
 "use server";
 
-import type { RsvpStatus } from "@prisma/client";
+import { TeamJoinRequestDirection, type RsvpStatus } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
@@ -16,6 +16,12 @@ import {
   disbandTeam,
   joinTeamWithExistingRsvp,
   leaveTeam,
+  listSeekerInvites,
+  listSeekerRequests,
+  listSeekersForLeader,
+  listSeekersForSeeker,
+  listTeamJoinRequestsForLeader,
+  listTeamsLookingForMembers,
   regenerateJoinToken,
   regenerateManageToken,
   removeTeamMember,
@@ -27,6 +33,12 @@ import {
   setLookingForMembers,
   transferLeadership,
   upsertSeekerProfile,
+  type CursorPage,
+  type LookingTeamDto,
+  type SeekerInviteDto,
+  type SeekerListItemDto,
+  type SeekerRequestDto,
+  type TeamJoinRequestItemDto,
   type TeamLeaderAuth,
   type TicketHolder,
 } from "@/lib/core/teams";
@@ -350,4 +362,74 @@ export async function joinTeamWithTicketAction(
     });
   }
   return result;
+}
+
+/* ---------- Read-only list pages ("Show more" and search) ---------- */
+
+const TOO_MANY_SEARCHES = "Too many searches. Try again shortly.";
+const LIST_UNAVAILABLE = "This list isn't available any more. Reload the page.";
+const directionSchema = z.enum([TeamJoinRequestDirection.INVITE, TeamJoinRequestDirection.REQUEST]);
+
+/**
+ * Leader team page: one page of the Looking for a team list. The leader
+ * capability and the list's own rules (matching event, team not declined,
+ * free space) are re-checked on every page; seekers carry display fields only.
+ */
+export async function loadTeamSeekersPageAction(ref: unknown, input: unknown): Promise<ActionResult<CursorPage<SeekerListItemDto>>> {
+  const leader = await resolveLeader(ref);
+  if (!leader) return { ok: false, error: LINK_EXPIRED };
+  if (await limited("search", `team:${leader.auth.teamId}`)) return { ok: false, error: TOO_MANY_SEARCHES };
+  const page = await listSeekersForLeader(leader.auth, input);
+  return page ? { ok: true, data: page } : { ok: false, error: LIST_UNAVAILABLE };
+}
+
+/** Leader team page: one page of incoming requests (`REQUEST`) or sent invitations (`INVITE`). */
+export async function loadTeamJoinRequestsPageAction(
+  ref: unknown,
+  direction: unknown,
+  input: unknown,
+): Promise<ActionResult<CursorPage<TeamJoinRequestItemDto>>> {
+  const leader = await resolveLeader(ref);
+  if (!leader) return { ok: false, error: LINK_EXPIRED };
+  const parsed = directionSchema.safeParse(direction);
+  if (!parsed.success) return { ok: false, error: LIST_UNAVAILABLE };
+  if (await limited("search", `team:${leader.auth.teamId}`)) return { ok: false, error: TOO_MANY_SEARCHES };
+  const page = await listTeamJoinRequestsForLeader(leader.auth, parsed.data, input);
+  return page ? { ok: true, data: page } : { ok: false, error: LIST_UNAVAILABLE };
+}
+
+/** Ticket page: one page of the other visible seekers, for a visible seeker. */
+export async function loadTicketSeekersPageAction(ticketToken: unknown, input: unknown): Promise<ActionResult<CursorPage<SeekerListItemDto>>> {
+  const resolved = await resolveHolder(ticketToken);
+  if (!resolved) return { ok: false, error: NOT_FOUND };
+  if (await limited("search", `rsvp:${resolved.holder.rsvpId}`)) return { ok: false, error: TOO_MANY_SEARCHES };
+  const page = await listSeekersForSeeker(resolved.holder, input);
+  return page ? { ok: true, data: page } : { ok: false, error: LIST_UNAVAILABLE };
+}
+
+/** Ticket page: one page of teams looking for members, for a visible seeker. */
+export async function loadTicketTeamsPageAction(ticketToken: unknown, input: unknown): Promise<ActionResult<CursorPage<LookingTeamDto>>> {
+  const resolved = await resolveHolder(ticketToken);
+  if (!resolved) return { ok: false, error: NOT_FOUND };
+  if (await limited("search", `rsvp:${resolved.holder.rsvpId}`)) return { ok: false, error: TOO_MANY_SEARCHES };
+  const page = await listTeamsLookingForMembers(resolved.holder, input);
+  return page ? { ok: true, data: page } : { ok: false, error: LIST_UNAVAILABLE };
+}
+
+/** Ticket page: one page of the holder's pending invitations from teams. */
+export async function loadTicketInvitesPageAction(ticketToken: unknown, input: unknown): Promise<ActionResult<CursorPage<SeekerInviteDto>>> {
+  const resolved = await resolveHolder(ticketToken);
+  if (!resolved) return { ok: false, error: NOT_FOUND };
+  if (await limited("search", `rsvp:${resolved.holder.rsvpId}`)) return { ok: false, error: TOO_MANY_SEARCHES };
+  const page = await listSeekerInvites(resolved.holder, input);
+  return page ? { ok: true, data: page } : { ok: false, error: LIST_UNAVAILABLE };
+}
+
+/** Ticket page: one page of the pending requests the holder sent. */
+export async function loadTicketRequestsPageAction(ticketToken: unknown, input: unknown): Promise<ActionResult<CursorPage<SeekerRequestDto>>> {
+  const resolved = await resolveHolder(ticketToken);
+  if (!resolved) return { ok: false, error: NOT_FOUND };
+  if (await limited("search", `rsvp:${resolved.holder.rsvpId}`)) return { ok: false, error: TOO_MANY_SEARCHES };
+  const page = await listSeekerRequests(resolved.holder, input);
+  return page ? { ok: true, data: page } : { ok: false, error: LIST_UNAVAILABLE };
 }

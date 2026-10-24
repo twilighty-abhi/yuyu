@@ -8,6 +8,7 @@ import { deleteRsvp, restoreRsvp } from "@/app/actions/rsvp-admin";
 import { ConfirmationDialog } from "@/components/feedback/ConfirmationDialog";
 import { useToast } from "@/components/feedback/ToastProvider";
 import { Button, IconButton } from "@/components/ui/button";
+import { useLoadMoreFocus } from "@/components/ui/use-load-more-focus";
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader } from "@/components/ui/dialog";
 import { Avatar, Callout, Chip, EmptyState, type ChipTone } from "@/components/ui/display";
 import { Field, Input, SearchInput } from "@/components/ui/field";
@@ -15,7 +16,7 @@ import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "@/compo
 import { cn } from "@/lib/cn";
 import type { DashboardTeam, DashboardTeamsPage } from "@/lib/eventDashboard/teams";
 import { GUEST_STATUS_LABELS } from "@/components/event-dashboard/guests/guestList";
-import { MoveToTeamDialog, type MoveTargetTeam } from "@/components/event-dashboard/guests/MoveToTeamDialog";
+import { MoveToTeamDialog } from "@/components/event-dashboard/guests/MoveToTeamDialog";
 import {
   TEAM_FILTERS,
   teamCheckInLabel,
@@ -49,14 +50,11 @@ export function GuestsTeams({
   organisationSlug,
   eventId,
   initialPage,
-  moveTargets,
   approvalRequired,
 }: {
   organisationSlug: string;
   eventId: string;
   initialPage: DashboardTeamsPage;
-  /** Teams a member can be moved into (bounded, loaded with the panel). */
-  moveTargets: MoveTargetTeam[];
   approvalRequired: boolean;
 }) {
   const router = useRouter();
@@ -72,6 +70,7 @@ export function GuestsTeams({
   const [removing, setRemoving] = useState<{ member: Member; team: DashboardTeam } | null>(null);
 
   const [teams, setTeams] = useState<DashboardTeam[]>(initialPage.teams);
+  const { listId: teamListId, beforeLoadMore } = useLoadMoreFocus(teams.length);
   const [nextCursor, setNextCursor] = useState<string | null>(initialPage.nextCursor);
   const [loadingList, setLoadingList] = useState<"replace" | "more" | null>(null);
   const [listError, setListError] = useState<string | null>(null);
@@ -268,7 +267,7 @@ export function GuestsTeams({
       ) : teams.length === 0 ? (
         <EmptyState>{query.trim() ? "No teams match that search." : "No teams in this view."}</EmptyState>
       ) : (
-        <ul aria-label="Teams" aria-busy={loadingList != null} className="flex flex-col gap-2.5">
+        <ul id={teamListId} aria-label="Teams" aria-busy={loadingList != null} className="flex flex-col gap-2.5">
           {teams.map((team) => {
             const busy = pending && busyId === team.id;
             const checkIn = teamCheckInLabel(team);
@@ -391,7 +390,10 @@ export function GuestsTeams({
 
       {nextCursor && loadingList !== "replace" ? (
         <div className="flex justify-center">
-          <Button variant="secondary" loading={loadingList === "more"} loadingLabel="Loading…" onClick={() => void fetchPage({ query, status }, nextCursor)}>
+          <Button variant="secondary" loading={loadingList === "more"} loadingLabel="Loading…" onClick={() => {
+              beforeLoadMore();
+              void fetchPage({ query, status }, nextCursor);
+            }}>
             Load more teams
           </Button>
         </div>
@@ -472,7 +474,6 @@ export function GuestsTeams({
           organisationSlug={organisationSlug}
           eventId={eventId}
           person={{ rsvpId: moving.member.rsvpId, name: moving.member.name, teamId: moving.team.id }}
-          teams={moveTargets}
           onClose={() => setMoving(null)}
           onMoved={() => router.refresh()}
         />

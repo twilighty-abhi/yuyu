@@ -37,6 +37,7 @@ import {
 } from "@/lib/teamUnits";
 import type { WebhookEmission } from "@/lib/webhooks/emit";
 import { CHECK_IN_LIST_SOURCES, MAX_CHECK_IN_LISTS } from "@/lib/checkInLists";
+import { decodeKeyCursor, decodeTimeCursor, encodeKeyCursor, encodeTimeCursor } from "@/lib/keysetCursor";
 import {
   generateTeamManageToken,
   generateTeamToken,
@@ -1212,31 +1213,112 @@ const seekerRowSelect = {
   rsvp: { select: { guestName: true, user: { select: { name: true } } } },
 } satisfies Prisma.TeamSeekerProfileSelect;
 
-async function visibleSeekers(eventId: string, exclude: { rsvpId?: string; pendingWithTeamId?: string } = {}) {
-  const rows = await prisma.teamSeekerProfile.findMany({
-    where: {
-      visible: true,
-      rsvp: {
-        eventId,
-        teamId: null,
-        status: { not: RsvpStatus.REJECTED },
-        ...(exclude.rsvpId ? { id: { not: exclude.rsvpId } } : {}),
-        // Seekers with a pending invitation or request for this team are
-        // already listed with it on the team page.
-        ...(exclude.pendingWithTeamId
-          ? { teamJoinRequests: { none: { teamId: exclude.pendingWithTeamId, status: TeamJoinRequestStatus.PENDING } } }
-          : {}),
-      },
-    },
-    select: seekerRowSelect,
-    orderBy: [{ updatedAt: "desc" }, { id: "asc" }],
-    take: 200,
-  });
-  return seekerListDto(rows);
+/** Rows per page in the attendee-side matching lists (seekers, teams looking for members, pending requests). */
+export const TEAM_MATCHING_PAGE_SIZE = 20;
+
+/** One bounded page of a list, the keyset cursor for the next one, and the size of the whole list. */
+export type CursorPage<T> = { items: T[]; nextCursor: string | null; total: number };
+
+function emptyPage<T>(total = 0): CursorPage<T> {
+  return { items: [], nextCursor: null, total };
 }
 
-/** Seeker list for a leader of a non-rejected team with free space; otherwise null. */
-export async function listSeekersForLeader(auth: TeamLeaderAuth): Promise<SeekerListItemDto[] | null> {
+/** Search text and cursor for the seeker and team lists ("Show more"). */
+export const matchingListQuerySchema = z
+  .object({
+    query: z.string().trim().max(100).optional().default(""),
+    cursor: z.string().trim().max(160).nullable().optional(),
+  })
+  .strict();
+
+/** Cursor for the pending invitation and request lists. */
+export const joinRequestPageQuerySchema = z.object({ cursor: z.string().trim().max(160).nullable().optional() }).strict();
+
+/** Leader authority still holds for this team row (rotated token or transferred leadership fail). */
+function leaderAuthMatches(auth: TeamLeaderAuth, team: { manageTokenHash: string; leaderRsvp: { userId: string | null } | null }) {
+  return auth.kind === "token" ? team.manageTokenHash === auth.manageTokenHash : team.leaderRsvp?.userId === auth.userId;
+}
+
+type SeekerScope = { eventId: string; excludeRsvpId?: string; pendingWithTeamId?: string };
+
+const SEEKER_FROM = Prisma.sql`"TeamSeekerProfile" s JOIN "RSVP" r ON r."id" = s."rsvpId" LEFT JOIN "User" u ON u."id" = r."userId"`;
+
+/**
+ * The visible seekers of one event: solo, not declined. A search matches the
+ * headline, any skill, or the first name only: the list shows "Ada L.", so a
+ * search must not reveal a surname. Emails are never matched.
+ */
+export function seekerListConditions(scope: SeekerScope, query: string): Prisma.Sql[] {
+  const conditions = [
+    Prisma.sql`s."visible" = true`,
+    Prisma.sql`r."eventId" = ${scope.eventId}`,
+    Prisma.sql`r."teamId" IS NULL`,
+    Prisma.sql`r."status" <> ${RsvpStatus.REJECTED}::"RsvpStatus"`,
+  ];
+  if (scope.excludeRsvpId) conditions.push(Prisma.sql`r."id" <> ${scope.excludeRsvpId}`);
+  if (scope.pendingWithTeamId) {
+    // Seekers with a pending invitation or request for this team are
+    // already listed with it on the team page.
+    conditions.push(Prisma.sql`NOT EXISTS (
+      SELECT 1 FROM "TeamJoinRequest" j
+      WHERE j."rsvpId" = r."id" AND j."teamId" = ${scope.pendingWithTeamId}
+        AND j."status" = ${TeamJoinRequestStatus.PENDING}::"TeamJoinRequestStatus"
+    )`);
+  }
+  if (query) {
+    const pattern = `%${escapeLikePattern(query)}%`;
+    conditions.push(Prisma.sql`(
+      s."headline" ILIKE ${pattern}
+      OR EXISTS (SELECT 1 FROM unnest(s."skills") AS skill WHERE skill ILIKE ${pattern})
+      OR (regexp_split_to_array(btrim(COALESCE(NULLIF(btrim(u."name"), ''), r."guestName", '')), '[[:space:]]+'))[1] ILIKE ${pattern}
+    )`);
+  }
+  return conditions;
+}
+
+/** One page of visible seekers, most recently updated first (keyset on `updatedAt DESC, id ASC`). */
+async function pageVisibleSeekers(scope: SeekerScope, input: unknown): Promise<CursorPage<SeekerListItemDto>> {
+  const parsed = matchingListQuerySchema.safeParse(input ?? {});
+  if (!parsed.success) return emptyPage();
+  const { query, cursor } = parsed.data;
+  const base = seekerListConditions(scope, query);
+  const conditions = [...base];
+  if (cursor) {
+    const after = decodeKeysetCursor(cursor);
+    if (!after) return emptyPage();
+    const at = sqlTimestamp(after.at);
+    conditions.push(Prisma.sql`(s."updatedAt" < ${at}::timestamp(3) OR (s."updatedAt" = ${at}::timestamp(3) AND s."id" > ${after.id}))`);
+  }
+  const [ids, counted] = await Promise.all([
+    prisma.$queryRaw<Array<{ id: string; updatedAt: Date }>>`
+      SELECT s."id", s."updatedAt" FROM ${SEEKER_FROM}
+      WHERE ${Prisma.join(conditions, " AND ")}
+      ORDER BY s."updatedAt" DESC, s."id" ASC
+      LIMIT ${TEAM_MATCHING_PAGE_SIZE + 1}`,
+    prisma.$queryRaw<Array<{ count: bigint }>>`SELECT count(*) AS "count" FROM ${SEEKER_FROM} WHERE ${Prisma.join(base, " AND ")}`,
+  ]);
+  const total = Number(counted[0]?.count ?? 0);
+  const page = ids.slice(0, TEAM_MATCHING_PAGE_SIZE);
+  const last = page[page.length - 1];
+  if (!last) return emptyPage(total);
+  const rows = await prisma.teamSeekerProfile.findMany({
+    where: { id: { in: page.map((row) => row.id) }, visible: true, rsvp: { eventId: scope.eventId, teamId: null } },
+    select: seekerRowSelect,
+  });
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  return {
+    items: seekerListDto(page.flatMap((row) => byId.get(row.id) ?? [])),
+    nextCursor: ids.length > TEAM_MATCHING_PAGE_SIZE ? encodeKeysetCursor(last.updatedAt, last.id) : null,
+    total,
+  };
+}
+
+/**
+ * Seeker list for a leader of a non-rejected team with free space; otherwise
+ * null. Re-checked on every page, so "Show more" stops working as soon as the
+ * team fills up, is declined, or the leader loses the link.
+ */
+export async function listSeekersForLeader(auth: TeamLeaderAuth, input: unknown = {}): Promise<CursorPage<SeekerListItemDto> | null> {
   const team = await prisma.team.findFirst({
     where: { id: auth.teamId, eventId: auth.eventId },
     select: {
@@ -1248,9 +1330,9 @@ export async function listSeekersForLeader(auth: TeamLeaderAuth): Promise<Seeker
     },
   });
   if (!team || !isMatchingEvent(team.event) || team.status === RsvpStatus.REJECTED) return null;
-  if (auth.kind === "token" ? team.manageTokenHash !== auth.manageTokenHash : team.leaderRsvp?.userId !== auth.userId) return null;
+  if (!leaderAuthMatches(auth, team)) return null;
   if (!hasFreeSpace(team.event, team._count.members)) return null;
-  return visibleSeekers(auth.eventId, { pendingWithTeamId: auth.teamId });
+  return pageVisibleSeekers({ eventId: auth.eventId, pendingWithTeamId: auth.teamId }, input);
 }
 
 /** Seeker-side gate: the holder is a solo registrant with a visible profile on a matching event. */
@@ -1263,27 +1345,157 @@ async function visibleSeekerHolder(holder: TicketHolder) {
 }
 
 /** Other visible seekers of the same event, for a visible seeker; otherwise null. */
-export async function listSeekersForSeeker(holder: TicketHolder): Promise<SeekerListItemDto[] | null> {
+export async function listSeekersForSeeker(holder: TicketHolder, input: unknown = {}): Promise<CursorPage<SeekerListItemDto> | null> {
   if (!(await visibleSeekerHolder(holder))) return null;
-  return visibleSeekers(holder.eventId, { rsvpId: holder.rsvpId });
+  return pageVisibleSeekers({ eventId: holder.eventId, excludeRsvpId: holder.rsvpId }, input);
 }
 
-export type LookingTeamDto = { id: string; name: string; size: number; maxSize: number | null };
+/** `requested`: the holder already has a pending request with this team. */
+export type LookingTeamDto = { id: string; name: string; size: number; maxSize: number | null; requested: boolean };
 
-/** Teams that are looking for members and have space, for a visible seeker; otherwise null. */
-export async function listTeamsLookingForMembers(holder: TicketHolder): Promise<LookingTeamDto[] | null> {
+/**
+ * Teams that are looking for members and have space, for a visible seeker;
+ * otherwise null. Oldest first (keyset on `createdAt, id`); the free-space
+ * test is in the query, so full teams never take a place on a page. A search
+ * matches the team name.
+ */
+export async function listTeamsLookingForMembers(holder: TicketHolder, input: unknown = {}): Promise<CursorPage<LookingTeamDto> | null> {
   const seeker = await visibleSeekerHolder(holder);
   if (!seeker?.event) return null;
-  const teams = await prisma.team.findMany({
-    where: { eventId: holder.eventId, lookingForMembers: true, status: { not: RsvpStatus.REJECTED } },
-    select: { id: true, name: true, _count: { select: { members: true } } },
-    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-    take: 200,
-  });
+  const parsed = matchingListQuerySchema.safeParse(input ?? {});
+  if (!parsed.success) return emptyPage();
+  const { query, cursor } = parsed.data;
   const maxSize = seeker.event.teamMaxSize;
-  return teams
-    .filter((team) => hasFreeSpace({ teamMaxSize: maxSize }, team._count.members))
-    .map((team) => ({ id: team.id, name: team.name, size: team._count.members, maxSize }));
+  // Without a maximum no team has free space (`hasFreeSpace`).
+  if (maxSize == null) return emptyPage();
+  const base = [
+    Prisma.sql`t."eventId" = ${holder.eventId}`,
+    Prisma.sql`t."lookingForMembers" = true`,
+    Prisma.sql`t."status" <> ${RsvpStatus.REJECTED}::"RsvpStatus"`,
+    Prisma.sql`(SELECT count(*) FROM "RSVP" r WHERE r."teamId" = t."id") < ${maxSize}`,
+  ];
+  if (query) base.push(Prisma.sql`t."name" ILIKE ${`%${escapeLikePattern(query)}%`}`);
+  const conditions = [...base];
+  if (cursor) {
+    const after = decodeKeysetCursor(cursor);
+    if (!after) return emptyPage();
+    conditions.push(Prisma.sql`(t."createdAt", t."id") > (${sqlTimestamp(after.at)}::timestamp(3), ${after.id})`);
+  }
+  const [ids, counted] = await Promise.all([
+    prisma.$queryRaw<Array<{ id: string; createdAt: Date }>>`
+      SELECT t."id", t."createdAt" FROM "Team" t
+      WHERE ${Prisma.join(conditions, " AND ")}
+      ORDER BY t."createdAt" ASC, t."id" ASC
+      LIMIT ${TEAM_MATCHING_PAGE_SIZE + 1}`,
+    prisma.$queryRaw<Array<{ count: bigint }>>`SELECT count(*) AS "count" FROM "Team" t WHERE ${Prisma.join(base, " AND ")}`,
+  ]);
+  const total = Number(counted[0]?.count ?? 0);
+  const page = ids.slice(0, TEAM_MATCHING_PAGE_SIZE);
+  const last = page[page.length - 1];
+  if (!last) return emptyPage(total);
+  const pageIds = page.map((row) => row.id);
+  const [teams, requests] = await Promise.all([
+    prisma.team.findMany({
+      where: { id: { in: pageIds }, eventId: holder.eventId },
+      select: { id: true, name: true, _count: { select: { members: true } } },
+    }),
+    prisma.teamJoinRequest.findMany({
+      where: { rsvpId: holder.rsvpId, teamId: { in: pageIds }, status: TeamJoinRequestStatus.PENDING, direction: TeamJoinRequestDirection.REQUEST },
+      select: { teamId: true },
+    }),
+  ]);
+  const byId = new Map(teams.map((team) => [team.id, team]));
+  const requested = new Set(requests.map((request) => request.teamId));
+  return {
+    items: page.flatMap((row) => {
+      const team = byId.get(row.id);
+      return team ? [{ id: team.id, name: team.name, size: team._count.members, maxSize, requested: requested.has(team.id) }] : [];
+    }),
+    nextCursor: ids.length > TEAM_MATCHING_PAGE_SIZE ? encodeKeysetCursor(last.createdAt, last.id) : null,
+    total,
+  };
+}
+
+/**
+ * One page of pending join requests, oldest first (keyset on `createdAt, id`),
+ * with the count of all rows matching `where`.
+ */
+async function pageJoinRequests<R extends { id: string; createdAt: Date }, T>(
+  where: Prisma.TeamJoinRequestWhereInput,
+  cursor: string | null | undefined,
+  find: (args: { where: Prisma.TeamJoinRequestWhereInput; take: number }) => Promise<R[]>,
+  map: (row: R) => T,
+): Promise<CursorPage<T>> {
+  let pageWhere = where;
+  if (cursor) {
+    const after = decodeKeysetCursor(cursor);
+    if (!after) return emptyPage();
+    pageWhere = { AND: [where, { OR: [{ createdAt: { gt: after.at } }, { createdAt: after.at, id: { gt: after.id } }] }] };
+  }
+  const [rows, total] = await Promise.all([
+    find({ where: pageWhere, take: TEAM_MATCHING_PAGE_SIZE + 1 }),
+    prisma.teamJoinRequest.count({ where }),
+  ]);
+  const page = rows.slice(0, TEAM_MATCHING_PAGE_SIZE);
+  const last = page[page.length - 1];
+  return {
+    items: page.map(map),
+    nextCursor: rows.length > TEAM_MATCHING_PAGE_SIZE && last ? encodeKeysetCursor(last.createdAt, last.id) : null,
+    total,
+  };
+}
+
+/** A pending invitation or request on the team page: the seeker's display fields only. */
+export type TeamJoinRequestItemDto = { id: string; direction: TeamJoinRequestDirection; displayName: string; headline: string | null; skills: string[] };
+
+const teamJoinRequestSelect = {
+  id: true,
+  direction: true,
+  createdAt: true,
+  rsvp: { select: { guestName: true, user: { select: { name: true } }, seekerProfile: { select: { headline: true, skills: true } } } },
+} satisfies Prisma.TeamJoinRequestSelect;
+
+export function teamJoinRequestDto(request: {
+  id: string;
+  direction: TeamJoinRequestDirection;
+  rsvp: { guestName: string | null; user: { name: string | null } | null; seekerProfile: { headline: string; skills: string[] } | null };
+}): TeamJoinRequestItemDto {
+  return {
+    id: request.id,
+    direction: request.direction,
+    displayName: seekerDisplayName(request.rsvp.user?.name?.trim() || request.rsvp.guestName),
+    headline: request.rsvp.seekerProfile?.headline ?? null,
+    skills: request.rsvp.seekerProfile ? [...request.rsvp.seekerProfile.skills] : [],
+  };
+}
+
+function teamJoinRequestPage(teamId: string, direction: TeamJoinRequestDirection, cursor: string | null | undefined) {
+  return pageJoinRequests(
+    { teamId, status: TeamJoinRequestStatus.PENDING, direction },
+    cursor,
+    (args) => prisma.teamJoinRequest.findMany({ ...args, select: teamJoinRequestSelect, orderBy: [{ createdAt: "asc" }, { id: "asc" }] }),
+    (row) => teamJoinRequestDto(row),
+  );
+}
+
+/**
+ * Team page "Show more" for incoming requests (`REQUEST`) or sent invitations
+ * (`INVITE`). Leader authority is re-checked against the team row on every
+ * page; null on any mismatch.
+ */
+export async function listTeamJoinRequestsForLeader(
+  auth: TeamLeaderAuth,
+  direction: TeamJoinRequestDirection,
+  input: unknown = {},
+): Promise<CursorPage<TeamJoinRequestItemDto> | null> {
+  const parsed = joinRequestPageQuerySchema.safeParse(input ?? {});
+  if (!parsed.success) return null;
+  const team = await prisma.team.findFirst({
+    where: { id: auth.teamId, eventId: auth.eventId },
+    select: { manageTokenHash: true, leaderRsvp: { select: { userId: true } } },
+  });
+  if (!team || !leaderAuthMatches(auth, team)) return null;
+  return teamJoinRequestPage(auth.teamId, direction, parsed.data.cursor);
 }
 
 export type TeamPageDto = {
@@ -1311,8 +1523,10 @@ export type TeamPageDto = {
     inviteOnly: boolean;
   };
   members: Array<{ rsvpId: string; name: string; isLeader: boolean; checkedIn: boolean }>;
-  /** Pending invitations (sent by the team) and requests (received), seeker side as display fields only. */
-  pendingRequests: Array<{ id: string; direction: TeamJoinRequestDirection; displayName: string; headline: string | null; skills: string[] }>;
+  /** First page of pending requests the team received, seeker side as display fields only. */
+  incomingRequests: CursorPage<TeamJoinRequestItemDto>;
+  /** First page of pending invitations the team sent. */
+  sentInvites: CursorPage<TeamJoinRequestItemDto>;
 };
 
 type TeamPageRow = {
@@ -1336,15 +1550,13 @@ type TeamPageRow = {
     organisation: { slug: string };
   };
   members: Array<{ id: string; guestName: string | null; checkedInAt: Date | null; user: { name: string | null } | null }>;
-  joinRequests: Array<{
-    id: string;
-    direction: TeamJoinRequestDirection;
-    rsvp: { guestName: string | null; user: { name: string | null } | null; seekerProfile: { headline: string; skills: string[] } | null };
-  }>;
 };
 
 /** Team page DTO: names only for members; no emails, answers, or ticket tokens. */
-export function teamPageDto(row: TeamPageRow): TeamPageDto {
+export function teamPageDto(
+  row: TeamPageRow,
+  requests: { incoming: CursorPage<TeamJoinRequestItemDto>; sent: CursorPage<TeamJoinRequestItemDto> },
+): TeamPageDto {
   const size = row.members.length;
   return {
     team: {
@@ -1375,13 +1587,8 @@ export function teamPageDto(row: TeamPageRow): TeamPageDto {
       isLeader: member.id === row.leaderRsvpId,
       checkedIn: member.checkedInAt != null,
     })),
-    pendingRequests: row.joinRequests.map((request) => ({
-      id: request.id,
-      direction: request.direction,
-      displayName: seekerDisplayName(request.rsvp.user?.name?.trim() || request.rsvp.guestName),
-      headline: request.rsvp.seekerProfile?.headline ?? null,
-      skills: request.rsvp.seekerProfile ? [...request.rsvp.seekerProfile.skills] : [],
-    })),
+    incomingRequests: requests.incoming,
+    sentInvites: requests.sent,
   };
 }
 
@@ -1416,29 +1623,24 @@ export async function loadTeamPage(auth: TeamLeaderAuth): Promise<TeamPageDto | 
           organisation: { select: { slug: true } },
         },
       },
+      // Bounded by `teamMaxSize`; members are never paged.
       members: {
         select: { id: true, guestName: true, checkedInAt: true, user: { select: { name: true } } },
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       },
-      joinRequests: {
-        where: { status: TeamJoinRequestStatus.PENDING },
-        select: {
-          id: true,
-          direction: true,
-          rsvp: { select: { guestName: true, user: { select: { name: true } }, seekerProfile: { select: { headline: true, skills: true } } } },
-        },
-        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-      },
     },
   });
-  if (!team) return null;
-  if (auth.kind === "token" ? team.manageTokenHash !== auth.manageTokenHash : team.leaderRsvp?.userId !== auth.userId) return null;
+  if (!team || !leaderAuthMatches(auth, team)) return null;
   const registrationOpen =
     team.event.status === EventStatus.PUBLISHED &&
     team.event.page?.isPublished === true &&
     team.event.endDateTime > new Date() &&
     !isRegistrationClosed(team.event);
-  return teamPageDto({ ...team, event: { ...team.event, registrationOpen } });
+  const [incoming, sent] = await Promise.all([
+    teamJoinRequestPage(team.id, TeamJoinRequestDirection.REQUEST, null),
+    teamJoinRequestPage(team.id, TeamJoinRequestDirection.INVITE, null),
+  ]);
+  return teamPageDto({ ...team, event: { ...team.event, registrationOpen } }, { incoming, sent });
 }
 
 export type MemberTeamViewDto = { name: string; leaderName: string | null; members: string[]; isLeader: boolean };
@@ -1464,48 +1666,95 @@ export async function loadMemberTeamView(holder: TicketHolder): Promise<MemberTe
   };
 }
 
+/** A pending invitation from a team, to accept or decline: team name and size only. */
+export type SeekerInviteDto = { id: string; teamName: string; size: number; maxSize: number | null };
+/** A pending request the holder sent, to withdraw. */
+export type SeekerRequestDto = { id: string; teamId: string; teamName: string };
+
 export type SeekerViewDto = {
   /** The holder's own profile, including hidden ones, so it can be edited. */
   profile: { headline: string; skills: string[]; visible: boolean } | null;
-  /** Pending invitations from teams, to accept or decline. */
-  invites: Array<{ id: string; teamName: string; size: number; maxSize: number | null }>;
-  /** Pending requests the holder sent, to withdraw. */
-  requests: Array<{ id: string; teamId: string; teamName: string }>;
+  /** First page of pending invitations from teams. */
+  invites: CursorPage<SeekerInviteDto>;
+  /** First page of pending requests the holder sent. */
+  requests: CursorPage<SeekerRequestDto>;
 };
 
-/**
- * Ticket page, solo registrant of a SOLO_WITH_MATCHING event: their own
- * profile and their pending invitations and requests. Team names and sizes
- * only; never member names, emails, or tokens. Null when the holder is in a
- * team, was declined, or the event has no matching list.
- */
-export async function loadSeekerView(holder: TicketHolder): Promise<SeekerViewDto | null> {
+/** Seeker-view gate: a solo, non-declined registrant of a matching event (listed or not). */
+async function seekerViewHolder(holder: TicketHolder) {
   const rsvp = await prisma.rSVP.findFirst({
     where: { id: holder.rsvpId, eventId: holder.eventId, teamId: null, status: { not: RsvpStatus.REJECTED } },
     select: {
       seekerProfile: { select: { headline: true, skills: true, visible: true } },
       event: { select: { registrationMode: true, soloPolicy: true, teamMaxSize: true } },
-      teamJoinRequests: {
-        where: { status: TeamJoinRequestStatus.PENDING, team: { eventId: holder.eventId } },
-        select: { id: true, direction: true, team: { select: { id: true, name: true, _count: { select: { members: true } } } } },
-        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-        take: 100,
-      },
     },
   });
-  if (!rsvp?.event || !isMatchingEvent(rsvp.event)) return null;
-  const maxSize = rsvp.event.teamMaxSize;
+  return rsvp?.event && isMatchingEvent(rsvp.event) ? { profile: rsvp.seekerProfile, maxSize: rsvp.event.teamMaxSize } : null;
+}
+
+function seekerJoinRequestWhere(holder: TicketHolder, direction: TeamJoinRequestDirection): Prisma.TeamJoinRequestWhereInput {
+  return { rsvpId: holder.rsvpId, status: TeamJoinRequestStatus.PENDING, direction, team: { eventId: holder.eventId } };
+}
+
+function seekerInvitePage(holder: TicketHolder, maxSize: number | null, cursor: string | null | undefined) {
+  return pageJoinRequests(
+    seekerJoinRequestWhere(holder, TeamJoinRequestDirection.INVITE),
+    cursor,
+    (args) =>
+      prisma.teamJoinRequest.findMany({
+        ...args,
+        select: { id: true, createdAt: true, team: { select: { name: true, _count: { select: { members: true } } } } },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      }),
+    (row): SeekerInviteDto => ({ id: row.id, teamName: row.team.name, size: row.team._count.members, maxSize }),
+  );
+}
+
+function seekerRequestPage(holder: TicketHolder, cursor: string | null | undefined) {
+  return pageJoinRequests(
+    seekerJoinRequestWhere(holder, TeamJoinRequestDirection.REQUEST),
+    cursor,
+    (args) =>
+      prisma.teamJoinRequest.findMany({
+        ...args,
+        select: { id: true, createdAt: true, team: { select: { id: true, name: true } } },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      }),
+    (row): SeekerRequestDto => ({ id: row.id, teamId: row.team.id, teamName: row.team.name }),
+  );
+}
+
+/**
+ * Ticket page, solo registrant of a SOLO_WITH_MATCHING event: their own
+ * profile and the first page of their pending invitations and requests. Team
+ * names and sizes only; never member names, emails, or tokens. Null when the
+ * holder is in a team, was declined, or the event has no matching list.
+ */
+export async function loadSeekerView(holder: TicketHolder): Promise<SeekerViewDto | null> {
+  const seeker = await seekerViewHolder(holder);
+  if (!seeker) return null;
+  const [invites, requests] = await Promise.all([seekerInvitePage(holder, seeker.maxSize, null), seekerRequestPage(holder, null)]);
   return {
-    profile: rsvp.seekerProfile
-      ? { headline: rsvp.seekerProfile.headline, skills: [...rsvp.seekerProfile.skills], visible: rsvp.seekerProfile.visible }
-      : null,
-    invites: rsvp.teamJoinRequests
-      .filter((request) => request.direction === TeamJoinRequestDirection.INVITE)
-      .map((request) => ({ id: request.id, teamName: request.team.name, size: request.team._count.members, maxSize })),
-    requests: rsvp.teamJoinRequests
-      .filter((request) => request.direction === TeamJoinRequestDirection.REQUEST)
-      .map((request) => ({ id: request.id, teamId: request.team.id, teamName: request.team.name })),
+    profile: seeker.profile ? { headline: seeker.profile.headline, skills: [...seeker.profile.skills], visible: seeker.profile.visible } : null,
+    invites,
+    requests,
   };
+}
+
+/** Ticket page "Show more" for the holder's pending invitations; same gate as `loadSeekerView`. */
+export async function listSeekerInvites(holder: TicketHolder, input: unknown = {}): Promise<CursorPage<SeekerInviteDto> | null> {
+  const parsed = joinRequestPageQuerySchema.safeParse(input ?? {});
+  if (!parsed.success) return null;
+  const seeker = await seekerViewHolder(holder);
+  return seeker ? seekerInvitePage(holder, seeker.maxSize, parsed.data.cursor) : null;
+}
+
+/** Ticket page "Show more" for the holder's pending requests; same gate as `loadSeekerView`. */
+export async function listSeekerRequests(holder: TicketHolder, input: unknown = {}): Promise<CursorPage<SeekerRequestDto> | null> {
+  const parsed = joinRequestPageQuerySchema.safeParse(input ?? {});
+  if (!parsed.success) return null;
+  const seeker = await seekerViewHolder(holder);
+  return seeker ? seekerRequestPage(holder, parsed.data.cursor) : null;
 }
 
 export type OrganiserTeamDto = {
@@ -1524,8 +1773,8 @@ export type OrganiserTeamDto = {
 
 /** Teams per page in the organiser's Teams view; "Load more" fetches the next page. */
 export const ORGANISER_TEAMS_PAGE_SIZE = 50;
-/** Upper bound on the teams offered as move targets in the People view. */
-export const MAX_TEAM_MOVE_TARGETS = 200;
+/** Teams per page in the Move to team picker; "Show more" fetches the next page. */
+export const TEAM_MOVE_TARGETS_PAGE_SIZE = 20;
 
 export const ORGANISER_TEAM_FILTERS = ["all", "going", "waitlist", "approve", "declined", "incomplete"] as const;
 export type OrganiserTeamFilter = (typeof ORGANISER_TEAM_FILTERS)[number];
@@ -1537,16 +1786,29 @@ const FILTER_STATUS: Partial<Record<OrganiserTeamFilter, RsvpStatus>> = {
   declined: RsvpStatus.REJECTED,
 };
 
-/** Opaque keyset cursor: the last team's creation time (ms) and id. */
+/** Opaque keyset cursor: the last row's sort time (ms) and id. */
+/** The shared `<epoch ms>.<id>` keyset cursor (lib/keysetCursor.ts). */
+export function encodeKeysetCursor(at: Date, id: string): string {
+  return encodeTimeCursor({ at, id });
+}
+
+export function decodeKeysetCursor(cursor: string): { at: Date; id: string } | null {
+  return decodeTimeCursor(cursor);
+}
+
+/** `timestamp(3)` columns hold UTC wall-clock time; compare a cursor time against them as such. */
+function sqlTimestamp(at: Date): string {
+  return at.toISOString().replace("Z", "");
+}
+
+/** The organiser Teams view's cursor: the last team's creation time and id. */
 export function encodeTeamCursor(team: { createdAt: Date; id: string }): string {
-  return `${team.createdAt.getTime()}.${team.id}`;
+  return encodeKeysetCursor(team.createdAt, team.id);
 }
 
 export function decodeTeamCursor(cursor: string): { createdAt: Date; id: string } | null {
-  const match = /^(\d{1,15})\.([A-Za-z0-9_-]{1,128})$/.exec(cursor);
-  if (!match) return null;
-  const createdAt = new Date(Number(match[1]));
-  return Number.isNaN(createdAt.getTime()) ? null : { createdAt, id: match[2]! };
+  const after = decodeKeysetCursor(cursor);
+  return after ? { createdAt: after.at, id: after.id } : null;
 }
 
 /** `%`, `_` and `\` match literally in the search text. */
@@ -1602,8 +1864,7 @@ export async function listEventTeamsForOrganiser(ctx: OrganiserEventContext, inp
   if (cursor) {
     const after = decodeTeamCursor(cursor);
     if (!after) return empty;
-    // `createdAt` is a UTC wall-clock timestamp(3) column.
-    const at = after.createdAt.toISOString().replace("Z", "");
+    const at = sqlTimestamp(after.createdAt);
     conditions.push(Prisma.sql`(t."createdAt", t."id") > (${at}::timestamp(3), ${after.id})`);
   }
   const ids = await prisma.$queryRaw<Array<{ id: string }>>`
@@ -1680,22 +1941,60 @@ export async function countEventTeamsForOrganiser(ctx: OrganiserEventContext): P
   return counts;
 }
 
+export const teamMoveTargetsQuerySchema = z
+  .object({
+    query: z.string().trim().max(100).optional().default(""),
+    cursor: z.string().trim().max(600).nullable().optional(),
+    /** The person's current team, never offered as a target. */
+    excludeTeamId: z.string().trim().min(1).max(128).nullable().optional(),
+  })
+  .strict();
+
+export type TeamMoveTargetDto = { id: string; name: string; status: RsvpStatus; size: number; maxSize: number | null };
+export type TeamMoveTargetsPage = { teams: TeamMoveTargetDto[]; nextCursor: string | null };
+
 /**
- * Teams a registration could be moved into from the People view: names,
- * status and size only, bounded. Full teams stay in the list; the dialog
- * filters them and the server rechecks size under the event lock.
+ * Teams a registration could be moved into (People row "Move to team", and a
+ * member move in the Teams view): this event's teams that are not declined
+ * and, when the event caps team size, still have room. Alphabetical
+ * (`nameKey, id` keyset), searched by name, one bounded page at a time, so
+ * full teams never take up a page and every team can be reached. Names,
+ * status and size only. The move itself re-checks everything under the
+ * event lock. Callers must have passed `resolveOrganiserEvent`.
  */
-export async function listTeamMoveTargetsForOrganiser(ctx: OrganiserEventContext) {
+export async function listTeamMoveTargetsForOrganiser(ctx: OrganiserEventContext, input: unknown = {}): Promise<TeamMoveTargetsPage> {
+  const empty: TeamMoveTargetsPage = { teams: [], nextCursor: null };
+  const parsed = teamMoveTargetsQuerySchema.safeParse(input ?? {});
+  if (!parsed.success) return empty;
+  const { query, cursor, excludeTeamId } = parsed.data;
   const event = await prisma.event.findFirst({
     where: { id: ctx.eventId, organisationId: ctx.organisationId },
     select: { id: true, teamMaxSize: true },
   });
-  if (!event) return [];
-  const teams = await prisma.team.findMany({
-    where: { eventId: event.id, status: { not: RsvpStatus.REJECTED } },
-    select: { id: true, name: true, status: true, _count: { select: { members: true } } },
-    orderBy: [{ nameKey: "asc" }, { id: "asc" }],
-    take: MAX_TEAM_MOVE_TARGETS,
-  });
-  return teams.map((team) => ({ id: team.id, name: team.name, status: team.status, size: team._count.members, maxSize: event.teamMaxSize }));
+  if (!event) return empty;
+
+  const conditions: Prisma.Sql[] = [Prisma.sql`t."eventId" = ${event.id}`, Prisma.sql`t."status" <> ${RsvpStatus.REJECTED}::"RsvpStatus"`];
+  if (event.teamMaxSize != null) {
+    conditions.push(Prisma.sql`(SELECT count(*) FROM "RSVP" r WHERE r."teamId" = t."id") < ${event.teamMaxSize}`);
+  }
+  if (excludeTeamId) conditions.push(Prisma.sql`t."id" <> ${excludeTeamId}`);
+  if (query) conditions.push(Prisma.sql`t."name" ILIKE ${`%${escapeLikePattern(query)}%`}`);
+  if (cursor) {
+    const after = decodeKeyCursor(cursor);
+    if (!after) return empty;
+    conditions.push(Prisma.sql`(t."nameKey", t."id") > (${after.key}, ${after.id})`);
+  }
+  const rows = await prisma.$queryRaw<Array<{ id: string; name: string; nameKey: string; status: RsvpStatus; size: bigint }>>`
+    SELECT t."id", t."name", t."nameKey", t."status",
+      (SELECT count(*) FROM "RSVP" r WHERE r."teamId" = t."id") AS "size"
+    FROM "Team" t
+    WHERE ${Prisma.join(conditions, " AND ")}
+    ORDER BY t."nameKey" ASC, t."id" ASC
+    LIMIT ${TEAM_MOVE_TARGETS_PAGE_SIZE + 1}`;
+  const page = rows.slice(0, TEAM_MOVE_TARGETS_PAGE_SIZE);
+  const last = page[page.length - 1];
+  return {
+    teams: page.map((team) => ({ id: team.id, name: team.name, status: team.status, size: Number(team.size), maxSize: event.teamMaxSize })),
+    nextCursor: rows.length > TEAM_MOVE_TARGETS_PAGE_SIZE && last ? encodeKeyCursor({ key: last.nameKey, id: last.id }) : null,
+  };
 }

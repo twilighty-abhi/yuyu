@@ -56,7 +56,7 @@ would be allowed. `tests/unit/event-capabilities.test.ts` pins this table.
 | Overview: "Embed" shortcut | none (Settings section is admin-only) | Yes | — | — | — | — | — | — | — | — |
 | Overview: team card | collaborator actions: admin | Yes | — | — | — | — | — | — | — | — |
 | Overview: "See how it went" (ended) | Analytics visibility | Yes | — | — | Yes | — | — | — | — | Yes |
-| Guests · People: list, filters, ticket links | `loadAttendees` only for `canManageRegistrations` | Yes | — | — | Yes | — | — | — | — | Yes |
+| Guests · People: list, filters, ticket links | `loadAttendeesFirstPage` / `loadAttendeesPage` only for `canManageRegistrations` | Yes | — | — | Yes | — | — | — | — | Yes |
 | Guests · People: approve, decline, give spot, add, edit, remove, undo remove | `lib/core/rsvpLifecycle.ts`, `lib/core/rsvpAdmin.ts`: `canManageRegistrationsFor` | Yes | — | — | Yes | — | — | — | — | Yes |
 | Guests · People: undo check-in | `lib/core/checkin.ts`: `CHECK_IN` | Yes | — | — | — | — | — | — | — | Yes |
 | Guests · Teams (TEAM events): list, approve, decline, give spot, rename, move member, delete and undo | `app/actions/team-admin.ts` via `resolveOrganiserEvent` (`lib/core/teams.ts`): `canManageRegistrationsFor` | Yes | — | — | Yes | — | — | — | — | Yes |

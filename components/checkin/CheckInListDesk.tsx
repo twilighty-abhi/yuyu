@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Info, RotateCcw, Search, X } from "lucide-react";
-import { checkInToList, lookupListAttendees, undoListCheckIn, type ListLookupRow } from "@/app/actions/checkin-lists";
+import { checkInToList, loadListRosterPage, lookupListAttendees, undoListCheckIn, type ListLookupRow } from "@/app/actions/checkin-lists";
 import { Button, IconButton } from "@/components/ui/button";
 import { FilterChip, Switch } from "@/components/ui/choice";
 import { Callout, Chip, ProgressBar, type ChipTone } from "@/components/ui/display";
@@ -14,6 +14,9 @@ import { CheckInQrScanner } from "@/components/checkin/CheckInQrScanner";
 import { playRefusedFeedback, playSuccessFeedback } from "@/components/checkin/checkInFeedback";
 import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format/datetime";
+import { showingLabel } from "@/lib/keysetCursor";
+import type { ListRosterPage } from "@/lib/eventDashboard/checkInLists";
+import { useDebouncedValue, useServerPages, type ServerPageResult } from "@/components/event-dashboard/guests/useServerPages";
 
 /*
  * The check-in desk for one custom list ("Swag", "Lunch – Day 1"). Scanning a
@@ -43,17 +46,19 @@ const STATUS_CHIPS: Record<string, { label: string; tone: ChipTone }> = {
   REJECTED: { label: "Declined", tone: "danger" },
 };
 
-const ROSTER_PAGE = 100;
+const SEARCH_DELAY_MS = 300;
+const NO_COUNTS: Record<RosterFilter, number> = { all: 0, collected: 0, notCollected: 0 };
+type RosterView = { filter: RosterFilter; query: string };
 
 export function CheckInListDesk(props: {
   organisationSlug: string;
   eventId: string;
   timeZone: string;
   list: { id: string; name: string; requiresEntryCheckIn: boolean; collected: number; eligible: number };
-  roster: ListDeskRosterRow[];
-  rosterTruncated: boolean;
+  /** The first page of "Guests for <list>" with its chip counts; further pages, filters and search are fetched. */
+  initialRoster: ListRosterPage;
 }) {
-  const { organisationSlug, eventId, timeZone, list, roster, rosterTruncated } = props;
+  const { organisationSlug, eventId, timeZone, list, initialRoster } = props;
   const router = useRouter();
   const { showToast } = useToast();
   const [pending, startTransition] = useTransition();
@@ -64,8 +69,33 @@ export function CheckInListDesk(props: {
   const [lookupRows, setLookupRows] = useState<ListLookupRow[]>([]);
   const [filter, setFilter] = useState<RosterFilter>("all");
   const [rosterQuery, setRosterQuery] = useState("");
-  const [rosterLimit, setRosterLimit] = useState(ROSTER_PAGE);
   const target = useMemo(() => ({ organisationSlug, eventId, listId: list.id }), [eventId, list.id, organisationSlug]);
+
+  // "Guests for <list>" is paged, filtered, searched and counted on the server.
+  const searchedRoster = useDebouncedValue(rosterQuery.trim(), SEARCH_DELAY_MS);
+  const rosterView: RosterView = useMemo(() => ({ filter, query: searchedRoster }), [filter, searchedRoster]);
+  const initialRosterState = useMemo(
+    () => ({ rows: initialRoster.rows as ListDeskRosterRow[], nextCursor: initialRoster.nextCursor, meta: initialRoster.counts ?? NO_COUNTS }),
+    [initialRoster],
+  );
+  const fetchRosterPage = useCallback(
+    async (view: RosterView, cursor: string | null): Promise<ServerPageResult<ListDeskRosterRow, Record<RosterFilter, number>>> => {
+      const res = await loadListRosterPage({ ...target, filter: view.filter, query: view.query, cursor });
+      if (!res.ok || !res.data) return { ok: false, error: res.ok ? "Could not load guests." : res.error };
+      return { ok: true, page: { rows: res.data.rows, nextCursor: res.data.nextCursor, meta: res.data.counts } };
+    },
+    [target],
+  );
+  const roster = useServerPages<ListDeskRosterRow, RosterView, Record<RosterFilter, number>>({
+    initial: initialRosterState,
+    view: rosterView,
+    viewKey: `${rosterView.filter}|${rosterView.query}`,
+    isDefaultView: rosterView.filter === "all" && !rosterView.query,
+    delayMs: 0,
+    fetchPage: fetchRosterPage,
+    keyOf: (row) => row.rsvpId,
+  });
+  const counts = roster.meta;
 
   const markLookup = useCallback((rsvpId: string, listCheckedInAt: string | null) => {
     setLookupRows((rows) => rows.map((row) => (row.rsvpId === rsvpId ? { ...row, listCheckedInAt } : row)));
@@ -123,22 +153,6 @@ export function CheckInListDesk(props: {
       setLookupRows(res.data!.rows);
     });
   };
-
-  const counts = useMemo(() => ({
-    all: roster.length,
-    collected: roster.filter((row) => row.listCheckedInAt).length,
-    notCollected: roster.filter((row) => !row.listCheckedInAt).length,
-  }), [roster]);
-
-  const visibleRoster = useMemo(() => {
-    const q = rosterQuery.trim().toLowerCase();
-    return roster.filter((row) => {
-      if (filter === "collected" && !row.listCheckedInAt) return false;
-      if (filter === "notCollected" && row.listCheckedInAt) return false;
-      if (!q) return true;
-      return row.displayName.toLowerCase().includes(q) || Boolean(row.email?.toLowerCase().includes(q));
-    });
-  }, [filter, roster, rosterQuery]);
 
   const rate = list.eligible > 0 ? Math.round((list.collected / list.eligible) * 1000) / 10 : 0;
 
@@ -253,7 +267,7 @@ export function CheckInListDesk(props: {
       <section aria-labelledby="list-roster-title" className="flex flex-col gap-3">
         <div className="flex flex-col gap-1">
           <h3 id="list-roster-title" className="text-h4 text-ink">Guests for {list.name}</h3>
-          <p className="text-caption text-ink-muted">Confirmed guests, plus anyone already in this list.{rosterTruncated ? " Showing the first 500; search above to find anyone else." : ""}</p>
+          <p className="text-caption text-ink-muted">Confirmed guests, plus anyone already in this list, in registration order.</p>
         </div>
         <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
           <div role="group" aria-label="Filter guests" className="flex flex-wrap gap-2">
@@ -263,14 +277,17 @@ export function CheckInListDesk(props: {
           </div>
           <div className="sm:w-64">
             <label htmlFor="list-roster-filter" className="sr-only">Filter by name or email</label>
-            <Input id="list-roster-filter" placeholder="Filter by name or email" value={rosterQuery} onChange={(event) => setRosterQuery(event.target.value)} />
+            <Input id="list-roster-filter" placeholder="Filter by name or email" value={rosterQuery} autoComplete="off" onChange={(event) => setRosterQuery(event.target.value)} />
           </div>
         </div>
-        {visibleRoster.length === 0 ? (
-          <p className="text-body-ui text-ink-muted">{roster.length === 0 ? "No confirmed guests yet." : "No guests match this filter."}</p>
+        {roster.error ? <Callout tone="danger" role="alert">{roster.error}</Callout> : null}
+        {roster.loading === "replace" ? (
+          <p role="status" className="text-body-ui text-ink-muted">Loading guests…</p>
+        ) : roster.rows.length === 0 ? (
+          <p className="text-body-ui text-ink-muted">{initialRoster.counts?.all === 0 && filter === "all" && !rosterView.query ? "No confirmed guests yet." : "No guests match this filter."}</p>
         ) : (
-          <ul aria-label={`Guests for ${list.name}`} className="flex flex-col divide-y divide-line rounded-lg border border-line bg-canvas px-4">
-            {visibleRoster.slice(0, rosterLimit).map((row) => (
+          <ul id={roster.listId} aria-label={`Guests for ${list.name}`} aria-busy={roster.loading != null} className="flex flex-col divide-y divide-line rounded-lg border border-line bg-canvas px-4">
+            {roster.rows.map((row) => (
               <li key={row.rsvpId} className="flex flex-wrap items-center gap-3 py-3">
                 <span aria-hidden className={cn("flex size-6 shrink-0 items-center justify-center rounded-full", row.listCheckedInAt ? "bg-success-bg text-success-fg" : "bg-muted text-ink-muted")}>
                   {row.listCheckedInAt ? <Check className="size-4" /> : null}
@@ -292,10 +309,15 @@ export function CheckInListDesk(props: {
             ))}
           </ul>
         )}
-        {visibleRoster.length > rosterLimit ? (
-          <Button size="sm" variant="secondary" className="self-start" onClick={() => setRosterLimit((limit) => limit + ROSTER_PAGE)}>
-            Show more ({visibleRoster.length - rosterLimit} left)
-          </Button>
+        {roster.rows.length > 0 && roster.loading !== "replace" ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-ink-secondary">
+            <span aria-live="polite">{showingLabel(roster.rows.length, Math.max(counts[filter], roster.rows.length), "guests")}</span>
+            {roster.nextCursor ? (
+              <Button size="sm" variant="secondary" loading={roster.loading === "more"} loadingLabel="Loading…" onClick={() => void roster.loadMore()}>
+                Show more
+              </Button>
+            ) : null}
+          </div>
         ) : null}
       </section>
     </div>

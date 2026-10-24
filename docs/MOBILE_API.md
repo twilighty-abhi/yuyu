@@ -151,7 +151,9 @@ profile form; the current profile image is kept.
 ### `GET /me/registrations` (auth)
 
 Built from the same records as the account Registrations page
-(`loadAccountRegistrationRecords`: own RSVPs only, 50 upcoming and 50 past).
+(`loadAccountRegistrationRecords`: own RSVPs only, the first page of each
+section: 50 upcoming, 50 past and 50 certificates). The web page pages further
+with `?upcoming=`, `?past=` and `?certificates=`; this endpoint does not.
 
 ```json
 {

@@ -14,10 +14,36 @@ import { prisma } from "@/lib/db";
 import { flattenZodErrors } from "@/app/actions/utils";
 import { recordAuditEvent } from "@/lib/audit";
 import { isOrgAdmin } from "@/lib/permissions";
-import { resolveTeamByManageToken } from "@/lib/core/teams";
+import { escapeLikePattern, resolveTeamByManageToken } from "@/lib/core/teams";
+import {
+  clampPage,
+  decodeSubmissionCursor,
+  encodeSubmissionCursor,
+  JUDGE_SUBMISSIONS_PAGE_SIZE,
+  judgeSubmissionsQuerySchema,
+  parseSearchParam,
+  PROJECT_GALLERY_PAGE_SIZE,
+  totalPagesFor,
+  type JudgeSubmissionCounts,
+  type JudgeSubmissionFilter,
+} from "@/lib/judgingPaging";
 import { asResultsPublishedPayload, enqueueResultsPublished, enqueueSubmissionLink, enqueueSubmissionReceived } from "@/lib/outbox";
 import { generateSubmissionLinkToken, hashSubmissionLinkToken, isSubmissionTokenShape } from "@/lib/submissionToken";
 import { computeJudgingResults, type CriterionAverage } from "@/lib/judgingScore";
+import { decodeTimeCursor, encodeTimeCursor } from "@/lib/keysetCursor";
+import {
+  AWARD_CANDIDATES_PAGE_SIZE,
+  awardCandidatesQuerySchema,
+  JUDGING_RESULTS_PAGE_SIZE,
+  judgingResultsQuerySchema,
+  matchesProjectQuery,
+  numberedPage,
+  offsetPage,
+  ORGANISER_SUBMISSIONS_PAGE_SIZE,
+  organiserSubmissionsQuerySchema,
+  type NumberedPage,
+  type OffsetPage,
+} from "@/lib/judgingOrganiserPaging";
 import type { JudgeContext, JudgingOrganiserContext } from "@/lib/judgingAccess";
 import { safeTimeZone, zonedIsoWithOffset } from "@/lib/timeZone";
 import {
@@ -30,6 +56,7 @@ import {
   publicWinnerDto,
   type EntrantSubmissionDto,
   type JudgeSubmissionDetailDto,
+  type JudgeSubmissionsPageDto,
   type JudgeWorkspaceDto,
   type JudgingCriterionDto,
   type OrganiserSubmissionDto,
@@ -39,6 +66,7 @@ import {
 import {
   awardWinnerSchema,
   disqualifySubmissionSchema,
+  EVENT_AWARD_PLACE_MAX,
   EVENT_AWARDS_LIMIT,
   eventAwardSchema,
   JUDGING_CRITERIA_LIMIT,
@@ -1008,24 +1036,158 @@ async function visibleSubmissionIds(client: Prisma.TransactionClient, event: { i
   return rows.filter((row) => !hasConflictOfInterest(row, conflicts)).map((row) => row.id);
 }
 
-/** The judge's list: project content and progress only. Null when the event is gone or not a judging event. */
-export async function listSubmissionsForJudge(ctx: JudgeContext): Promise<JudgeWorkspaceDto | null> {
+/**
+ * SQL conditions (on `"Submission" s`) for the submissions this judge may see,
+ * the same rule as visibleSubmissionIds: SUBMITTED, in this event, assigned
+ * unless judgesSeeAll, and not an entrant the judge's own account belongs to.
+ */
+function judgeVisibleSql(event: { id: string; judgesSeeAll: boolean }, judgeUserId: string, conflicts: ConflictKeys | undefined): Prisma.Sql[] {
+  const conditions: Prisma.Sql[] = [
+    Prisma.sql`s."eventId" = ${event.id}`,
+    Prisma.sql`s."status" = ${SubmissionStatus.SUBMITTED}::"SubmissionStatus"`,
+  ];
+  if (!event.judgesSeeAll) {
+    conditions.push(Prisma.sql`EXISTS (SELECT 1 FROM "JudgeAssignment" ja WHERE ja."submissionId" = s."id" AND ja."judgeUserId" = ${judgeUserId})`);
+  }
+  const teamIds = [...(conflicts?.teamIds ?? [])];
+  const rsvpIds = [...(conflicts?.rsvpIds ?? [])];
+  if (teamIds.length) conditions.push(Prisma.sql`(s."teamId" IS NULL OR s."teamId" NOT IN (${Prisma.join(teamIds)}))`);
+  if (rsvpIds.length) conditions.push(Prisma.sql`(s."rsvpId" IS NULL OR s."rsvpId" NOT IN (${Prisma.join(rsvpIds)}))`);
+  return conditions;
+}
+
+function reviewedBySql(judgeUserId: string): Prisma.Sql {
+  return Prisma.sql`EXISTS (SELECT 1 FROM "JudgeReview" jr WHERE jr."submissionId" = s."id" AND jr."judgeUserId" = ${judgeUserId} AND jr."submittedAt" IS NOT NULL)`;
+}
+
+function scoredBySql(judgeUserId: string): Prisma.Sql {
+  return Prisma.sql`EXISTS (SELECT 1 FROM "JudgeScore" js WHERE js."submissionId" = s."id" AND js."judgeUserId" = ${judgeUserId})`;
+}
+
+function judgeFilterSql(filter: JudgeSubmissionFilter, judgeUserId: string): Prisma.Sql | null {
+  if (filter === "reviewed") return reviewedBySql(judgeUserId);
+  if (filter === "todo") return Prisma.sql`NOT ${reviewedBySql(judgeUserId)}`;
+  if (filter === "in_progress") return Prisma.sql`(NOT ${reviewedBySql(judgeUserId)} AND ${scoredBySql(judgeUserId)})`;
+  return null;
+}
+
+/**
+ * Search on what the viewer is shown: the project title, the team name, or a
+ * solo entrant's first name (the display name is "Ada L.", so the surname is
+ * never matched and a search cannot reveal it). Wildcards match literally.
+ */
+function projectSearchSql(query: string): Prisma.Sql | null {
+  if (!query) return null;
+  const pattern = `%${escapeLikePattern(query)}%`;
+  return Prisma.sql`(
+    s."title" ILIKE ${pattern}
+    OR EXISTS (SELECT 1 FROM "Team" t WHERE t."id" = s."teamId" AND t."name" ILIKE ${pattern})
+    OR (s."teamId" IS NULL AND EXISTS (
+      SELECT 1 FROM "RSVP" r LEFT JOIN "User" u ON u."id" = r."userId"
+      WHERE r."id" = s."rsvpId"
+        AND (regexp_split_to_array(btrim(COALESCE(NULLIF(btrim(u."name"), ''), r."guestName", '')), '[[:space:]]+'))[1] ILIKE ${pattern}
+    ))
+  )`;
+}
+
+const EMPTY_JUDGE_COUNTS: JudgeSubmissionCounts = { all: 0, todo: 0, in_progress: 0, reviewed: 0 };
+
+/** The event and the judge's conflict keys, once eligibility is confirmed; null otherwise. */
+async function judgeListScope(ctx: JudgeContext) {
   const event = await prisma.event.findFirst({ where: { id: ctx.eventId, organisationId: ctx.organisationId }, select: judgingEventSelect });
   if (!event?.submissionsEnabled) return null;
   if (!(await isEligibleJudge(prisma, event.organisationId, event.id, ctx.userId))) return null;
-  const [criteria, ids] = await Promise.all([criteriaFor(prisma, event.id), visibleSubmissionIds(prisma, event, ctx.userId)]);
+  const conflicts = (await conflictKeysFor(prisma, event.id, [ctx.userId])).get(ctx.userId);
+  return { event, visible: judgeVisibleSql(event, ctx.userId, conflicts) };
+}
+
+/** Totals over every submission this judge may see (ignores the search and the page). */
+async function judgeSubmissionCounts(visible: Prisma.Sql[], judgeUserId: string): Promise<JudgeSubmissionCounts> {
+  const reviewed = reviewedBySql(judgeUserId);
+  const [row] = await prisma.$queryRaw<Array<{ all: bigint; reviewed: bigint; in_progress: bigint }>>`
+    SELECT count(*) AS "all",
+           count(*) FILTER (WHERE ${reviewed}) AS "reviewed",
+           count(*) FILTER (WHERE NOT ${reviewed} AND ${scoredBySql(judgeUserId)}) AS "in_progress"
+    FROM "Submission" s
+    WHERE ${Prisma.join(visible, " AND ")}`;
+  if (!row) return { ...EMPTY_JUDGE_COUNTS };
+  const all = Number(row.all);
+  const done = Number(row.reviewed);
+  return { all, reviewed: done, in_progress: Number(row.in_progress), todo: all - done };
+}
+
+/** One bounded page of the judge's list (keyset on `submittedAt, id`), with progress for those rows only. */
+async function judgeSubmissionsPage(
+  scope: { event: { id: string }; visible: Prisma.Sql[] },
+  judgeUserId: string,
+  query: { query: string; filter: JudgeSubmissionFilter; cursor?: string | null },
+): Promise<Omit<JudgeSubmissionsPageDto, "counts">> {
+  const empty = { submissions: [], nextCursor: null };
+  const conditions = [...scope.visible];
+  const filter = judgeFilterSql(query.filter, judgeUserId);
+  if (filter) conditions.push(filter);
+  const search = projectSearchSql(query.query);
+  if (search) conditions.push(search);
+  if (query.cursor) {
+    const after = decodeSubmissionCursor(query.cursor);
+    if (!after) return empty;
+    // `submittedAt` is a UTC wall-clock timestamp(3) column.
+    const at = after.submittedAt.toISOString().replace("Z", "");
+    conditions.push(Prisma.sql`(s."submittedAt", s."id") > (${at}::timestamp(3), ${after.id})`);
+  }
+  const ids = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT s."id" FROM "Submission" s
+    WHERE ${Prisma.join(conditions, " AND ")}
+    ORDER BY s."submittedAt" ASC, s."id" ASC
+    LIMIT ${JUDGE_SUBMISSIONS_PAGE_SIZE + 1}`;
+  const pageIds = ids.slice(0, JUDGE_SUBMISSIONS_PAGE_SIZE).map((row) => row.id);
+  if (pageIds.length === 0) return empty;
   const [rows, scoreCounts, reviews] = await Promise.all([
-    prisma.submission.findMany({ where: { id: { in: ids }, eventId: event.id }, select: projectSelect, orderBy: [{ submittedAt: "asc" }, { id: "asc" }] }),
-    prisma.judgeScore.groupBy({ by: ["submissionId"], where: { judgeUserId: ctx.userId, submissionId: { in: ids } }, _count: { _all: true } }),
-    prisma.judgeReview.findMany({ where: { judgeUserId: ctx.userId, submissionId: { in: ids }, submittedAt: { not: null } }, select: { submissionId: true } }),
+    prisma.submission.findMany({
+      where: { id: { in: pageIds }, eventId: scope.event.id, status: SubmissionStatus.SUBMITTED },
+      select: { ...projectSelect, submittedAt: true },
+      orderBy: [{ submittedAt: "asc" }, { id: "asc" }],
+    }),
+    prisma.judgeScore.groupBy({ by: ["submissionId"], where: { judgeUserId, submissionId: { in: pageIds } }, _count: { _all: true } }),
+    prisma.judgeReview.findMany({ where: { judgeUserId, submissionId: { in: pageIds }, submittedAt: { not: null } }, select: { submissionId: true } }),
   ]);
   const scored = new Map(scoreCounts.map((row) => [row.submissionId, row._count._all]));
   const submitted = new Set(reviews.map((row) => row.submissionId));
+  const last = rows[rows.length - 1];
   return {
-    judgingStatus: event.judgingStatus,
-    criteria,
     submissions: rows.map((row) => judgeSubmissionDto(row, { scoredCriteria: scored.get(row.id) ?? 0, reviewSubmitted: submitted.has(row.id) })),
+    nextCursor: ids.length > JUDGE_SUBMISSIONS_PAGE_SIZE && last?.submittedAt ? encodeSubmissionCursor({ submittedAt: last.submittedAt, id: last.id }) : null,
   };
+}
+
+/**
+ * The judge's workspace: the rubric, totals, and the first page of the list
+ * (or the page `input` asks for). Project content and this judge's own
+ * progress only. Null when the event is gone, not a judging event, or the
+ * user is not a judge for it; an invalid `input` gives an empty page.
+ */
+export async function listSubmissionsForJudge(ctx: JudgeContext, input: unknown = {}): Promise<JudgeWorkspaceDto | null> {
+  const scope = await judgeListScope(ctx);
+  if (!scope) return null;
+  const parsed = judgeSubmissionsQuerySchema.safeParse(input);
+  const [criteria, counts, page] = await Promise.all([
+    criteriaFor(prisma, scope.event.id),
+    judgeSubmissionCounts(scope.visible, ctx.userId),
+    parsed.success ? judgeSubmissionsPage(scope, ctx.userId, parsed.data) : Promise.resolve({ submissions: [], nextCursor: null }),
+  ]);
+  return { judgingStatus: scope.event.judgingStatus, criteria, counts, ...page };
+}
+
+/** One page of the judge's list for a filter, a search, or "Load more", with fresh totals. */
+export async function listJudgeSubmissionsPage(ctx: JudgeContext, input: unknown): Promise<JudgeSubmissionsPageDto | null> {
+  const scope = await judgeListScope(ctx);
+  if (!scope) return null;
+  const parsed = judgeSubmissionsQuerySchema.safeParse(input);
+  const [counts, page] = await Promise.all([
+    judgeSubmissionCounts(scope.visible, ctx.userId),
+    parsed.success ? judgeSubmissionsPage(scope, ctx.userId, parsed.data) : Promise.resolve({ submissions: [], nextCursor: null }),
+  ]);
+  return { counts, ...page };
 }
 
 /** One submission for scoring, with this judge's own scores and review. */
@@ -1181,21 +1343,69 @@ export async function loadJudgingSetup(ctx: JudgingOrganiserContext): Promise<Ju
   };
 }
 
-/** Every submission of the event with status, organiser-only reason, and assigned judges. */
-export async function listSubmissionsForOrganiser(ctx: JudgingOrganiserContext): Promise<OrganiserSubmissionDto[]> {
+export type OrganiserSubmissionsPage = { submissions: OrganiserSubmissionDto[]; nextCursor: string | null };
+
+/**
+ * Judging → Submissions, one bounded page at a time (oldest first, keyset
+ * paging on `createdAt, id`), with status, organiser-only reason, and
+ * assigned judges. The status filter and the search (project title, or the
+ * entrant's name: the team name, else the registrant's name) run in SQL,
+ * within this event of this organisation only. Per-status totals come from
+ * `loadJudgingSetup().counts`.
+ */
+export async function listSubmissionsForOrganiser(ctx: JudgingOrganiserContext, input: unknown = {}): Promise<OrganiserSubmissionsPage> {
+  const empty: OrganiserSubmissionsPage = { submissions: [], nextCursor: null };
+  const parsed = organiserSubmissionsQuerySchema.safeParse(input);
+  if (!parsed.success) return empty;
+  const { query, status, cursor } = parsed.data;
+  const event = await prisma.event.findFirst({ where: { id: ctx.eventId, organisationId: ctx.organisationId }, select: { id: true } });
+  if (!event) return empty;
+
+  const conditions: Prisma.Sql[] = [Prisma.sql`s."eventId" = ${event.id}`];
+  if (status !== "all") conditions.push(Prisma.sql`s."status" = ${status}::"SubmissionStatus"`);
+  if (query) {
+    const pattern = `%${escapeLikePattern(query)}%`;
+    conditions.push(Prisma.sql`(
+      s."title" ILIKE ${pattern}
+      OR COALESCE(t."name", NULLIF(btrim(u."name"), ''), NULLIF(btrim(r."guestName"), ''), '') ILIKE ${pattern}
+    )`);
+  }
+  if (cursor) {
+    const after = decodeTimeCursor(cursor);
+    if (!after) return empty;
+    // `createdAt` is a UTC wall-clock timestamp(3) column.
+    const at = after.at.toISOString().replace("Z", "");
+    conditions.push(Prisma.sql`(s."createdAt", s."id") > (${at}::timestamp(3), ${after.id})`);
+  }
+  const ids = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT s."id" FROM "Submission" s
+    LEFT JOIN "Team" t ON t."id" = s."teamId"
+    LEFT JOIN "RSVP" r ON r."id" = s."rsvpId"
+    LEFT JOIN "User" u ON u."id" = r."userId"
+    WHERE ${Prisma.join(conditions, " AND ")}
+    ORDER BY s."createdAt" ASC, s."id" ASC
+    LIMIT ${ORGANISER_SUBMISSIONS_PAGE_SIZE + 1}`;
+  const pageIds = ids.slice(0, ORGANISER_SUBMISSIONS_PAGE_SIZE).map((row) => row.id);
+  if (pageIds.length === 0) return empty;
+
   const rows = await prisma.submission.findMany({
-    where: { eventId: ctx.eventId, event: { organisationId: ctx.organisationId } },
+    where: { id: { in: pageIds }, eventId: event.id },
     select: {
       ...projectSelect,
       status: true,
+      createdAt: true,
       submittedAt: true,
       updatedAt: true,
       disqualifiedReason: true,
-      assignments: { select: { judgeUserId: true } },
+      assignments: { select: { judgeUserId: true }, orderBy: [{ createdAt: "asc" }, { judgeUserId: "asc" }] },
     },
-    orderBy: [{ status: "asc" }, { submittedAt: "asc" }, { createdAt: "asc" }],
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
   });
-  return rows.map((row) => organiserSubmissionDto(row, row.assignments.map((assignment) => assignment.judgeUserId)));
+  const last = rows[rows.length - 1];
+  return {
+    submissions: rows.map((row) => organiserSubmissionDto(row, row.assignments.map((assignment) => assignment.judgeUserId))),
+    nextCursor: ids.length > ORGANISER_SUBMISSIONS_PAGE_SIZE && last ? encodeTimeCursor({ at: last.createdAt, id: last.id }) : null,
+  };
 }
 
 export type OrganiserReviewDto = {
@@ -1249,16 +1459,20 @@ export type JudgingResultsDto = {
   criteria: JudgingCriterionDto[];
   /** SUBMITTED projects ranked; DISQUALIFIED ones follow with no rank. */
   rows: ResultRowDto[];
-  judges: JudgeProgressDto[];
   /** `submissionId\0judgeUserId` of every review counted in the scores (server-side only, for the CSV export). */
   countedReviewKeys: string[];
 };
 
-/** The organiser's ranked score table and per-judge progress. */
+/**
+ * The organiser's ranked score table, computed over every SUBMITTED and
+ * DISQUALIFIED project (ranks need the whole set). The dashboard shows it a
+ * page at a time (`loadJudgingResultsPage`); the CSV export uses all of it.
+ * Per-judge progress comes from `loadJudgeProgress`, with aggregates.
+ */
 export async function loadJudgingResults(ctx: JudgingOrganiserContext): Promise<JudgingResultsDto | null> {
   const event = await prisma.event.findFirst({ where: { id: ctx.eventId, organisationId: ctx.organisationId }, select: judgingEventSelect });
   if (!event) return null;
-  const [criteria, submissions, scores, reviews, eligible, assignments] = await Promise.all([
+  const [criteria, submissions, scores, reviews, eligible] = await Promise.all([
     criteriaFor(prisma, event.id),
     prisma.submission.findMany({
       where: { eventId: event.id, status: { in: [SubmissionStatus.SUBMITTED, SubmissionStatus.DISQUALIFIED] } },
@@ -1266,9 +1480,8 @@ export async function loadJudgingResults(ctx: JudgingOrganiserContext): Promise<
       orderBy: [{ submittedAt: "asc" }, { id: "asc" }],
     }),
     prisma.judgeScore.findMany({ where: { submission: { eventId: event.id } }, select: { submissionId: true, judgeUserId: true, criterionId: true, score: true } }),
-    prisma.judgeReview.findMany({ where: { submission: { eventId: event.id } }, select: { submissionId: true, judgeUserId: true, submittedAt: true, judge: { select: { name: true } } } }),
+    prisma.judgeReview.findMany({ where: { submission: { eventId: event.id } }, select: { submissionId: true, judgeUserId: true, submittedAt: true } }),
     listEligibleJudges(ctx),
-    prisma.judgeAssignment.findMany({ where: { eventId: event.id }, select: { judgeUserId: true, submissionId: true } }),
   ]);
   const submitted = submissions.filter((row) => row.status === SubmissionStatus.SUBMITTED);
   const byId = new Map(submissions.map((row) => [row.id, row]));
@@ -1308,28 +1521,135 @@ export async function loadJudgingResults(ctx: JudgingOrganiserContext): Promise<
       })),
   ];
 
-  // Judges: JUDGE collaborators always; organisers only once they have judged or been assigned.
-  const active = new Set([...reviews.map((review) => review.judgeUserId), ...scores.map((score) => score.judgeUserId), ...assignments.map((a) => a.judgeUserId)]);
-  const names = new Map<string, string>(eligible.map((judge) => [judge.userId, judge.name]));
-  for (const review of reviews) if (!names.has(review.judgeUserId)) names.set(review.judgeUserId, review.judge.name?.trim() || "Judge");
-  const judgeIds = [...new Set([...eligible.filter((judge) => judge.kind === "judge" || active.has(judge.userId)).map((judge) => judge.userId), ...reviews.map((review) => review.judgeUserId)])];
-  const conflicts = await conflictKeysFor(prisma, event.id, judgeIds);
-  const assignedBy = new Map<string, Set<string>>();
-  for (const assignment of assignments) {
-    const set = assignedBy.get(assignment.judgeUserId) ?? new Set<string>();
-    set.add(assignment.submissionId);
-    assignedBy.set(assignment.judgeUserId, set);
-  }
-  const judges = judgeIds.map((userId) => ({
-    userId,
-    name: names.get(userId) ?? "Judge",
-    visible: eligibleIds.has(userId)
-      ? submitted.filter((row) => (event.judgesSeeAll || assignedBy.get(userId)?.has(row.id)) && !hasConflictOfInterest(row, conflicts.get(userId))).length
-      : 0,
-    reviewsSubmitted: submittedReviews.filter((review) => review.judgeUserId === userId).length,
-  }));
   const countedReviewKeys = submittedReviews.map((review) => `${review.submissionId}\u0000${review.judgeUserId}`);
-  return { judgingStatus: event.judgingStatus, resultsPublishedAt: event.resultsPublishedAt, criteria, rows, judges, countedReviewKeys };
+  return { judgingStatus: event.judgingStatus, resultsPublishedAt: event.resultsPublishedAt, criteria, rows, countedReviewKeys };
+}
+
+export type JudgingResultsPageDto = NumberedPage<ResultRowDto> & {
+  criteria: JudgingCriterionDto[];
+  /** The search the page was filtered by ("" for none). */
+  query: string;
+  /** Every row in the ranking, before any search. */
+  rankedTotal: number;
+};
+
+/**
+ * One numbered page of the ranked table. The ranking is computed over every
+ * project first, so a rank (and a tie) is the same on every page and in
+ * every search; a search only filters which ranked rows are shown.
+ */
+export async function loadJudgingResultsPage(ctx: JudgingOrganiserContext, input: unknown = {}): Promise<JudgingResultsPageDto | null> {
+  const parsed = judgingResultsQuerySchema.safeParse(input);
+  if (!parsed.success) return null;
+  const results = await loadJudgingResults(ctx);
+  if (!results) return null;
+  const { query, page } = parsed.data;
+  const matching = query ? results.rows.filter((row) => matchesProjectQuery(row, query)) : results.rows;
+  return { ...numberedPage(matching, page, JUDGING_RESULTS_PAGE_SIZE), criteria: results.criteria, query, rankedTotal: results.rows.length };
+}
+
+export type AwardCandidateDto = { submissionId: string; title: string; entrantName: string; rank: number | null; score: number | null };
+
+/**
+ * Projects for the Awards winner picker: SUBMITTED only (setAwardWinner
+ * refuses anything else), in ranking order, searchable by title or entrant,
+ * in short "Show more" steps.
+ */
+export async function searchAwardCandidates(ctx: JudgingOrganiserContext, input: unknown = {}): Promise<OffsetPage<AwardCandidateDto> | null> {
+  const parsed = awardCandidatesQuerySchema.safeParse(input);
+  if (!parsed.success) return null;
+  const results = await loadJudgingResults(ctx);
+  if (!results) return null;
+  const { query, offset } = parsed.data;
+  const candidates = results.rows
+    .filter((row) => row.status === SubmissionStatus.SUBMITTED && matchesProjectQuery(row, query))
+    .map((row) => ({ submissionId: row.submissionId, title: row.title, entrantName: row.entrantName, rank: row.rank, score: row.score }));
+  return offsetPage(candidates, offset, AWARD_CANDIDATES_PAGE_SIZE);
+}
+
+export type JudgeProgressRowDto = EligibleJudgeDto & {
+  /** Submissions this judge can see (assignment rule and conflicts applied); null for an organiser who hasn't judged yet. */
+  visible: number | null;
+  /** Reviews that count in the scores (see loadJudgingResults). */
+  reviewsSubmitted: number;
+  /** Assignments on any project of the event, whatever its status. */
+  assigned: number;
+};
+
+function countBy(rows: Array<{ judgeUserId: string; _count: { _all: number } }>): Map<string, number> {
+  return new Map(rows.map((row) => [row.judgeUserId, row._count._all]));
+}
+
+/**
+ * Judging → Judges: one row per eligible judge (JUDGE collaborators, then
+ * organisation owners and admins), plus anyone else whose review is on record
+ * (a revoked judge: listed with no counted reviews). Counts come from
+ * aggregates, not from loading every score: an eligible judge sees every
+ * SUBMITTED project (or their assigned ones), less entrants their own
+ * account is registered on; a review counts when it is submitted, on a
+ * SUBMITTED project, and not such an entrant's. Organisers show "not judging
+ * yet" (visible null) until they review, score, or are assigned.
+ */
+export async function loadJudgeProgress(ctx: JudgingOrganiserContext): Promise<JudgeProgressRowDto[] | null> {
+  const event = await prisma.event.findFirst({ where: { id: ctx.eventId, organisationId: ctx.organisationId }, select: { id: true, judgesSeeAll: true } });
+  if (!event) return null;
+  const submittedOnly = { eventId: event.id, status: SubmissionStatus.SUBMITTED };
+  const [eligible, reviewAuthors, scorers, assignedAll, assignedSubmitted, countedReviews, submittedCount] = await Promise.all([
+    listEligibleJudges(ctx),
+    prisma.judgeReview.groupBy({ by: ["judgeUserId"], where: { submission: { eventId: event.id } }, _count: { _all: true }, orderBy: { judgeUserId: "asc" } }),
+    prisma.judgeScore.groupBy({ by: ["judgeUserId"], where: { submission: { eventId: event.id } }, _count: { _all: true }, orderBy: { judgeUserId: "asc" } }),
+    prisma.judgeAssignment.groupBy({ by: ["judgeUserId"], where: { eventId: event.id, submission: { eventId: event.id } }, _count: { _all: true }, orderBy: { judgeUserId: "asc" } }),
+    prisma.judgeAssignment.groupBy({ by: ["judgeUserId"], where: { eventId: event.id, submission: submittedOnly }, _count: { _all: true }, orderBy: { judgeUserId: "asc" } }),
+    prisma.judgeReview.groupBy({ by: ["judgeUserId"], where: { submittedAt: { not: null }, submission: submittedOnly }, _count: { _all: true }, orderBy: { judgeUserId: "asc" } }),
+    prisma.submission.count({ where: submittedOnly }),
+  ]);
+  const active = new Set([...reviewAuthors, ...scorers, ...assignedAll].map((row) => row.judgeUserId));
+  const eligibleIds = new Set(eligible.map((judge) => judge.userId));
+  const formerIds = reviewAuthors.map((row) => row.judgeUserId).filter((id) => !eligibleIds.has(id));
+  const counted = new Set([...eligible.filter((judge) => judge.kind === "judge" || active.has(judge.userId)).map((judge) => judge.userId)]);
+
+  // Conflicts of interest are rare and small (a judge's own registrations),
+  // so the SUBMITTED projects they touch are read row by row.
+  const conflicts = await conflictKeysFor(prisma, event.id, [...counted]);
+  const teamIds = [...conflicts.values()].flatMap((keys) => [...keys.teamIds]);
+  const rsvpIds = [...conflicts.values()].flatMap((keys) => [...keys.rsvpIds]);
+  const conflicted =
+    teamIds.length + rsvpIds.length === 0
+      ? []
+      : await prisma.submission.findMany({
+          where: { ...submittedOnly, OR: [...(teamIds.length ? [{ teamId: { in: teamIds } }] : []), ...(rsvpIds.length ? [{ rsvpId: { in: rsvpIds } }] : [])] },
+          select: {
+            teamId: true,
+            rsvpId: true,
+            assignments: { where: { judgeUserId: { in: [...counted] } }, select: { judgeUserId: true } },
+            reviews: { where: { judgeUserId: { in: [...counted] }, submittedAt: { not: null } }, select: { judgeUserId: true } },
+          },
+        });
+  const formerNames =
+    formerIds.length === 0 ? new Map<string, string>() : new Map((await prisma.user.findMany({ where: { id: { in: formerIds } }, select: { id: true, name: true } })).map((user) => [user.id, user.name?.trim() || "Judge"]));
+
+  const assignedTotal = countBy(assignedAll);
+  const assignedVisible = countBy(assignedSubmitted);
+  const reviewsCounted = countBy(countedReviews);
+  const progress = (userId: string) => {
+    const own = conflicted.filter((row) => hasConflictOfInterest(row, conflicts.get(userId)));
+    const hidden = own.filter((row) => event.judgesSeeAll || row.assignments.some((assignment) => assignment.judgeUserId === userId)).length;
+    const hiddenReviews = own.filter((row) => row.reviews.some((review) => review.judgeUserId === userId)).length;
+    return {
+      visible: (event.judgesSeeAll ? submittedCount : assignedVisible.get(userId) ?? 0) - hidden,
+      reviewsSubmitted: (reviewsCounted.get(userId) ?? 0) - hiddenReviews,
+    };
+  };
+  const rows: JudgeProgressRowDto[] = eligible.map((judge) =>
+    counted.has(judge.userId)
+      ? { ...judge, ...progress(judge.userId), assigned: assignedTotal.get(judge.userId) ?? 0 }
+      : { ...judge, visible: null, reviewsSubmitted: 0, assigned: assignedTotal.get(judge.userId) ?? 0 },
+  );
+  // A judge whose grant was revoked after reviewing stays listed for the record; their reviews no longer count.
+  for (const userId of formerIds) {
+    rows.push({ userId, name: formerNames.get(userId) ?? "Judge", email: null, kind: "judge", visible: 0, reviewsSubmitted: 0, assigned: assignedTotal.get(userId) ?? 0 });
+  }
+  return rows;
 }
 
 /**
@@ -1394,14 +1714,19 @@ export async function loadPublicResults(eventId: string): Promise<PublicResultsD
     select: {
       submissionsEnabled: true,
       resultsPublishedAt: true,
+      // Defensive bounds for a public page. They never cut a valid event:
+      // award creation stops at EVENT_AWARDS_LIMIT, and each award has at
+      // most one winner per place in 1..EVENT_AWARD_PLACE_MAX.
       awards: {
-        orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+        orderBy: [{ position: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+        take: EVENT_AWARDS_LIMIT,
         select: {
           name: true,
           description: true,
           winners: {
             where: { submission: { status: SubmissionStatus.SUBMITTED } },
-            orderBy: { place: "asc" },
+            orderBy: [{ place: "asc" }, { id: "asc" }],
+            take: EVENT_AWARD_PLACE_MAX,
             select: { place: true, submission: { select: { title: true, repoUrl: true, demoUrl: true, videoUrl: true, ...nameSourceSelect } } },
           },
         },
@@ -1415,19 +1740,49 @@ export async function loadPublicResults(eventId: string): Promise<PublicResultsD
   };
 }
 
+export type ProjectGalleryQuery = { page?: number; query?: string };
+
 /**
- * Submitted projects for `/{org}/{event}/projects`, once the window has closed
- * and the organiser made the gallery public. Null (render a 404) otherwise.
- * The caller must already have applied the event page's visibility rules.
+ * One page of submitted projects for `/{org}/{event}/projects`, once the
+ * window has closed and the organiser made the gallery public. Null (render a
+ * 404) otherwise, before any project is read. Ordered `submittedAt, id`; the
+ * page is clamped to the pages that exist. The caller must already have
+ * applied the event page's visibility rules.
  */
-export async function loadProjectGallery(eventId: string, now: Date = new Date()): Promise<PublicGalleryDto | null> {
+export async function loadProjectGallery(eventId: string, now: Date = new Date(), options: ProjectGalleryQuery = {}): Promise<PublicGalleryDto | null> {
   if (!isId(eventId)) return null;
   const event = await prisma.event.findUnique({ where: { id: eventId }, select: { submissionsEnabled: true, projectGalleryPublic: true, submissionsCloseAt: true } });
   if (!event || !isProjectGalleryVisible(event, now)) return null;
-  const rows = await prisma.submission.findMany({
-    where: { eventId, status: SubmissionStatus.SUBMITTED },
-    select: projectSelect,
-    orderBy: [{ submittedAt: "asc" }, { id: "asc" }],
-  });
-  return { projects: rows.map(publicGalleryItemDto) };
+  const query = parseSearchParam(options.query);
+  const base: Prisma.Sql[] = [
+    Prisma.sql`s."eventId" = ${eventId}`,
+    Prisma.sql`s."status" = ${SubmissionStatus.SUBMITTED}::"SubmissionStatus"`,
+  ];
+  const search = projectSearchSql(query);
+  const matching = search ? [...base, search] : base;
+  const [total, matched] = await Promise.all([
+    prisma.submission.count({ where: { eventId, status: SubmissionStatus.SUBMITTED } }),
+    search
+      ? prisma.$queryRaw<Array<{ count: bigint }>>`SELECT count(*) AS "count" FROM "Submission" s WHERE ${Prisma.join(matching, " AND ")}`.then((rows) => Number(rows[0]?.count ?? 0))
+      : null,
+  ]);
+  const matchedCount = matched ?? total;
+  const pageSize = PROJECT_GALLERY_PAGE_SIZE;
+  const totalPages = totalPagesFor(matchedCount, pageSize);
+  const page = clampPage(options.page ?? 1, totalPages);
+  const result = { total, matched: matchedCount, query, page, totalPages, pageSize };
+  if (matchedCount === 0) return { projects: [], ...result };
+  const ids = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT s."id" FROM "Submission" s
+    WHERE ${Prisma.join(matching, " AND ")}
+    ORDER BY s."submittedAt" ASC, s."id" ASC
+    LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`;
+  const rows = ids.length
+    ? await prisma.submission.findMany({
+        where: { id: { in: ids.map((row) => row.id) }, eventId, status: SubmissionStatus.SUBMITTED },
+        select: projectSelect,
+        orderBy: [{ submittedAt: "asc" }, { id: "asc" }],
+      })
+    : [];
+  return { projects: rows.map(publicGalleryItemDto), ...result };
 }

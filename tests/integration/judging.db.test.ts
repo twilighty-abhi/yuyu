@@ -20,7 +20,14 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 import { prisma } from "@/lib/db";
 import { submitRsvpCore } from "@/lib/rsvpCore";
-import { canAccessEvent } from "@/lib/eventAccess";
+import { canAccessEvent, canManageRegistrationsFor } from "@/lib/eventAccess";
+import { canManageWebhooks, getMembership } from "@/lib/permissions";
+import { eventCapabilities } from "@/lib/eventDashboard/capabilities";
+import { flushWebhookEmits } from "@/lib/webhooks/emit";
+import { approveRsvpForUser, reacceptRsvpForUser } from "@/lib/core/rsvpLifecycle";
+import { checkInToListForUser, createCheckInListForUser, lookupListAttendeesForUser } from "@/lib/core/checkinLists";
+import { loadEventBroadcastDraftForUser, saveEventBroadcastDraftForUser } from "@/lib/core/broadcasts";
+import { GET as exportAttendees } from "@/app/api/exports/events/[eventId]/attendees/route";
 import { resolvePublicJudgingEvent } from "@/lib/publicJudgingPage";
 import { resolveEventContext, listOrgEvents } from "@/lib/mobile/organiser";
 import { judgingPermissionsFor } from "@/lib/judgingPermissions";
@@ -28,7 +35,7 @@ import { eventUsesJudging } from "@/lib/eventDashboard/judging";
 import type { EventDashboardContext } from "@/lib/eventDashboard/context";
 import { hashTeamManageToken } from "@/lib/teamToken";
 import { hashSubmissionLinkToken } from "@/lib/submissionToken";
-import { organiserDeleteTeam, organiserMoveMember, resolveOrganiserEvent, resolveRsvpByTicketToken, respondToJoinRequest } from "@/lib/core/teams";
+import { joinTeamWithExistingRsvp, organiserDeleteTeam, organiserMoveMember, resolveOrganiserEvent, resolveRsvpByTicketToken, respondToJoinRequest } from "@/lib/core/teams";
 import { deleteRsvpForUser, restoreRsvpForUser } from "@/lib/core/rsvpAdmin";
 import { resolveJudgeContext, resolveJudgingOrganiser, type JudgeContext, type JudgingOrganiserContext } from "@/lib/judgingAccess";
 import {
@@ -535,6 +542,46 @@ describe.sequential("hackathon judging integration", () => {
     const serialised = JSON.stringify([workspace, await loadSubmissionForJudge(judge.ctx, await submissionIdFor({ teamId }))]);
     expect(serialised).not.toMatch(/@example\.test|checkInToken|ticket|manageToken|joinToken|guestEmail|answers|disqualifiedReason/i);
 
+    // Main's permission model (docs/PERMISSIONS.md): no registration, check-in
+    // list, email draft, webhook, or export surface accepts a JUDGE-only grant.
+    expect(await canManageRegistrationsFor({ userId: judge.userId, organisationId, eventId: event.id })).toBe(false);
+    expect(eventCapabilities(null, grant.permissions)).toMatchObject({
+      canJudge: true,
+      isJudgeOnly: true,
+      canManageJudging: false,
+      canManageRegistrations: false,
+      canExportAttendees: false,
+      canViewAnalytics: false,
+      canCheckIn: false,
+      canCheckInToLists: false,
+      canManageCheckInLists: false,
+      canSendEmails: false,
+      canEditPageContent: false,
+      canManageCollaborators: false,
+    });
+    const someone = await register(event, "guest");
+    const ref = { organisationSlug: orgSlug, eventId: event.id };
+    expect(await approveRsvpForUser(judge.userId, { ...ref, rsvpId: someone.rsvpId })).toMatchObject({ ok: false });
+    expect(await reacceptRsvpForUser(judge.userId, { ...ref, rsvpId: someone.rsvpId })).toMatchObject({ ok: false });
+    expect(await deleteRsvpForUser(judge.userId, { ...ref, rsvpId: someone.rsvpId })).toMatchObject({ ok: false });
+    expect(await createCheckInListForUser(judge.userId, { ...ref, name: "Swag" })).toEqual({ ok: false, error: "You do not have permission to manage check-in lists." });
+    const list = await prisma.checkInList.create({ data: { eventId: event.id, name: `Lunch ${suffix}` } });
+    expect(await checkInToListForUser(judge.userId, { ...ref, listId: list.id, rsvpId: someone.rsvpId })).toEqual({ ok: false, error: "You do not have permission to operate check-in." });
+    expect(await lookupListAttendeesForUser(judge.userId, { ...ref, listId: list.id, query: "guest" })).toMatchObject({ ok: false });
+    expect(await prisma.checkInListRecord.count({ where: { listId: list.id } })).toBe(0);
+    const draft = { ...ref, subject: "Hi", body: "<p>Hi</p>", design: "minimal", statuses: ["CONFIRMED"], attendance: "ANY", templateId: null };
+    expect(await saveEventBroadcastDraftForUser(judge.userId, draft)).toMatchObject({ ok: false });
+    expect(await loadEventBroadcastDraftForUser(judge.userId, ref)).toMatchObject({ ok: false });
+    expect(await prisma.eventBroadcastDraft.count({ where: { eventId: event.id } })).toBe(0);
+    expect(canManageWebhooks(await getMembership(judge.userId, organisationId))).toBe(false);
+    authMock.mockResolvedValue({ user: { id: judge.userId } });
+    try {
+      const response = await exportAttendees(new Request("https://yuyu.example.test/api/exports"), { params: Promise.resolve({ eventId: event.id }) });
+      expect(response.status).toBe(404);
+    } finally {
+      authMock.mockResolvedValue(null);
+    }
+
     // Revoking the grant closes the workspace immediately, even with an old context.
     await prisma.eventCollaborator.delete({ where: { id: grant.id } });
     expect(await resolveJudgeContext(judge.userId, orgSlug, event.id)).toBeNull();
@@ -827,6 +874,75 @@ describe.sequential("hackathon judging integration", () => {
     expect((await prisma.submission.findMany({ where: { eventId: event.id } })).map((row) => row.teamId)).toEqual([teamId]);
   });
 
+  it("applies the solo project rules when a solo registrant joins a team by link", async () => {
+    await prisma.webhookEndpoint.create({
+      data: {
+        organisationId,
+        url: "https://hooks.example.test/judging",
+        eventTypes: ["registration.status_changed"],
+        secretEncrypted: "v1.placeholder.placeholder.placeholder",
+      },
+    });
+    const since = new Date();
+    const statusHooksFor = async (rsvpId: string) => {
+      await flushWebhookEmits();
+      const rows = await prisma.webhookDelivery.findMany({ where: { organisationId, eventType: "registration.status_changed", createdAt: { gte: since } } });
+      return rows.filter((row) => (row.payload as { data: { registration: { id: string } } }).data.registration.id === rsvpId);
+    };
+    try {
+      // One unit: the solo registrant is confirmed, the team waits.
+      const event = await createEvent({ capacity: 1 });
+      const ctx = await organiser(event);
+      await openWindow(ctx);
+      const solo = await register(event, "link-solo");
+      expect(solo.status).toBe(RsvpStatus.CONFIRMED);
+      const { teamId } = await createTeam(event, `Linkers ${suffix}`);
+      const team = await prisma.team.findUniqueOrThrow({ where: { id: teamId } });
+      const holder = await resolveRsvpByTicketToken(solo.ticketToken, null);
+      if (!holder) throw new Error("ticket did not resolve");
+
+      // A SUBMITTED solo project blocks the join; nothing moves or is emitted.
+      const soloEntrant = await soloAuth(solo.rsvpId, event.id);
+      expect(await submitSubmission(soloEntrant, { title: "Solo by link" })).toMatchObject({ ok: true });
+      expect(await joinTeamWithExistingRsvp(holder, team.joinToken)).toMatchObject({ ok: false, error: expect.stringContaining("Withdraw that project") });
+      expect(await prisma.rSVP.findUniqueOrThrow({ where: { id: solo.rsvpId } })).toMatchObject({ teamId: null, status: RsvpStatus.CONFIRMED });
+      expect(await prisma.submission.findFirstOrThrow({ where: { rsvpId: solo.rsvpId } })).toMatchObject({ status: SubmissionStatus.SUBMITTED });
+      expect(await statusHooksFor(solo.rsvpId)).toHaveLength(0);
+
+      // Withdrawn: the join discards the solo project and retires its link,
+      // and the status webhooks are still sent after the transaction commits.
+      expect(await withdrawSubmission(soloEntrant)).toMatchObject({ ok: true });
+      expect(await joinTeamWithExistingRsvp(holder, team.joinToken)).toMatchObject({ ok: true, data: { teamName: team.name } });
+      expect(await prisma.rSVP.findUniqueOrThrow({ where: { id: solo.rsvpId } })).toMatchObject({ teamId });
+      expect(await prisma.submission.count({ where: { rsvpId: solo.rsvpId } })).toBe(0);
+      expect(await prisma.submissionLink.count({ where: { rsvpId: solo.rsvpId } })).toBe(0);
+      expect(await saveSubmissionDraft(soloEntrant, content)).toMatchObject({ ok: false });
+      expect((await statusHooksFor(solo.rsvpId)).length).toBeGreaterThan(0);
+
+      // A DISQUALIFIED solo project can't be shed by joining with a link either.
+      const open = await createEvent();
+      const openCtx = await organiser(open);
+      await openWindow(openCtx);
+      const { teamId: openTeamId } = await createTeam(open, `Open linkers ${suffix}`);
+      const openTeam = await prisma.team.findUniqueOrThrow({ where: { id: openTeamId } });
+      const flagged = await register(open, "link-flagged");
+      expect(await submitSubmission(await soloAuth(flagged.rsvpId, open.id), { title: "Flagged" })).toMatchObject({ ok: true });
+      expect(await disqualifySubmission(openCtx, { submissionId: await submissionIdFor({ rsvpId: flagged.rsvpId }), reason: "Copied" })).toMatchObject({ ok: true });
+      const flaggedHolder = await resolveRsvpByTicketToken(flagged.ticketToken, null);
+      expect(await joinTeamWithExistingRsvp(flaggedHolder!, openTeam.joinToken)).toMatchObject({ ok: false, error: expect.stringContaining("disqualified") });
+      expect(await prisma.rSVP.findUniqueOrThrow({ where: { id: flagged.rsvpId } })).toMatchObject({ teamId: null });
+
+      // A draft is simply discarded.
+      const drafter = await register(open, "link-drafter");
+      expect(await saveSubmissionDraft(await soloAuth(drafter.rsvpId, open.id), content)).toMatchObject({ ok: true });
+      const drafterHolder = await resolveRsvpByTicketToken(drafter.ticketToken, null);
+      expect(await joinTeamWithExistingRsvp(drafterHolder!, openTeam.joinToken)).toMatchObject({ ok: true });
+      expect(await prisma.submission.count({ where: { rsvpId: drafter.rsvpId } })).toBe(0);
+    } finally {
+      await prisma.webhookEndpoint.deleteMany({ where: { organisationId } });
+    }
+  });
+
   it("stores project links in canonical https:// form", async () => {
     const event = await createEvent();
     const ctx = await organiser(event);
@@ -875,6 +991,64 @@ describe.sequential("hackathon judging integration", () => {
     const restored = await prisma.submission.findUniqueOrThrow({ where: { id: soloSubmission }, include: { rsvp: true } });
     expect(restored).toMatchObject({ title: "Solo undo", status: SubmissionStatus.SUBMITTED });
     expect(restored.rsvp?.attendeeKey).toBeTruthy();
+  });
+
+  it("restores the project, judging record, and check-in list records from one team undo snapshot", async () => {
+    const event = await createEvent();
+    const ctx = await organiser(event);
+    await openWindow(ctx);
+    const teamsCtx = await resolveOrganiserEvent(organiserId, orgSlug, event.id);
+    const c = await criterion(ctx, { name: "Craft", weight: 1, maxScore: 10 });
+    const judge = await createJudge(event, "snapshot-judge");
+    const swag = await prisma.checkInList.create({ data: { eventId: event.id, name: `Swag ${suffix}` } });
+    const at = new Date(Date.now() - HOUR);
+
+    async function teamWithEverything(name: string) {
+      const { teamId, leader } = await createTeam(event, name);
+      const member = await joinTeam(event, teamId);
+      expect(await submitSubmission(await teamAuth(teamId), { title: name })).toMatchObject({ ok: true });
+      const submissionId = await submissionIdFor({ teamId });
+      await prisma.checkInListRecord.createMany({ data: [
+        { listId: swag.id, rsvpId: leader.rsvpId, source: "mobile-scan", checkedInAt: at },
+        { listId: swag.id, rsvpId: member.rsvpId, source: "online", checkedInAt: at },
+      ] });
+      return { teamId, submissionId, rsvpIds: [leader.rsvpId, member.rsvpId] };
+    }
+    async function deleteTeam(teamId: string) {
+      const deleted = await organiserDeleteTeam(teamsCtx!, teamId);
+      if (!deleted.ok || !deleted.data) throw new Error("delete failed");
+      return deleted.data.undoId;
+    }
+    const restore = (undoId: string) => restoreRsvpForUser(organiserId, { organisationSlug: orgSlug, undoId });
+
+    // Current format: both the judging record and the list records come back.
+    await setJudgingStatus(ctx, JudgingStatus.OPEN);
+    const full = await teamWithEverything(`Snapshot full ${suffix}`);
+    expect(await saveJudgeScores(judge.ctx, { submissionId: full.submissionId, scores: [{ criterionId: c, score: 6 }] })).toMatchObject({ ok: true });
+    const undoId = await deleteTeam(full.teamId);
+    const payload = (await prisma.rsvpDeletionUndo.findUniqueOrThrow({ where: { id: undoId } })).payload as { submission?: unknown; rsvps: Array<{ listCheckIns?: unknown[] }> };
+    expect(payload.submission).toBeTruthy();
+    expect(payload.rsvps.every((rsvp) => rsvp.listCheckIns?.length === 1)).toBe(true);
+    expect(await restore(undoId)).toEqual({ ok: true });
+    expect(await prisma.submission.findUniqueOrThrow({ where: { id: full.submissionId } })).toMatchObject({ teamId: full.teamId, status: SubmissionStatus.SUBMITTED });
+    expect(await prisma.judgeScore.count({ where: { submissionId: full.submissionId, score: 6 } })).toBe(1);
+    expect((await prisma.checkInListRecord.findMany({ where: { listId: swag.id, rsvpId: { in: full.rsvpIds } }, select: { rsvpId: true } })).map((row) => row.rsvpId).sort()).toEqual([...full.rsvpIds].sort());
+
+    // Older formats still restore: team registration's (no project, no list
+    // records) and the judging branch's (project, no list records).
+    for (const keepSubmission of [false, true]) {
+      const older = await teamWithEverything(`Snapshot ${keepSubmission ? "judging" : "teams"} ${suffix}`);
+      const id = await deleteTeam(older.teamId);
+      const row = await prisma.rsvpDeletionUndo.findUniqueOrThrow({ where: { id } });
+      const legacy = structuredClone(row.payload) as Record<string, unknown> & { rsvps: Array<Record<string, unknown>> };
+      if (!keepSubmission) delete legacy.submission;
+      for (const rsvp of legacy.rsvps) delete rsvp.listCheckIns;
+      await prisma.rsvpDeletionUndo.update({ where: { id }, data: { payload: legacy as never } });
+      expect(await restore(id)).toEqual({ ok: true });
+      expect(await prisma.rSVP.count({ where: { teamId: older.teamId } })).toBe(2);
+      expect(await prisma.checkInListRecord.count({ where: { rsvpId: { in: older.rsvpIds } } })).toBe(0);
+      expect(await prisma.submission.count({ where: { id: older.submissionId } })).toBe(keepSubmission ? 1 : 0);
+    }
   });
 
   it("counts only reviews by current judges without a conflict of interest", async () => {

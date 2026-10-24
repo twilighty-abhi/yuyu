@@ -54,8 +54,12 @@ keeps the submission and its judging record (scores, reviews, assignments,
 award places) in the undo snapshot, so undo restores them too.
 
 An entrant is a team or a single RSVP, never both. When a solo registration
-joins a team (accepting a join request or invitation, or an organiser move),
-in the same transaction: a `SUBMITTED` solo project refuses the move until it
+joins a team (accepting a join request or invitation, joining with a pasted
+team link from the ticket or join page, or an organiser move), in the same
+transaction (`moveSoloRsvpIntoTeamTx` and `organiserMoveMember` in
+`lib/core/teams.ts`, both calling `retireSoloSubmissionForTeamTx` after every
+other check, inside `teamTransaction` so the registration webhooks are sent
+only after commit): a `SUBMITTED` solo project refuses the move until it
 is withdrawn (or disqualified); a `DISQUALIFIED` one refuses a join from the
 entrant side and is deleted by an organiser move; a `DRAFT` or `WITHDRAWN`
 one is deleted. The solo submission link is retired. `submission-received` email goes to the person
@@ -67,7 +71,21 @@ see) and reinstate.
 - New `EventPermission` value `JUDGE`, granted through the existing event
   collaborator invitation flow. A collaborator with only `JUDGE` sees only the
   judging workspace: no guest list, answers, emails, check-in, or event
-  editing. Org owners and admins can also judge.
+  editing. Org owners and admins can also judge. `JUDGE` never satisfies any
+  other check: `canAccessEvent` matches exact grants, so
+  `canManageRegistrationsFor` (guest actions, team admin, attendee CSV),
+  custom check-in lists (`CHECK_IN`/`EDIT_DETAILS`), email drafts and
+  broadcasts (admin), and webhooks (admin) all refuse a judge-only
+  collaborator, and `eventCapabilities` (`canJudge`, `isJudgeOnly`) shows such
+  a viewer only the judging workspace. See [Permissions](PERMISSIONS.md).
+- **Managing judging is owner/admin only.** Settings, the rubric, judge
+  assignments, disqualification and reinstatement, awards, results
+  publication, and the scores CSV (`canManageJudging`, `resolveJudgingOrganiser`)
+  need an organisation OWNER or ADMIN. No grant reaches them, not even
+  `MANAGE_REGISTRATIONS`: judging decides the competition's outcome, which is
+  not registration management, and a co-organiser who runs the guest list
+  should not be able to rewrite the rubric or publish winners. A future
+  dedicated grant could delegate it.
 - Organisers choose **All judges see all submissions** or assign specific
   submissions to specific judges (`JudgeAssignment`).
 - **Conflict of interest:** a judge whose own account owns an RSVP on that
@@ -127,7 +145,13 @@ see) and reinstate.
   restoring the project and its judging record; reviews by revoked or
   conflicted judges not counted; submissions locked on once judging starts;
   the results announcement sent once across re-publication; links stored in
-  canonical `https://` form.
-- Unit tests: validators (URLs `https:` only), the score formula, DTOs for
+  canonical `https://` form; joining a team by link applies the same solo
+  project rules and still sends registration webhooks; one team undo snapshot
+  restoring the project, judging record, and custom check-in list records,
+  with older snapshot formats still restoring; a `JUDGE`-only collaborator
+  refused by registration, check-in list, email draft, webhook, and attendee
+  export surfaces.
+- Unit tests: `tests/unit/event-capabilities.test.ts` (judging flags for every
+  role and grant), validators (URLs `https:` only), the score formula, DTOs for
   public results, gallery, and judge views (forbidden fields), and the outbox
   payloads.

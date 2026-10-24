@@ -31,6 +31,7 @@ This page contains only work that is not currently implemented. Current behavior
 - Team support in the mobile API (create, join, and manage teams; team fields in DTOs) and the machine API (team rosters behind a separately scoped credential). Today the mobile API registers solo or returns `TEAM_REQUIRED`, and no API DTO has team fields.
 - Email notifications for team invitations and join requests (today they appear only on the team and ticket pages).
 - Hackathon judging in the mobile API (entrant submissions, a judge scoring workspace) and the machine API (published results behind a separately scoped credential). Today neither API exposes submissions, judging, or results, and judge-only co-organisers do not see the event in the mobile organiser API.
+- Hackathon events in the organisation webhook catalogue ([Organisation webhooks](WEBHOOKS.md)), for example `submission.submitted`, `submission.withdrawn`, and `results.published`. Each needs a new event type in `lib/webhooks/eventTypes.ts`, a minimal payload builder (project title and entrant display name only, never scores, judge comments, or the disqualification reason), commit-point emission from `lib/core/judging.ts`, the endpoint form's type list, and tests, so it was left out of the first judging release.
 - Extend the machine API only for concrete consumers: recurring series/instances, RSVP workflow data, separately scoped participant contact or registration answers, privacy-preserving feedback reads, and narrow idempotent writes.
 
 ## Scale and reliability

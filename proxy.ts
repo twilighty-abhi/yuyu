@@ -37,9 +37,16 @@ function allowedEmbedAncestors() {
   ));
 }
 
-/** Pages whose URL is itself the credential: `/ticket/{token}`, `/team/{token}`, `/{org}/{event}/team/{joinToken}`. */
-function isCapabilityPage(pathname: string): boolean {
-  return /^\/(?:ticket|team)\/[^/]+\/?$/.test(pathname) || /^\/[^/]+\/[^/]+\/team\/[^/]+\/?$/.test(pathname);
+/**
+ * Pages that must never be stored: those whose URL is itself the credential
+ * (`/ticket/{token}`, `/team/{token}`, `/{org}/{event}/team/{joinToken}`,
+ * `/submit/{token}`), and the signed-in entrant's own project page
+ * (`/account/submissions/{eventId}`, docs/HACKATHON.md).
+ */
+function isNoStorePage(pathname: string): boolean {
+  return /^\/(?:ticket|team|submit)\/[^/]+\/?$/.test(pathname)
+    || /^\/[^/]+\/[^/]+\/team\/[^/]+\/?$/.test(pathname)
+    || /^\/account\/submissions\/[^/]+\/?$/.test(pathname);
 }
 
 export async function proxy(request: NextRequest) {
@@ -143,10 +150,11 @@ export async function proxy(request: NextRequest) {
   // after this CSP has been generated. Its script is intentionally blocked by
   // the per-request nonce policy, so instruct intermediaries not to transform
   // application HTML.
-  // Bearer-capability pages (ticket, team management and team join links;
-  // docs/TEAMS.md) must never be stored by a browser or shared cache. This
+  // Bearer-capability pages (ticket, team management and join links, solo
+  // submission links; docs/TEAMS.md, docs/HACKATHON.md) and the account
+  // submission page must never be stored by a browser or shared cache. This
   // header replaces Next's own `private, no-store` in production, so say it here.
-  response.headers.set("Cache-Control", isCapabilityPage(pathname) ? "private, no-cache, no-store, max-age=0, must-revalidate, no-transform" : "no-transform");
+  response.headers.set("Cache-Control", isNoStorePage(pathname) ? "private, no-cache, no-store, max-age=0, must-revalidate, no-transform" : "no-transform");
   if (!isEmbedPage) response.headers.set("X-Frame-Options", "DENY");
   return response;
 }

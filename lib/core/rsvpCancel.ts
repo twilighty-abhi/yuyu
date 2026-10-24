@@ -9,6 +9,7 @@ import { z } from "zod";
 import { isActionRateLimited } from "@/lib/actionRateLimit";
 import { EventPrivacyType, RegistrationMode, RsvpStatus } from "@prisma/client";
 import { promoteOldestWaitlistedUnit, settleTeamAfterMemberLeft } from "@/lib/teamUnits";
+import { emitWebhookEvent, type RsvpWebhookSnapshot } from "@/lib/webhooks/emit";
 
 const cancelRsvpSchema = z.object({ checkInToken: z.string().trim().min(8).max(256) }).strict();
 
@@ -80,6 +81,8 @@ export async function cancelRsvpForUser(actorUserId: string | null, input: unkno
     const current = await tx.rSVP.findUnique({ where: { id: rsvp.id } });
     if (!current) return { error: "RSVP not found." };
     if (current.checkedInAt) return { error: "Cannot cancel — you have already checked in." };
+    let promotedId: string | null = null;
+    const snapshot: RsvpWebhookSnapshot = { id: current.id, eventId: current.eventId, eventInstanceId: current.eventInstanceId, userId: current.userId, guestName: current.guestName, createdAt: current.createdAt, checkedInAt: current.checkedInAt };
     await tx.rSVP.delete({ where: { id: current.id } });
     if (current.eventId) {
       const event = await tx.event.findUnique({
@@ -92,8 +95,10 @@ export async function cancelRsvpForUser(actorUserId: string | null, input: unkno
           const settled = await settleTeamAfterMemberLeft(tx, { teamId: current.teamId, eventId: event.id, leftRsvpId: current.id });
           freedUnit = settled.freedConfirmedUnit;
         }
-        if (freedUnit) await promoteOldestWaitlistedUnit(tx, event);
-        return { error: null };
+        const promotedUnit = freedUnit ? await promoteOldestWaitlistedUnit(tx, event) : null;
+        // Whole-team promotions do not raise per-member webhooks yet (see docs/TEAMS.md).
+        if (promotedUnit?.kind === "rsvp") promotedId = promotedUnit.rsvpId;
+        return { error: null, snapshot, previousStatus: current.status, promotedId };
       }
     }
     const privacyType = rsvp.event?.privacyType ?? rsvp.eventInstance?.series.privacyType;
@@ -109,6 +114,7 @@ export async function cancelRsvpForUser(actorUserId: string | null, input: unkno
           where: { id: nextWaitlisted.id, status: "WAITLISTED" },
           data: { status: "CONFIRMED" },
         });
+        if (promoted.count === 1) promotedId = nextWaitlisted.id;
         const to = nextWaitlisted.user?.email?.trim() || nextWaitlisted.guestEmail;
         if (promoted.count === 1 && to) {
           await enqueueRsvpStatusNotification(tx, {
@@ -120,9 +126,15 @@ export async function cancelRsvpForUser(actorUserId: string | null, input: unkno
         }
       }
     }
-    return { error: null };
+    return { error: null, snapshot, previousStatus: current.status, promotedId };
   });
   if (cancellation.error) return { ok: false, error: cancellation.error };
+  if (cancellation.snapshot && cancellation.previousStatus) {
+    emitWebhookEvent({ type: "registration.status_changed", rsvpId: cancellation.snapshot.id, status: "CANCELLED", previousStatus: cancellation.previousStatus, snapshot: cancellation.snapshot });
+  }
+  if (cancellation.promotedId) {
+    emitWebhookEvent({ type: "registration.status_changed", rsvpId: cancellation.promotedId, status: RsvpStatus.CONFIRMED, previousStatus: RsvpStatus.WAITLISTED });
+  }
 
   await recordAuditEvent({
     action: "RSVP_CANCELLED",

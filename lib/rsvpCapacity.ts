@@ -1,7 +1,8 @@
 import { EventStatus, Prisma, RegistrationMode, RsvpStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { enqueueRsvpStatusNotification } from "@/lib/outbox";
+import { enqueueRsvpConfirmation, enqueueRsvpStatusNotification } from "@/lib/outbox";
 import { countConfirmedUnits } from "@/lib/teamUnits";
+import { emitWebhookEvent } from "@/lib/webhooks/emit";
 
 export { countConfirmedUnits };
 
@@ -71,9 +72,16 @@ export async function confirmRsvpWithinCapacity(params: {
   /** Approval requests must not be confirmed after their event has ended or been unpublished. */
   requireOpen?: boolean;
   notification?: { to: string; eventTitle: string; checkInToken: string };
-}): Promise<"confirmed" | "full" | "changed" | "closed"> {
+  /**
+   * What to do when there is no room. By default the RSVP is left unchanged
+   * and "full" is returned. "waitlist" instead moves it to WAITLISTED in the
+   * same locked transaction and queues the waitlist email, so an organiser can
+   * later promote it like any other waitlisted guest.
+   */
+  whenFull?: "reject" | "waitlist";
+}): Promise<"confirmed" | "waitlisted" | "full" | "changed" | "closed"> {
   const target = params.eventId ? { eventId: params.eventId } : { eventInstanceId: params.eventInstanceId! };
-  return prisma.$transaction(async (tx) => {
+  const outcome = await prisma.$transaction(async (tx): Promise<"confirmed" | "waitlisted" | "full" | "changed" | "closed"> => {
     let capacity: number | null;
     let isOpen: boolean;
     let teamMode = false;
@@ -105,7 +113,17 @@ export async function confirmRsvpWithinCapacity(params: {
     const confirmed = teamMode
       ? await countConfirmedUnits(tx, params.eventId!)
       : await tx.rSVP.count({ where: { ...target, status: RsvpStatus.CONFIRMED } });
-    if (capacity != null && confirmed >= capacity) return "full";
+    if (capacity != null && confirmed >= capacity) {
+      if (params.whenFull !== "waitlist") return "full";
+      const waitlisted = await tx.rSVP.updateMany({
+        where: { id: params.rsvpId, ...target, status: { in: params.expectedStatuses }, ...(teamMode ? { teamId: null } : {}) },
+        data: { status: RsvpStatus.WAITLISTED },
+      });
+      if (waitlisted.count === 1 && params.notification) {
+        await enqueueRsvpConfirmation(tx, { ...params.notification, status: RsvpStatus.WAITLISTED });
+      }
+      return waitlisted.count === 1 ? "waitlisted" : "changed";
+    }
     const updated = await tx.rSVP.updateMany({
       where: { id: params.rsvpId, ...target, status: { in: params.expectedStatuses }, ...(teamMode ? { teamId: null } : {}) },
       data: { status: RsvpStatus.CONFIRMED },
@@ -118,4 +136,13 @@ export async function confirmRsvpWithinCapacity(params: {
     }
     return updated.count === 1 ? "confirmed" : "changed";
   });
+  if (outcome === "confirmed" || outcome === "waitlisted") {
+    emitWebhookEvent({
+      type: "registration.status_changed",
+      rsvpId: params.rsvpId,
+      status: outcome === "confirmed" ? RsvpStatus.CONFIRMED : RsvpStatus.WAITLISTED,
+      previousStatus: params.expectedStatuses.length === 1 ? params.expectedStatuses[0]! : null,
+    });
+  }
+  return outcome;
 }

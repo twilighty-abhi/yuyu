@@ -79,12 +79,15 @@ export function BroadcastEmailEditor(props: { value: string; onChange: (html: st
     onUpdate: ({ editor: current }) => onChange(current.getHTML()),
   });
 
-  // Keep the editor in sync when a template or a previous email is loaded.
+  // Keep the editor in sync when a template, a previous email, or a saved
+  // draft is loaded. Loading is not an edit, so it emits no update: the
+  // editor's normalised HTML would otherwise count as an unsaved change.
   useEffect(() => {
-    if (editor && value !== editor.getHTML()) editor.commands.setContent(value);
+    if (editor && value !== editor.getHTML()) editor.commands.setContent(value, { emitUpdate: false });
   }, [editor, value]);
+  // Toggling editability is not an edit either (Tiptap emits an update by default).
   useEffect(() => {
-    editor?.setEditable(!disabled);
+    editor?.setEditable(!disabled, false);
   }, [editor, disabled]);
 
   const button = (label: string, active: boolean, action: () => void, icon: ReactNode) => (

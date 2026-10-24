@@ -7,10 +7,10 @@ import { FunnelCard, KeyNumbers, StatusMixCard, TimelineCard, type MixPart } fro
 import { busiestDay, capacityStatus, funnelSentence, funnelSteps, percentOf, signupsLastWeek, signupTimeline } from "../analytics/metrics";
 import { NoPermission } from "./shared";
 
-/** Analytics tab: registration numbers are organisation-admin only, like the RSVP actions and the PDF report. */
+/** Analytics tab: registration numbers follow the RSVP actions; the PDF report stays with organisation admins. */
 export async function AnalyticsPanel({ ctx }: { ctx: EventDashboardContext }) {
   const { event, permissions, now } = ctx;
-  if (!permissions.canManageRegistrations) return <NoPermission>You do not have permission to see registration numbers for this event.</NoPermission>;
+  if (!permissions.canViewAnalytics) return <NoPermission>You do not have permission to see registration numbers for this event.</NoPermission>;
 
   const [counts, feedback, signupDates] = await Promise.all([loadRsvpStatusCounts(event.id), loadFeedbackCount(event.id), loadAllSignupDates(event.id)]);
   const ended = event.endDateTime < now;
@@ -78,7 +78,7 @@ export async function AnalyticsPanel({ ctx }: { ctx: EventDashboardContext }) {
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-body-ui text-ink-secondary">{ended ? "Final numbers for this event. Everything here is also in the PDF report." : "Live numbers for this event. The PDF report is ready once the event ends."}</p>
-        {permissions.isAdmin && ended ? <EventReportDownloadButton href={`/api/reports/event/${event.id}`} label="Download report (PDF)" /> : null}
+        {permissions.canDownloadReports && ended ? <EventReportDownloadButton href={`/api/reports/event/${event.id}`} label="Download report (PDF)" /> : null}
       </div>
 
       {counts.total === 0 ? (

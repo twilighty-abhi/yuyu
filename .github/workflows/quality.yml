@@ -84,3 +84,6 @@ jobs:
           # The specs give each browser context its own client IP through
           # cf-connecting-ip so per-IP limits (10 sign-ins/min) don't couple tests.
           TRUSTED_PROXY_IP_HEADER: cf-connecting-ip
+          # tests/e2e/webhooks.spec.ts posts to a local receiver; honoured by the
+          # production build only with CI=true and ALLOW_INSECURE_PRODUCTION_TESTS=1.
+          WEBHOOKS_ALLOW_PRIVATE_TARGETS: "1"

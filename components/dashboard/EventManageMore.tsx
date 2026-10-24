@@ -17,13 +17,17 @@ function originFromWindow() {
 }
 
 function escapeHtml(value: string) {
-  return value.replace(/[&<>'"]/g, (character) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    "'": "&#39;",
-    '"': "&quot;",
-  })[character] ?? character);
+  return value.replace(
+    /[&<>'"]/g,
+    (character) =>
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        "'": "&#39;",
+        '"': "&quot;",
+      })[character] ?? character,
+  );
 }
 
 async function copyToClipboard(text: string) {
@@ -43,13 +47,23 @@ async function copyToClipboard(text: string) {
   document.body.removeChild(el);
 }
 
-const card = "flex flex-col gap-3 rounded-2xl border border-line bg-canvas p-5 sm:p-6";
+const card =
+  "flex flex-col gap-3 rounded-2xl border border-line bg-canvas p-5 sm:p-6";
+
+/** Which sections to show; from the server-computed event capabilities (lib/eventDashboard/capabilities.ts). */
+export type EventManageMoreCapabilities = {
+  changeAddress: boolean;
+  clone: boolean;
+  embed: boolean;
+  delete: boolean;
+};
 
 export function EventManageMore(props: {
   organisationSlug: string;
   event: EventClientDto;
+  can: EventManageMoreCapabilities;
 }) {
-  const { organisationSlug, event } = props;
+  const { organisationSlug, event, can } = props;
   const router = useRouter();
   const { showToast } = useToast();
   const [pending, startTransition] = useTransition();
@@ -118,127 +132,182 @@ export function EventManageMore(props: {
   };
 
   const copySnippet = (value: string) => {
-    void copyToClipboard(value).then(() => showToast("Copied embed snippet", "success"));
+    void copyToClipboard(value).then(() =>
+      showToast("Copied embed snippet", "success"),
+    );
   };
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="grid gap-5 md:grid-cols-2">
-        <section aria-labelledby="event-address-title" className={card}>
-          <h2 id="event-address-title" className="text-h4 text-ink">Event address</h2>
-          <Field label="Event address" hideLabel helperText="Lowercase letters, numbers and hyphens.">
-            <PrefixInput
-              prefix={`/${organisationSlug}/`}
-              value={slug}
-              onChange={(e) => setSlug(e.target.value)}
-              disabled={pending}
-              autoComplete="off"
-              spellCheck={false}
-              className="font-mono text-sm"
+      {can.changeAddress || can.clone ? (
+        <div className="grid gap-5 md:grid-cols-2">
+          {can.changeAddress ? (
+            <section aria-labelledby="event-address-title" className={card}>
+              <h2 id="event-address-title" className="text-h4 text-ink">
+                Event address
+              </h2>
+              <Field
+                label="Event address"
+                hideLabel
+                helperText="Lowercase letters, numbers and hyphens."
+              >
+                <PrefixInput
+                  prefix={`/${organisationSlug}/`}
+                  value={slug}
+                  onChange={(e) => setSlug(e.target.value)}
+                  disabled={pending}
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="font-mono text-sm"
+                />
+              </Field>
+              <p className="text-caption text-warning-fg">
+                Changing it breaks links you&apos;ve already shared.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={doUpdateSlug}
+                  disabled={pending || slug.trim() === event.slug}
+                >
+                  Update
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  startIcon={<Link2 />}
+                  onClick={() => {
+                    void copyToClipboard(publicUrl).then(() => {
+                      showToast("Copied URL", "success");
+                    });
+                  }}
+                  disabled={pending}
+                >
+                  Copy link
+                </Button>
+              </div>
+            </section>
+          ) : null}
+
+          {can.clone ? (
+            <section aria-labelledby="event-clone-title" className={card}>
+              <h2 id="event-clone-title" className="text-h4 text-ink">
+                Run it again
+              </h2>
+              <p className="text-body-ui text-ink-secondary">
+                Make a new event with the same information as this one. Guests
+                and invites aren&apos;t copied.
+              </p>
+              <Button
+                variant="secondary"
+                size="sm"
+                className="self-start"
+                startIcon={<CopyPlus />}
+                onClick={doClone}
+                disabled={pending}
+              >
+                Clone event
+              </Button>
+            </section>
+          ) : null}
+        </div>
+      ) : null}
+
+      {can.embed ? (
+        <section
+          aria-labelledby="event-embed-title"
+          className={cn(card, "gap-4")}
+        >
+          <div>
+            <h2 id="event-embed-title" className="text-h4 text-ink">
+              Put it on your website
+            </h2>
+            <p className="mt-0.5 text-body-ui text-ink-muted">
+              Pick one, copy the code, paste it into your site.
+            </p>
+          </div>
+          <div className="grid gap-3.5 sm:grid-cols-2">
+            <EmbedOption
+              title="A register button"
+              description={`Shows “Register for ${event.title}” and opens the event page in a new tab.`}
+              snippet={embedButtonSnippet}
+              copyLabel="Copy button code"
+              onCopy={() => copySnippet(embedButtonSnippet)}
+              preview={
+                <div className="flex min-h-22.5 items-center justify-center rounded-xl bg-subtle p-3">
+                  <span className="max-w-full truncate rounded-full border border-line bg-canvas px-4 py-2.5 text-sm font-semibold text-ink">
+                    Register for {event.title}
+                  </span>
+                </div>
+              }
             />
-          </Field>
-          <p className="text-caption text-warning-fg">Changing it breaks links you&apos;ve already shared.</p>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" size="sm" onClick={doUpdateSlug} disabled={pending || slug.trim() === event.slug}>
-              Update
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              startIcon={<Link2 />}
-              onClick={() => {
-                void copyToClipboard(publicUrl).then(() => {
-                  showToast("Copied URL", "success");
-                });
-              }}
-              disabled={pending}
-            >
-              Copy link
-            </Button>
+            <EmbedOption
+              title="The whole event page"
+              description="Embeds the event page, including registration, in a frame."
+              snippet={embedPageSnippet}
+              copyLabel="Copy embed code"
+              onCopy={() => copySnippet(embedPageSnippet)}
+              preview={
+                <div className="flex min-h-22.5 flex-col gap-1.5 rounded-xl bg-subtle p-2.5">
+                  <span
+                    className="h-7 rounded-lg bg-accent"
+                    style={{
+                      backgroundImage:
+                        "radial-gradient(circle, rgba(255,255,255,0.22) 1.5px, transparent 2px)",
+                      backgroundSize: "10px 10px",
+                    }}
+                  />
+                  <span className="h-2 w-3/5 rounded bg-emphasis" />
+                  <span className="h-2 w-2/5 rounded bg-emphasis" />
+                </div>
+              }
+            />
           </div>
         </section>
+      ) : null}
 
-        <section aria-labelledby="event-clone-title" className={card}>
-          <h2 id="event-clone-title" className="text-h4 text-ink">Run it again</h2>
-          <p className="text-body-ui text-ink-secondary">
-            Make a new event with the same information as this one. Guests and invites aren&apos;t copied.
-          </p>
-          <Button variant="secondary" size="sm" className="self-start" startIcon={<CopyPlus />} onClick={doClone} disabled={pending}>
-            Clone event
-          </Button>
-        </section>
-      </div>
-
-      <section aria-labelledby="event-embed-title" className={cn(card, "gap-4")}>
-        <div>
-          <h2 id="event-embed-title" className="text-h4 text-ink">Put it on your website</h2>
-          <p className="mt-0.5 text-body-ui text-ink-muted">Pick one, copy the code, paste it into your site.</p>
-        </div>
-        <div className="grid gap-3.5 sm:grid-cols-2">
-          <EmbedOption
-            title="A register button"
-            description={`Shows “Register for ${event.title}” and opens the event page in a new tab.`}
-            snippet={embedButtonSnippet}
-            copyLabel="Copy button code"
-            onCopy={() => copySnippet(embedButtonSnippet)}
-            preview={(
-              <div className="flex min-h-22.5 items-center justify-center rounded-xl bg-subtle p-3">
-                <span className="max-w-full truncate rounded-full border border-line bg-canvas px-4 py-2.5 text-sm font-semibold text-ink">
-                  Register for {event.title}
-                </span>
-              </div>
-            )}
+      {can.delete ? (
+        <>
+          <section
+            aria-labelledby="event-delete-title"
+            className="flex flex-col gap-4 rounded-2xl border-[1.5px] border-danger-border bg-canvas p-5 sm:p-6 md:flex-row md:items-center"
+          >
+            <div className="min-w-0 flex-1">
+              <h2 id="event-delete-title" className="text-h4 text-danger-fg">
+                Delete event
+              </h2>
+              <p className="mt-0.5 text-body-ui text-ink-secondary">
+                Permanently deletes this event and its registrations. This
+                can&apos;t be undone. You&apos;ll type the event address to
+                confirm.
+              </p>
+            </div>
+            <Button
+              variant="danger"
+              className="self-start md:self-auto"
+              disabled={pending}
+              onClick={() => {
+                setDeleteKey((key) => key + 1);
+                setDeleteOpen(true);
+              }}
+            >
+              Delete event…
+            </Button>
+          </section>
+          <ConfirmDialog
+            key={deleteKey}
+            open={deleteOpen}
+            title={`Delete ${event.title}?`}
+            message="The event and all of its registrations will be permanently removed. This can't be undone."
+            confirmLabel="Delete event"
+            confirmText={event.slug}
+            loading={pending}
+            onCancel={() => setDeleteOpen(false)}
+            onConfirm={doDelete}
           />
-          <EmbedOption
-            title="The whole event page"
-            description="Embeds the event page, including registration, in a frame."
-            snippet={embedPageSnippet}
-            copyLabel="Copy embed code"
-            onCopy={() => copySnippet(embedPageSnippet)}
-            preview={(
-              <div className="flex min-h-22.5 flex-col gap-1.5 rounded-xl bg-subtle p-2.5">
-                <span
-                  className="h-7 rounded-lg bg-accent"
-                  style={{ backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.22) 1.5px, transparent 2px)", backgroundSize: "10px 10px" }}
-                />
-                <span className="h-2 w-3/5 rounded bg-emphasis" />
-                <span className="h-2 w-2/5 rounded bg-emphasis" />
-              </div>
-            )}
-          />
-        </div>
-      </section>
-
-      <section aria-labelledby="event-delete-title" className="flex flex-col gap-4 rounded-2xl border-[1.5px] border-danger-border bg-canvas p-5 sm:p-6 md:flex-row md:items-center">
-        <div className="min-w-0 flex-1">
-          <h2 id="event-delete-title" className="text-h4 text-danger-fg">Delete event</h2>
-          <p className="mt-0.5 text-body-ui text-ink-secondary">
-            Permanently deletes this event and its registrations. This can&apos;t be undone. You&apos;ll type the event address to confirm.
-          </p>
-        </div>
-        <Button
-          variant="danger"
-          className="self-start md:self-auto"
-          disabled={pending}
-          onClick={() => {
-            setDeleteKey((key) => key + 1);
-            setDeleteOpen(true);
-          }}
-        >
-          Delete event…
-        </Button>
-      </section>
-      <ConfirmDialog
-        key={deleteKey}
-        open={deleteOpen}
-        title={`Delete ${event.title}?`}
-        message="The event and all of its registrations will be permanently removed. This can't be undone."
-        confirmLabel="Delete event"
-        confirmText={event.slug}
-        loading={pending}
-        onCancel={() => setDeleteOpen(false)}
-        onConfirm={doDelete}
-      />
+        </>
+      ) : null}
     </div>
   );
 }
@@ -264,12 +333,21 @@ function EmbedOption({
       <div aria-hidden>{preview}</div>
       <p className="text-caption text-ink-muted">{description}</p>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <Button variant="secondary" size="sm" startIcon={<Copy />} onClick={onCopy}>
+        <Button
+          variant="secondary"
+          size="sm"
+          startIcon={<Copy />}
+          onClick={onCopy}
+        >
           {copyLabel}
         </Button>
         <details className="min-w-0 basis-full">
-          <summary className="cursor-pointer text-sm font-semibold text-ink-secondary hover:text-ink">Show code</summary>
-          <pre className="mt-2 whitespace-pre-wrap break-all rounded-lg border border-line bg-subtle p-3 font-mono text-xs text-ink-secondary">{snippet}</pre>
+          <summary className="cursor-pointer text-sm font-semibold text-ink-secondary hover:text-ink">
+            Show code
+          </summary>
+          <pre className="mt-2 whitespace-pre-wrap break-all rounded-lg border border-line bg-subtle p-3 font-mono text-xs text-ink-secondary">
+            {snippet}
+          </pre>
         </details>
       </div>
     </div>

@@ -1,12 +1,13 @@
 "use client";
 
 import { useId, useState } from "react";
-import { ArrowRightLeft, ChevronDown, Copy, MoreHorizontal, Pencil, RotateCcw, Trash2, Users, UserX } from "lucide-react";
+import { ArrowRightLeft, Check, ChevronDown, Copy, MoreHorizontal, Pencil, RotateCcw, Trash2, Users, UserX } from "lucide-react";
 import { Button, IconButton } from "@/components/ui/button";
 import { Avatar, Chip, type ChipTone } from "@/components/ui/display";
 import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import type { AttendeeRow } from "@/components/attendees/types";
 import { cn } from "@/lib/cn";
+import { formatTime } from "@/lib/format/datetime";
 import { GUEST_STATUS_LABELS, describeCheckIn, describeGuestWhen, guestDisplayName, guestEmail, isManagedByTeam } from "./guestList";
 
 const CHIP_TONES: Record<AttendeeRow["status"], ChipTone> = {
@@ -27,6 +28,8 @@ export type GuestRowActions = {
   approve: (guest: AttendeeRow) => void;
   decline: (guest: AttendeeRow) => void;
   promote: (guest: AttendeeRow) => void;
+  /** Reverses a decline: confirmed when there is room, otherwise waitlisted. */
+  reaccept: (guest: AttendeeRow) => void;
   copyTicket: (guest: AttendeeRow) => void;
   edit: (guest: AttendeeRow) => void;
   /** Omitted where no undo-check-in action exists for the target (series dates). */
@@ -109,6 +112,11 @@ export function GuestRow({ guest, timeZone, now, busy, disabled, actions }: { gu
             Give a spot
           </Button>
         ) : null}
+        {!teamManaged && guest.status === "REJECTED" ? (
+          <Button size="sm" variant="secondary" disabled={disabled} loading={busy} onClick={() => actions.reaccept(guest)} aria-label={`Re-accept ${name}`}>
+            Re-accept
+          </Button>
+        ) : null}
         <Menu>
           <MenuTrigger asChild>
             <IconButton size="sm" variant="secondary" label={`More actions for ${name}`} disabled={disabled}>
@@ -144,6 +152,17 @@ export function GuestRow({ guest, timeZone, now, busy, disabled, actions }: { gu
           </MenuContent>
         </Menu>
       </div>
+      {guest.listCheckIns && guest.listCheckIns.length > 0 ? (
+        <ul aria-label={`Check-in lists for ${name}`} className="flex basis-full flex-wrap gap-1.5">
+          {guest.listCheckIns.map((entry) => (
+            <li key={entry.listName}>
+              <Chip size="sm" tone="success" icon={<Check />}>
+                {entry.listName} · {formatTime(entry.checkedInAt, timeZone)}
+              </Chip>
+            </li>
+          ))}
+        </ul>
+      ) : null}
       {answers.length > 0 ? (
         <div id={answersId} hidden={!answersOpen} className="basis-full">
           <dl className="grid gap-3 rounded-lg bg-subtle px-4 py-3 sm:grid-cols-2">

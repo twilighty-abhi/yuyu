@@ -79,6 +79,11 @@ try {
   if (!insecureCiTest && s3Endpoint && s3Endpoint.protocol !== "https:") {
     throw new Error("S3_ENDPOINT must use HTTPS in production.");
   }
+  // Development/test only: lets organisation webhooks reach http and private
+  // addresses. The production server ignores it outside CI test mode.
+  if (!insecureCiTest && process.env.WEBHOOKS_ALLOW_PRIVATE_TARGETS?.trim() && process.env.WEBHOOKS_ALLOW_PRIVATE_TARGETS.trim() !== "0") {
+    throw new Error("WEBHOOKS_ALLOW_PRIVATE_TARGETS is for development and tests only; remove it from production.");
+  }
 } catch (error) {
   console.error(error instanceof Error ? error.message : "Invalid production URLs.");
   process.exit(1);

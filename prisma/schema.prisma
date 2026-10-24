@@ -88,6 +88,13 @@ enum OutboxStatus {
   FAILED
 }
 
+enum WebhookDeliveryStatus {
+  PENDING
+  PROCESSING
+  SUCCEEDED
+  FAILED
+}
+
 enum ApiClientStatus {
   ACTIVE
   DISABLED
@@ -157,7 +164,11 @@ model User {
   eventCollaborations EventCollaborator[]
   eventCollaboratorInvitesUsed EventCollaboratorInvite[] @relation("EventCollaboratorInviteUsedBy")
   eventBroadcasts   EventBroadcast[]
+  broadcastDrafts   EventBroadcastDraft[]
+  checkInListRecords CheckInListRecord[]
+  checkInListEvents  CheckInListEvent[]
   mobileSessions    MobileSession[]
+  webhookEndpointsCreated WebhookEndpoint[] @relation("WebhookEndpointCreatedBy")
 }
 
 model Account {
@@ -244,6 +255,7 @@ model Organisation {
   auditEvents       AuditEvent[]
   rsvpDeletionUndos RsvpDeletionUndo[]
   apiClients        ApiClient[]
+  webhookEndpoints  WebhookEndpoint[]
 }
 
 /// A tenant-bound machine identity. It never authenticates through Auth.js.
@@ -395,6 +407,8 @@ model Event {
   resources        EventResource[]
   broadcasts       EventBroadcast[]
   teams            Team[]
+  broadcastDrafts  EventBroadcastDraft[]
+  checkInLists     CheckInList[]
 
   @@unique([organisationId, slug])
   @@index([organisationId])
@@ -424,6 +438,34 @@ model EventBroadcast {
   createdBy User? @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
 
   @@index([eventId, createdAt])
+}
+
+/// One organiser's unsent email in an event's Emails tab, autosaved while
+/// they write. Private to its author (unique on event and user) and removed
+/// when that organiser sends from the dashboard. Holds only what the organiser
+/// entered: the body is sanitised exactly as the send path does.
+model EventBroadcastDraft {
+  id         String                    @id @default(cuid())
+  eventId    String
+  userId     String
+  subject    String                    @default("")
+  /// Sanitised HTML template with {{placeholders}}, as it would be sent.
+  body       String                    @default("")
+  /// Visual design id from lib/email/broadcastDesigns.ts.
+  design     String                    @default("classic")
+  /// Selected registration statuses; may be empty while the draft is being written.
+  statuses   RsvpStatus[]              @default([])
+  attendance BroadcastAttendanceFilter @default(ANY)
+  /// Starter template the draft began from (lib/broadcastTemplate.ts), if any.
+  templateId String?
+  createdAt  DateTime                  @default(now())
+  updatedAt  DateTime                  @updatedAt
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@index([userId])
 }
 
 model EventInvite {
@@ -769,6 +811,8 @@ model RSVP {
   answers           RsvpAnswer[]
   feedbackResponses EventFeedbackResponse[]
   checkInEvents     CheckInEvent[]
+  checkInListRecords CheckInListRecord[]
+  checkInListEvents  CheckInListEvent[]
 
   @@index([eventId])
   @@index([teamId])
@@ -1039,6 +1083,73 @@ model CheckInEvent {
   @@index([actorUserId, occurredAt])
 }
 
+/// An organiser-defined check-in list beyond venue entry ("Swag collection",
+/// "Lunch – Day 1", "Workshop B"). Standalone events only. Names are unique per
+/// event among non-archived lists, case-insensitively, through the partial
+/// index `CheckInList_eventId_active_name_key` (declared in the migration,
+/// because Prisma cannot model it). Archived lists are read-only.
+model CheckInList {
+  id                   String   @id @default(cuid())
+  eventId              String
+  name                 String
+  sortOrder            Int      @default(0)
+  archived             Boolean  @default(false)
+  /// Guests must already be checked in at entry before they can be marked here.
+  requiresEntryCheckIn Boolean  @default(false)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  event   Event               @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  records CheckInListRecord[]
+  history CheckInListEvent[]
+
+  @@index([eventId, archived, sortOrder])
+}
+
+/// One person checked into one custom list. Unique on (listId, rsvpId), so a
+/// guest is in a list at most once; undo deletes the row. Independent of
+/// entry check-in (`RSVP.checkedInAt`), which list check-ins never change.
+model CheckInListRecord {
+  id          String   @id @default(cuid())
+  listId      String
+  rsvpId      String
+  actorUserId String?
+  /// `online`, `mobile-scan` or `mobile-manual` (`CheckInListRecord_known_source`).
+  source      String
+  checkedInAt DateTime @default(now())
+
+  list  CheckInList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  rsvp  RSVP        @relation(fields: [rsvpId], references: [id], onDelete: Cascade)
+  actor User?       @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@unique([listId, rsvpId])
+  @@index([rsvpId])
+  @@index([actorUserId])
+}
+
+/// Immutable history of list check-ins and undos, kept apart from
+/// `CheckInEvent` so entry reports and check-in source counts never include
+/// list activity. Like `CheckInEvent`, a deleted RSVP or actor leaves the row
+/// with a null reference; deleting the event (and so the list) removes it.
+model CheckInListEvent {
+  id          String   @id @default(cuid())
+  listId      String
+  rsvpId      String?
+  actorUserId String?
+  /// `CHECKED_IN` or `CHECK_IN_UNDONE` (`CheckInListEvent_known_action`).
+  action      String
+  source      String
+  occurredAt  DateTime @default(now())
+
+  list  CheckInList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  rsvp  RSVP?       @relation(fields: [rsvpId], references: [id], onDelete: SetNull)
+  actor User?       @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([listId, occurredAt])
+  @@index([rsvpId, occurredAt])
+  @@index([actorUserId, occurredAt])
+}
+
 /// Durable queue for transactional messages. A background worker claims and
 /// retries these rows; request handlers only enqueue them.
 model OutboxMessage {
@@ -1116,4 +1227,65 @@ model Asset {
   @@index([organisationId])
   @@index([createdAt])
   @@index([provider])
+}
+
+/// An organisation's outgoing webhook receiver (docs/WEBHOOKS.md). The signing
+/// secret is stored only as AES-GCM ciphertext under a domain-separated key and
+/// is shown to the organiser once, on create or rotate.
+model WebhookEndpoint {
+  id                  String    @id @default(cuid())
+  organisationId      String
+  url                 String
+  description         String    @default("")
+  /// Subscribed event types (lib/webhooks/eventTypes.ts). `ping` is always deliverable as a test.
+  eventTypes          String[]
+  enabled             Boolean   @default(true)
+  secretEncrypted     String
+  /// Why the endpoint is off when it was not switched off by a person ("auto_disabled").
+  disabledReason      String?
+  disabledAt          DateTime?
+  consecutiveFailures Int       @default(0)
+  lastSuccessAt       DateTime?
+  lastFailureAt       DateTime?
+  createdByUserId     String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  organisation Organisation      @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  createdBy    User?             @relation("WebhookEndpointCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  deliveries   WebhookDelivery[]
+
+  @@index([organisationId, enabled])
+}
+
+/// Durable delivery queue: one row per endpoint and event. A worker claims rows
+/// with FOR UPDATE SKIP LOCKED; request paths only insert them after commit.
+model WebhookDelivery {
+  id             String                @id @default(cuid())
+  endpointId     String
+  organisationId String
+  /// Stable envelope id (`evt_…`), identical on every retry for receiver idempotency.
+  eventId        String
+  eventType      String
+  /// The complete minimal envelope as sent. Never holds tokens, answers, or secrets.
+  payload        Json
+  status         WebhookDeliveryStatus @default(PENDING)
+  attempts       Int                   @default(0)
+  nextAttemptAt  DateTime              @default(now())
+  lockedAt       DateTime?
+  lastAttemptAt  DateTime?
+  deliveredAt    DateTime?
+  lastStatusCode Int?
+  /// Short, redacted failure summary (never the full response body).
+  lastError      String?
+  responseTimeMs Int?
+  createdAt      DateTime              @default(now())
+
+  endpoint WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+
+  @@unique([endpointId, eventId])
+  @@index([status, nextAttemptAt])
+  @@index([endpointId, createdAt])
+  @@index([organisationId, createdAt])
+  @@index([createdAt])
 }

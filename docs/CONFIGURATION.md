@@ -51,7 +51,7 @@ Keep an HTTPS redirect from the old hostname to the new one for as long as invit
 | Variable | Production | Purpose |
 | --- | --- | --- |
 | `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` | Required | Stable base64 AES key shared by the build and every replica; 16, 24, or 32 decoded bytes |
-| `MFA_ENCRYPTION_KEY` | Required | Independent base64 key used to encrypt TOTP seeds; exactly 32 decoded bytes. A domain-separated subkey also encrypts the SMTP password, Google client secret, and alert webhook URL saved in Super admin → Settings. Must be identical on every replica and job (app pods, migration job, any one-off container) and stable |
+| `MFA_ENCRYPTION_KEY` | Required | Independent base64 key used to encrypt TOTP seeds; exactly 32 decoded bytes. A domain-separated subkey also encrypts the SMTP password, Google client secret, and alert webhook URL saved in Super admin → Settings, and another one the organisation webhook signing secrets. Must be identical on every replica and job (app pods, migration job, any one-off container) and stable |
 | `CRON_SECRET` | Required | Bearer secret for the outbox scheduler, at least 32 characters |
 | `HEALTHCHECK_SECRET` | Required | Bearer secret for database readiness, at least 32 characters |
 
@@ -77,7 +77,7 @@ It reports which stored values cannot be decrypted, never printing them, and exi
 
 Do not expose the application directly while trusting a client-controlled forwarding header.
 
-Rate-limit windows are defined in code (`lib/rateLimit.ts`), not configured by environment. Recent buckets: `dataExport` (5 personal data exports per user per hour), `broadcastTest` (20 broadcast test sends per hour), `ticketStatus` (120 ticket status reads per IP per minute), `ticketEvents` (60 ticket event-stream connections per IP per minute), `shortLink` (30 short-link lookups per IP per minute), `mobileAuth` (30 mobile token refreshes per IP per minute), `mobileApi` (300 mobile API requests per user per minute), and `clientError` (10 browser crash reports per IP per minute). The ticket buckets are generous because attendees at one venue often share a NAT address.
+Rate-limit windows are defined in code (`lib/rateLimit.ts`), not configured by environment. Recent buckets: `dataExport` (5 personal data exports per user per hour), `broadcastTest` (20 broadcast test sends per hour), `broadcastDraft` (60 email draft saves or discards per minute, per user and per IP), `ticketStatus` (120 ticket status reads per IP per minute), `ticketEvents` (60 ticket event-stream connections per IP per minute), `shortLink` (30 short-link lookups per IP per minute), `mobileAuth` (30 mobile token refreshes per IP per minute), `mobileApi` (300 mobile API requests per user per minute), and `clientError` (10 browser crash reports per IP per minute), `webhookManage` (30 webhook endpoint changes per minute) and `webhookTest` (20 webhook test sends or redeliveries per hour). The ticket buckets are generous because attendees at one venue often share a NAT address.
 
 The live ticket stream at `/api/ticket/:token/events` is a long-lived `text/event-stream` response. Any reverse proxy in front of the application must not buffer it (for nginx, `proxy_buffering off`; the route also sends `X-Accel-Buffering: no`) and must allow idle reads of at least 30 seconds.
 
@@ -122,9 +122,17 @@ The bucket must remain private. Existing database-backed assets can be moved wit
 
 These values are display-only and do not run or retain backups; configure new instances in Super admin → Settings.
 
+## Organisation webhooks
+
+| Variable | Production | Purpose |
+| --- | --- | --- |
+| `WEBHOOKS_ALLOW_PRIVATE_TARGETS` | **Never** (development/test only) | `1` lets organisation webhooks use `http://` and private or loopback receivers on any port, for a local test receiver. A production server ignores it except in the CI-only test mode below, and `npm run production:check` fails when it is set |
+
+Webhook signing secrets are encrypted with a domain-separated key derived from `MFA_ENCRYPTION_KEY`; no new secret is needed. App processes need outbound HTTPS (ports 443 and 8443) to the receivers organisations configure. See [Organisation webhooks](WEBHOOKS.md).
+
 ## Test-only bypass
 
-`ALLOW_INSECURE_PRODUCTION_TESTS=1` has an effect only when `CI=true`. Together they permit local HTTP, non-TLS test services, and the controlled in-memory Redis fallback while exercising a production build. Never configure this pair in a deployed environment.
+`ALLOW_INSECURE_PRODUCTION_TESTS=1` has an effect only when `CI=true`. Together they permit local HTTP, non-TLS test services, the controlled in-memory Redis fallback, and `WEBHOOKS_ALLOW_PRIVATE_TARGETS` while exercising a production build. Never configure this pair in a deployed environment.
 
 Validate production configuration with:
 

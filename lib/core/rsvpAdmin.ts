@@ -4,7 +4,7 @@ import { Prisma, RegistrationMode, RsvpStatus } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { canManageEvents, getMembership } from "@/lib/permissions";
+import { canManageRegistrationsFor } from "@/lib/eventAccess";
 import { deleteRsvpSchema, manualRsvpSchema, restoreRsvpSchema, updateRsvpRegistrationSchema } from "@/lib/validators";
 import type { ActionResult } from "@/app/actions/org";
 import { flattenZodErrors } from "@/app/actions/utils";
@@ -15,6 +15,8 @@ import { isActionRateLimited } from "@/lib/actionRateLimit";
 import { hasCapacityToRestoreConfirmedRsvp } from "@/lib/rsvpCapacity";
 import { promoteOldestWaitlistedUnit, settleTeamAfterMemberLeft } from "@/lib/teamUnits";
 import { isTeamDeletionSnapshot, restoreTeamDeletionSnapshot, soleMemberTeamSnapshotTx } from "@/lib/core/teams";
+import { emitWebhookEvent } from "@/lib/webhooks/emit";
+import { CHECK_IN_LIST_SOURCES, MAX_CHECK_IN_LISTS } from "@/lib/checkInLists";
 
 const UNDO_TTL_MS = 5 * 60_000;
 
@@ -34,8 +36,7 @@ export async function addManualRsvpForUser(
 
   const org = await prisma.organisation.findUnique({ where: { slug: parsed.data.organisationSlug } });
   if (!org) return { ok: false, error: "Organisation not found." };
-  const membership = await getMembership(session.user.id, org.id);
-  if (!canManageEvents(membership)) {
+  if (!(await canManageRegistrationsFor({ userId: session.user.id, organisationId: org.id, eventId: parsed.data.eventId }))) {
     return { ok: false, error: "You do not have permission to add attendees." };
   }
 
@@ -66,8 +67,9 @@ export async function updateRsvpRegistrationForUser(actorUserId: string | null, 
 
   const org = await prisma.organisation.findUnique({ where: { slug: parsed.data.organisationSlug } });
   if (!org) return { ok: false, error: "Organisation not found." };
-  const membership = await getMembership(session.user.id, org.id);
-  if (!canManageEvents(membership)) return { ok: false, error: "You do not have permission to edit registrations." };
+  if (!(await canManageRegistrationsFor({ userId: session.user.id, organisationId: org.id, eventId: parsed.data.eventId, eventInstanceId: parsed.data.eventInstanceId }))) {
+    return { ok: false, error: "You do not have permission to edit registrations." };
+  }
 
   const target = parsed.data.eventId
     ? { eventId: parsed.data.eventId, event: { organisationId: org.id } }
@@ -149,6 +151,12 @@ const snapshotSchema = z.object({
     valueNumber: z.number().finite().nullable(),
     valueDate: z.string().datetime().nullable(),
   })).max(200),
+  /** Custom check-in list records, restored for lists that still belong to the event. */
+  listCheckIns: z.array(z.object({
+    listId: z.string().min(1).max(128),
+    checkedInAt: z.string().datetime(),
+    source: z.enum(CHECK_IN_LIST_SOURCES),
+  })).max(MAX_CHECK_IN_LISTS).optional(),
 }).refine(
   (value) => Boolean(value.eventId) !== Boolean(value.eventInstanceId),
   { message: "Invalid RSVP target." },
@@ -177,8 +185,9 @@ export async function deleteRsvpForUser(actorUserId: string | null, input: unkno
   const { organisationSlug, eventId, eventInstanceId, rsvpId } = parsed.data;
   const org = await prisma.organisation.findUnique({ where: { slug: organisationSlug } });
   if (!org) return { ok: false, error: "Organisation not found." };
-  const membership = await getMembership(session.user.id, org.id);
-  if (!canManageEvents(membership)) return { ok: false, error: "You do not have permission to manage attendees." };
+  if (!(await canManageRegistrationsFor({ userId: session.user.id, organisationId: org.id, eventId, eventInstanceId }))) {
+    return { ok: false, error: "You do not have permission to manage attendees." };
+  }
 
   const rsvp = await prisma.rSVP.findFirst({
     where: {
@@ -188,6 +197,7 @@ export async function deleteRsvpForUser(actorUserId: string | null, input: unkno
     include: {
       answers: true,
       event: { select: { slug: true, registrationMode: true } },
+      checkInListRecords: { select: { listId: true, checkedInAt: true, source: true } },
     },
   });
   if (!rsvp) return { ok: false, error: "RSVP not found." };
@@ -211,6 +221,11 @@ export async function deleteRsvpForUser(actorUserId: string | null, input: unkno
       valueBool: answer.valueBool,
       valueNumber: answer.valueNumber,
       valueDate: answer.valueDate?.toISOString() ?? null,
+    })),
+    listCheckIns: rsvp.checkInListRecords.map((record) => ({
+      listId: record.listId,
+      checkedInAt: record.checkedInAt.toISOString(),
+      source: record.source,
     })),
   };
 
@@ -252,6 +267,13 @@ export async function deleteRsvpForUser(actorUserId: string | null, input: unkno
     return created;
   });
 
+  emitWebhookEvent({
+    type: "registration.status_changed",
+    rsvpId: rsvp.id,
+    status: "REMOVED",
+    previousStatus: rsvp.status,
+    snapshot: { id: rsvp.id, eventId: rsvp.eventId, eventInstanceId: rsvp.eventInstanceId, userId: rsvp.userId, guestName: rsvp.guestName, createdAt: rsvp.createdAt, checkedInAt: rsvp.checkedInAt },
+  });
   await recordAuditEvent({ action: "RSVP_DELETED", actorUserId: session.user.id, organisationId: org.id, targetType: "RSVP", targetId: rsvp.id });
 
   revalidateRsvpPaths(org.slug, { eventId: rsvp.eventId, eventInstanceId: rsvp.eventInstanceId, eventSlug: rsvp.event?.slug });
@@ -268,8 +290,6 @@ export async function restoreRsvpForUser(actorUserId: string | null, input: unkn
 
   const org = await prisma.organisation.findUnique({ where: { slug: parsed.data.organisationSlug } });
   if (!org) return { ok: false, error: "Organisation not found." };
-  const membership = await getMembership(session.user.id, org.id);
-  if (!canManageEvents(membership)) return { ok: false, error: "You do not have permission to restore RSVPs." };
 
   const undo = await prisma.rsvpDeletionUndo.findFirst({
     where: {
@@ -281,6 +301,11 @@ export async function restoreRsvpForUser(actorUserId: string | null, input: unkn
   });
   if (!undo) return { ok: false, error: "This undo has expired or is unavailable." };
   if (isTeamDeletionSnapshot(undo.payload)) {
+    // Same re-check as a single RSVP restore, against the snapshot's event.
+    const teamEventId = (undo.payload as { eventId?: unknown }).eventId;
+    if (typeof teamEventId !== "string" || !(await canManageRegistrationsFor({ userId: session.user.id, organisationId: org.id, eventId: teamEventId }))) {
+      return { ok: false, error: "You do not have permission to restore RSVPs." };
+    }
     const restoredTeam = await restoreTeamDeletionSnapshot(undo, org.id);
     if (!restoredTeam.ok || !restoredTeam.data) return restoredTeam.ok ? { ok: false, error: "Could not restore the team." } : restoredTeam;
     revalidateRsvpPaths(org.slug, { eventId: restoredTeam.data.eventId, eventInstanceId: null, eventSlug: restoredTeam.data.eventSlug });
@@ -289,6 +314,11 @@ export async function restoreRsvpForUser(actorUserId: string | null, input: unkn
   }
   const snapshot = snapshotSchema.safeParse(undo.payload);
   if (!snapshot.success) return { ok: false, error: "Could not restore this RSVP safely." };
+  // Re-checked against the snapshot's own event or occurrence: the undo row is
+  // the deleter's, but their access may have changed since.
+  if (!(await canManageRegistrationsFor({ userId: session.user.id, organisationId: org.id, eventId: snapshot.data.eventId, eventInstanceId: snapshot.data.eventInstanceId }))) {
+    return { ok: false, error: "You do not have permission to restore RSVPs." };
+  }
 
   const targetExists = snapshot.data.eventId
     ? await prisma.event.findFirst({ where: { id: snapshot.data.eventId, organisationId: org.id }, select: { id: true, slug: true } })
@@ -341,11 +371,27 @@ export async function restoreRsvpForUser(actorUserId: string | null, input: unkn
           })) },
         },
       });
+      const listCheckIns = snapshot.data.listCheckIns ?? [];
+      if (snapshot.data.eventId && listCheckIns.length > 0) {
+        // Only lists that still exist on the same event; history is not rewritten.
+        const lists = await tx.checkInList.findMany({ where: { eventId: snapshot.data.eventId, id: { in: listCheckIns.map((entry) => entry.listId) } }, select: { id: true } });
+        const live = new Set(lists.map((list) => list.id));
+        await tx.checkInListRecord.createMany({
+          data: listCheckIns.filter((entry) => live.has(entry.listId)).map((entry) => ({
+            listId: entry.listId,
+            rsvpId: created.id,
+            source: entry.source,
+            checkedInAt: new Date(entry.checkedInAt),
+          })),
+          skipDuplicates: true,
+        });
+      }
       await tx.rsvpDeletionUndo.delete({ where: { id: undo.id } });
       return created;
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
     if (!restored) return { ok: false, error: refusal };
     restoredId = restored.id;
+    emitWebhookEvent({ type: "registration.status_changed", rsvpId: restored.id, status: restored.status, previousStatus: "REMOVED" });
   } catch (error) {
     if (typeof error === "object" && error !== null && "code" in error && (error as { code?: string }).code === "P2002") {
       return { ok: false, error: "This RSVP can no longer be restored because a conflicting registration exists." };

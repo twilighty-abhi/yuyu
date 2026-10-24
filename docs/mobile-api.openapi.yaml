@@ -385,6 +385,18 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
 
+  /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/guests/{rsvpId}/reaccept:
+    post:
+      tags: [Organiser]
+      summary: Re-accept a declined guest (organisation admins); confirmed when there is room, otherwise waitlisted
+      parameters: [{ $ref: "#/components/parameters/orgSlug" }, { $ref: "#/components/parameters/eventId" }, { $ref: "#/components/parameters/rsvpId" }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GuestResponse" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+
   /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/check-in/preview:
     post:
       tags: [Check-in]

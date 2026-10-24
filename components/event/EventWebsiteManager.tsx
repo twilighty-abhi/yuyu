@@ -67,6 +67,8 @@ type Props = {
   organisationSlug: string;
   eventId: string;
   eventSlug: string;
+  /** The Details sub-tab is owner/admin only; co-organisers with EDIT_DETAILS edit page content here. */
+  canEditDetails?: boolean;
   page: {
     tagline: string;
     logoUrl: string | null;
@@ -576,7 +578,7 @@ export function EventWebsiteManager(props: Props) {
         </button>
       );
     }
-    if (type === "ABOUT" || type === "VENUE") {
+    if ((type === "ABOUT" || type === "VENUE") && props.canEditDetails !== false) {
       return (
         <button type="button" className={linkClass} onClick={() => openTab("page", "details")}>
           Edit in Details

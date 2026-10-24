@@ -16,7 +16,7 @@ import type { EventDashboardContext } from "@/lib/eventDashboard/context";
 /*
  * Team registration data for the event dashboard (docs/TEAMS.md). Callers
  * must have checked `ctx.permissions.canManageRegistrations` (the same
- * organisation-admin check as the RSVP lifecycle actions) before calling the
+ * check as the RSVP lifecycle actions: OWNER/ADMIN or MANAGE_REGISTRATIONS) before calling the
  * guest-level loaders. Names and emails only; never tokens.
  */
 
@@ -68,7 +68,7 @@ function organiserContext(ctx: EventDashboardContext): OrganiserEventContext {
 
 /**
  * The first page of the event's teams, oldest first, with the filter counts
- * (organisation admins only). Further pages and searches go through the
+ * (registration managers only). Further pages and searches go through the
  * `loadTeamsPage` action, bounded the same way.
  */
 export const loadEventTeams = cache(async (ctx: EventDashboardContext): Promise<DashboardTeamsPage> => {
@@ -77,7 +77,7 @@ export const loadEventTeams = cache(async (ctx: EventDashboardContext): Promise<
   return { teams: page.teams.map(toDashboardTeam), nextCursor: page.nextCursor, counts };
 });
 
-/** Teams a registration can be moved into from the People view (bounded; organisation admins only). */
+/** Teams a registration can be moved into from the People view (bounded; registration managers only). */
 export const loadTeamMoveTargets = cache(async (ctx: EventDashboardContext) => listTeamMoveTargetsForOrganiser(organiserContext(ctx)));
 
 /**

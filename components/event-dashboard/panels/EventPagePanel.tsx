@@ -15,7 +15,7 @@ export async function EventPagePanel({ ctx }: { ctx: EventDashboardContext }) {
   const { event, permissions, organisation, now } = ctx;
   const [fields, registrations] = await Promise.all([
     loadRegistrationFields(event.id),
-    permissions.canEditDetails ? loadRegistrationLock(event.id) : Promise.resolve(undefined),
+    permissions.canEditEventDetails ? loadRegistrationLock(event.id) : Promise.resolve(undefined),
   ]);
   const website = {
     page: event.page,
@@ -52,13 +52,13 @@ export async function EventPagePanel({ ctx }: { ctx: EventDashboardContext }) {
         {
           value: "details",
           label: "Details",
-          content: permissions.canEditDetails ? <EditEventForm organisationSlug={organisation.slug} event={dto} page={website.page} registrations={registrations} /> : <NoPermission>You do not have permission to edit event details.</NoPermission>,
+          content: permissions.canEditEventDetails ? <EditEventForm organisationSlug={organisation.slug} event={dto} page={website.page} registrations={registrations} /> : <NoPermission>You do not have permission to edit event details.</NoPermission>,
         },
         {
           value: "page",
           label: "Page & programme",
-          content: permissions.canEditDetails ? (
-            <EventWebsiteManager organisationSlug={organisation.slug} eventId={event.id} eventSlug={event.slug} {...website} preview={preview} programme={programme} />
+          content: permissions.canEditPageContent ? (
+            <EventWebsiteManager organisationSlug={organisation.slug} eventId={event.id} eventSlug={event.slug} {...website} preview={preview} programme={programme} canEditDetails={permissions.canEditEventDetails} />
           ) : (
             <div className="flex flex-col gap-5">
               {programme}
@@ -69,7 +69,11 @@ export async function EventPagePanel({ ctx }: { ctx: EventDashboardContext }) {
         {
           value: "registration",
           label: "Registration form",
-          content: <EventRegistrationFormEditor organisationSlug={organisation.slug} eventId={event.id} fields={fields} />,
+          content: permissions.canEditRegistrationForm ? (
+            <EventRegistrationFormEditor organisationSlug={organisation.slug} eventId={event.id} fields={fields} />
+          ) : (
+            <NoPermission>Only organisation owners and admins can change the registration form.</NoPermission>
+          ),
         },
       ]}
     />

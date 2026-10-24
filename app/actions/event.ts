@@ -29,6 +29,7 @@ import { recordAuditEvent } from "@/lib/audit";
 import { z } from "zod";
 import { isOrganisationUploadUrl } from "@/lib/uploadUrl";
 import { richTextToPlainText, sanitizeRichText } from "@/lib/richText";
+import { emitWebhookEvent } from "@/lib/webhooks/emit";
 
 const MAX_COVER_IMAGE_BYTES = 5 * 1024 * 1024;
 const publishEventSchema = z
@@ -227,6 +228,9 @@ export async function createEvent(
       metadata: { status: created.status, registrationMode: created.registrationMode },
     });
 
+    if (created.status === EventStatus.PUBLISHED || created.status === EventStatus.CANCELLED) {
+      emitWebhookEvent({ type: created.status === EventStatus.PUBLISHED ? "event.published" : "event.cancelled", eventId: created.id, previousStatus: null });
+    }
     revalidateEventPaths(org.slug, slug, created.id);
     return { ok: true, data: { id: created.id, slug: created.slug } };
   } catch {
@@ -302,7 +306,7 @@ export async function updateEvent(input: unknown): Promise<ActionResult> {
   try {
     const saved = await prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT "id" FROM "Event" WHERE "id" = ${event.id} FOR UPDATE`;
-      const locked = await tx.event.findUnique({ where: { id: event.id }, select: { registrationMode: true } });
+      const locked = await tx.event.findUnique({ where: { id: event.id }, select: { registrationMode: true, status: true } });
       if (!locked) return "missing" as const;
       if (data.capacity != null) {
         // TEAM events count units (docs/TEAMS.md); INDIVIDUAL events keep the
@@ -375,7 +379,7 @@ export async function updateEvent(input: unknown): Promise<ActionResult> {
             : {}),
         },
       });
-      return "saved" as const;
+      return { previousStatus: locked.status };
     });
     if (saved === "missing") return { ok: false, error: "Event not found." };
     if (saved === "capacity")
@@ -409,6 +413,9 @@ export async function updateEvent(input: unknown): Promise<ActionResult> {
       metadata: { status: data.status },
     });
 
+    if (data.status !== saved.previousStatus && (data.status === EventStatus.PUBLISHED || data.status === EventStatus.CANCELLED)) {
+      emitWebhookEvent({ type: data.status === EventStatus.PUBLISHED ? "event.published" : "event.cancelled", eventId: event.id, previousStatus: saved.previousStatus });
+    }
     revalidateEventPaths(org.slug, event.slug, event.id);
     return { ok: true };
   } catch {
@@ -688,6 +695,9 @@ export async function publishEvent(input: unknown): Promise<ActionResult> {
     }),
   ]);
 
+  if (event.status !== EventStatus.PUBLISHED) {
+    emitWebhookEvent({ type: "event.published", eventId: event.id, previousStatus: event.status });
+  }
   await recordAuditEvent({
     action: "EVENT_PUBLISHED",
     actorUserId: session.user.id,

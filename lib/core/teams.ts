@@ -14,7 +14,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import type { ActionResult } from "@/app/actions/org";
 import { flattenZodErrors } from "@/app/actions/utils";
-import { canManageEvents, getMembership } from "@/lib/permissions";
+import { canManageRegistrationsFor } from "@/lib/eventAccess";
 import { isRegistrationClosed } from "@/lib/registrationCutoff";
 import { submitRsvpCore } from "@/lib/rsvpCore";
 import { cancelRsvpForUser } from "@/lib/core/rsvpCancel";
@@ -223,9 +223,10 @@ export async function resolveRsvpByTicketToken(
 }
 
 /**
- * Organiser access to one event's teams: the same `canManageEvents` check
- * that guards individual approve/reject/promote, with the event re-read
- * inside the organisation.
+ * Organiser access to one event's teams: the same check that guards the
+ * individual RSVP lifecycle (`canManageRegistrationsFor`: organisation
+ * OWNER/ADMIN or the event's MANAGE_REGISTRATIONS grant), with the event
+ * re-read inside the organisation.
  */
 export async function resolveOrganiserEvent(
   userId: string,
@@ -234,9 +235,9 @@ export async function resolveOrganiserEvent(
 ): Promise<OrganiserEventContext | null> {
   const org = await prisma.organisation.findUnique({ where: { slug: organisationSlug }, select: { id: true, slug: true } });
   if (!org) return null;
-  if (!canManageEvents(await getMembership(userId, org.id))) return null;
   const event = await prisma.event.findFirst({ where: { id: eventId, organisationId: org.id }, select: { id: true, slug: true } });
   if (!event) return null;
+  if (!(await canManageRegistrationsFor({ userId, organisationId: org.id, eventId: event.id }))) return null;
   return { userId, organisationId: org.id, orgSlug: org.slug, eventId: event.id, eventSlug: event.slug };
 }
 

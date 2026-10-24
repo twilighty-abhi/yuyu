@@ -50,6 +50,7 @@ export async function GuestsPanel({ ctx }: { ctx: EventDashboardContext }) {
               registrationFields={fields}
               teamMode={teamMode}
               teams={moveTargets}
+              canUndoCheckIn={permissions.canCheckIn}
             />
           ) : (
             <NoPermission>You do not have permission to view or manage attendee registrations.</NoPermission>

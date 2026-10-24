@@ -29,7 +29,7 @@ import { flattenZodErrors } from "./utils";
 /*
  * Organiser actions on whole teams (Guests → Teams, docs/TEAMS.md). The
  * permission check is the one that guards the individual RSVP lifecycle
- * actions (`canManageEvents`, via resolveOrganiserEvent), and the same "rsvp"
+ * actions (`canManageRegistrationsFor`, via resolveOrganiserEvent), and the same "rsvp"
  * rate-limit bucket applies. The rules, the Event lock and the re-read of the
  * team inside its event live in lib/core/teams.ts. Removing one member goes
  * through the existing deleteRsvp action, which keeps its undo snapshot.

@@ -4,7 +4,8 @@ import { useId, useRef, useState } from "react";
 import { ChevronDown, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
-import { FeedbackResponsesPanel, type FeedbackResponseRow } from "@/components/feedback/FeedbackResponsesPanel";
+import { FeedbackResponsesPanel } from "@/components/feedback/FeedbackResponsesPanel";
+import type { FeedbackResponsesPage } from "@/lib/eventDashboard/feedbackResponses";
 import { RATING_DOTS, type FeedbackInsights } from "./helpers";
 
 /** Rating labels can be numbers ("5") or words ("Excellent"); the label column fits the longest one. */
@@ -19,19 +20,23 @@ function labelWidth(rows: ReadonlyArray<{ value: string | number }>) {
 
 /**
  * Feedback summary for organisation admins: rating distributions, the latest
- * text answers and the full anonymous response list on demand. Data arrives
+ * text answers and the full anonymous response list on demand, in numbered
+ * pages read on the server. Data arrives
  * pre-aggregated from the server and never includes attendee identity.
  */
 export function ResponsesCard({
+  organisationSlug,
+  eventId,
   insights,
-  responses,
-  truncated,
+  initialPage,
   exportHref,
   timeZone,
 }: {
+  organisationSlug: string;
+  eventId: string;
   insights: FeedbackInsights;
-  responses: FeedbackResponseRow[];
-  truncated: boolean;
+  /** The first page of individual responses; later pages are fetched on the server. */
+  initialPage: FeedbackResponsesPage;
   exportHref?: string;
   timeZone: string;
 }) {
@@ -153,7 +158,7 @@ export function ResponsesCard({
               {showAll ? "Hide individual responses" : "Show individual responses"}
             </Button>
             <div id={listId} ref={listRef} tabIndex={-1} hidden={!showAll} className="scroll-mt-24 outline-none">
-              {showAll ? <FeedbackResponsesPanel responses={responses} truncated={truncated} showHeader={false} timeZone={timeZone} /> : null}
+              {showAll ? <FeedbackResponsesPanel organisationSlug={organisationSlug} eventId={eventId} initialPage={initialPage} timeZone={timeZone} /> : null}
             </div>
           </div>
         </>

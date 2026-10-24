@@ -157,5 +157,20 @@ describe("production migration safety contracts", () => {
     expect(sql).toContain('"Event_reviews_per_project_range"');
     expect(sql).toContain('CHECK ("reviewsPerProject" IS NULL OR "reviewsPerProject" BETWEEN 1 AND 20)');
   });
+
+  it("adds saved views as a new table that cascades from its event, organisation and creator", () => {
+    const sql = readFileSync(resolve(root, "prisma/migrations/20261025010000_saved_views/migration.sql"), "utf8");
+    expect(sql).not.toMatch(/\bDROP\b/i);
+    expect(sql).not.toMatch(/^\s*UPDATE\s/im);
+    expect(sql).not.toMatch(/ALTER TABLE "(Event|User|Organisation)"/);
+    expect(sql).toContain(`CREATE TYPE "SavedViewSurface" AS ENUM ('GUESTS_PEOPLE', 'GUESTS_TEAMS', 'JUDGING_SUBMISSIONS', 'JUDGING_RESULTS', 'JUDGING_PROGRESS');`);
+    expect(sql).toContain('"shared" BOOLEAN NOT NULL DEFAULT false');
+    expect(sql).toContain('"SavedView_name_length" CHECK (char_length("name") BETWEEN 1 AND 60)');
+    expect(sql).toContain(`"SavedView_params_object" CHECK (jsonb_typeof("params") = 'object')`);
+    expect(sql).toContain('CREATE INDEX "SavedView_eventId_surface_idx" ON "SavedView"("eventId", "surface");');
+    expect(sql).toContain('"SavedView_eventId_fkey" FOREIGN KEY ("eventId") REFERENCES "Event"("id") ON DELETE CASCADE');
+    expect(sql).toContain('"SavedView_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE');
+    expect(sql).toContain('"SavedView_organisationId_fkey" FOREIGN KEY ("organisationId") REFERENCES "Organisation"("id") ON DELETE CASCADE');
+  });
 });
 

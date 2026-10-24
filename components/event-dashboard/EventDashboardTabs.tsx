@@ -10,6 +10,7 @@ import {
 } from "react";
 import { useSearchParams } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { clearViewParamsFromUrl } from "@/lib/savedViews";
 
 export const EVENT_TABS = [
   { value: "overview", label: "Overview" },
@@ -64,12 +65,14 @@ export function useEventTabs() {
   return useContext(TabsContext);
 }
 
-/** Keeps `?tab=` (and drops a stale `?sub=`) in the address bar so tabs can be linked and survive a reload. */
+/** Keeps `?tab=` (and drops a stale `?sub=` and list filters) in the address bar so tabs can be linked and survive a reload. */
 function writeQuery(tab: EventTab) {
   const url = new URL(window.location.href);
   if (tab === "overview") url.searchParams.delete("tab");
   else url.searchParams.set("tab", tab);
   url.searchParams.delete("sub");
+  // List filters belong to the list that was showing (saved views).
+  clearViewParamsFromUrl(url);
   window.history.replaceState(window.history.state, "", url);
 }
 

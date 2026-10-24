@@ -35,17 +35,23 @@ import { decodeTimeCursor, encodeTimeCursor } from "@/lib/keysetCursor";
 import {
   AWARD_CANDIDATES_PAGE_SIZE,
   awardCandidatesQuerySchema,
+  countScoreFilters,
   JUDGING_RESULTS_PAGE_SIZE,
   judgingResultsQuerySchema,
   matchesProjectQuery,
+  matchesScoreFilter,
   numberedPage,
   offsetPage,
   ORGANISER_SUBMISSIONS_PAGE_SIZE,
   organiserSubmissionsQuerySchema,
   type NumberedPage,
+  type OrganiserSubmissionFilter,
   type OffsetPage,
+  type ResultsScoreFilter,
+  type SubmissionViewFilter,
 } from "@/lib/judgingOrganiserPaging";
 import type { JudgeContext, JudgingOrganiserContext } from "@/lib/judgingAccess";
+import { listUnsubmittedEntrants } from "@/lib/core/judgingEntrants";
 import { safeTimeZone, zonedIsoWithOffset } from "@/lib/timeZone";
 import {
   entrantDisplayName,
@@ -1428,7 +1434,14 @@ export type OrganiserSubmissionsPage = { submissions: OrganiserSubmissionDto[]; 
  * within this event of this organisation only. Per-status totals come from
  * `loadJudgingSetup().counts`.
  */
-export async function listSubmissionsForOrganiser(ctx: JudgingOrganiserContext, input: unknown = {}): Promise<OrganiserSubmissionsPage> {
+export async function listSubmissionsForOrganiser(
+  ctx: JudgingOrganiserContext,
+  input: unknown = {},
+  options: { pageSize?: number } = {},
+): Promise<OrganiserSubmissionsPage> {
+  // The dashboard pages 50 at a time; the Submissions CSV reads larger,
+  // still bounded, batches through the same query.
+  const pageSize = Math.min(Math.max(1, Math.floor(options.pageSize ?? ORGANISER_SUBMISSIONS_PAGE_SIZE)), JUDGING_EXPORT_BATCH_SIZE);
   const empty: OrganiserSubmissionsPage = { submissions: [], nextCursor: null };
   const parsed = organiserSubmissionsQuerySchema.safeParse(input);
   if (!parsed.success) return empty;
@@ -1459,8 +1472,8 @@ export async function listSubmissionsForOrganiser(ctx: JudgingOrganiserContext, 
     LEFT JOIN "User" u ON u."id" = r."userId"
     WHERE ${Prisma.join(conditions, " AND ")}
     ORDER BY s."createdAt" ASC, s."id" ASC
-    LIMIT ${ORGANISER_SUBMISSIONS_PAGE_SIZE + 1}`;
-  const pageIds = ids.slice(0, ORGANISER_SUBMISSIONS_PAGE_SIZE).map((row) => row.id);
+    LIMIT ${pageSize + 1}`;
+  const pageIds = ids.slice(0, pageSize).map((row) => row.id);
   if (pageIds.length === 0) return empty;
 
   const rows = await prisma.submission.findMany({
@@ -1479,7 +1492,7 @@ export async function listSubmissionsForOrganiser(ctx: JudgingOrganiserContext, 
   const last = rows[rows.length - 1];
   return {
     submissions: rows.map((row) => organiserSubmissionDto(row, row.assignments.map((assignment) => assignment.judgeUserId))),
-    nextCursor: ids.length > ORGANISER_SUBMISSIONS_PAGE_SIZE && last ? encodeTimeCursor({ at: last.createdAt, id: last.id }) : null,
+    nextCursor: ids.length > pageSize && last ? encodeTimeCursor({ at: last.createdAt, id: last.id }) : null,
   };
 }
 
@@ -1549,7 +1562,7 @@ export type JudgingResultsDto = {
  * page at a time (`loadJudgingResultsPage`); the CSV export uses all of it.
  * Per-judge progress comes from `loadJudgeProgress`, with aggregates.
  */
-export async function loadJudgingResults(ctx: JudgingOrganiserContext): Promise<JudgingResultsDto | null> {
+export async function loadJudgingResults(ctx: JudgingOrganiserContext, options: { method?: ScoreNormalization } = {}): Promise<JudgingResultsDto | null> {
   const event = await prisma.event.findFirst({ where: { id: ctx.eventId, organisationId: ctx.organisationId }, select: { ...judgingEventSelect, scoreNormalization: true } });
   if (!event) return null;
   const [criteria, submissions, scores, reviews, eligible] = await Promise.all([
@@ -1581,7 +1594,10 @@ export async function loadJudgingResults(ctx: JudgingOrganiserContext): Promise<
         !hasConflictOfInterest(row, authorConflicts.get(review.judgeUserId)),
     );
   });
-  const results = computeJudgingResults({ submissionIds: submitted.map((row) => row.id), criteria, scores, submittedReviews, method: event.scoreNormalization });
+  // The saved method ranks, unless the caller names one (the Results CSV
+  // passes the method the organiser's table is showing).
+  const method = options.method ?? event.scoreNormalization;
+  const results = computeJudgingResults({ submissionIds: submitted.map((row) => row.id), criteria, scores, submittedReviews, method });
   const rows: ResultRowDto[] = [
     ...results.map((result) => {
       const row = byId.get(result.submissionId)!;
@@ -1604,7 +1620,7 @@ export async function loadJudgingResults(ctx: JudgingOrganiserContext): Promise<
   ];
 
   const countedReviewKeys = submittedReviews.map((review) => `${review.submissionId}\u0000${review.judgeUserId}`);
-  return { judgingStatus: event.judgingStatus, resultsPublishedAt: event.resultsPublishedAt, scoreNormalization: event.scoreNormalization, criteria, rows, countedReviewKeys };
+  return { judgingStatus: event.judgingStatus, resultsPublishedAt: event.resultsPublishedAt, scoreNormalization: method, criteria, rows, countedReviewKeys };
 }
 
 export type JudgingResultsPageDto = NumberedPage<ResultRowDto> & {
@@ -1614,6 +1630,10 @@ export type JudgingResultsPageDto = NumberedPage<ResultRowDto> & {
   query: string;
   /** Every row in the ranking, before any search. */
   rankedTotal: number;
+  /** The score filter the page was filtered by ("all" for none). */
+  scored: ResultsScoreFilter;
+  /** Rows per score filter over the whole ranking (before the search), for the chips. */
+  scoreCounts: Record<ResultsScoreFilter, number>;
 };
 
 /**
@@ -1626,14 +1646,16 @@ export async function loadJudgingResultsPage(ctx: JudgingOrganiserContext, input
   if (!parsed.success) return null;
   const results = await loadJudgingResults(ctx);
   if (!results) return null;
-  const { query, page } = parsed.data;
-  const matching = query ? results.rows.filter((row) => matchesProjectQuery(row, query)) : results.rows;
+  const { query, page, scored } = parsed.data;
+  const matching = results.rows.filter((row) => matchesScoreFilter(row, scored) && (!query || matchesProjectQuery(row, query)));
   return {
     ...numberedPage(matching, page, JUDGING_RESULTS_PAGE_SIZE),
     criteria: results.criteria,
     scoreNormalization: results.scoreNormalization,
     query,
     rankedTotal: results.rows.length,
+    scored,
+    scoreCounts: countScoreFilters(results.rows),
   };
 }
 
@@ -1741,59 +1763,180 @@ export async function loadJudgeProgress(ctx: JudgingOrganiserContext): Promise<J
   return rows;
 }
 
+/** Projects per batch when a judging CSV streams (bounded reads of reviews and scores). */
+export const JUDGING_EXPORT_BATCH_SIZE = 200;
+
+/** A CSV export ready to stream: the header row, then bounded batches of rows. */
+export type CsvExportPlan = {
+  header: string[];
+  batches: () => AsyncGenerator<string[][]>;
+};
+
+export type JudgingResultsExportView = {
+  /** The Results search (title or entrant); ranks are computed over every project first. */
+  query?: string;
+  /** The Results score chip. */
+  scored?: ResultsScoreFilter;
+  /** The score method the table shows; the event's saved one when omitted. */
+  method?: ScoreNormalization;
+};
+
 /**
- * Rows for `/api/exports/events/{eventId}/judging` (owners and admins only):
- * one row per submitted review, with the result score (the active method's,
- * which ranks) and both the raw and the adjusted score. Judge names, no
- * emails, no comments. Pass the result to `buildCsv` from lib/csv.ts.
+ * `/api/exports/events/{eventId}/judging` (owners and admins only): one row
+ * per review, with the result score (the active method's, which ranks) and
+ * both the raw and the adjusted score. Judge names, no emails, no comments.
+ * The ranking is computed over every project, like Judging → Results, and a
+ * search keeps the matching ranked rows without renumbering them. Reviews
+ * and scores are read for JUDGING_EXPORT_BATCH_SIZE projects at a time.
+ * `rows` counts the projects in the file. Cells go through `buildCsv`.
  */
-export async function buildJudgingExportRows(ctx: JudgingOrganiserContext): Promise<string[][] | null> {
-  const results = await loadJudgingResults(ctx);
-  if (!results) return null;
-  const scores = await prisma.judgeScore.findMany({
-    where: { submission: { eventId: ctx.eventId, event: { organisationId: ctx.organisationId } } },
-    select: { submissionId: true, judgeUserId: true, criterionId: true, score: true },
-  });
-  const reviews = await prisma.judgeReview.findMany({
-    where: { submission: { eventId: ctx.eventId, event: { organisationId: ctx.organisationId } } },
-    select: { submissionId: true, judgeUserId: true, submittedAt: true, judge: { select: { name: true } } },
-    orderBy: { createdAt: "asc" },
-  });
-  const event = await prisma.event.findFirst({ where: { id: ctx.eventId, organisationId: ctx.organisationId }, select: { timezone: true } });
+export async function planJudgingResultsExport(
+  ctx: JudgingOrganiserContext,
+  view: JudgingResultsExportView = {},
+): Promise<(CsvExportPlan & { rows: number; method: ScoreNormalization }) | null> {
+  const event = await prisma.event.findFirst({ where: { id: ctx.eventId, organisationId: ctx.organisationId }, select: { id: true, timezone: true } });
   if (!event) return null;
+  const results = await loadJudgingResults(ctx, { method: view.method });
+  if (!results) return null;
+  const query = view.query?.trim() ?? "";
+  const scored = view.scored ?? "all";
+  // The same filters as loadJudgingResultsPage, over the whole ranking.
+  const matching = results.rows.filter((row) => matchesScoreFilter(row, scored) && (!query || matchesProjectQuery(row, query)));
   // Same clock as the dashboard: ISO 8601 in the event timezone, with its offset.
   const timeZone = safeTimeZone(event.timezone);
   const counted = new Set(results.countedReviewKeys);
   const header = ["Rank", "Project", "Entrant", "Status", "Result score", "Raw score", "Adjusted score", "Judges counted", "Judge", `Review submitted (${timeZone})`, "Counted in score", ...results.criteria.map((criterion) => `${criterion.name} (/${criterion.maxScore}, weight ${criterion.weight})`)];
-  const rows: string[][] = [header];
-  for (const row of results.rows) {
-    const rowReviews = reviews.filter((review) => review.submissionId === row.submissionId);
-    const base = [
-      row.rank?.toString() ?? "",
-      row.title,
-      row.entrantName,
-      row.status,
-      row.score?.toFixed(1) ?? "",
-      row.rawScore?.toFixed(1) ?? "",
-      row.adjustedScore?.toFixed(1) ?? "",
-      String(row.judgesCounted),
-    ];
-    if (rowReviews.length === 0) {
-      rows.push([...base, "", "", "", ...results.criteria.map(() => "")]);
-      continue;
-    }
-    for (const review of rowReviews) {
-      const judgeScores = new Map(scores.filter((score) => score.submissionId === row.submissionId && score.judgeUserId === review.judgeUserId).map((score) => [score.criterionId, score.score]));
-      rows.push([
-        ...base,
-        review.judge.name?.trim() || "Judge",
-        review.submittedAt ? zonedIsoWithOffset(review.submittedAt, timeZone) : "",
-        counted.has(`${row.submissionId}\u0000${review.judgeUserId}`) ? "Yes" : "No",
-        ...results.criteria.map((criterion) => judgeScores.get(criterion.id)?.toString() ?? ""),
+
+  async function* batches(): AsyncGenerator<string[][]> {
+    for (let start = 0; start < matching.length; start += JUDGING_EXPORT_BATCH_SIZE) {
+      const chunk = matching.slice(start, start + JUDGING_EXPORT_BATCH_SIZE);
+      const ids = chunk.map((row) => row.submissionId);
+      const scoped = { id: { in: ids }, eventId: event!.id, event: { organisationId: ctx.organisationId } };
+      const [scores, reviews] = await Promise.all([
+        prisma.judgeScore.findMany({ where: { submission: scoped }, select: { submissionId: true, judgeUserId: true, criterionId: true, score: true } }),
+        prisma.judgeReview.findMany({
+          where: { submission: scoped },
+          select: { submissionId: true, judgeUserId: true, submittedAt: true, judge: { select: { name: true } } },
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        }),
       ]);
+      const scoreIndex = new Map(scores.map((score) => [`${score.submissionId}\u0000${score.judgeUserId}\u0000${score.criterionId}`, score.score]));
+      const rows: string[][] = [];
+      for (const row of chunk) {
+        const rowReviews = reviews.filter((review) => review.submissionId === row.submissionId);
+        const base = [
+          row.rank?.toString() ?? "",
+          row.title,
+          row.entrantName,
+          row.status,
+          row.score?.toFixed(1) ?? "",
+          row.rawScore?.toFixed(1) ?? "",
+          row.adjustedScore?.toFixed(1) ?? "",
+          String(row.judgesCounted),
+        ];
+        if (rowReviews.length === 0) {
+          rows.push([...base, "", "", "", ...results!.criteria.map(() => "")]);
+          continue;
+        }
+        for (const review of rowReviews) {
+          const key = `${row.submissionId}\u0000${review.judgeUserId}`;
+          rows.push([
+            ...base,
+            review.judge.name?.trim() || "Judge",
+            review.submittedAt ? zonedIsoWithOffset(review.submittedAt, timeZone) : "",
+            counted.has(key) ? "Yes" : "No",
+            ...results!.criteria.map((criterion) => scoreIndex.get(`${key}\u0000${criterion.id}`)?.toString() ?? ""),
+          ]);
+        }
+      }
+      yield rows;
     }
   }
+
+  return { header, batches, rows: matching.length, method: results.scoreNormalization };
+}
+
+/** Every row of the judging scores CSV, header first (tests and small callers; the route streams the plan). */
+export async function buildJudgingExportRows(ctx: JudgingOrganiserContext, view: JudgingResultsExportView = {}): Promise<string[][] | null> {
+  const plan = await planJudgingResultsExport(ctx, view);
+  if (!plan) return null;
+  const rows: string[][] = [plan.header];
+  for await (const batch of plan.batches()) rows.push(...batch);
   return rows;
+}
+
+export type JudgingSubmissionsExportView = { query?: string; status?: SubmissionViewFilter };
+
+/**
+ * Judging → Submissions → "Export CSV" (owners and admins only): every
+ * project matching the view's status filter and search, through the view's
+ * own query (`listSubmissionsForOrganiser`) in keyset batches. One row per
+ * project with its links, the organiser-only disqualification reason and
+ * the assigned judges' names; no entrant emails, answers, tickets, scores or
+ * comments. Times in the event timezone with the offset.
+ */
+export async function planJudgingSubmissionsExport(ctx: JudgingOrganiserContext, view: JudgingSubmissionsExportView = {}): Promise<CsvExportPlan | null> {
+  const event = await prisma.event.findFirst({ where: { id: ctx.eventId, organisationId: ctx.organisationId }, select: { id: true, timezone: true } });
+  if (!event) return null;
+  const timeZone = safeTimeZone(event.timezone);
+  if (view.status === "notSubmitted") return planUnsubmittedEntrantsExport(ctx, view.query?.trim() ?? "", timeZone);
+  const header = ["Project", "Entrant", "Entry", "Status", `Submitted (${timeZone})`, `Last updated (${timeZone})`, "Summary", "Code", "Demo", "Video", "Assigned judges", "Disqualification reason"];
+  const filter = { query: view.query?.trim() ?? "", status: (view.status ?? "all") as OrganiserSubmissionFilter };
+
+  async function* batches(): AsyncGenerator<string[][]> {
+    let cursor: string | null = null;
+    do {
+      const page = await listSubmissionsForOrganiser(ctx, { ...filter, cursor }, { pageSize: JUDGING_EXPORT_BATCH_SIZE });
+      if (page.submissions.length === 0) break;
+      const judgeIds = [...new Set(page.submissions.flatMap((submission) => submission.assignedJudgeIds))];
+      const judges = judgeIds.length ? await prisma.user.findMany({ where: { id: { in: judgeIds } }, select: { id: true, name: true } }) : [];
+      const judgeNames = new Map(judges.map((judge) => [judge.id, judge.name?.trim() || "Judge"]));
+      yield page.submissions.map((submission) => [
+        submission.title,
+        submission.entrantName,
+        submission.isTeam ? "Team" : "Solo",
+        submission.status,
+        submission.submittedAt ? zonedIsoWithOffset(submission.submittedAt, timeZone) : "",
+        zonedIsoWithOffset(submission.updatedAt, timeZone),
+        submission.summary,
+        submission.repoUrl ?? "",
+        submission.demoUrl ?? "",
+        submission.videoUrl ?? "",
+        submission.assignedJudgeIds.map((id) => judgeNames.get(id) ?? "Judge").join("; "),
+        submission.status === SubmissionStatus.DISQUALIFIED ? submission.disqualifiedReason ?? "" : "",
+      ]);
+      cursor = page.nextCursor;
+    } while (cursor);
+  }
+
+  return { header, batches };
+}
+
+/**
+ * Submissions → "Not submitted" as CSV: entrants (confirmed teams and solo
+ * registrants) without a SUBMITTED project, through the view's own query
+ * (`listUnsubmittedEntrants`) one keyset page at a time. Names and sizes,
+ * never emails.
+ */
+function planUnsubmittedEntrantsExport(ctx: JudgingOrganiserContext, query: string, timeZone: string): CsvExportPlan {
+  const header = ["Entrant", "Entry", "Size", "Project status", "Project", `Registered (${timeZone})`];
+  async function* batches(): AsyncGenerator<string[][]> {
+    let cursor: string | null = null;
+    do {
+      const page = await listUnsubmittedEntrants(ctx, { query, cursor });
+      if (page.entrants.length === 0) break;
+      yield page.entrants.map((entrant) => [
+        entrant.name,
+        entrant.kind === "team" ? "Team" : "Solo",
+        String(entrant.size),
+        entrant.submissionStatus ?? "None",
+        entrant.submissionTitle ?? "",
+        zonedIsoWithOffset(entrant.registeredAt, timeZone),
+      ]);
+      cursor = page.nextCursor;
+    } while (cursor);
+  }
+  return { header, batches };
 }
 
 // ---------------------------------------------------------------------------

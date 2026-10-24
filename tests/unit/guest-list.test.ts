@@ -32,8 +32,9 @@ const guests: GuestLike[] = [
 
 describe("guest list helpers", () => {
   it("counts every status filter", () => {
-    expect(countGuestFilters(guests)).toEqual({ all: 5, going: 2, waitlist: 1, approve: 1, declined: 1, checkedIn: 1 });
-    expect(countGuestFilters([])).toEqual({ all: 0, going: 0, waitlist: 0, approve: 0, declined: 0, checkedIn: 0 });
+    expect(countGuestFilters(guests)).toEqual({ all: 5, going: 2, waitlist: 1, approve: 1, declined: 1, checkedIn: 1, notCheckedIn: 1 });
+    expect(filterGuests(guests, { status: "notCheckedIn" }).map((row) => row.guestName)).toEqual(["Asha Shetty"]);
+    expect(countGuestFilters([])).toEqual({ all: 0, going: 0, waitlist: 0, approve: 0, declined: 0, checkedIn: 0, notCheckedIn: 0 });
   });
 
   it("filters by status, account kind and name or email search", () => {

@@ -11,6 +11,9 @@ import { useLoadMoreFocus } from "@/components/ui/use-load-more-focus";
  * server refresh (a new `initial`, after a change) re-reads as many pages as
  * were showing so the list doesn't jump back to page one.
  *
+ * A list opened with filters already set (a link or saved view in the
+ * address bar) starts loading that view's first page on mount.
+ *
  * Every fetch goes through a Server Action that re-checks permission and
  * scope; out-of-order replies are dropped, and a request that fails (such as
  * a dropped connection) shows an error instead of leaving the list loading.
@@ -41,7 +44,8 @@ export function useServerPages<R, V, M>(options: {
   const [rows, setRows] = useState<R[]>(initial.rows);
   const [nextCursor, setNextCursor] = useState<string | null>(initial.nextCursor);
   const [meta, setMeta] = useState<M>(initial.meta);
-  const [loading, setLoading] = useState<"replace" | "more" | null>(null);
+  // A view opened from the address bar (saved views) isn't the server-rendered first page: load it on mount.
+  const [loading, setLoading] = useState<"replace" | "more" | null>(isDefaultView ? null : "replace");
   const [error, setError] = useState<string | null>(null);
 
   const seq = useRef(0);
@@ -123,6 +127,7 @@ export function useServerPages<R, V, M>(options: {
   useEffect(() => {
     if (firstRun.current) {
       firstRun.current = false;
+      if (!isDefaultView) void readPages(viewRef.current, 1, "replace");
       return;
     }
     const viewChanged = lastViewKey.current !== viewKey;

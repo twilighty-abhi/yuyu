@@ -204,6 +204,7 @@ describe("guest list paging", () => {
       approve: await count({ status: RsvpStatus.PENDING_APPROVAL }),
       declined: await count({ status: RsvpStatus.REJECTED }),
       checkedIn: await count({ checkedInAt: { not: null } }),
+      notCheckedIn: await count({ status: RsvpStatus.CONFIRMED, checkedInAt: null }),
     });
 
     const soloGuests = await listAttendeesPage(scope(), { status: "going", kind: "guests", team: "solo" }, options);

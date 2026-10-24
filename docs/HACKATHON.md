@@ -279,7 +279,34 @@ interest. Rules are pure functions in `lib/judgingProgress.ts`.
   of 50, so a rank and a tie are the same on every page. A search filters the
   ranked rows without renumbering them. The Awards winner picker searches the
   ranked `SUBMITTED` projects on the server, 20 at a time. The Judges view
-  takes its counts from aggregates. The CSV export always holds every row.
+  takes its counts from aggregates.
+- **Filtered exports**: Results **Export CSV** holds the ranked rows matching
+  the search and score chip showing, ranked under the score method the table
+  shows (`q`, `scored`, `method`), with ranks from the whole ranking.
+  Submissions **Export CSV** (`view=submissions&status=&q=`) holds every
+  project matching the chip and search: project, entrant, team or solo,
+  status, submitted and updated times in the event timezone, summary, links,
+  assigned judges' names and the disqualification reason; *Not submitted*
+  exports the entrants instead. Both read their view's own query in batches of
+  200 projects (`planJudgingResultsExport`, `planJudgingSubmissionsExport`),
+  stay owner/admin only with an empty 404 for anyone else, and audit filter
+  names only (`JUDGING_SCORES_EXPORTED`, `JUDGING_SUBMISSIONS_EXPORTED`).
+- **Saved views** ([Features → Saved views](FEATURES.md#saved-views)):
+  Submissions, Results and Progress keep their filters in the address bar
+  and have a **Views** menu (owners and admins, like the rest of judging
+  management). Submissions gains **Not submitted** (`status=notSubmitted`):
+  instead of projects it lists *entrants* without a `SUBMITTED` project,
+  meaning `CONFIRMED` teams and `CONFIRMED` registrations without a team,
+  whose project is missing, a draft, withdrawn or disqualified
+  (`lib/core/judgingEntrants.ts`, one `UNION ALL` query with keyset paging on
+  registration time and id, display names and sizes only, through
+  `loadUnsubmittedEntrantsPage`, `search` bucket), with its chip count.
+  Results gains a score filter (`scored=unscored`: `SUBMITTED` with no counted
+  review; `scored=underTwo`: fewer than two) that filters the ranked rows
+  without renumbering them, with counts over the whole ranking. Progress
+  can show one list (`show=below-target`, `judges`, `outliers`, `stale`).
+  Presets: *Not submitted*, *Drafts*, *Disqualified*; *Unscored*, *Scored by
+  fewer than 2 judges*; *Below target*.
 - **Publishing results** sets `resultsPublishedAt`, shows
   `/{orgSlug}/{eventSlug}/results` (awards, winners' project titles, team or
   entrant display names, and links), and queues one `results-published` email
@@ -351,3 +378,5 @@ interest. Rules are pure functions in `lib/judgingProgress.ts`.
   assignment previewed and applied from Progress (even loads, a judge's own
   project skipped, judges then see only assigned), the outlier and stale
   lists, and no Progress view for a `JUDGE`-only collaborator.
+  `tests/integration/saved-views.db.test.ts` and `tests/e2e/saved-views.spec.ts`
+  cover the Not submitted, Unscored and Below target views.

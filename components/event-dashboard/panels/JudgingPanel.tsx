@@ -24,6 +24,7 @@ import { JudgingPanelSetup } from "./JudgingPanelSetup";
 import type { JudgingLimits } from "./JudgingPanelShared";
 import { JudgingPanelSubmissions } from "./JudgingPanelSubmissions";
 import { NoPermission } from "./shared";
+import { loadSavedViewsForDashboard } from "@/lib/eventDashboard/savedViews";
 
 const LIMITS: JudgingLimits = {
   criteria: JUDGING_CRITERIA_LIMIT,
@@ -57,7 +58,11 @@ export async function JudgingPanel({ ctx }: { ctx: EventDashboardContext }) {
   }
 
   const organiser = judgingOrganiserContext(ctx);
-  const [data, progress] = await Promise.all([loadJudgingDashboard(ctx), organiser ? loadProgressTab(organiser, ctx.now) : null]);
+  const [data, progress, savedViews] = await Promise.all([
+    loadJudgingDashboard(ctx),
+    organiser ? loadProgressTab(organiser, ctx.now) : null,
+    loadSavedViewsForDashboard(ctx),
+  ]);
   if (!data) return <NoPermission>You do not have permission to manage judging for this event.</NoPermission>;
   const { scope, settings } = data;
   const frozen = settings.judgingStatus !== "NOT_STARTED";
@@ -99,6 +104,8 @@ export async function JudgingPanel({ ctx }: { ctx: EventDashboardContext }) {
               awards={data.awards}
               resultsPublished={Boolean(settings.resultsPublishedAt)}
               limits={LIMITS}
+              unsubmittedCount={data.unsubmittedCount}
+              savedViews={savedViews.JUDGING_SUBMISSIONS ?? []}
             />
           ),
         },
@@ -113,7 +120,14 @@ export async function JudgingPanel({ ctx }: { ctx: EventDashboardContext }) {
           value: "judging-progress",
           label: "Progress",
           content: progress ? (
-            <JudgingPanelProgress scope={scope} initial={progress.data} judges={progress.judges} timezone={settings.timezone} now={ctx.now.toISOString()} />
+            <JudgingPanelProgress
+              scope={scope}
+              initial={progress.data}
+              judges={progress.judges}
+              timezone={settings.timezone}
+              now={ctx.now.toISOString()}
+              savedViews={savedViews.JUDGING_PROGRESS ?? []}
+            />
           ) : (
             <NoPermission>You do not have permission to manage judging for this event.</NoPermission>
           ),
@@ -136,6 +150,7 @@ export async function JudgingPanel({ ctx }: { ctx: EventDashboardContext }) {
               resultsUrl={data.resultsUrl}
               exportHref={data.exportHref}
               timezone={settings.timezone}
+              savedViews={savedViews.JUDGING_RESULTS ?? []}
             />
           ),
         },

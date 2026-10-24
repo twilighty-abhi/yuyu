@@ -16,6 +16,7 @@ vi.mock("@/app/actions/judging-admin", () => ({
   loadResultsPage: vi.fn(),
 }));
 vi.mock("@/app/actions/judging", () => ({ loadJudgeSubmission: vi.fn(), loadNextJudgeSubmission: vi.fn(), saveJudgeReviewAction: vi.fn() }));
+vi.mock("@/app/actions/saved-views", () => ({ saveView: vi.fn(), renameView: vi.fn(), shareView: vi.fn(), deleteView: vi.fn() }));
 
 import { JudgingPanelJudges, JudgingPanelResults } from "@/components/event-dashboard/panels/JudgingPanelResults";
 import { JudgingSettingsCard, judgingSettingsSavedMessage } from "@/components/event-dashboard/panels/JudgingPanelSetup";
@@ -107,7 +108,7 @@ describe("Results publish hint (2)", () => {
       renderToString(
         createElement(JudgingPanelResults, {
           scope,
-          initialPage: { rows: [], page: 1, totalPages: 1, total: 0, start: 0, pageSize: 50, query: "", rankedTotal: 0, scoreNormalization: "RAW" },
+          initialPage: { rows: [], page: 1, totalPages: 1, total: 0, start: 0, pageSize: 50, query: "", rankedTotal: 0, scoreNormalization: "RAW", scored: "all", scoreCounts: { all: 0, unscored: 0, underTwo: 0 } },
           criteria: [],
           judgingStatus: "NOT_STARTED",
           resultsPublishedAt: null,
@@ -252,7 +253,7 @@ describe("Results: adjust for harsh/generous judges", () => {
     return renderToString(
       createElement(JudgingPanelResults, {
         scope,
-        initialPage: { rows: [row], page: 1, totalPages: 1, total: 1, start: 0, pageSize: 50, query: "", rankedTotal: 1, scoreNormalization: method },
+        initialPage: { rows: [row], page: 1, totalPages: 1, total: 1, start: 0, pageSize: 50, query: "", rankedTotal: 1, scoreNormalization: method, scored: "all", scoreCounts: { all: 1, unscored: 0, underTwo: 1 } },
         criteria: [],
         judgingStatus: "CLOSED",
         resultsPublishedAt: null,

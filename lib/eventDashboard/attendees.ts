@@ -91,11 +91,12 @@ export type AttendeesPage = {
 
 const EMPTY_PAGE: AttendeesPage = { rows: [], nextCursor: null, counts: null, total: null };
 
-/** The chip counts: one grouped count by status plus the checked-in count, under the same search. */
+/** The chip counts: one grouped count by status plus the checked-in counts, under the same search. */
 export async function countAttendeeFilters(base: Prisma.RSVPWhereInput): Promise<AttendeeFilterCounts> {
-  const [groups, checkedIn] = await Promise.all([
+  const [groups, checkedIn, notCheckedIn] = await Promise.all([
     prisma.rSVP.groupBy({ by: ["status"], where: base, _count: { _all: true } }),
-    prisma.rSVP.count({ where: { AND: [base, { checkedInAt: { not: null } }] } }),
+    prisma.rSVP.count({ where: { AND: [base, attendeeStatusWhere("checkedIn")] } }),
+    prisma.rSVP.count({ where: { AND: [base, attendeeStatusWhere("notCheckedIn")] } }),
   ]);
   const of = (status: string) => groups.find((group) => group.status === status)?._count._all ?? 0;
   const counts = Object.fromEntries(ATTENDEE_STATUS_FILTERS.map((filter) => [filter, 0])) as AttendeeFilterCounts;
@@ -105,6 +106,7 @@ export async function countAttendeeFilters(base: Prisma.RSVPWhereInput): Promise
   counts.approve = of("PENDING_APPROVAL");
   counts.declined = of("REJECTED");
   counts.checkedIn = checkedIn;
+  counts.notCheckedIn = notCheckedIn;
   return counts;
 }
 

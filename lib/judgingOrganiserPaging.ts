@@ -37,10 +37,50 @@ export const organiserSubmissionsQuerySchema = z
   })
   .strict();
 
+/**
+ * Judging → Submissions view filters: every submission status, plus
+ * `notSubmitted`, which lists entrants rather than projects: confirmed teams
+ * and confirmed solo registrants whose project is not SUBMITTED (none yet, a
+ * draft, withdrawn, or disqualified). See `listUnsubmittedEntrants`.
+ */
+export const SUBMISSION_VIEW_FILTERS = [...ORGANISER_SUBMISSION_FILTERS, "notSubmitted"] as const;
+export type SubmissionViewFilter = (typeof SUBMISSION_VIEW_FILTERS)[number];
+
+export const unsubmittedEntrantsQuerySchema = z
+  .object({
+    query: z.string().trim().max(SEARCH_MAX_LENGTH).optional().default(""),
+    cursor: z.string().trim().max(160).nullable().optional(),
+  })
+  .strict();
+
+/**
+ * Judging → Results score filters over the ranked rows (ranks never change):
+ * `unscored`: SUBMITTED with no counted review; `underTwo`: SUBMITTED with
+ * fewer than two counted reviews (unscored included).
+ */
+export const RESULTS_SCORE_FILTERS = ["all", "unscored", "underTwo"] as const;
+export type ResultsScoreFilter = (typeof RESULTS_SCORE_FILTERS)[number];
+
+export function matchesScoreFilter(row: { status: string; judgesCounted: number }, filter: ResultsScoreFilter): boolean {
+  if (filter === "all") return true;
+  if (row.status !== "SUBMITTED") return false;
+  return filter === "unscored" ? row.judgesCounted === 0 : row.judgesCounted < 2;
+}
+
+export function countScoreFilters(rows: ReadonlyArray<{ status: string; judgesCounted: number }>): Record<ResultsScoreFilter, number> {
+  const counts = { all: rows.length, unscored: 0, underTwo: 0 };
+  for (const row of rows) {
+    if (matchesScoreFilter(row, "unscored")) counts.unscored += 1;
+    if (matchesScoreFilter(row, "underTwo")) counts.underTwo += 1;
+  }
+  return counts;
+}
+
 export const judgingResultsQuerySchema = z
   .object({
     query: z.string().trim().max(SEARCH_MAX_LENGTH).optional().default(""),
     page: z.number().int().min(1).max(MAX_PAGE).optional().default(1),
+    scored: z.enum(RESULTS_SCORE_FILTERS).optional().default("all"),
   })
   .strict();
 

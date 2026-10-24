@@ -3,7 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { signOut, useSession } from "next-auth/react";
+import { signOut } from "next-auth/react";
+import { useAuthSession } from "@/components/auth/useAuthSession";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Menu as MenuIcon, X } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -30,7 +31,7 @@ export function YuyuWordmark({ href = "/", size = "sm" }: { href?: string; size?
 /** Yuyu's own site header (docs/DESIGN.md §4.14): home, about, features, discover, legal. */
 export function SiteHeader() {
   const pathname = usePathname();
-  const { status } = useSession();
+  const { status } = useAuthSession();
   const [menuOpen, setMenuOpen] = useState(false);
   const signedIn = status === "authenticated";
   const links = primaryLinks.filter((link) => !(link.guestOnly && signedIn));

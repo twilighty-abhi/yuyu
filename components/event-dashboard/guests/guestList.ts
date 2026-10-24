@@ -6,7 +6,7 @@ import { formatDate, formatDayShort, formatRelativeTime, formatTime } from "@/li
  * live counts, search, labels and relative "when" copy. No React, no I/O.
  */
 
-export type GuestStatusFilter = "all" | "going" | "waitlist" | "approve" | "declined" | "checkedIn";
+export type GuestStatusFilter = "all" | "going" | "waitlist" | "approve" | "declined" | "checkedIn" | "notCheckedIn";
 export type GuestKindFilter = "all" | "guests" | "users";
 /** TEAM events only: registrations in a team, or on their own. */
 export type GuestTeamFilter = "all" | "team" | "solo";
@@ -30,6 +30,7 @@ export const GUEST_FILTERS: Array<{ value: GuestStatusFilter; label: string }> =
   { value: "approve", label: "To approve" },
   { value: "declined", label: "Declined" },
   { value: "checkedIn", label: "Checked in" },
+  { value: "notCheckedIn", label: "Not checked in" },
 ];
 
 export const GUEST_STATUS_LABELS: Record<RsvpStatus, string> = {
@@ -53,6 +54,8 @@ export function matchesGuestFilter(guest: GuestLike, filter: GuestStatusFilter) 
       return guest.status === "REJECTED";
     case "checkedIn":
       return guest.checkedInAt != null;
+    case "notCheckedIn":
+      return guest.status === "CONFIRMED" && guest.checkedInAt == null;
   }
 }
 

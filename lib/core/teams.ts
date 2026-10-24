@@ -38,6 +38,7 @@ import {
 import type { WebhookEmission } from "@/lib/webhooks/emit";
 import { CHECK_IN_LIST_SOURCES, MAX_CHECK_IN_LISTS } from "@/lib/checkInLists";
 import { decodeKeyCursor, decodeTimeCursor, encodeKeyCursor, encodeTimeCursor } from "@/lib/keysetCursor";
+import { ORGANISER_TEAM_FILTERS, type OrganiserTeamFilter } from "@/lib/organiserTeamFilters";
 import {
   generateTeamManageToken,
   generateTeamToken,
@@ -1773,11 +1774,12 @@ export type OrganiserTeamDto = {
 
 /** Teams per page in the organiser's Teams view; "Load more" fetches the next page. */
 export const ORGANISER_TEAMS_PAGE_SIZE = 50;
+/** Teams per batch when the Teams CSV streams a filtered view (the largest page the query serves). */
+export const ORGANISER_TEAMS_EXPORT_BATCH_SIZE = 200;
 /** Teams per page in the Move to team picker; "Show more" fetches the next page. */
 export const TEAM_MOVE_TARGETS_PAGE_SIZE = 20;
 
-export const ORGANISER_TEAM_FILTERS = ["all", "going", "waitlist", "approve", "declined", "incomplete"] as const;
-export type OrganiserTeamFilter = (typeof ORGANISER_TEAM_FILTERS)[number];
+export { ORGANISER_TEAM_FILTERS, type OrganiserTeamFilter } from "@/lib/organiserTeamFilters";
 
 const FILTER_STATUS: Partial<Record<OrganiserTeamFilter, RsvpStatus>> = {
   going: RsvpStatus.CONFIRMED,
@@ -1832,7 +1834,14 @@ export type OrganiserTeamsPage = { teams: OrganiserTeamDto[]; nextCursor: string
  * emails, within this event only. Callers must have passed
  * `resolveOrganiserEvent`.
  */
-export async function listEventTeamsForOrganiser(ctx: OrganiserEventContext, input: unknown = {}): Promise<OrganiserTeamsPage> {
+export async function listEventTeamsForOrganiser(
+  ctx: OrganiserEventContext,
+  input: unknown = {},
+  options: { pageSize?: number } = {},
+): Promise<OrganiserTeamsPage> {
+  // The dashboard pages 50 at a time; the filtered Teams CSV reads larger,
+  // still bounded, batches through the same query.
+  const pageSize = Math.min(Math.max(1, Math.floor(options.pageSize ?? ORGANISER_TEAMS_PAGE_SIZE)), ORGANISER_TEAMS_EXPORT_BATCH_SIZE);
   const empty: OrganiserTeamsPage = { teams: [], nextCursor: null };
   const parsed = organiserTeamsQuerySchema.safeParse(input);
   if (!parsed.success) return empty;
@@ -1850,6 +1859,7 @@ export async function listEventTeamsForOrganiser(ctx: OrganiserEventContext, inp
     if (event.teamMinSize == null) return empty;
     conditions.push(Prisma.sql`(SELECT count(*) FROM "RSVP" r WHERE r."teamId" = t."id") < ${event.teamMinSize}`);
   }
+  if (filter === "looking") conditions.push(Prisma.sql`t."lookingForMembers" = true`);
   if (query) {
     const pattern = `%${escapeLikePattern(query)}%`;
     conditions.push(Prisma.sql`(
@@ -1871,8 +1881,8 @@ export async function listEventTeamsForOrganiser(ctx: OrganiserEventContext, inp
     SELECT t."id" FROM "Team" t
     WHERE ${Prisma.join(conditions, " AND ")}
     ORDER BY t."createdAt" ASC, t."id" ASC
-    LIMIT ${ORGANISER_TEAMS_PAGE_SIZE + 1}`;
-  const pageIds = ids.slice(0, ORGANISER_TEAMS_PAGE_SIZE).map((row) => row.id);
+    LIMIT ${pageSize + 1}`;
+  const pageIds = ids.slice(0, pageSize).map((row) => row.id);
   if (pageIds.length === 0) return empty;
 
   const rows = await prisma.team.findMany({
@@ -1911,7 +1921,7 @@ export async function listEventTeamsForOrganiser(ctx: OrganiserEventContext, inp
     })),
   }));
   const last = rows[rows.length - 1];
-  return { teams, nextCursor: ids.length > ORGANISER_TEAMS_PAGE_SIZE && last ? encodeTeamCursor(last) : null };
+  return { teams, nextCursor: ids.length > pageSize && last ? encodeTeamCursor(last) : null };
 }
 
 /** How many of the event's teams each Teams-view filter holds (aggregates only). */
@@ -1922,7 +1932,7 @@ export async function countEventTeamsForOrganiser(ctx: OrganiserEventContext): P
     select: { id: true, teamMinSize: true },
   });
   if (!event) return counts;
-  const [groups, incomplete] = await Promise.all([
+  const [groups, incomplete, looking] = await Promise.all([
     prisma.team.groupBy({ by: ["status"], where: { eventId: event.id }, _count: { _all: true } }),
     event.teamMinSize == null
       ? Promise.resolve([{ count: BigInt(0) }])
@@ -1930,6 +1940,7 @@ export async function countEventTeamsForOrganiser(ctx: OrganiserEventContext): P
           SELECT count(*) AS "count" FROM "Team" t
           WHERE t."eventId" = ${event.id}
             AND (SELECT count(*) FROM "RSVP" r WHERE r."teamId" = t."id") < ${event.teamMinSize}`,
+    prisma.team.count({ where: { eventId: event.id, lookingForMembers: true } }),
   ]);
   for (const group of groups) {
     counts.all += group._count._all;
@@ -1938,6 +1949,7 @@ export async function countEventTeamsForOrganiser(ctx: OrganiserEventContext): P
     }
   }
   counts.incomplete = Number(incomplete[0]?.count ?? 0);
+  counts.looking = looking;
   return counts;
 }
 

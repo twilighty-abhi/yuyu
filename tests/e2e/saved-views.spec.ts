@@ -77,7 +77,8 @@ async function waitForHydration(page: Page, selector: string) {
 }
 
 const dashboard = () => `/dashboard/${orgSlug}/event/${eventId}`;
-const viewsButton = (page: Page) => page.getByRole("button", { name: /^Views/ }).filter({ visible: true });
+// The organisation and account menus also start with "Views" (from the seeded names), so match the menu's own label.
+const viewsButton = (page: Page) => page.getByRole("button", { name: /^Views(?:,|$)/ }).filter({ visible: true });
 
 test.beforeAll(async () => {
   const passwordHash = await bcrypt.hash(password, 12);
@@ -109,7 +110,8 @@ test.beforeAll(async () => {
     })
   ).id;
   const person = (name: string, extra: { status?: RsvpStatus; checkedInAt?: Date } = {}) => {
-    const email = `${name.split(" ")[0]!.toLowerCase()}-${suffix}@example.test`;
+    // Every name carries the suffix; slug the whole name so team leaders stay distinct.
+    const email = `${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}@example.test`;
     return prisma.rSVP.create({ data: { eventId, guestName: name, guestEmail: email, attendeeKey: `guest:${email}`, status: extra.status ?? RsvpStatus.CONFIRMED, checkedInAt: extra.checkedInAt } });
   };
   await person(names.waiting, { status: RsvpStatus.WAITLISTED });

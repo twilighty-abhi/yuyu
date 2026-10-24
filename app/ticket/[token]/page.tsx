@@ -27,6 +27,7 @@ import {
   type TicketHolder,
 } from "@/lib/core/teams";
 import { TicketSeekerPanel, TicketTeamCard } from "@/components/team/TicketTeamSection";
+import { TicketJoinTeamForm } from "@/components/team/JoinTeamWithRegistration";
 
 type Props = {
   params: Promise<{ token: string }>;
@@ -215,8 +216,14 @@ export default async function TicketPage({ params }: Props) {
           />
         );
       }
-    } else if (teamEvent.soloPolicy === SoloPolicy.SOLO_WITH_MATCHING && rsvp.status !== "REJECTED") {
-      if (canAct) {
+    } else if (rsvp.status !== "REJECTED" && !canAct) {
+      teamSection = <Callout tone="info">Sign in to the account you registered with to join or find a team.</Callout>;
+    } else if (rsvp.status !== "REJECTED") {
+      // A solo registrant can join a team with its join link (and, on
+      // SOLO_WITH_MATCHING events, list themselves as looking for a team).
+      const joinForm = teamEvent.endDateTime > new Date() ? <TicketJoinTeamForm ticketToken={rsvp.checkInToken} /> : null;
+      teamSection = joinForm;
+      if (teamEvent.soloPolicy === SoloPolicy.SOLO_WITH_MATCHING) {
         const [seekerView, seekers, teams] = await Promise.all([
           loadSeekerView(holder),
           listSeekersForSeeker(holder),
@@ -224,18 +231,19 @@ export default async function TicketPage({ params }: Props) {
         ]);
         if (seekerView) {
           teamSection = (
-            <TicketSeekerPanel
-              ticketToken={rsvp.checkInToken}
-              profile={seekerView.profile}
-              invites={seekerView.invites}
-              requests={seekerView.requests}
-              seekers={seekers}
-              teams={teams}
-            />
+            <>
+              <TicketSeekerPanel
+                ticketToken={rsvp.checkInToken}
+                profile={seekerView.profile}
+                invites={seekerView.invites}
+                requests={seekerView.requests}
+                seekers={seekers}
+                teams={teams}
+              />
+              {joinForm}
+            </>
           );
         }
-      } else {
-        teamSection = <Callout tone="info">Sign in to the account you registered with to find a team.</Callout>;
       }
     }
   }

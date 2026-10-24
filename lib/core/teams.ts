@@ -31,6 +31,7 @@ import {
   generateTeamToken,
   hashTeamManageToken,
   isTeamTokenShape,
+  joinTokenFromInput,
   teamJoinPath,
   teamManagePath,
 } from "@/lib/teamToken";
@@ -589,32 +590,108 @@ export async function respondToJoinRequest(params: {
     if (event.registrationMode !== RegistrationMode.TEAM) return fail(NOT_A_TEAM_EVENT);
     const team = await tx.team.findFirst({ where: { id: request.teamId, eventId: event.id }, select: { id: true, name: true, status: true } });
     if (!team || team.status === RsvpStatus.REJECTED) return fail("This team can no longer take new members.");
-    const size = await tx.rSVP.count({ where: { teamId: team.id } });
-    if (!hasFreeSpace(event, size)) return fail("This team is already full.");
-    const rsvp = await tx.rSVP.findFirst({
-      where: { id: request.rsvpId, eventId: event.id },
-      select: { id: true, teamId: true, status: true, checkInToken: true, guestEmail: true, user: { select: { email: true } } },
-    });
+    const rsvp = await tx.rSVP.findFirst({ where: { id: request.rsvpId, eventId: event.id }, select: soloRsvpSelect });
     if (!rsvp || rsvp.teamId) return fail("This person is already in a team.");
     if (rsvp.status === RsvpStatus.REJECTED) return fail("This registration was declined.");
-    const moved = await tx.rSVP.updateMany({
-      where: { id: rsvp.id, eventId: event.id, teamId: null, status: rsvp.status },
-      data: { teamId: team.id, status: team.status },
-    });
-    if (moved.count !== 1) return fail("This registration was changed. Try again.");
+    const moved = await moveSoloRsvpIntoTeamTx(tx, event, rsvp, team, { acceptedRequestId: request.id });
+    if (!moved.ok) return moved;
     await tx.teamJoinRequest.update({ where: { id: request.id }, data: { status: TeamJoinRequestStatus.ACCEPTED } });
-    await tx.teamJoinRequest.updateMany({
-      where: { rsvpId: rsvp.id, status: TeamJoinRequestStatus.PENDING, id: { not: request.id } },
-      data: { status: TeamJoinRequestStatus.CANCELLED },
-    });
-    await tx.teamSeekerProfile.updateMany({ where: { rsvpId: rsvp.id }, data: { visible: false } });
-    if (rsvp.status !== RsvpStatus.CONFIRMED && team.status === RsvpStatus.CONFIRMED) {
-      const to = personEmail(rsvp);
-      if (to) await enqueueRsvpStatusNotification(tx, { to, eventTitle: event.title, approved: true, checkInToken: rsvp.checkInToken, teamName: team.name });
-    }
-    // The seeker's solo unit is gone; if it was confirmed, a unit is free.
-    if (rsvp.status === RsvpStatus.CONFIRMED) await promoteOldestWaitlistedUnit(tx, event);
     return { ok: true, data: { accepted: true } };
+  });
+}
+
+const soloRsvpSelect = {
+  id: true,
+  teamId: true,
+  status: true,
+  checkedInAt: true,
+  checkInToken: true,
+  guestEmail: true,
+  user: { select: { email: true } },
+} satisfies Prisma.RSVPSelect;
+
+type SoloRsvpRow = Prisma.RSVPGetPayload<{ select: typeof soloRsvpSelect }>;
+
+/**
+ * Inside a transaction that holds the Event lock: move a solo registration
+ * into a team of the same event (docs/TEAMS.md). The team size is rechecked,
+ * the registration takes the team's status, its seeker profile is hidden, its
+ * other pending invitations and requests are cancelled, and when its solo
+ * unit was confirmed the freed unit promotes the oldest waitlisted unit. A
+ * checked-in person can only join a confirmed team: otherwise their unit
+ * would go to the waitlist while they are already inside.
+ */
+async function moveSoloRsvpIntoTeamTx(
+  tx: Prisma.TransactionClient,
+  event: LockedEvent,
+  rsvp: SoloRsvpRow,
+  team: { id: string; name: string; status: RsvpStatus },
+  opts: { acceptedRequestId?: string } = {},
+): Promise<TeamResult<{ status: RsvpStatus }>> {
+  if (rsvp.teamId) return fail("This registration is already in a team.");
+  if (team.status === RsvpStatus.REJECTED) return fail("This team can no longer take new members.");
+  if (rsvp.checkedInAt && team.status !== RsvpStatus.CONFIRMED) {
+    return fail("This registration has already checked in, so it can only join a team that has a place.");
+  }
+  const size = await tx.rSVP.count({ where: { teamId: team.id } });
+  if (!hasFreeSpace(event, size)) return fail("This team is already full.");
+  const moved = await tx.rSVP.updateMany({
+    where: { id: rsvp.id, eventId: event.id, teamId: null, status: rsvp.status },
+    data: { teamId: team.id, status: team.status },
+  });
+  if (moved.count !== 1) return fail("This registration was changed. Try again.");
+  await tx.teamJoinRequest.updateMany({
+    where: {
+      rsvpId: rsvp.id,
+      status: TeamJoinRequestStatus.PENDING,
+      ...(opts.acceptedRequestId ? { id: { not: opts.acceptedRequestId } } : {}),
+    },
+    data: { status: TeamJoinRequestStatus.CANCELLED },
+  });
+  await tx.teamSeekerProfile.updateMany({ where: { rsvpId: rsvp.id }, data: { visible: false } });
+  if (rsvp.status !== RsvpStatus.CONFIRMED && team.status === RsvpStatus.CONFIRMED) {
+    const to = personEmail(rsvp);
+    if (to) await enqueueRsvpStatusNotification(tx, { to, eventTitle: event.title, approved: true, checkInToken: rsvp.checkInToken, teamName: team.name });
+  }
+  // The solo unit is gone; if it was confirmed, a unit is free.
+  if (rsvp.status === RsvpStatus.CONFIRMED) await promoteOldestWaitlistedUnit(tx, event);
+  return { ok: true, data: { status: team.status } };
+}
+
+export const JOIN_LINK_INVALID = "This team link is no longer valid. Ask your team leader for a new one.";
+
+/**
+ * A solo registrant joins a team with its join link, keeping their existing
+ * registration (no second ticket). The holder comes from the ticket token, or
+ * from the signed-in owner's own registration on the join page. The team is
+ * looked up by its join token inside the holder's event only, so a link for
+ * another event never matches. Everything else is `moveSoloRsvpIntoTeamTx`
+ * under the Event lock.
+ */
+export async function joinTeamWithExistingRsvp(
+  holder: TicketHolder,
+  joinLink: unknown,
+): Promise<TeamResult<{ status: RsvpStatus; teamName: string }>> {
+  const joinToken = joinTokenFromInput(joinLink);
+  if (!joinToken) return fail("Paste the full team link your team leader shared.");
+  return prisma.$transaction(async (tx): Promise<TeamResult<{ status: RsvpStatus; teamName: string }>> => {
+    const event = await lockEvent(tx, holder.eventId);
+    if (!event || event.organisationId !== holder.organisationId) return fail("Registration not found.");
+    if (event.registrationMode !== RegistrationMode.TEAM) return fail(NOT_A_TEAM_EVENT);
+    // Same gate as the join page: a withdrawn page or a draft event never
+    // resolves a join link, so it can't be used to probe team names.
+    if (event.status !== EventStatus.PUBLISHED || event.page?.isPublished !== true || event.endDateTime <= new Date()) {
+      return fail("This event is no longer taking team changes.");
+    }
+    const team = await tx.team.findFirst({ where: { joinToken, eventId: event.id }, select: { id: true, name: true, status: true } });
+    if (!team || team.status === RsvpStatus.REJECTED) return fail(JOIN_LINK_INVALID);
+    const rsvp = await tx.rSVP.findFirst({ where: { id: holder.rsvpId, eventId: event.id }, select: soloRsvpSelect });
+    if (!rsvp) return fail("Registration not found.");
+    if (rsvp.teamId === team.id) return fail("You're already in this team.");
+    if (rsvp.teamId) return fail("You're already in a team. Leave it from your ticket page before joining another.");
+    if (rsvp.status === RsvpStatus.REJECTED) return fail("This registration was declined.");
+    const moved = await moveSoloRsvpIntoTeamTx(tx, event, rsvp, team);
+    return moved.ok ? { ok: true, data: { status: team.status, teamName: team.name } } : moved;
   });
 }
 
@@ -1325,15 +1402,100 @@ export type OrganiserTeamDto = {
   members: Array<{ rsvpId: string; name: string; email: string | null; isLeader: boolean; checkedIn: boolean }>;
 };
 
-/** Guests tab → Teams view. Callers must have passed `resolveOrganiserEvent`. */
-export async function listEventTeamsForOrganiser(ctx: OrganiserEventContext): Promise<OrganiserTeamDto[]> {
+/** Teams per page in the organiser's Teams view; "Load more" fetches the next page. */
+export const ORGANISER_TEAMS_PAGE_SIZE = 50;
+/** Upper bound on the teams offered as move targets in the People view. */
+export const MAX_TEAM_MOVE_TARGETS = 200;
+
+export const ORGANISER_TEAM_FILTERS = ["all", "going", "waitlist", "approve", "declined", "incomplete"] as const;
+export type OrganiserTeamFilter = (typeof ORGANISER_TEAM_FILTERS)[number];
+
+const FILTER_STATUS: Partial<Record<OrganiserTeamFilter, RsvpStatus>> = {
+  going: RsvpStatus.CONFIRMED,
+  waitlist: RsvpStatus.WAITLISTED,
+  approve: RsvpStatus.PENDING_APPROVAL,
+  declined: RsvpStatus.REJECTED,
+};
+
+/** Opaque keyset cursor: the last team's creation time (ms) and id. */
+export function encodeTeamCursor(team: { createdAt: Date; id: string }): string {
+  return `${team.createdAt.getTime()}.${team.id}`;
+}
+
+export function decodeTeamCursor(cursor: string): { createdAt: Date; id: string } | null {
+  const match = /^(\d{1,15})\.([A-Za-z0-9_-]{1,128})$/.exec(cursor);
+  if (!match) return null;
+  const createdAt = new Date(Number(match[1]));
+  return Number.isNaN(createdAt.getTime()) ? null : { createdAt, id: match[2]! };
+}
+
+/** `%`, `_` and `\` match literally in the search text. */
+export function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
+}
+
+export const organiserTeamsQuerySchema = z
+  .object({
+    query: z.string().trim().max(100).optional().default(""),
+    filter: z.enum(ORGANISER_TEAM_FILTERS).optional().default("all"),
+    cursor: z.string().trim().max(160).nullable().optional(),
+  })
+  .strict();
+
+export type OrganiserTeamsPage = { teams: OrganiserTeamDto[]; nextCursor: string | null };
+
+/**
+ * Guests tab → Teams view, one bounded page at a time (oldest first, keyset
+ * paging on `createdAt, id`). Searches team names, and members' names and
+ * emails, within this event only. Callers must have passed
+ * `resolveOrganiserEvent`.
+ */
+export async function listEventTeamsForOrganiser(ctx: OrganiserEventContext, input: unknown = {}): Promise<OrganiserTeamsPage> {
+  const empty: OrganiserTeamsPage = { teams: [], nextCursor: null };
+  const parsed = organiserTeamsQuerySchema.safeParse(input);
+  if (!parsed.success) return empty;
+  const { query, filter, cursor } = parsed.data;
   const event = await prisma.event.findFirst({
     where: { id: ctx.eventId, organisationId: ctx.organisationId },
-    select: { teamMinSize: true, teamMaxSize: true },
+    select: { id: true, teamMinSize: true, teamMaxSize: true },
   });
-  if (!event) return [];
-  const teams = await prisma.team.findMany({
-    where: { eventId: ctx.eventId },
+  if (!event) return empty;
+
+  const conditions: Prisma.Sql[] = [Prisma.sql`t."eventId" = ${event.id}`];
+  const status = FILTER_STATUS[filter];
+  if (status) conditions.push(Prisma.sql`t."status" = ${status}::"RsvpStatus"`);
+  if (filter === "incomplete") {
+    if (event.teamMinSize == null) return empty;
+    conditions.push(Prisma.sql`(SELECT count(*) FROM "RSVP" r WHERE r."teamId" = t."id") < ${event.teamMinSize}`);
+  }
+  if (query) {
+    const pattern = `%${escapeLikePattern(query)}%`;
+    conditions.push(Prisma.sql`(
+      t."name" ILIKE ${pattern}
+      OR EXISTS (
+        SELECT 1 FROM "RSVP" r LEFT JOIN "User" u ON u."id" = r."userId"
+        WHERE r."teamId" = t."id" AND r."eventId" = ${event.id}
+          AND (r."guestName" ILIKE ${pattern} OR r."guestEmail" ILIKE ${pattern} OR u."name" ILIKE ${pattern} OR u."email" ILIKE ${pattern})
+      )
+    )`);
+  }
+  if (cursor) {
+    const after = decodeTeamCursor(cursor);
+    if (!after) return empty;
+    // `createdAt` is a UTC wall-clock timestamp(3) column.
+    const at = after.createdAt.toISOString().replace("Z", "");
+    conditions.push(Prisma.sql`(t."createdAt", t."id") > (${at}::timestamp(3), ${after.id})`);
+  }
+  const ids = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT t."id" FROM "Team" t
+    WHERE ${Prisma.join(conditions, " AND ")}
+    ORDER BY t."createdAt" ASC, t."id" ASC
+    LIMIT ${ORGANISER_TEAMS_PAGE_SIZE + 1}`;
+  const pageIds = ids.slice(0, ORGANISER_TEAMS_PAGE_SIZE).map((row) => row.id);
+  if (pageIds.length === 0) return empty;
+
+  const rows = await prisma.team.findMany({
+    where: { id: { in: pageIds }, eventId: event.id },
     select: {
       id: true,
       name: true,
@@ -1348,7 +1510,7 @@ export async function listEventTeamsForOrganiser(ctx: OrganiserEventContext): Pr
     },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
   });
-  return teams.map((team) => ({
+  const teams = rows.map((team) => ({
     id: team.id,
     name: team.name,
     status: team.status,
@@ -1367,4 +1529,53 @@ export async function listEventTeamsForOrganiser(ctx: OrganiserEventContext): Pr
       checkedIn: member.checkedInAt != null,
     })),
   }));
+  const last = rows[rows.length - 1];
+  return { teams, nextCursor: ids.length > ORGANISER_TEAMS_PAGE_SIZE && last ? encodeTeamCursor(last) : null };
+}
+
+/** How many of the event's teams each Teams-view filter holds (aggregates only). */
+export async function countEventTeamsForOrganiser(ctx: OrganiserEventContext): Promise<Record<OrganiserTeamFilter, number>> {
+  const counts = Object.fromEntries(ORGANISER_TEAM_FILTERS.map((filter) => [filter, 0])) as Record<OrganiserTeamFilter, number>;
+  const event = await prisma.event.findFirst({
+    where: { id: ctx.eventId, organisationId: ctx.organisationId },
+    select: { id: true, teamMinSize: true },
+  });
+  if (!event) return counts;
+  const [groups, incomplete] = await Promise.all([
+    prisma.team.groupBy({ by: ["status"], where: { eventId: event.id }, _count: { _all: true } }),
+    event.teamMinSize == null
+      ? Promise.resolve([{ count: BigInt(0) }])
+      : prisma.$queryRaw<Array<{ count: bigint }>>`
+          SELECT count(*) AS "count" FROM "Team" t
+          WHERE t."eventId" = ${event.id}
+            AND (SELECT count(*) FROM "RSVP" r WHERE r."teamId" = t."id") < ${event.teamMinSize}`,
+  ]);
+  for (const group of groups) {
+    counts.all += group._count._all;
+    for (const [filter, status] of Object.entries(FILTER_STATUS) as Array<[OrganiserTeamFilter, RsvpStatus]>) {
+      if (status === group.status) counts[filter] += group._count._all;
+    }
+  }
+  counts.incomplete = Number(incomplete[0]?.count ?? 0);
+  return counts;
+}
+
+/**
+ * Teams a registration could be moved into from the People view: names,
+ * status and size only, bounded. Full teams stay in the list; the dialog
+ * filters them and the server rechecks size under the event lock.
+ */
+export async function listTeamMoveTargetsForOrganiser(ctx: OrganiserEventContext) {
+  const event = await prisma.event.findFirst({
+    where: { id: ctx.eventId, organisationId: ctx.organisationId },
+    select: { id: true, teamMaxSize: true },
+  });
+  if (!event) return [];
+  const teams = await prisma.team.findMany({
+    where: { eventId: event.id, status: { not: RsvpStatus.REJECTED } },
+    select: { id: true, name: true, status: true, _count: { select: { members: true } } },
+    orderBy: [{ nameKey: "asc" }, { id: "asc" }],
+    take: MAX_TEAM_MOVE_TARGETS,
+  });
+  return teams.map((team) => ({ id: team.id, name: team.name, status: team.status, size: team._count.members, maxSize: event.teamMaxSize }));
 }

@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRightLeft, Crown, MoreHorizontal, Pencil, Trash2, UserMinus, UserX } from "lucide-react";
-import { approveTeam, deleteTeam, promoteTeam, rejectTeam, renameTeamAsOrganiser } from "@/app/actions/team-admin";
+import { approveTeam, deleteTeam, loadTeamsPage, promoteTeam, rejectTeam, renameTeamAsOrganiser } from "@/app/actions/team-admin";
 import { deleteRsvp, restoreRsvp } from "@/app/actions/rsvp-admin";
 import { ConfirmationDialog } from "@/components/feedback/ConfirmationDialog";
 import { useToast } from "@/components/feedback/ToastProvider";
@@ -13,13 +13,11 @@ import { Avatar, Callout, Chip, EmptyState, type ChipTone } from "@/components/u
 import { Field, Input, SearchInput } from "@/components/ui/field";
 import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { cn } from "@/lib/cn";
-import type { DashboardTeam } from "@/lib/eventDashboard/teams";
+import type { DashboardTeam, DashboardTeamsPage } from "@/lib/eventDashboard/teams";
 import { GUEST_STATUS_LABELS } from "@/components/event-dashboard/guests/guestList";
-import { MoveToTeamDialog } from "@/components/event-dashboard/guests/MoveToTeamDialog";
+import { MoveToTeamDialog, type MoveTargetTeam } from "@/components/event-dashboard/guests/MoveToTeamDialog";
 import {
   TEAM_FILTERS,
-  countTeamFilters,
-  filterTeams,
   teamCheckInLabel,
   teamSizeLabel,
   type TeamStatusFilter,
@@ -40,16 +38,25 @@ type Result = { ok: true } | { ok: false; error: string };
  * place as one unit; members can be moved or removed one at a time. Every
  * action is re-checked on the server (organisation admin, team re-read with
  * its event, the event lock for capacity).
+ *
+ * The list is paged on the server: the first page comes with the panel, and
+ * searches, status filters and "Load more" fetch bounded pages through
+ * `loadTeamsPage`.
  */
+const SEARCH_DELAY_MS = 300;
+
 export function GuestsTeams({
   organisationSlug,
   eventId,
-  teams,
+  initialPage,
+  moveTargets,
   approvalRequired,
 }: {
   organisationSlug: string;
   eventId: string;
-  teams: DashboardTeam[];
+  initialPage: DashboardTeamsPage;
+  /** Teams a member can be moved into (bounded, loaded with the panel). */
+  moveTargets: MoveTargetTeam[];
   approvalRequired: boolean;
 }) {
   const router = useRouter();
@@ -64,9 +71,96 @@ export function GuestsTeams({
   const [moving, setMoving] = useState<{ member: Member; team: DashboardTeam } | null>(null);
   const [removing, setRemoving] = useState<{ member: Member; team: DashboardTeam } | null>(null);
 
-  const counts = useMemo(() => countTeamFilters(teams), [teams]);
-  const visible = useMemo(() => filterTeams(teams, { status, query }), [teams, status, query]);
+  const [teams, setTeams] = useState<DashboardTeam[]>(initialPage.teams);
+  const [nextCursor, setNextCursor] = useState<string | null>(initialPage.nextCursor);
+  const [loadingList, setLoadingList] = useState<"replace" | "more" | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
+  const requestSeq = useRef(0);
+  const counts = initialPage.counts;
   const scope = { organisationSlug, eventId };
+
+  // How many pages the current view holds, so a refresh after a change can
+  // reload the same stretch instead of dropping pages added with "Load more".
+  const pagesLoaded = useRef(1);
+
+  const fetchPage = useCallback(
+    async (view: { query: string; status: TeamStatusFilter }, cursor: string | null) => {
+      const seq = ++requestSeq.current;
+      setLoadingList(cursor ? "more" : "replace");
+      setListError(null);
+      const res = await loadTeamsPage({ organisationSlug, eventId, query: view.query.trim(), filter: view.status, cursor });
+      if (seq !== requestSeq.current) return;
+      setLoadingList(null);
+      if (!res.ok || !res.data) {
+        setListError(res.ok ? "Could not load teams." : res.error);
+        return;
+      }
+      const page = res.data;
+      setTeams((current) => (cursor ? [...current, ...page.teams.filter((team) => !current.some((other) => other.id === team.id))] : page.teams));
+      setNextCursor(page.nextCursor);
+      pagesLoaded.current = cursor ? pagesLoaded.current + 1 : 1;
+    },
+    [organisationSlug, eventId],
+  );
+
+  /** Re-read the first `pages` pages of a view in place (after a change). */
+  const reloadPages = useCallback(
+    async (view: { query: string; status: TeamStatusFilter }, pages: number) => {
+      const seq = ++requestSeq.current;
+      setListError(null);
+      const collected: DashboardTeam[] = [];
+      let cursor: string | null = null;
+      let loaded = 0;
+      do {
+        const res = await loadTeamsPage({ organisationSlug, eventId, query: view.query.trim(), filter: view.status, cursor });
+        if (seq !== requestSeq.current) return;
+        if (!res.ok || !res.data) {
+          setListError(res.ok ? "Could not load teams." : res.error);
+          return;
+        }
+        for (const team of res.data.teams) if (!collected.some((other) => other.id === team.id)) collected.push(team);
+        cursor = res.data.nextCursor;
+        loaded += 1;
+      } while (cursor && loaded < pages);
+      setTeams(collected);
+      setNextCursor(cursor);
+      pagesLoaded.current = loaded;
+    },
+    [organisationSlug, eventId],
+  );
+
+  // A search or a filter fetches its first page (a search waits for typing
+  // to pause; the unfiltered view uses the first page that came with the
+  // panel). A refresh after a change (new `initialPage`) reloads as many
+  // pages as were showing.
+  const firstRun = useRef(true);
+  const lastView = useRef({ query, status });
+  useEffect(() => {
+    if (firstRun.current) {
+      firstRun.current = false;
+      return;
+    }
+    const unfiltered = status === "all" && !query.trim();
+    const viewChanged = lastView.current.query !== query || lastView.current.status !== status;
+    lastView.current = { query, status };
+    if (!viewChanged && pagesLoaded.current > 1) {
+      void reloadPages({ query, status }, pagesLoaded.current);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      if (!unfiltered) {
+        void fetchPage({ query, status }, null);
+        return;
+      }
+      requestSeq.current += 1;
+      pagesLoaded.current = 1;
+      setLoadingList(null);
+      setListError(null);
+      setTeams(initialPage.teams);
+      setNextCursor(initialPage.nextCursor);
+    }, viewChanged && !unfiltered && query.trim() ? SEARCH_DELAY_MS : 0);
+    return () => window.clearTimeout(timer);
+  }, [query, status, fetchPage, reloadPages, initialPage]);
 
   function run(id: string, action: () => Promise<Result>, success: string) {
     setBusyId(id);
@@ -117,7 +211,7 @@ export function GuestsTeams({
     });
   }
 
-  if (teams.length === 0) {
+  if (counts.all === 0 && teams.length === 0) {
     return (
       <EmptyState mood="sleepy" title="No teams yet.">
         Teams appear here when someone signs up and creates one.
@@ -167,11 +261,15 @@ export function GuestsTeams({
         </div>
       </div>
 
-      {visible.length === 0 ? (
+      {listError ? <Callout tone="danger" role="alert">{listError}</Callout> : null}
+
+      {loadingList === "replace" ? (
+        <p role="status" className="text-body-ui text-ink-muted">Loading teams…</p>
+      ) : teams.length === 0 ? (
         <EmptyState>{query.trim() ? "No teams match that search." : "No teams in this view."}</EmptyState>
       ) : (
-        <ul aria-label="Teams" className="flex flex-col gap-2.5">
-          {visible.map((team) => {
+        <ul aria-label="Teams" aria-busy={loadingList != null} className="flex flex-col gap-2.5">
+          {teams.map((team) => {
             const busy = pending && busyId === team.id;
             const checkIn = teamCheckInLabel(team);
             return (
@@ -283,6 +381,14 @@ export function GuestsTeams({
         </ul>
       )}
 
+      {nextCursor && loadingList !== "replace" ? (
+        <div className="flex justify-center">
+          <Button variant="secondary" loading={loadingList === "more"} loadingLabel="Loading…" onClick={() => void fetchPage({ query, status }, nextCursor)}>
+            Load more teams
+          </Button>
+        </div>
+      ) : null}
+
       <ConfirmationDialog
         open={declining != null}
         title="Decline this team?"
@@ -358,7 +464,7 @@ export function GuestsTeams({
           organisationSlug={organisationSlug}
           eventId={eventId}
           person={{ rsvpId: moving.member.rsvpId, name: moving.member.name, teamId: moving.team.id }}
-          teams={teams}
+          teams={moveTargets}
           onClose={() => setMoving(null)}
           onMoved={() => router.refresh()}
         />

@@ -3,7 +3,14 @@ import "server-only";
 import { cache } from "react";
 import { RsvpStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { listEventTeamsForOrganiser } from "@/lib/core/teams";
+import {
+  countEventTeamsForOrganiser,
+  listEventTeamsForOrganiser,
+  listTeamMoveTargetsForOrganiser,
+  type OrganiserEventContext,
+  type OrganiserTeamDto,
+  type OrganiserTeamFilter,
+} from "@/lib/core/teams";
 import type { EventDashboardContext } from "@/lib/eventDashboard/context";
 
 /*
@@ -27,16 +34,15 @@ export type DashboardTeam = {
   members: Array<{ rsvpId: string; name: string; email: string | null; isLeader: boolean; checkedIn: boolean }>;
 };
 
-/** Every team of the event, oldest first (organisation admins only). */
-export const loadEventTeams = cache(async (ctx: EventDashboardContext): Promise<DashboardTeam[]> => {
-  const teams = await listEventTeamsForOrganiser({
-    userId: ctx.userId,
-    organisationId: ctx.organisation.id,
-    orgSlug: ctx.organisation.slug,
-    eventId: ctx.event.id,
-    eventSlug: ctx.event.slug,
-  });
-  return teams.map((team) => ({
+/** One page of the Teams view, plus the per-filter counts for its chips. */
+export type DashboardTeamsPage = {
+  teams: DashboardTeam[];
+  nextCursor: string | null;
+  counts: Record<OrganiserTeamFilter, number>;
+};
+
+export function toDashboardTeam(team: OrganiserTeamDto): DashboardTeam {
+  return {
     id: team.id,
     name: team.name,
     status: team.status,
@@ -47,8 +53,32 @@ export const loadEventTeams = cache(async (ctx: EventDashboardContext): Promise<
     lookingForMembers: team.lookingForMembers,
     createdAt: team.createdAt.toISOString(),
     members: team.members,
-  }));
+  };
+}
+
+function organiserContext(ctx: EventDashboardContext): OrganiserEventContext {
+  return {
+    userId: ctx.userId,
+    organisationId: ctx.organisation.id,
+    orgSlug: ctx.organisation.slug,
+    eventId: ctx.event.id,
+    eventSlug: ctx.event.slug,
+  };
+}
+
+/**
+ * The first page of the event's teams, oldest first, with the filter counts
+ * (organisation admins only). Further pages and searches go through the
+ * `loadTeamsPage` action, bounded the same way.
+ */
+export const loadEventTeams = cache(async (ctx: EventDashboardContext): Promise<DashboardTeamsPage> => {
+  const organiser = organiserContext(ctx);
+  const [page, counts] = await Promise.all([listEventTeamsForOrganiser(organiser), countEventTeamsForOrganiser(organiser)]);
+  return { teams: page.teams.map(toDashboardTeam), nextCursor: page.nextCursor, counts };
 });
+
+/** Teams a registration can be moved into from the People view (bounded; organisation admins only). */
+export const loadTeamMoveTargets = cache(async (ctx: EventDashboardContext) => listTeamMoveTargetsForOrganiser(organiserContext(ctx)));
 
 /**
  * What the Publishing settings need to know: whether anyone has registered

@@ -20,12 +20,12 @@ Dynamic segments are shown as `:name` for readability.
 | `/:orgSlug/:eventSlug/sessions/:sessionSlug` | Public session page (published sessions and resources only) |
 | `/:orgSlug/:eventSlug/speakers/:speakerSlug` | Public speaker page (published speakers only) |
 | `/:orgSlug/:eventSlug/feedback` | Event feedback form when open |
-| `/:orgSlug/:eventSlug/team/:joinToken` | Team join link ([Team registration](TEAMS.md)): the registration form with the team fixed. Same access rules as the event page; shows only the team name, size and maximum size; unknown, retired and other events' tokens are a 404; `noindex`, `no-referrer` |
+| `/:orgSlug/:eventSlug/team/:joinToken` | Team join link ([Team registration](TEAMS.md)): the registration form with the team fixed. Same access rules as the event page; shows only the team name, size and maximum size; unknown, retired and other events' tokens are a 404; a signed-in person's own solo registration for the event (or a ticket this browser remembers) can join the team instead of registering again; `noindex`, `no-referrer` |
 | `/:orgSlug/:eventSlug/check-in` | PIN-protected venue check-in station; usable by trusted on-site staff without an account |
 | `/:orgSlug/i/:instanceId` | Recurring-series instance and RSVP |
 | `/:orgSlug/i/:instanceId/schedule` | Programme for one recurring occurrence |
 | `/:shortCode` | Event short link: a 7-character code (letters and digits, always at least one uppercase letter, so it never matches a lowercase organisation slug) that temporarily redirects to the event's current public page. Unknown, unpublished, and unreleased codes, and lookups over the `shortLink` limit (30/min per IP), return the same not-found page as an unknown organisation. Publishing releases the event page in the same step, so a Live event's code works immediately |
-| `/ticket/:token` | Attendee ticket status and QR page; tears off the QR stub live when the attendee is checked in. On a team event it also shows the team (name, leader, member names), leaving the team, and the *Looking for a team* profile and list |
+| `/ticket/:token` | Attendee ticket status and QR page; tears off the QR stub live when the attendee is checked in. On a team event it also shows the team (name, leader, member names), leaving the team, **Join a team** with a pasted join link for a solo registration, and the *Looking for a team* profile and list |
 | `/team/:token` | Team page for the leader ([Team registration](TEAMS.md)), opened by the opaque management token (stored only as a SHA-256 hash; regenerating it retires the old link). A signed-in leader reaches the same page at `/account/teams/:teamId` without the token. `noindex`, private cache, `no-referrer`; the ticket's check-in token never opens it |
 | `/join/org/:token` | Accept an organisation invitation |
 | `/join/event-collaborator/:token` | Accept an event co-organiser invitation |

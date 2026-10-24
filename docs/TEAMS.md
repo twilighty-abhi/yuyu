@@ -24,8 +24,10 @@ summarises the shipped behaviour.
 
 Database CHECK constraints keep the sizes valid. `registrationMode` cannot change
 while the event has registrations, and `teamMaxSize` cannot drop below the
-current largest team. Organisers edit these in the event's **Publishing**
-section, under the sign-ups question.
+current largest team. Organisers can set them when creating the event (the
+last step of the **Create event** dialog, with the same wording and checks) and
+edit them later in the event's **Publishing** section, under the sign-ups
+question. Both use the same `TeamSettingsFields` component.
 
 ## Capacity counts registration units
 
@@ -87,6 +89,36 @@ Both ways are always available in `TEAM` mode:
    the invite list does not prove who typed it, so invitees sign in with their
    invited account and use the join link.
 
+3. **Already registered on your own.** A solo registrant (an RSVP with no
+   team) of the same event joins a team with its join link and keeps their
+   registration and ticket (`joinTeamWithExistingRsvp`):
+   - On the join page, a signed-in person's own registration for the event is
+     detected server-side: a solo one gets **Join {team}** instead of the form;
+     one already in this team links to the ticket; one in another team is told
+     to leave it first. When this browser remembers a ticket for the event
+     (the event page's saved RSVP), the page offers to join with it. The page
+     also tells guests to use their ticket page.
+   - The ticket page of a solo registrant on a `TEAM` event has **Join a team**,
+     which accepts a pasted join link (absolute, relative, or without its
+     scheme) or a bare join token. Management links are refused.
+   - The ticket token proves the registration; an account-owned registration
+     also needs that account signed in. The join token is looked up inside the
+     registration's own event only, so another event's link never matches.
+   - Under the event lock: the team size is rechecked, the RSVP takes the
+     team's status, its seeker profile is hidden, its pending invitations and
+     requests are cancelled, and a confirmed solo unit is freed and promotes
+     the oldest waitlisted unit. A checked-in registration can only join a
+     `CONFIRMED` team. Rejected teams and declined registrations are refused.
+     This works while the event and its page are published and the event has
+     not ended (a withdrawn page refuses it, like the join page's 404), even
+     after new registrations close, because it never adds a unit.
+
+The event page's register button says what a `TEAM` event registers
+(**Register your team**, or **Register a team or yourself** when solo sign-ups
+are allowed; the waitlist and approval wording follows the same split). The
+wording lives in `lib/registrationLabel.ts`, shared with the dashboard's
+event-page preview.
+
 The registration form, for a `TEAM` event, offers **Create a team** (team name
 required, unique per event ignoring case), **Join with a link** (explains how to
 get one), and **Register solo** only when `soloPolicy` allows it. With
@@ -128,15 +160,26 @@ to 30 characters).
   (`INVITE`/`REQUEST`, `PENDING`/`ACCEPTED`/`DECLINED`/`CANCELLED`), at most one
   pending per team and RSVP. The other side accepts or declines on their page.
   No email is sent for requests in this version.
-- Accepting moves the seeker's RSVP into the team under the event lock: size is
-  rechecked, the RSVP takes the team status, the profile is hidden, other
-  pending requests for that RSVP are cancelled, and the freed solo unit
-  triggers promotion.
+- Accepting moves the seeker's RSVP into the team under the event lock with the
+  same move as joining by link (size rechecked, team status taken, profile
+  hidden, other pending requests cancelled, freed solo unit promotes, checked-in
+  registrations only into a `CONFIRMED` team).
+- Saving the profile from the ticket page resets the edit form to the stored
+  values (trimmed, duplicate skills dropped).
 
 ## Organisers
 
 - Guests tab gets a **Teams** view: name, status, size and min/max, an
-  *Incomplete* badge below `teamMinSize`, leader, and members. Actions: approve,
+  *Incomplete* badge below `teamMinSize`, leader, and members. It is paged on
+  the server, oldest first, `ORGANISER_TEAMS_PAGE_SIZE` (50) teams at a time
+  with **Load more** (keyset cursor on `createdAt, id`). Search matches team
+  names and members' names and emails (LIKE wildcards are literal), and the
+  status filters (including *Incomplete*) are applied in the query; the
+  filter counts are aggregates. After a change, the view reloads as many
+  pages as were showing. Searches and further pages go through the
+  read-only `loadTeamsPage` action (same organiser check, `search` rate-limit
+  bucket). The People view's move targets are a separate bounded list
+  (`MAX_TEAM_MOVE_TARGETS`, 200, non-rejected teams). Actions: approve,
   reject, promote from waitlist (all as one unit), rename, remove a member, move
   a member to another team (size rechecked, member takes the target team's
   status), and delete a team with the existing undo pattern where practical.
@@ -146,7 +189,8 @@ to 30 characters).
   organisation, and a team id from the browser is always re-read with its
   `eventId`.
 - Attendee CSV adds `Team` and `Team role` columns. The check-in desk and lookup
-  show the team name. Badges gain a `{{team}}` merge field. The personal data
+  show the team name, and the lookup also matches team names (teams of the same
+  event only), listing that team's members. Badges gain a `{{team}}` merge field. The personal data
   export includes the team name and role.
 - The post-event PDF report shows team counts (teams, solo registrants, average
   size). It never lists seeker profiles.
@@ -173,7 +217,12 @@ a deliberate error code (`TEAM_REQUIRED`). No API DTO gains team fields yet.
   for the last unit never oversells; concurrent joins never exceed
   `teamMaxSize`; team approval updates all members atomically; accepting a
   seeker frees a unit and promotes the oldest waitlisted unit; cross-event and
-  cross-organisation team ids are refused; and a manage token for one team
-  cannot act on another.
+  cross-organisation team ids are refused; a manage token for one team
+  cannot act on another; a solo registrant joining by link frees and promotes
+  their unit, cancels pending requests and hides their profile, while other
+  events' links, full teams and checked-in moves into an unconfirmed team are
+  refused; the Teams view pages, searches and filters within one event; and the
+  check-in lookup matches team names within the event.
 - Unit tests: validators, the unit-count helper, status decisions, DTOs for the
-  join page and seeker list (forbidden fields), and the token hashing.
+  join page and seeker list (forbidden fields), the token hashing, pasted
+  join-link parsing, and the Teams view cursor and search escaping.

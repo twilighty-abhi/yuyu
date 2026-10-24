@@ -224,7 +224,7 @@ export async function createEvent(
       organisationId: org.id,
       targetType: "Event",
       targetId: created.id,
-      metadata: { status: created.status },
+      metadata: { status: created.status, registrationMode: created.registrationMode },
     });
 
     revalidateEventPaths(org.slug, slug, created.id);

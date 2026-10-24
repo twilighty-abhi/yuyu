@@ -12,6 +12,13 @@ import { Callout } from "@/components/ui/display";
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader } from "@/components/ui/dialog";
 import { Field, Input, Dropdown } from "@/components/ui/field";
 import { cn } from "@/lib/cn";
+import {
+  DEFAULT_TEAM_SETTINGS,
+  TeamSettingsFields,
+  teamSettingsPayload,
+  teamSettingsProblem,
+  type TeamSettingsDraft,
+} from "./TeamSettingsFields";
 
 const timezones = [
   "UTC",
@@ -37,8 +44,8 @@ function fromDatetimeLocalValue(value: string) {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-const STEP_TITLES = ["Create Event: Basics", "Create Event: Schedule", "Create Event: Location"];
-const STEP_LABELS = ["Basics", "Schedule", "Location & platform"];
+const STEP_TITLES = ["Create Event: Basics", "Create Event: Schedule", "Create Event: Location & sign-ups"];
+const STEP_LABELS = ["Basics", "Schedule", "Location & sign-ups"];
 
 function isRichTextEmpty(html: string) {
   return !new DOMParser().parseFromString(html, "text/html").body.textContent?.trim();
@@ -63,6 +70,7 @@ export function CreateEventDialog(props: {
   // Wizard States
   const [activeStep, setActiveStep] = useState(0);
   const [isOnline, setIsOnline] = useState(false);
+  const [teamSettings, setTeamSettings] = useState<TeamSettingsDraft>(DEFAULT_TEAM_SETTINGS);
 
   const resetDraft = () => {
     setActiveStep(0);
@@ -72,6 +80,7 @@ export function CreateEventDialog(props: {
     setTagsPreview([]);
     setTagInput("");
     setIsOnline(false);
+    setTeamSettings(DEFAULT_TEAM_SETTINGS);
     setFormKey((current) => current + 1);
   };
 
@@ -95,6 +104,11 @@ export function CreateEventDialog(props: {
       setActiveStep(1);
       return;
     }
+    const teamProblem = teamSettingsProblem(teamSettings);
+    if (teamProblem) {
+      setError(teamProblem);
+      return;
+    }
     const form = e.currentTarget;
     const fd = new FormData(form);
     startTransition(async () => {
@@ -113,6 +127,7 @@ export function CreateEventDialog(props: {
         capacity: "",
         status: EventStatus.DRAFT,
         privacyType: EventPrivacyType.PUBLIC,
+        ...teamSettingsPayload(teamSettings),
       });
       if (!res.ok) {
         setError(res.error);
@@ -300,6 +315,9 @@ export function CreateEventDialog(props: {
                     <Input name="mapLinkUrl" type="url" />
                   </Field>
                 )}
+                <div className="border-t border-line pt-4">
+                  <TeamSettingsFields value={teamSettings} onChange={setTeamSettings} />
+                </div>
               </div>
             </DialogBody>
             <DialogFooter className="sm:justify-between">

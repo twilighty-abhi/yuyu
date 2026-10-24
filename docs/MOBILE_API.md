@@ -316,6 +316,8 @@ ticket tokens.
   waitlist override is possible (retry with `force: true`).
 - `POST …/check-in/undo` `{ "rsvpId" }` → `null`.
 - `GET …/check-in/lookup?q=` (min 2 chars, max 12 rows) → `{ "rows": [Guest] }`.
+  Matches guest names and emails and, on team events, team names (teams of the
+  same event only, listing their members). `Guest` has no team field yet.
 - `GET …/check-in/stats` → `{ "confirmed", "checkedIn", "recent": [{ "rsvpId", "displayName", "checkedInAt" }] }` (ten latest).
 - `GET …/check-in/roster` → `{ "generatedAt", "rows": [Guest & { "ticketToken", "checkInDetails", "registrationDetails" }] }`
   (as `downloadOfflineCheckInRoster`: confirmed, waitlisted and pending). Keep it

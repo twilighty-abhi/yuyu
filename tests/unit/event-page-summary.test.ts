@@ -100,6 +100,9 @@ describe("labels and excerpts", () => {
     expect(registerLabelFor("HIDDEN_LINK")).toBe("Register — it's free");
     expect(registerLabelFor("APPROVAL_REQUIRED")).toBe("Request to join");
     expect(registerLabelFor("INVITE_ONLY")).toBe("Register with your invite");
+    expect(registerLabelFor("PUBLIC", { soloPolicy: "TEAMS_ONLY" })).toBe("Register your team");
+    expect(registerLabelFor("PUBLIC", { soloPolicy: "SOLO_ALLOWED" })).toBe("Register a team or yourself");
+    expect(registerLabelFor("APPROVAL_REQUIRED", { soloPolicy: "TEAMS_ONLY" })).toBe("Request a place for your team");
   });
 
   it("names field types", () => {

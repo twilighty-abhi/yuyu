@@ -33,6 +33,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Submission links are random 256-bit tokens stored only as SHA-256 hashes, emailed only to the registration's own address (at most once a minute), and retired when replaced; the outbox deletes the message after delivery. The ticket QR alone never opens a submission.
 - `JUDGE` never satisfies any other event permission check. Judges see project content only, never entrant emails, answers, or tickets, and never an entry their own account is registered on. Disqualification reasons and judge comments stay organiser-only; scores and comments are never public.
 - Entrant, judge, and organiser ids are re-read with their event and organisation inside each write transaction, and the submission window is compared with server time there.
+- **Dependency advisories patched.** `next` 16.3.8 → 16.4.2 (GHSA-2464-fhr4-w9xw, GHSA-673q-mjm6-r5xr, GHSA-p3m5-59mp-jv5r) with `eslint-config-next` in step, `zod` 4.3.6 → 4.6.7 (GHSA-mrhx-c7xc-m3w5) and `nodemailer` 10.0.10 → 10.2.1 (addressparser GHSA-8c8m-p3m8-cjg8, GHSA-m943-m63m-w62w, GHSA-85x2-q946-cp5h). No application code changes; `npm audit --omit=dev` reports 0 vulnerabilities.
 
 ### Fixed
 

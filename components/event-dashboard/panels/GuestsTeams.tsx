@@ -293,10 +293,16 @@ export function GuestsTeams({
                         <Button
                           size="sm"
                           variant="secondary"
-                          disabled={pending || team.incomplete}
+                          disabled={pending}
                           loading={busy}
-                          title={team.incomplete ? "This team is below the minimum size, so it can't be approved yet." : undefined}
-                          onClick={() => run(team.id, () => approveTeam({ ...scope, teamId: team.id }), `${team.name} approved`)}
+                          // Incomplete teams keep a focusable, aria-disabled button so keyboard
+                          // and screen-reader users reach the reason it is unavailable.
+                          aria-disabled={team.incomplete || undefined}
+                          aria-describedby={team.incomplete ? `team-approve-reason-${team.id}` : undefined}
+                          onClick={() => {
+                            if (team.incomplete) return;
+                            run(team.id, () => approveTeam({ ...scope, teamId: team.id }), `${team.name} approved`);
+                          }}
                           aria-label={`Approve team ${team.name}`}
                         >
                           Approve
@@ -335,7 +341,9 @@ export function GuestsTeams({
                   </div>
                 </div>
                 {team.incomplete && team.status === "PENDING_APPROVAL" ? (
-                  <p className="text-caption text-ink-muted">Needs at least {team.minSize} people before it can be approved.</p>
+                  <p id={`team-approve-reason-${team.id}`} className="text-caption text-ink-muted">
+                    Can&apos;t be approved yet: this team needs at least {team.minSize} people.
+                  </p>
                 ) : null}
                 <ul aria-label={`Members of ${team.name}`} className="flex flex-col divide-y divide-line rounded-lg bg-subtle">
                   {team.members.map((member) => (

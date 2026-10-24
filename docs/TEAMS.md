@@ -59,7 +59,9 @@ member.
   else `CONFIRMED`.
 - Joining a team never changes capacity. The new RSVP takes the team's status.
   `REJECTED` teams cannot be joined. A join that would exceed `teamMaxSize`
-  fails.
+  fails. The leader of a `REJECTED` team can still view it, remove members and
+  disband it, and members can leave; rename, join/management link resets,
+  leadership transfer and "looking for members" are refused (UI and cores).
 - Organisers approve, reject, and promote **whole teams**. Individual
   approve/reject/promote on an RSVP that belongs to a team is refused with a
   message pointing to the team. Approving a team below `teamMinSize` is

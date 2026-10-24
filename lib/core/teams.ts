@@ -95,6 +95,8 @@ export type JoinRequestActor =
 
 const TEAM_NOT_FOUND = "Team not found.";
 const NOT_A_TEAM_EVENT = "This event does not use team registration.";
+/** Leader management that only matters for a team that can still take part (rename, links, leadership, matching). */
+const TEAM_DECLINED = "The organisers declined this team, so it can't be changed. You can still remove members or disband it.";
 export const INVITE_ONLY_ADD_REFUSED =
   "This event is invite-only. Share your team's join link instead; each person signs in with their invited account to join.";
 
@@ -388,6 +390,7 @@ export async function transferLeadership(auth: TeamLeaderAuth, newLeaderRsvpId: 
     if (!event) return fail(TEAM_NOT_FOUND);
     const team = await lockedLeaderTeam(tx, auth);
     if (!team) return fail(TEAM_NOT_FOUND);
+    if (team.status === RsvpStatus.REJECTED) return fail(TEAM_DECLINED);
     if (team.leaderRsvpId === newLeaderRsvpId) return fail("This member already leads the team.");
     const member = await tx.rSVP.findFirst({ where: { id: newLeaderRsvpId, eventId: event.id, teamId: team.id }, select: { id: true } });
     if (!member) return fail("Member not found.");
@@ -413,6 +416,7 @@ export async function renameTeam(auth: TeamLeaderAuth, input: unknown): Promise<
       if (!event) return fail(TEAM_NOT_FOUND);
       const team = await lockedLeaderTeam(tx, auth);
       if (!team) return fail(TEAM_NOT_FOUND);
+    if (team.status === RsvpStatus.REJECTED) return fail(TEAM_DECLINED);
       return renameTeamTx(tx, team, parsed.data.name);
     });
   } catch (error) {
@@ -428,6 +432,7 @@ export async function regenerateJoinToken(auth: TeamLeaderAuth): Promise<TeamRes
     if (!event) return fail(TEAM_NOT_FOUND);
     const team = await lockedLeaderTeam(tx, auth);
     if (!team) return fail(TEAM_NOT_FOUND);
+    if (team.status === RsvpStatus.REJECTED) return fail(TEAM_DECLINED);
     const joinToken = generateTeamToken();
     await tx.team.update({ where: { id: team.id }, data: { joinToken } });
     const org = await tx.organisation.findUnique({ where: { id: event.organisationId }, select: { slug: true } });
@@ -447,6 +452,7 @@ export async function regenerateManageToken(auth: TeamLeaderAuth): Promise<TeamR
     if (!event) return fail(TEAM_NOT_FOUND);
     const team = await lockedLeaderTeam(tx, auth);
     if (!team) return fail(TEAM_NOT_FOUND);
+    if (team.status === RsvpStatus.REJECTED) return fail(TEAM_DECLINED);
     const manage = generateTeamManageToken();
     await tx.team.update({ where: { id: team.id }, data: { manageTokenHash: manage.hash } });
     const leader = team.leaderRsvpId
@@ -465,6 +471,7 @@ export async function setLookingForMembers(auth: TeamLeaderAuth, looking: boolea
     if (!event) return fail(TEAM_NOT_FOUND);
     const team = await lockedLeaderTeam(tx, auth);
     if (!team) return fail(TEAM_NOT_FOUND);
+    if (team.status === RsvpStatus.REJECTED) return fail(TEAM_DECLINED);
     await tx.team.update({ where: { id: team.id }, data: { lookingForMembers: looking } });
     return { ok: true };
   });

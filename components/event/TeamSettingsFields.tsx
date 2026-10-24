@@ -27,6 +27,19 @@ export function teamSettingsProblem(draft: TeamSettingsDraft, largestTeam = 0): 
   return draft.teamMode ? teamSizeProblem({ minSize: draft.teamMinSize, maxSize: draft.teamMaxSize, largestTeam: largestTeam || undefined }) : null;
 }
 
+/** Which size input the problem belongs to, for focusing it; null when there is no problem. */
+export function teamSettingsProblemField(draft: TeamSettingsDraft, largestTeam = 0): "min" | "max" | null {
+  if (!teamSettingsProblem(draft, largestTeam)) return null;
+  return teamSettingsProblem({ ...draft, teamMinSize: "" }, largestTeam) ? "max" : "min";
+}
+
+/** Focus the size input a problem belongs to, inside `root` (a form or section holding `TeamSettingsFields`). */
+export function focusTeamSettingsProblem(root: ParentNode | null | undefined, draft: TeamSettingsDraft, largestTeam = 0) {
+  const field = teamSettingsProblemField(draft, largestTeam);
+  if (!field) return;
+  root?.querySelector<HTMLInputElement>(`[data-team-size="${field}"]`)?.focus();
+}
+
 /** The create/update payload fields for these settings (docs/TEAMS.md). */
 export function teamSettingsPayload(draft: TeamSettingsDraft) {
   return draft.teamMode
@@ -58,6 +71,7 @@ export function TeamSettingsFields({
   const soloLabelId = useId();
   const soloHelpId = useId();
   const problem = teamSettingsProblem(value, largestTeam);
+  const problemField = teamSettingsProblemField(value, largestTeam);
   const set = (patch: Partial<TeamSettingsDraft>) => onChange({ ...value, ...patch });
   return (
     <div className="flex flex-col gap-3">
@@ -85,35 +99,36 @@ export function TeamSettingsFields({
           <div className="flex flex-wrap items-end gap-3">
             <label className="flex flex-col gap-1">
               <span className="text-caption text-ink-secondary">Smallest team</span>
+              {/* No native min/max: the inline message below is the only validation shown (the server checks again). */}
               <Input
                 type="number"
-                min={1}
-                max={100}
                 inputMode="numeric"
+                data-team-size="min"
                 value={value.teamMinSize}
                 onChange={(event) => set({ teamMinSize: event.target.value })}
                 placeholder="Any"
                 className="w-28"
                 aria-describedby={helpId}
+                aria-invalid={problemField === "min" ? true : undefined}
               />
             </label>
             <label className="flex flex-col gap-1">
               <span className="text-caption text-ink-secondary">Largest team</span>
               <Input
                 type="number"
-                min={Math.max(2, largestTeam)}
-                max={100}
                 inputMode="numeric"
+                data-team-size="max"
                 value={value.teamMaxSize}
                 onChange={(event) => set({ teamMaxSize: event.target.value })}
                 className="w-28"
                 aria-describedby={helpId}
-                aria-invalid={problem ? true : undefined}
+                aria-invalid={problemField === "max" ? true : undefined}
               />
             </label>
             <span className="pb-2.5 text-body-ui text-ink-muted">people</span>
           </div>
-          <p id={helpId} className={cn("text-caption", problem ? "text-danger-fg" : "text-ink-muted")}>
+          {/* Polite live region: a new problem is read out as it appears, and the invalid input is described by it. */}
+          <p id={helpId} aria-live="polite" className={cn("text-caption", problem ? "text-danger-fg" : "text-ink-muted")}>
             {problem ?? "Teams smaller than the minimum are marked Incomplete and can't be approved until they grow."}
           </p>
           {/* Not a <label>: it would label the Dropdown's hidden native select, leaving the visible combobox unnamed. */}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Link2, UsersRound } from "lucide-react";
+import { UsersRound } from "lucide-react";
 import { CheckboxField, RadioGroup, Radio } from "@/components/ui/choice";
 import { Callout } from "@/components/ui/display";
 import { Field, Input } from "@/components/ui/field";
@@ -213,12 +213,7 @@ export function TeamRegistrationFields({ controller }: { controller: TeamRegistr
 
       {controller.mode === "join" ? (
         <Callout tone="info" title="Ask your team leader for the team link">
-          <span className="flex items-start gap-2">
-            <Link2 aria-hidden className="mt-0.5 size-4 shrink-0" />
-            <span>
-              The leader finds it on their team page. Opening it brings you back to this form with the team already chosen.
-            </span>
-          </span>
+          Your leader can copy it from their team page. The link opens a page for that team where you register straight into it.
         </Callout>
       ) : null}
 

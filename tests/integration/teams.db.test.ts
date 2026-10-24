@@ -39,6 +39,7 @@ import {
   organiserDeleteTeam,
   organiserMoveMember,
   organiserRenameTeam,
+  regenerateJoinToken,
   regenerateManageToken,
   removeTeamMember,
   renameTeam,
@@ -337,6 +338,35 @@ describe.sequential("team registration integration", () => {
     });
     await expect(prisma.rSVP.count({ where: { teamId: team.id } })).resolves.toBe(2);
     await expectTeamInvariants(event);
+  });
+
+  it("refuses rename, link resets, leadership transfer and matching for a declined team, but still allows removal and disbanding", async () => {
+    const event = await createEvent({ privacyType: EventPrivacyType.APPROVAL_REQUIRED, soloPolicy: SoloPolicy.SOLO_WITH_MATCHING });
+    const ctx = await organiser(event);
+    const { team } = await createTeam(event, "Turned Down");
+    const second = await joinTeam(event, team.id, "second");
+    const third = await joinTeam(event, team.id, "third");
+    const auth = await leaderAuth(team.id);
+    await expect(transitionTeamStatus(ctx, team.id, "reject")).resolves.toEqual({ ok: true, data: { status: RsvpStatus.REJECTED } });
+    const before = await prisma.team.findUniqueOrThrow({ where: { id: team.id } });
+
+    const declined = { ok: false, error: "The organisers declined this team, so it can't be changed. You can still remove members or disband it." };
+    await expect(renameTeam(auth, { name: "Renamed Anyway" })).resolves.toEqual(declined);
+    await expect(regenerateJoinToken(auth)).resolves.toEqual(declined);
+    await expect(regenerateManageToken(auth)).resolves.toEqual(declined);
+    await expect(transferLeadership(auth, second.rsvpId)).resolves.toEqual(declined);
+    await expect(setLookingForMembers(auth, true)).resolves.toEqual(declined);
+    const after = await prisma.team.findUniqueOrThrow({ where: { id: team.id } });
+    expect({ name: after.name, joinToken: after.joinToken, manageTokenHash: after.manageTokenHash, leaderRsvpId: after.leaderRsvpId, lookingForMembers: after.lookingForMembers })
+      .toEqual({ name: before.name, joinToken: before.joinToken, manageTokenHash: before.manageTokenHash, leaderRsvpId: before.leaderRsvpId, lookingForMembers: before.lookingForMembers });
+    // The old management link still resolves: nothing was rotated.
+    await expect(resolveTeamByManageToken(await currentManageToken(team.id))).resolves.not.toBeNull();
+    await expectTeamInvariants(event);
+
+    // Removing a member and disbanding (cancelling) stay available.
+    await expect(removeTeamMember(auth, third.rsvpId)).resolves.toEqual({ ok: true });
+    await expect(disbandTeam(auth)).resolves.toEqual({ ok: true, data: { cancelled: 2 } });
+    await expect(prisma.team.count({ where: { id: team.id } })).resolves.toBe(0);
   });
 
   it("accepting a seeker frees their solo unit and promotes the oldest waitlisted unit", async () => {

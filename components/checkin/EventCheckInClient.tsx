@@ -734,10 +734,11 @@ export function EventCheckInClient(props: {
           <section aria-labelledby="search-title" className="flex flex-col gap-3 rounded-lg border border-line bg-canvas p-4">
             <h2 id="search-title" className="text-title text-ink">Search attendees</h2>
             <div className="flex gap-2">
-              <label htmlFor="check-in-search" className="sr-only">Name or email</label>
+              {/* The lookup also matches team names on TEAM events (docs/TEAMS.md), so say so. */}
+              <label htmlFor="check-in-search" className="sr-only">{teamEvent ? "Name, email or team" : "Name or email"}</label>
               <Input
                 id="check-in-search"
-                placeholder="Name or email"
+                placeholder={teamEvent ? "Name, email or team" : "Name or email"}
                 value={lookupQuery}
                 onChange={(e) => setLookupQuery(e.target.value)}
                 onKeyDown={(e) => {

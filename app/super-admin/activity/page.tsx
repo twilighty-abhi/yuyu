@@ -2,6 +2,8 @@ import { requireSuperAdminMfa } from "@/lib/permissions";
 import Link from "next/link";
 import { EventStatus, RsvpStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { countConfirmedForEvent } from "@/lib/rsvpCapacity";
+import { peopleCount, teamCapacityLabel } from "@/lib/teamCapacityDisplay";
 import { ACTIVITY_SERIES, loadDailyActivity, loadTopOrganisationsByRsvps } from "@/lib/superAdminData";
 import { compareWindows, fillDailySeries, formatChange, formatShare, sumPoints, windowStart, DAY_MS } from "@/lib/superAdminInsights";
 import { SparklineCard } from "@/components/super-admin/Sparkline";
@@ -45,7 +47,7 @@ export default async function SuperAdminActivityPage() {
       where: { status: EventStatus.PUBLISHED, startDateTime: { gte: now, lt: nextWeek } },
       orderBy: { startDateTime: "asc" },
       take: 15,
-      select: { id: true, title: true, startDateTime: true, capacity: true, organisation: { select: { id: true, name: true } }, _count: { select: { rsvps: { where: { status: RsvpStatus.CONFIRMED } } } } },
+      select: { id: true, title: true, startDateTime: true, capacity: true, registrationMode: true, soloPolicy: true, organisation: { select: { id: true, name: true } }, _count: { select: { rsvps: { where: { status: RsvpStatus.CONFIRMED } } } } },
     }),
     prisma.organisation.count({ where: { events: { none: {} }, eventSeries: { none: {} } } }),
     prisma.organisation.findMany({
@@ -55,6 +57,13 @@ export default async function SuperAdminActivityPage() {
       select: { id: true, name: true, slug: true, createdAt: true, _count: { select: { memberships: true } } },
     }),
   ]);
+
+  // TEAM events fill capacity in units (teams plus solo registrants), not people.
+  const unitsByEvent = new Map(
+    await Promise.all(
+      upcoming.filter((event) => event.registrationMode === "TEAM").map(async (event) => [event.id, await countConfirmedForEvent(event.id, event.registrationMode)] as const),
+    ),
+  );
 
   const series = fillDailySeries(dailyRows, ACTIVITY_SERIES, WINDOW_DAYS * 2, now);
   const rsvpTotal = rsvpStatuses.reduce((total, row) => total + row._count._all, 0);
@@ -151,7 +160,18 @@ export default async function SuperAdminActivityPage() {
                   <TR key={event.id}>
                     <TD><NameCell name={event.title} sub={<Link href={`/super-admin/orgs/${event.organisation.id}`} className="underline-offset-4 hover:underline">{event.organisation.name}</Link>} /></TD>
                     <TD className="whitespace-nowrap text-ink-secondary">{event.startDateTime.toLocaleString()}</TD>
-                    <TD className="text-right tabular-nums">{event.capacity ? `${event._count.rsvps} / ${event.capacity}` : event._count.rsvps}</TD>
+                    <TD className="text-right tabular-nums">
+                      {unitsByEvent.has(event.id) ? (
+                        <>
+                          {teamCapacityLabel(unitsByEvent.get(event.id)!, event.capacity, event.soloPolicy)}
+                          <span className="block text-caption text-ink-muted">{peopleCount(event._count.rsvps)}</span>
+                        </>
+                      ) : event.capacity ? (
+                        `${event._count.rsvps} / ${event.capacity}`
+                      ) : (
+                        event._count.rsvps
+                      )}
+                    </TD>
                   </TR>
                 ))}
               </TBody>

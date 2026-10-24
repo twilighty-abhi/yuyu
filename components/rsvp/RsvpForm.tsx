@@ -222,10 +222,11 @@ export function RsvpForm(props: {
     </Callout>
   ) : null;
 
-  if (teamState.awaitingLink) {
-    // "Join with a link" without a link: only the explanation, nothing to submit.
-    return <div className="flex flex-col gap-3.5">{teamFields}</div>;
-  }
+  // "Join with a link" without a link: only the explanation, nothing to
+  // submit. The team choice stays in the same element either way, so moving
+  // between the options with the arrow keys never remounts the radio group
+  // (which would drop keyboard focus out of it).
+  const awaitingLink = teamState.awaitingLink;
 
   if (session?.user) {
     return (
@@ -233,25 +234,29 @@ export function RsvpForm(props: {
         {error ? <Callout tone="danger" role="alert">{error}</Callout> : null}
         {problems}
         {teamFields}
-        <div data-question-key="__name">
-          <Field label="Name" optional={!requireName} required={requireName} error={identity.name} helperText={!requireName ? `Leave blank to use ${session.user.name}.` : undefined}>
-            <Input
-              name="name"
-              autoComplete="name"
-              value={name}
-              placeholder={session.user.name ?? ""}
-              onChange={(event) => {
-                setName(event.target.value);
-                if (identity.name && event.target.value.trim()) setIdentity((current) => ({ ...current, name: undefined }));
-              }}
-              maxLength={200}
-            />
-          </Field>
-        </div>
-        {questions}
-        <Button variant="accent" size="lg" fullWidth loading={pending} loadingLabel="Registering…" onClick={submit}>
-          Register
-        </Button>
+        {awaitingLink ? null : (
+          <>
+            <div data-question-key="__name">
+              <Field label="Name" optional={!requireName} required={requireName} error={identity.name} helperText={!requireName ? `Leave blank to use ${session.user.name}.` : undefined}>
+                <Input
+                  name="name"
+                  autoComplete="name"
+                  value={name}
+                  placeholder={session.user.name ?? ""}
+                  onChange={(event) => {
+                    setName(event.target.value);
+                    if (identity.name && event.target.value.trim()) setIdentity((current) => ({ ...current, name: undefined }));
+                  }}
+                  maxLength={200}
+                />
+              </Field>
+            </div>
+            {questions}
+            <Button variant="accent" size="lg" fullWidth loading={pending} loadingLabel="Registering…" onClick={submit}>
+              Register
+            </Button>
+          </>
+        )}
       </div>
     );
   }
@@ -269,42 +274,46 @@ export function RsvpForm(props: {
       {error ? <Callout tone="danger" role="alert">{error}</Callout> : null}
       {problems}
       {teamFields}
-      <p className="text-body-ui text-ink-muted">Register with your email</p>
-      <div data-question-key="__name">
-        <Field label="Name" required error={identity.name}>
-          <Input
-            name="name"
-            autoComplete="name"
-            value={name}
-            onChange={(event) => {
-              setName(event.target.value);
-              if (identity.name && event.target.value.trim()) setIdentity((current) => ({ ...current, name: undefined }));
-            }}
-            maxLength={200}
-          />
-        </Field>
-      </div>
-      <div data-question-key="__email">
-        <Field label="Email" required error={identity.email} helperText="We’ll send your ticket here.">
-          <Input
-            name="guestEmail"
-            type="email"
-            autoComplete="email"
-            value={guestEmail}
-            onChange={(event) => {
-              setGuestEmail(event.target.value);
-              if (identity.email) {
-                const recheck = identityErrors({ name, email: event.target.value, requireName: false, requireEmail: true }).email;
-                setIdentity((current) => ({ ...current, email: recheck }));
-              }
-            }}
-          />
-        </Field>
-      </div>
-      {questions}
-      <Button variant="accent" size="lg" fullWidth type="submit" loading={pending} loadingLabel="Registering…">
-        Register
-      </Button>
+      {awaitingLink ? null : (
+        <>
+          <p className="text-body-ui text-ink-muted">Register with your email</p>
+          <div data-question-key="__name">
+            <Field label="Name" required error={identity.name}>
+              <Input
+                name="name"
+                autoComplete="name"
+                value={name}
+                onChange={(event) => {
+                  setName(event.target.value);
+                  if (identity.name && event.target.value.trim()) setIdentity((current) => ({ ...current, name: undefined }));
+                }}
+                maxLength={200}
+              />
+            </Field>
+          </div>
+          <div data-question-key="__email">
+            <Field label="Email" required error={identity.email} helperText="We’ll send your ticket here.">
+              <Input
+                name="guestEmail"
+                type="email"
+                autoComplete="email"
+                value={guestEmail}
+                onChange={(event) => {
+                  setGuestEmail(event.target.value);
+                  if (identity.email) {
+                    const recheck = identityErrors({ name, email: event.target.value, requireName: false, requireEmail: true }).email;
+                    setIdentity((current) => ({ ...current, email: recheck }));
+                  }
+                }}
+              />
+            </Field>
+          </div>
+          {questions}
+          <Button variant="accent" size="lg" fullWidth type="submit" loading={pending} loadingLabel="Registering…">
+            Register
+          </Button>
+        </>
+      )}
     </form>
   );
 }

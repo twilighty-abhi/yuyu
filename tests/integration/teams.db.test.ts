@@ -21,6 +21,8 @@ import { cancelRsvpForUser } from "@/lib/core/rsvpCancel";
 import { approveRsvpForUser } from "@/lib/core/rsvpLifecycle";
 import { deleteRsvpForUser, restoreRsvpForUser } from "@/lib/core/rsvpAdmin";
 import { countConfirmedUnits } from "@/lib/teamUnits";
+import { countConfirmedForEvent } from "@/lib/rsvpCapacity";
+import { loadRsvpCounts } from "@/lib/dashboardHome";
 import { lookupAttendeesForCheckInForUser } from "@/lib/core/checkin";
 import { hashTeamManageToken, teamJoinPath } from "@/lib/teamToken";
 import { flushWebhookEmits } from "@/lib/webhooks/emit";
@@ -39,6 +41,7 @@ import {
   organiserDeleteTeam,
   organiserMoveMember,
   organiserRenameTeam,
+  regenerateJoinToken,
   regenerateManageToken,
   removeTeamMember,
   renameTeam,
@@ -339,6 +342,35 @@ describe.sequential("team registration integration", () => {
     await expectTeamInvariants(event);
   });
 
+  it("refuses rename, link resets, leadership transfer and matching for a declined team, but still allows removal and disbanding", async () => {
+    const event = await createEvent({ privacyType: EventPrivacyType.APPROVAL_REQUIRED, soloPolicy: SoloPolicy.SOLO_WITH_MATCHING });
+    const ctx = await organiser(event);
+    const { team } = await createTeam(event, "Turned Down");
+    const second = await joinTeam(event, team.id, "second");
+    const third = await joinTeam(event, team.id, "third");
+    const auth = await leaderAuth(team.id);
+    await expect(transitionTeamStatus(ctx, team.id, "reject")).resolves.toEqual({ ok: true, data: { status: RsvpStatus.REJECTED } });
+    const before = await prisma.team.findUniqueOrThrow({ where: { id: team.id } });
+
+    const declined = { ok: false, error: "The organisers declined this team, so it can't be changed. You can still remove members or disband it." };
+    await expect(renameTeam(auth, { name: "Renamed Anyway" })).resolves.toEqual(declined);
+    await expect(regenerateJoinToken(auth)).resolves.toEqual(declined);
+    await expect(regenerateManageToken(auth)).resolves.toEqual(declined);
+    await expect(transferLeadership(auth, second.rsvpId)).resolves.toEqual(declined);
+    await expect(setLookingForMembers(auth, true)).resolves.toEqual(declined);
+    const after = await prisma.team.findUniqueOrThrow({ where: { id: team.id } });
+    expect({ name: after.name, joinToken: after.joinToken, manageTokenHash: after.manageTokenHash, leaderRsvpId: after.leaderRsvpId, lookingForMembers: after.lookingForMembers })
+      .toEqual({ name: before.name, joinToken: before.joinToken, manageTokenHash: before.manageTokenHash, leaderRsvpId: before.leaderRsvpId, lookingForMembers: before.lookingForMembers });
+    // The old management link still resolves: nothing was rotated.
+    await expect(resolveTeamByManageToken(await currentManageToken(team.id))).resolves.not.toBeNull();
+    await expectTeamInvariants(event);
+
+    // Removing a member and disbanding (cancelling) stay available.
+    await expect(removeTeamMember(auth, third.rsvpId)).resolves.toEqual({ ok: true });
+    await expect(disbandTeam(auth)).resolves.toEqual({ ok: true, data: { cancelled: 2 } });
+    await expect(prisma.team.count({ where: { id: team.id } })).resolves.toBe(0);
+  });
+
   it("accepting a seeker frees their solo unit and promotes the oldest waitlisted unit", async () => {
     const event = await createEvent({ capacity: 2, soloPolicy: SoloPolicy.SOLO_WITH_MATCHING });
     const teamA = await createTeam(event, "Seekers welcome");
@@ -464,6 +496,12 @@ describe.sequential("team registration integration", () => {
     await expect(resolveTeamByManageToken(teamA.manageToken)).resolves.toBeNull();
     await expect(renameTeam(authA!, { name: "Stale" })).resolves.toEqual({ ok: false, error: "Team not found." });
     await expect(resolveTeamByManageToken(rotated.ok ? rotated.data!.manageToken : "")).resolves.toMatchObject({ teamId: teamA.team.id });
+    // The new link is emailed to the leader, so losing the tab never strands the team.
+    const leaderA = await prisma.rSVP.findUniqueOrThrow({ where: { id: teamA.team.leaderRsvpId! }, select: { guestEmail: true } });
+    const resetMail = await prisma.outboxMessage.findMany({ where: { kind: "team-created", AND: [{ payload: { path: ["teamId"], equals: teamA.team.id } }, { payload: { path: ["reason"], equals: "reset" } }] } });
+    expect(resetMail.map((message) => message.payload)).toEqual([
+      { to: leaderA.guestEmail, teamId: teamA.team.id, manageToken: rotated.ok ? rotated.data!.manageToken : "", reason: "reset" },
+    ]);
     await expectTeamInvariants(event);
   });
 
@@ -958,5 +996,29 @@ describe.sequential("team registration integration", () => {
     await expect(prisma.checkInListRecord.findMany({ where: { rsvpId: solo.leader.rsvpId }, select: { listId: true, source: true } })).resolves.toEqual([
       { listId: swag.id, source: "mobile-manual" },
     ]);
+  });
+
+  it("dashboard counts compare units, not people, with capacity on TEAM events", async () => {
+    const event = await createEvent({ capacity: 3 });
+    const alpha = await createTeam(event, "Count Alpha");
+    await joinTeam(event, alpha.team.id);
+    await joinTeam(event, alpha.team.id);
+    const beta = await createTeam(event, "Count Beta");
+    await joinTeam(event, beta.team.id);
+    await registerOk(event, "count-solo");
+    // 6 people in 3 units: the event is full in units.
+    await expect(prisma.rSVP.count({ where: { eventId: event.id, status: RsvpStatus.CONFIRMED } })).resolves.toBe(6);
+    await expect(countConfirmedForEvent(event.id, event.registrationMode)).resolves.toBe(3);
+    const counts = await loadRsvpCounts([event.id], []);
+    expect(counts.event.get(event.id)?.confirmed).toBe(6);
+    expect(counts.units.get(event.id)).toBe(3);
+
+    // INDIVIDUAL events: units equal confirmed people.
+    const individual = await createEvent({ capacity: 5, registrationMode: RegistrationMode.INDIVIDUAL });
+    await registerOk(individual, "count-one");
+    await registerOk(individual, "count-two");
+    await expect(countConfirmedForEvent(individual.id, individual.registrationMode)).resolves.toBe(2);
+    const individualCounts = await loadRsvpCounts([individual.id], []);
+    expect(individualCounts.units.get(individual.id)).toBe(2);
   });
 });

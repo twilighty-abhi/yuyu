@@ -18,7 +18,7 @@ import { canManageRegistrationsFor } from "@/lib/eventAccess";
 import { isRegistrationClosed } from "@/lib/registrationCutoff";
 import { submitRsvpCore } from "@/lib/rsvpCore";
 import { cancelRsvpForUser } from "@/lib/core/rsvpCancel";
-import { enqueueRsvpStatusNotification, enqueueTeamMemberAdded } from "@/lib/outbox";
+import { enqueueRsvpStatusNotification, enqueueTeamCreated, enqueueTeamMemberAdded } from "@/lib/outbox";
 import {
   captureSubmissionSnapshotTx,
   restoreSubmissionSnapshotTx,
@@ -101,6 +101,8 @@ export type JoinRequestActor =
 
 const TEAM_NOT_FOUND = "Team not found.";
 const NOT_A_TEAM_EVENT = "This event does not use team registration.";
+/** Leader management that only matters for a team that can still take part (rename, links, leadership, matching). */
+const TEAM_DECLINED = "The organisers declined this team, so it can't be changed. You can still remove members or disband it.";
 export const INVITE_ONLY_ADD_REFUSED =
   "This event is invite-only. Share your team's join link instead; each person signs in with their invited account to join.";
 
@@ -394,6 +396,7 @@ export async function transferLeadership(auth: TeamLeaderAuth, newLeaderRsvpId: 
     if (!event) return fail(TEAM_NOT_FOUND);
     const team = await lockedLeaderTeam(tx, auth);
     if (!team) return fail(TEAM_NOT_FOUND);
+    if (team.status === RsvpStatus.REJECTED) return fail(TEAM_DECLINED);
     if (team.leaderRsvpId === newLeaderRsvpId) return fail("This member already leads the team.");
     const member = await tx.rSVP.findFirst({ where: { id: newLeaderRsvpId, eventId: event.id, teamId: team.id }, select: { id: true } });
     if (!member) return fail("Member not found.");
@@ -419,6 +422,7 @@ export async function renameTeam(auth: TeamLeaderAuth, input: unknown): Promise<
       if (!event) return fail(TEAM_NOT_FOUND);
       const team = await lockedLeaderTeam(tx, auth);
       if (!team) return fail(TEAM_NOT_FOUND);
+    if (team.status === RsvpStatus.REJECTED) return fail(TEAM_DECLINED);
       return renameTeamTx(tx, team, parsed.data.name);
     });
   } catch (error) {
@@ -434,6 +438,7 @@ export async function regenerateJoinToken(auth: TeamLeaderAuth): Promise<TeamRes
     if (!event) return fail(TEAM_NOT_FOUND);
     const team = await lockedLeaderTeam(tx, auth);
     if (!team) return fail(TEAM_NOT_FOUND);
+    if (team.status === RsvpStatus.REJECTED) return fail(TEAM_DECLINED);
     const joinToken = generateTeamToken();
     await tx.team.update({ where: { id: team.id }, data: { joinToken } });
     const org = await tx.organisation.findUnique({ where: { id: event.organisationId }, select: { slug: true } });
@@ -443,8 +448,9 @@ export async function regenerateJoinToken(auth: TeamLeaderAuth): Promise<TeamRes
 
 /**
  * New management link; the old one stops working immediately. The raw token
- * is returned once so the page can move to the new address; only its hash is
- * stored.
+ * is returned once so the page can move to the new address, and is emailed to
+ * the leader (outbox `team-created`, reason `reset`) so the team stays
+ * manageable if that tab is lost; only its hash is stored.
  */
 export async function regenerateManageToken(auth: TeamLeaderAuth): Promise<TeamResult<{ manageToken: string; managePath: string }>> {
   return prisma.$transaction(async (tx): Promise<TeamResult<{ manageToken: string; managePath: string }>> => {
@@ -452,8 +458,14 @@ export async function regenerateManageToken(auth: TeamLeaderAuth): Promise<TeamR
     if (!event) return fail(TEAM_NOT_FOUND);
     const team = await lockedLeaderTeam(tx, auth);
     if (!team) return fail(TEAM_NOT_FOUND);
+    if (team.status === RsvpStatus.REJECTED) return fail(TEAM_DECLINED);
     const manage = generateTeamManageToken();
     await tx.team.update({ where: { id: team.id }, data: { manageTokenHash: manage.hash } });
+    const leader = team.leaderRsvpId
+      ? await tx.rSVP.findUnique({ where: { id: team.leaderRsvpId }, select: { guestEmail: true, user: { select: { email: true } } } })
+      : null;
+    const to = leader?.user?.email?.trim() || leader?.guestEmail;
+    if (to) await enqueueTeamCreated(tx, { to, teamId: team.id, manageToken: manage.raw, reason: "reset" });
     return { ok: true, data: { manageToken: manage.raw, managePath: teamManagePath(manage.raw) } };
   });
 }
@@ -465,6 +477,7 @@ export async function setLookingForMembers(auth: TeamLeaderAuth, looking: boolea
     if (!event) return fail(TEAM_NOT_FOUND);
     const team = await lockedLeaderTeam(tx, auth);
     if (!team) return fail(TEAM_NOT_FOUND);
+    if (team.status === RsvpStatus.REJECTED) return fail(TEAM_DECLINED);
     await tx.team.update({ where: { id: team.id }, data: { lookingForMembers: looking } });
     return { ok: true };
   });

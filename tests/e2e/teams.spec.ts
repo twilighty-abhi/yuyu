@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import bcrypt from "bcryptjs";
-import { EventPrivacyType, EventStatus, MembershipRole, PrismaClient, RegistrationMode } from "@prisma/client";
+import { EventPrivacyType, EventStatus, MembershipRole, PrismaClient, RegistrationMode, RsvpStatus, SoloPolicy } from "@prisma/client";
 import { expect, test, type APIResponse, type Browser, type BrowserContext, type Page } from "@playwright/test";
 
 // Team registration journeys (docs/TEAMS.md). One ordered story: the organiser
@@ -26,7 +26,22 @@ const member = { name: "Milo Member", email: `teams-member-${suffix}@example.tes
 const approvalLeader = { name: "Aria Approval", email: `teams-approval-leader-${suffix}@example.test` };
 const approvalMember = { name: "Bram Approval", email: `teams-approval-member-${suffix}@example.test` };
 const soloEntrant = { name: "Sol Solo", email: `teams-solo-${suffix}@example.test` };
-const testEmails = [ownerEmail, leader.email, member.email, approvalLeader.email, approvalMember.email, soloEntrant.email];
+const matchSlug = `match-${suffix}`;
+const matchTitle = `Match Night ${suffix}`;
+const matchLeader = { name: "Max Match", email: `teams-match-leader-${suffix}@example.test` };
+const matchSeeker = { name: "Sasha Seeker", email: `teams-match-seeker-${suffix}@example.test` };
+const declinedLeader = { name: "Dana Declined", email: `teams-declined-leader-${suffix}@example.test` };
+const testEmails = [
+  ownerEmail,
+  leader.email,
+  member.email,
+  approvalLeader.email,
+  approvalMember.email,
+  soloEntrant.email,
+  matchLeader.email,
+  matchSeeker.email,
+  declinedLeader.email,
+];
 
 let ownerId = "";
 let organisationId = "";
@@ -169,12 +184,15 @@ test("an organiser turns on team registration in the event's publishing settings
   await expect(teamSwitch).not.toBeChecked();
   await teamSwitch.click();
   await expect(teamSwitch).toBeChecked();
+  await form.getByRole("spinbutton", { name: "Smallest team" }).fill("2");
   await form.getByRole("spinbutton", { name: "Largest team" }).fill("3");
+  // The solo-policy dropdown is named by its question (not by the hidden native select).
+  await expect(form.getByRole("combobox", { name: "Can people sign up without a team?" })).toHaveText("Teams or on their own");
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByText("Event saved").first()).toBeVisible();
   await expect
-    .poll(async () => prisma.event.findUniqueOrThrow({ where: { id: eventId }, select: { registrationMode: true, teamMaxSize: true } }))
-    .toEqual({ registrationMode: RegistrationMode.TEAM, teamMaxSize: 3 });
+    .poll(async () => prisma.event.findUniqueOrThrow({ where: { id: eventId }, select: { registrationMode: true, teamMinSize: true, teamMaxSize: true } }))
+    .toEqual({ registrationMode: RegistrationMode.TEAM, teamMinSize: 2, teamMaxSize: 3 });
   expect(errors).toEqual([]);
   await context.close();
 });
@@ -184,9 +202,33 @@ test("a leader creates a team through the public form and sees the confirmation"
   const page = await context.newPage();
   const errors = collectPageErrors(page);
   await page.goto(`/${orgSlug}/${eventSlug}`);
+  const joinCard = page.locator("section", { has: page.locator("#join-title") });
+  await expect(joinCard.getByText("0 places taken")).toBeVisible();
   await page.getByRole("button", { name: /^Register/ }).first().click();
   const dialog = page.getByRole("dialog", { name: `Register for ${eventTitle}` });
   await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("radio", { name: /Create a team/ })).toBeChecked();
+  // Keyboard: the arrow keys move through the options without focus leaving the group,
+  // including through "Join with a link", which hides the rest of the form.
+  await waitForHydration(page, '[role="dialog"] [role="radio"]');
+  await dialog.getByRole("radio", { name: /Create a team/ }).focus();
+  // Radix moves focus a tick after keydown and checks the option only while the
+  // key is still down, so hold each key briefly as a person does.
+  const pressArrow = async (key: "ArrowDown" | "ArrowUp") => {
+    await page.keyboard.down(key);
+    await page.waitForTimeout(100);
+    await page.keyboard.up(key);
+  };
+  await pressArrow("ArrowDown");
+  await expect(dialog.getByRole("radio", { name: /Join with a link/ })).toBeFocused();
+  await expect(dialog.getByRole("radio", { name: /Join with a link/ })).toBeChecked();
+  // The note says what the link does, with the callout's own icon only.
+  const linkNote = dialog.locator("div.rounded-lg", { hasText: "Ask your team leader for the team link" }).last();
+  await expect(linkNote).toContainText("The link opens a page for that team where you register straight into it.");
+  await expect(linkNote).not.toContainText("brings you back");
+  await expect(linkNote.locator("svg")).toHaveCount(1);
+  await pressArrow("ArrowUp");
+  await expect(dialog.getByRole("radio", { name: /Create a team/ })).toBeFocused();
   await expect(dialog.getByRole("radio", { name: /Create a team/ })).toBeChecked();
   await dialog.getByRole("textbox", { name: /^Team name/ }).fill(teamName);
   await dialog.getByRole("textbox", { name: /^Name/ }).fill(leader.name);
@@ -194,6 +236,10 @@ test("a leader creates a team through the public form and sees the confirmation"
   await dialog.getByRole("button", { name: "Register", exact: true }).click();
   // A new leader's dialog stays open on the done message: the team page link is emailed.
   await expect(dialog.getByText(/Your team is registered\. Check your email for your team page link/)).toBeVisible();
+  // The places count behind the dialog updates without a reload.
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(joinCard.getByText("1 place taken")).toBeVisible();
 
   const team = await prisma.team.findFirstOrThrow({ where: { eventId }, include: { members: true } });
   expect(team.name).toBe(teamName);
@@ -219,12 +265,18 @@ test("the team page shows the join link and is a private, unindexed page", async
   await expectCapabilityHeaders(await page.request.get(`/team/${manageToken}`), "/team/:token");
 
   await page.goto(`/team/${manageToken}`);
-  const joinCard = page.locator("section", { has: page.locator("#team-join-link") });
+  // The page sits in Yuyu's site chrome: header, a main landmark (skip-link target) and the page gutter.
+  const main = page.locator("main#main-content");
+  await expect(main).toBeVisible();
+  const joinCard = main.locator("section", { has: page.locator("#team-join-link") });
   await expect(joinCard).toBeVisible();
   const joinUrl = (await joinCard.locator(".font-mono").innerText()).trim();
   joinPath = new URL(joinUrl, "http://placeholder.invalid").pathname;
   expect(joinPath).toMatch(new RegExp(`^/${orgSlug}/${eventSlug}/team/[A-Za-z0-9_-]{32,128}$`));
   await expect(page.getByRole("list").filter({ hasText: leader.name }).first()).toBeVisible();
+  // A confirmed team below the minimum on an event without approval is told to grow, not that approval waits.
+  await expect(main.getByText("Teams need at least 2 members. Add 1 more with the join link so your team is complete.")).toBeVisible();
+  await expect(main.getByText(/can't approve your team/)).toHaveCount(0);
 
   // An unknown management token reveals nothing.
   expect((await page.request.get(`/team/${"x".repeat(43)}`)).status()).toBe(404);
@@ -300,6 +352,8 @@ test("a solo registrant joins the team by pasting its link on their ticket page"
 
   const page = await context.newPage();
   const errors = collectPageErrors(page);
+  // The ticket page (with Join a team and the seeker list) is a bearer page like /team/:token.
+  await expectCapabilityHeaders(await page.request.get(`/ticket/${solo.checkInToken}`), "/ticket/:token");
   await page.goto(`/ticket/${solo.checkInToken}`);
   const card = page.locator("section", { has: page.locator("#ticket-join-team-title") });
   await expect(card).toBeVisible();
@@ -316,6 +370,12 @@ test("a solo registrant joins the team by pasting its link on their ticket page"
   const moved = await prisma.rSVP.findUniqueOrThrow({ where: { id: solo.id }, select: { status: true, checkInToken: true, team: { select: { name: true } } } });
   expect(moved).toEqual({ status: "CONFIRMED", checkInToken: solo.checkInToken, team: { name: teamName } });
   expect(await prisma.rSVP.count({ where: { eventId } })).toBe(3);
+  // The team is now full (3 of 3): the join page says so and doesn't promise a form.
+  const fullJoin = await context.newPage();
+  await fullJoin.goto(joinPath);
+  await expect(fullJoin.getByText("This team is full")).toBeVisible();
+  await expect(fullJoin.getByText(/Register below/)).toHaveCount(0);
+  await fullJoin.close();
   await discardQueuedTestEmail();
   expect(errors).toEqual([]);
   await context.close();
@@ -343,11 +403,28 @@ test("an organiser approves a team on an approval-required event and both ticket
 
   const { context, page } = await ownerContext(browser);
   const errors = collectPageErrors(page);
+  // Below the minimum, Approve stays reachable by keyboard and explains itself in visible text.
+  await prisma.event.update({ where: { id: approvalEventId }, data: { teamMinSize: 3 } });
   await page.goto(`/dashboard/${orgSlug}/event/${approvalEventId}?tab=guests`);
   await page.getByRole("tab", { name: /^Teams/ }).click();
   const teams = page.getByRole("list", { name: "Teams" });
   await expect(teams.getByText(approvalTeamName)).toBeVisible();
-  await teams.getByRole("button", { name: `Approve team ${approvalTeamName}` }).click();
+  const approve = teams.getByRole("button", { name: `Approve team ${approvalTeamName}` });
+  await expect(approve).toHaveAttribute("aria-disabled", "true");
+  await expect(approve).not.toHaveAttribute("title");
+  await expect(approve).toHaveAccessibleDescription("Can't be approved yet: this team needs at least 3 people.");
+  await expect(teams.getByText("Can't be approved yet: this team needs at least 3 people.")).toBeVisible();
+  await approve.focus();
+  await expect(approve).toBeFocused();
+  await page.keyboard.press("Enter");
+  expect((await prisma.team.findUniqueOrThrow({ where: { id: team.id } })).status).toBe("PENDING_APPROVAL");
+
+  await prisma.event.update({ where: { id: approvalEventId }, data: { teamMinSize: null } });
+  await page.reload();
+  await page.getByRole("tab", { name: /^Teams/ }).click();
+  await expect(teams.getByText(approvalTeamName)).toBeVisible();
+  await expect(approve).not.toHaveAttribute("aria-disabled");
+  await approve.click();
   await expect
     .poll(async () => (await prisma.rSVP.findMany({ where: { eventId: approvalEventId }, select: { status: true } })).map((rsvp) => rsvp.status))
     .toEqual(["CONFIRMED", "CONFIRMED"]);
@@ -369,4 +446,176 @@ test("an organiser approves a team on an approval-required event and both ticket
   }
   await leaderContext.close();
   await memberContext.close();
+});
+
+test("the check-in desk lookup says it matches teams and finds a team's members", async ({ browser }) => {
+  const { context, page } = await ownerContext(browser);
+  const errors = collectPageErrors(page);
+  await page.goto(`/dashboard/${orgSlug}/event/${eventId}/check-in`);
+  const search = page.getByRole("textbox", { name: "Name, email or team", exact: true });
+  await expect(search).toHaveAttribute("placeholder", "Name, email or team");
+  await waitForHydration(page, "#check-in-search");
+  await search.fill(teamName);
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await expect(page.getByRole("button", { name: leader.name }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: member.name }).first()).toBeVisible();
+  expect(errors).toEqual([]);
+  await context.close();
+});
+
+test("the create event dialog explains a too-small team size inline and focuses the field", async ({ browser }) => {
+  const { context, page } = await ownerContext(browser);
+  const errors = collectPageErrors(page);
+  await page.goto(`/dashboard/${orgSlug}`);
+  await page.getByRole("button", { name: "New event" }).first().click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("heading", { name: "Create Event: Basics" })).toBeVisible();
+  await dialog.getByRole("textbox", { name: /^Title/ }).fill(`Too Small ${suffix}`);
+  await dialog.getByRole("textbox", { name: "About the event" }).fill("Checks the team size message.");
+  await dialog.getByRole("button", { name: "Next" }).click();
+  await expect(dialog.getByRole("heading", { name: "Create Event: Schedule" })).toBeVisible();
+  await dialog.getByRole("button", { name: "Next" }).click();
+  await expect(dialog.getByRole("heading", { name: "Create Event: Location" })).toBeVisible();
+  await dialog.getByRole("textbox", { name: /^Location/ }).fill("Community Hall, 1 Test Street");
+  await dialog.getByRole("switch", { name: /^Team registration/ }).click();
+  const largest = dialog.getByRole("spinbutton", { name: "Largest team" });
+  await largest.fill("1");
+  await dialog.getByRole("button", { name: "Create", exact: true }).click();
+
+  const message = "Teams need room for at least 2 people.";
+  await expect(dialog.getByText(message)).toBeVisible();
+  await expect(dialog.getByText(message)).toHaveAttribute("aria-live", "polite");
+  await expect(largest).toBeFocused();
+  await expect(largest).toHaveAttribute("aria-invalid", "true");
+  await expect(largest).toHaveAccessibleDescription(message);
+  // No native constraint competes with the inline message (no browser bubble).
+  expect(await largest.evaluate((node: HTMLInputElement) => node.validity.valid)).toBe(true);
+  // Only the inline message: no second copy in the dialog's alert.
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  expect(await prisma.event.count({ where: { organisationId, title: `Too Small ${suffix}` } })).toBe(0);
+  expect(errors).toEqual([]);
+  await context.close();
+});
+
+test("a leader's team page lists invited seekers accurately and a declined team offers no management actions", async ({ browser }) => {
+  const matchEvent = await createTeamEvent({ slug: matchSlug, title: matchTitle, privacyType: EventPrivacyType.PUBLIC });
+  await prisma.event.update({ where: { id: matchEvent.id }, data: { registrationMode: RegistrationMode.TEAM, teamMaxSize: 4, soloPolicy: SoloPolicy.SOLO_WITH_MATCHING } });
+  // One client address per registration, so the per-IP registration limit never couples them.
+  const register = async (data: Record<string, unknown>) => {
+    const registrant = await newContext(browser);
+    const response = await registrant.request.post("/api/rsvp", { data });
+    const result = { status: response.status(), text: await response.text() };
+    await registrant.close();
+    return result;
+  };
+  const created = await register({ orgSlug, eventSlug: matchSlug, guestEmail: matchLeader.email, name: matchLeader.name, answers: {}, team: { mode: "create", name: `Match Team ${suffix}` } });
+  expect(created.status, created.text).toBe(200);
+  const seeker = await register({
+    orgSlug,
+    eventSlug: matchSlug,
+    guestEmail: matchSeeker.email,
+    name: matchSeeker.name,
+    answers: {},
+    team: { mode: "solo", seeker: { headline: "Frontend developer", skills: ["React"] } },
+  });
+  expect(seeker.status, seeker.text).toBe(200);
+  const declined = await register({ orgSlug, eventSlug: matchSlug, guestEmail: declinedLeader.email, name: declinedLeader.name, answers: {}, team: { mode: "create", name: `Declined Team ${suffix}` } });
+  expect(declined.status, declined.text).toBe(200);
+  const tokenFor = async (teamName: string) => {
+    const team = await prisma.team.findFirstOrThrow({ where: { eventId: matchEvent.id, name: teamName } });
+    const messages = await prisma.outboxMessage.findMany({ where: { kind: "team-created" }, select: { payload: true } });
+    const payload = messages.map((message) => message.payload as { teamId?: string; manageToken?: string }).find((item) => item.teamId === team.id);
+    return { team, manageToken: payload!.manageToken! };
+  };
+  const match = await tokenFor(`Match Team ${suffix}`);
+  const rejected = await tokenFor(`Declined Team ${suffix}`);
+  await discardQueuedTestEmail();
+
+  const context = await newContext(browser);
+  const page = await context.newPage();
+  const errors = collectPageErrors(page);
+  await page.goto(`/team/${match.manageToken}`);
+  const matching = page.locator("section", { has: page.locator("#team-matching") });
+  await expect(matching.locator("p", { hasText: "Sasha S." }).first()).toBeVisible();
+  await waitForHydration(page, "section:has(#team-matching) button");
+  await matching.getByRole("button", { name: "Invite", exact: true }).click();
+  await expect(matching.getByRole("heading", { name: "Invitations you sent" })).toBeVisible();
+  await expect(matching.getByText("Everyone looking for a team has already been invited. Check back later.")).toBeVisible();
+  await expect(matching.getByText("No one is looking for a team yet")).toHaveCount(0);
+
+  // A declined team: viewing and disbanding stay; rename and link resets are gone.
+  await prisma.$transaction([
+    prisma.team.update({ where: { id: rejected.team.id }, data: { status: RsvpStatus.REJECTED } }),
+    prisma.rSVP.updateMany({ where: { teamId: rejected.team.id }, data: { status: RsvpStatus.REJECTED } }),
+  ]);
+  await page.goto(`/team/${rejected.manageToken}`);
+  const main = page.locator("main#main-content");
+  await expect(main.getByText(/The organisers declined this team/)).toBeVisible();
+  await expect(main.getByRole("heading", { level: 1, name: `Declined Team ${suffix}` })).toBeVisible();
+  await expect(main.getByRole("button", { name: "Rename" })).toHaveCount(0);
+  await expect(main.getByRole("button", { name: /Reset management link/ })).toHaveCount(0);
+  await expect(main.getByRole("button", { name: /Create a new link/ })).toHaveCount(0);
+  await expect(main.getByRole("button", { name: "Disband team…" })).toBeVisible();
+  await discardQueuedTestEmail();
+  expect(errors).toEqual([]);
+  await context.close();
+});
+
+test("dashboards show team units against capacity and people separately; individual events are unchanged", async ({ browser }) => {
+  // Three confirmed teams of two fill a capacity of 3 units with 6 people.
+  const unitsEvent = await createTeamEvent({ slug: `units-${suffix}`, title: `Units Night ${suffix}`, privacyType: EventPrivacyType.PUBLIC });
+  await prisma.event.update({ where: { id: unitsEvent.id }, data: { registrationMode: RegistrationMode.TEAM, teamMaxSize: 4, capacity: 3 } });
+  for (const index of [1, 2, 3]) {
+    const name = `Units Team ${index} ${suffix}`;
+    const team = await prisma.team.create({
+      data: { eventId: unitsEvent.id, name, nameKey: name.toLowerCase(), status: RsvpStatus.CONFIRMED, joinToken: `units-join-${index}-${suffix}`, manageTokenHash: `units-manage-${index}-${suffix}` },
+    });
+    for (const person of ["a", "b"]) {
+      const email = `units-${index}${person}-${suffix}@example.test`;
+      await prisma.rSVP.create({ data: { eventId: unitsEvent.id, guestEmail: email, guestName: `Units ${index}${person}`, attendeeKey: `guest:${email}`, status: RsvpStatus.CONFIRMED, teamId: team.id } });
+    }
+  }
+  // An individual event keeps the plain "Going" people count.
+  const individualSlug = `solo-night-${suffix}`;
+  const individual = await createTeamEvent({ slug: individualSlug, title: `Solo Night ${suffix}`, privacyType: EventPrivacyType.PUBLIC });
+  await prisma.event.update({ where: { id: individual.id }, data: { capacity: 5 } });
+  for (const person of ["x", "y"]) {
+    const email = `units-ind-${person}-${suffix}@example.test`;
+    await prisma.rSVP.create({ data: { eventId: individual.id, guestEmail: email, guestName: `Ind ${person}`, attendeeKey: `guest:${email}`, status: RsvpStatus.CONFIRMED } });
+  }
+
+  const { context, page } = await ownerContext(browser);
+  const errors = collectPageErrors(page);
+  const headerStat = (label: string) => page.locator("header dl > div:visible", { has: page.locator("dt", { hasText: new RegExp(`^${label}$`) }) });
+
+  await page.goto(`/dashboard/${orgSlug}/event/${unitsEvent.id}`);
+  const places = headerStat("Places taken");
+  await expect(places.locator("dd")).toContainText("3 / 3");
+  await expect(places.locator("dd")).toContainText("teams & solo places · 6 people going");
+  await expect(headerStat("Going")).toHaveCount(0);
+  await expect(page.locator("header dl:visible").first()).not.toContainText("6 / 3");
+
+  await page.goto(`/dashboard/${orgSlug}/event/${unitsEvent.id}?tab=analytics`);
+  await expect(page.getByText("3 / 3 teams & solo places · full").filter({ visible: true }).first()).toBeVisible();
+  await expect(page.getByText(/places left/)).toHaveCount(0);
+
+  // The organisation event list chip compares units with capacity.
+  await page.goto(`/dashboard/${orgSlug}`);
+  await expect(page.getByRole("link", { name: new RegExp(`Units Night ${suffix}`) }).filter({ hasText: "Full", visible: true }).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: new RegExp(`Solo Night ${suffix}`) }).filter({ hasText: "2 / 5 going", visible: true }).first()).toBeVisible();
+
+  await page.goto(`/dashboard/${orgSlug}/event/${individual.id}`);
+  await expect(headerStat("Going").locator("dd")).toContainText("2 / 5");
+  await expect(headerStat("Places taken")).toHaveCount(0);
+  expect(errors).toEqual([]);
+  await context.close();
+
+  // The public card already counts units: full, with no places left.
+  const visitor = await newContext(browser);
+  const publicPage = await visitor.newPage();
+  await publicPage.goto(`/${orgSlug}/units-${suffix}`);
+  const joinCard = publicPage.locator("section", { has: publicPage.locator("#join-title") });
+  await expect(joinCard.getByText("3 places taken")).toBeVisible();
+  await expect(joinCard.getByText("0 places left")).toBeVisible();
+  await visitor.close();
 });

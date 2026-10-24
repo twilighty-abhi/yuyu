@@ -16,6 +16,7 @@ import {
   DEFAULT_TEAM_SETTINGS,
   TeamSettingsFields,
   teamSettingsPayload,
+  focusTeamSettingsProblem,
   teamSettingsProblem,
   type TeamSettingsDraft,
 } from "./TeamSettingsFields";
@@ -104,9 +105,9 @@ export function CreateEventDialog(props: {
       setActiveStep(1);
       return;
     }
-    const teamProblem = teamSettingsProblem(teamSettings);
-    if (teamProblem) {
-      setError(teamProblem);
+    if (teamSettingsProblem(teamSettings)) {
+      // The message is already shown (and announced) under the size inputs; move focus to the field.
+      focusTeamSettingsProblem(e.currentTarget, teamSettings);
       return;
     }
     const form = e.currentTarget;

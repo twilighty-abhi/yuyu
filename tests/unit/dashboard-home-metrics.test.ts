@@ -59,6 +59,14 @@ describe("dashboard home event status", () => {
     expect(eventFillStatus({ confirmed: 0, waitlisted: 0, pending: 0 }, null)).toEqual({ label: "0 going", tone: "neutral" });
   });
 
+  it("compares team units, not people, with capacity on TEAM events", () => {
+    // 6 people in 3 confirmed teams fill a capacity of 3 units.
+    expect(eventFillStatus({ confirmed: 6, waitlisted: 0, pending: 0 }, 3, { used: 3, noun: "places" })).toEqual({ label: "Full", tone: "warning" });
+    // 4 people in 2 teams are not over a capacity of 3.
+    expect(eventFillStatus({ confirmed: 4, waitlisted: 0, pending: 0 }, 3, { used: 2, noun: "teams" })).toEqual({ label: "2 / 3 teams", tone: "success" });
+    expect(eventFillStatus({ confirmed: 4, waitlisted: 0, pending: 0 }, null, { used: 2, noun: "places" })).toEqual({ label: "4 going", tone: "success" });
+  });
+
   it("finds the session on stage now and next, honouring live delays", () => {
     const sessions = [
       { id: "a", title: "Keynote", startDateTime: hours(-1), endDateTime: hours(-0.25), delayMinutes: 30 },

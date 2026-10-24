@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { RsvpStatus } from "@prisma/client";
 import { ArrowRight, Share2 } from "lucide-react";
 import { RsvpForm } from "@/components/rsvp/RsvpForm";
@@ -72,6 +73,7 @@ export function RegistrationCard(props: {
 }) {
   const { orgSlug, eventSlug, eventInstanceId, eventTitle, organisation, registrationFields, confirmedCount, capacity, state, accentColor, team } = props;
   const storageKey = eventInstanceId ? `yuyu:rsvp:${orgSlug}:i:${eventInstanceId}` : `yuyu:rsvp:${orgSlug}:e:${eventSlug ?? ""}`;
+  const router = useRouter();
   const [saved, setSaved] = useSavedRsvp(storageKey);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [shared, setShared] = useState(false);
@@ -180,6 +182,9 @@ export function RegistrationCard(props: {
                 // link is on its way by email), so that dialog stays open.
                 // Otherwise close it and let the card switch to the ticket link.
                 if (teamMode !== "create") setDialogOpen(false);
+                // `/api/rsvp` revalidates this page; refresh so the going/places
+                // count updates now. Client state (an open dialog) is kept.
+                router.refresh();
               }}
             />
           </DialogBody>

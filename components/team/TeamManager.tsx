@@ -285,7 +285,7 @@ export function TeamManager(props: TeamManagerProps) {
     },
     rotateManage: {
       title: "Reset the team management link?",
-      message: "The link you used to open this page stops working, including the one in your email. You'll move to the new address; bookmark it.",
+      message: "The link you used to open this page stops working, including the one in your email. You'll move to the new address, and we'll email it to the team leader.",
       label: "Reset link",
       destructive: false,
     },
@@ -310,9 +310,12 @@ export function TeamManager(props: TeamManagerProps) {
             <h1 className="break-words font-display text-[30px] font-extrabold leading-tight tracking-[-0.02em] text-ink sm:text-[38px]">{team.name}</h1>
             <p className="mt-1 text-body-ui text-ink-muted">{event.whenLabel}</p>
           </div>
-          <Button variant="secondary" size="sm" onClick={() => { setRenameValue(team.name); setRenameError(null); setRenameOpen(true); }}>
-            Rename
-          </Button>
+          {/* A declined team can only be viewed, trimmed or disbanded; the cores refuse the rest too. */}
+          {!rejected ? (
+            <Button variant="secondary" size="sm" onClick={() => { setRenameValue(team.name); setRenameError(null); setRenameOpen(true); }}>
+              Rename
+            </Button>
+          ) : null}
         </div>
         <div className="flex flex-wrap gap-1.5">
           <Chip tone={status.tone} icon={team.status === "CONFIRMED" ? <Check /> : undefined}>{status.label}</Chip>
@@ -325,10 +328,17 @@ export function TeamManager(props: TeamManagerProps) {
 
       {team.incomplete && team.minSize != null ? (
         <Callout tone="warning">
-          Teams need at least {team.minSize} members. The organisers can&apos;t approve your team until it has {team.minSize}.
+          Teams need at least {team.minSize} members.{" "}
+          {team.status === "PENDING_APPROVAL"
+            ? `The organisers can't approve your team until it has ${team.minSize}.`
+            : `Add ${Math.max(1, team.minSize - team.size)} more with the join link so your team is complete.`}
         </Callout>
       ) : null}
-      {rejected ? <Callout tone="danger">The organisers declined this team, so it can&apos;t take new members.</Callout> : null}
+      {rejected ? (
+        <Callout tone="danger">
+          The organisers declined this team, so it can&apos;t take new members or be changed. You can still remove members or disband the team.
+        </Callout>
+      ) : null}
 
       {feedback ? (
         <Callout tone={feedback.tone} role={feedback.tone === "danger" ? "alert" : "status"}>{feedback.message}</Callout>
@@ -379,7 +389,9 @@ export function TeamManager(props: TeamManagerProps) {
                     </IconButton>
                   </MenuTrigger>
                   <MenuContent>
-                    <MenuItem icon={<Crown />} onSelect={() => setConfirm({ kind: "transfer", member })}>Make leader…</MenuItem>
+                    {!rejected ? (
+                      <MenuItem icon={<Crown />} onSelect={() => setConfirm({ kind: "transfer", member })}>Make leader…</MenuItem>
+                    ) : null}
                     <MenuItem danger icon={<UserMinus />} disabled={member.checkedIn} onSelect={() => setConfirm({ kind: "remove", member })}>
                       Remove from team…
                     </MenuItem>
@@ -472,7 +484,14 @@ export function TeamManager(props: TeamManagerProps) {
             {seekers === null ? (
               <p className="mt-1 text-body-ui text-ink-muted">{full ? "Your team is full." : "This list isn't available right now."}</p>
             ) : seekers.length === 0 ? (
-              <p className="mt-1 text-body-ui text-ink-muted">No one is looking for a team yet. Check back later.</p>
+              <p className="mt-1 text-body-ui text-ink-muted">
+                {/* Seekers with a pending invitation or request for this team are listed above, not here. */}
+                {incomingRequests.length
+                  ? "Everyone looking for a team already has an invitation or request with your team, listed above. Check back later."
+                  : sentInvites.length
+                    ? "Everyone looking for a team has already been invited. Check back later."
+                    : "No one is looking for a team yet. Check back later."}
+              </p>
             ) : (
               <ul className="mt-2 flex flex-col divide-y divide-line">
                 {seekers.map((seeker) => (
@@ -495,7 +514,7 @@ export function TeamManager(props: TeamManagerProps) {
         </Card>
       ) : null}
 
-      {tokenPage ? (
+      {tokenPage && !rejected ? (
         <Card as="section" aria-labelledby="team-manage-link">
           <CardHeader
             title={<span id="team-manage-link">This page&apos;s link</span>}

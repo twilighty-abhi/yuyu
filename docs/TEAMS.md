@@ -44,6 +44,13 @@ mutations serialise with every other capacity change. A shared helper
 wherever the event is in `TEAM` mode; `INDIVIDUAL` events keep the current
 query untouched.
 
+Displays follow the same rule. The public registration card shows places taken
+in units. Organiser screens (event header, analytics, overview, dashboard home
+and organisation event lists, super-admin activity) show units against capacity
+("3 / 3 teams & solo places", or "teams" when solo registration is off) and
+the number of people going separately. The mobile organiser `EventCounts`
+carries `capacityUsed` for the same purpose (docs/MOBILE_API.md).
+
 ## Team status
 
 `Team.status` reuses `RsvpStatus` (`CONFIRMED`, `WAITLISTED`,
@@ -59,7 +66,9 @@ member.
   else `CONFIRMED`.
 - Joining a team never changes capacity. The new RSVP takes the team's status.
   `REJECTED` teams cannot be joined. A join that would exceed `teamMaxSize`
-  fails.
+  fails. The leader of a `REJECTED` team can still view it, remove members and
+  disband it, and members can leave; rename, join/management link resets,
+  leadership transfer and "looking for members" are refused (UI and cores).
 - Organisers approve, reject, and promote **whole teams**. Individual
   approve/reject/promote on an RSVP that belongs to a team is refused with a
   message pointing to the team. Approving a team below `teamMinSize` is
@@ -131,7 +140,8 @@ to 30 characters).
 - The leader receives a **team management link** `/team/{manageToken}` in the
   confirmation email. The raw token is random (at least 128 bits),
   shown once, and stored only as a SHA-256 hash (`Team.manageTokenHash`).
-  Regenerating it invalidates the old link. The check-in token (the ticket
+  Regenerating it invalidates the old link; the page moves to the new address
+  and the new link is emailed to the leader. The check-in token (the ticket
   QR) never grants team management.
 - A signed-in leader also reaches the team page from **Account → Registrations**
   without the token.
@@ -200,7 +210,9 @@ to 30 characters).
 New outbox kinds, following `lib/outbox.ts` conventions (payload type, enqueue
 helper, validator, delivery branch, capability flag because they carry tokens):
 
-- `team-created`: to the leader, with the team page link and the join link.
+- `team-created`: to the leader, with the team page link and the join link
+  (also sent to the new leader on a handover and after the leader resets the
+  team page link).
 - `team-member-added`: to a member added by the leader, with their ticket link.
 
 Status changes reuse the existing RSVP status email per member, naming the team.

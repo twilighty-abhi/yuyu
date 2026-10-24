@@ -1,8 +1,9 @@
 import "server-only";
 
 import { cache } from "react";
-import type { RegistrationFieldType } from "@prisma/client";
+import type { RegistrationFieldType, RegistrationMode } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { countConfirmedForEvent } from "@/lib/rsvpCapacity";
 import { toFieldDefinition, type FieldSettings } from "@/lib/registrationFields";
 
 /*
@@ -29,6 +30,12 @@ export const loadRsvpStatusCounts = cache(async (eventId: string): Promise<RsvpS
     checkedIn,
   };
 });
+
+/**
+ * The number compared with `Event.capacity`: confirmed RSVPs on INDIVIDUAL
+ * events, confirmed units (teams plus solo registrants) on TEAM events.
+ */
+export const loadCapacityUsed = cache(async (eventId: string, registrationMode: RegistrationMode): Promise<number> => countConfirmedForEvent(eventId, registrationMode));
 
 export type RegistrationFieldRow = { id: string; key: string; label: string; type: RegistrationFieldType; required: boolean; sortOrder: number; options: string[]; helpText: string; placeholder: string; settings: FieldSettings };
 

@@ -16,7 +16,7 @@
         "accentColor": null,
         "status": "PUBLISHED",
         "organisation": { "slug": "civic-tech", "name": "Civic Tech Meetup", "logoUrl": null },
-        "counts": { "confirmed": 42, "waitlisted": 5, "pending": 0, "checkedIn": 12, "capacity": 80 },
+        "counts": { "confirmed": 42, "waitlisted": 5, "pending": 0, "checkedIn": 12, "capacity": 80, "capacityUsed": 42 },
         "myPermissions": { "checkIn": true, "manageRegistrations": true, "sendEmails": true, "schedule": true, "manageFeedback": true, "manageRegistrationWindow": true }
       }
     ]

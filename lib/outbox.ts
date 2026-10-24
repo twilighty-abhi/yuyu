@@ -45,7 +45,7 @@ export type TeamCreatedPayload = {
   teamId: string;
   manageToken: string;
   /** "created": a new team; "leader": leadership passed to this member. */
-  reason?: "created" | "leader";
+  reason?: "created" | "leader" | "reset";
 };
 
 /** A member the leader added: their own ticket link, resolved at send time from the token. */
@@ -264,7 +264,7 @@ export function asTeamCreatedPayload(value: Prisma.JsonValue): TeamCreatedPayloa
     !isEmail(payload.to) ||
     !isBoundedString(payload.teamId, 64) ||
     !isTeamTokenShape(payload.manageToken) ||
-    (payload.reason !== undefined && payload.reason !== "created" && payload.reason !== "leader")
+    (payload.reason !== undefined && payload.reason !== "created" && payload.reason !== "leader" && payload.reason !== "reset")
   ) return null;
   return payload as TeamCreatedPayload;
 }

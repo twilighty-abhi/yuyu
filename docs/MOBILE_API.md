@@ -268,9 +268,12 @@ without the needed permission is `FORBIDDEN`.
 derived exactly as the event dashboard does: `checkIn` = organisation
 OWNER/ADMIN or the event `CHECK_IN` grant; `schedule` = OWNER/ADMIN or
 `PUBLISH_AND_SCHEDULE`; `manageRegistrations`, `sendEmails`, `manageFeedback`
-and `manageRegistrationWindow` = organisation OWNER/ADMIN (the website's RSVP,
-email, feedback-settings and event-edit actions are admin-only). The flags only
-hide controls; every mutation is re-checked server-side.
+and `manageRegistrationWindow` = organisation OWNER/ADMIN (the website's email,
+feedback-settings and event-edit actions are admin-only). The shared RSVP cores
+also accept the event's `MANAGE_REGISTRATIONS` grant, as the web guest list
+does, but `manageRegistrations` stays admin-only in this contract version (see
+[Permissions](PERMISSIONS.md#mobile-api)). The flags only hide controls; every
+mutation is re-checked server-side.
 
 `EventCounts = { "confirmed", "waitlisted", "pending", "checkedIn", "capacity|null" }`,
 returned only when the caller has `manageRegistrations` or `checkIn`, else `null`.
@@ -300,6 +303,14 @@ ticket tokens.
 - `POST …/guests/:rsvpId/approve` · `…/reject` · `…/promote` → the updated
   `Guest`. Same rules, capacity transaction, emails and audit as `approveRsvp`
   / `rejectRsvp` / `promoteFromWaitlist` (organisation admins).
+- `POST …/guests/:rsvpId/reaccept` → the updated `Guest`. Reverses a decline
+  (as `reacceptRsvp`; organisation admins): only a `REJECTED` guest, and only
+  while the event is open. The guest becomes `CONFIRMED` when there is room
+  and `WAITLISTED` otherwise (check the returned `status`), with the approval
+  or waitlist email and a `RSVP_REACCEPTED` audit event. Any other status is
+  `CONFLICT` ("Only declined registrations can be re-accepted."). Older apps
+  that do not call it are unaffected; `approve` still accepts only pending
+  requests.
 - `POST …/guests` `{ "name", "email", "answers"? }` → `201` `Guest` (as `addManualRsvp`).
 - `DELETE …/guests/:rsvpId` → `{ "undoId" }` (as `deleteRsvp`; the undo lasts five minutes).
 - `POST …/guests/restore` `{ "undoId" }` → `null` (as `restoreRsvp`). `NOT_FOUND`
@@ -316,6 +327,8 @@ ticket tokens.
   waitlist override is possible (retry with `force: true`).
 - `POST …/check-in/undo` `{ "rsvpId" }` → `null`.
 - `GET …/check-in/lookup?q=` (min 2 chars, max 12 rows) → `{ "rows": [Guest] }`.
+  Matches guest names and emails and, on team events, team names (teams of the
+  same event only, listing their members). `Guest` has no team field yet.
 - `GET …/check-in/stats` → `{ "confirmed", "checkedIn", "recent": [{ "rsvpId", "displayName", "checkedInAt" }] }` (ten latest).
 - `GET …/check-in/roster` → `{ "generatedAt", "rows": [Guest & { "ticketToken", "checkInDetails", "registrationDetails" }] }`
   (as `downloadOfflineCheckInRoster`: confirmed, waitlisted and pending). Keep it

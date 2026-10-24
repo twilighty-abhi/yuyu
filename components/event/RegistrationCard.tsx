@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Callout, Chip, OrgLogo, ProgressBar } from "@/components/ui/display";
 import { Dialog, DialogBody, DialogContent, DialogHeader } from "@/components/ui/dialog";
 import { accentStyle } from "@/lib/theme/accent";
+import { registrationActionLabel } from "@/lib/registrationLabel";
 
 type RegistrationState = {
   cancelled: boolean;
@@ -96,7 +97,7 @@ export function RegistrationCard(props: {
   };
 
   const savedLabel = saved ? statusLabels[saved.status ?? "CONFIRMED"] ?? { chip: "Registered", tone: "neutral" as const, action: "View registration" } : null;
-  const registerLabel = state.full ? "Join the waitlist" : state.approvalRequired ? "Request to join" : "Register — it's free";
+  const registerLabel = registrationActionLabel(state, team ?? null);
   const spotsLeft = capacity != null && confirmedCount != null ? Math.max(0, capacity - confirmedCount) : null;
 
   const primaryAction = state.cancelled ? null : saved && savedLabel ? (
@@ -156,7 +157,16 @@ export function RegistrationCard(props: {
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent size="md" style={accentStyle(accentColor)} className="yy-accent-scope">
-          <DialogHeader title={`Register for ${eventTitle}`} description="Free to attend. We'll email your ticket." />
+          <DialogHeader
+            title={`Register for ${eventTitle}`}
+            description={
+              team
+                ? team.soloPolicy === "TEAMS_ONLY"
+                  ? "Create a team or join one with its link. Each team takes one place. We'll email your ticket."
+                  : "Create a team, join one with its link, or take part on your own. We'll email your ticket."
+                : "Free to attend. We'll email your ticket."
+            }
+          />
           <DialogBody className="pb-6">
             <RsvpForm
               orgSlug={orgSlug}

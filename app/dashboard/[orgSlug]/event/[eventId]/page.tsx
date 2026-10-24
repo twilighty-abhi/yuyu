@@ -52,7 +52,7 @@ export default async function EventManagePage({ params }: Props) {
     );
   }
 
-  // Live numbers in the header are registration data: organisation admins only.
+  // Live numbers in the header are registration data (admins and MANAGE_REGISTRATIONS).
   const counts = permissions.canManageRegistrations ? await loadRsvpStatusCounts(event.id) : null;
   const stats: EventHeaderStat[] | undefined = counts
     ? [
@@ -86,7 +86,7 @@ export default async function EventManagePage({ params }: Props) {
         stats={stats}
         actions={
           <>
-            {permissions.isAdmin && event.endDateTime < ctx.now ? <EventReportDownloadButton href={`/api/reports/event/${event.id}`} /> : null}
+            {permissions.canDownloadReports && event.endDateTime < ctx.now ? <EventReportDownloadButton href={`/api/reports/event/${event.id}`} /> : null}
             <Button asChild variant="secondary">
               <Link href={publicPath}>
                 View page

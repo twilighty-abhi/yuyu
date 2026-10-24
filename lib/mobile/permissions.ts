@@ -1,14 +1,20 @@
 import { EventPermission } from "@prisma/client";
 import type { EventPermissionsDto } from "@/lib/mobile/schemas";
 
-/* Pure permission flags for the mobile organiser UI (mirrors lib/eventDashboard/context.ts). */
+/*
+ * Pure permission flags for the mobile organiser UI. The web derives its
+ * controls from lib/eventDashboard/capabilities.ts; the one difference is
+ * `manageRegistrations`, which this contract version keeps admin-only although
+ * the shared RSVP cores also accept the MANAGE_REGISTRATIONS grant
+ * (docs/PERMISSIONS.md#mobile-api).
+ */
 
 export function eventPermissionsFor(isAdmin: boolean, grant: readonly EventPermission[]): EventPermissionsDto {
   const has = (permission: EventPermission) => isAdmin || grant.includes(permission);
   return {
     checkIn: has(EventPermission.CHECK_IN),
-    // RSVP lifecycle, emails, feedback settings and the registration window
-    // are organisation OWNER/ADMIN operations on the web, so they are here too.
+    // Emails, feedback settings and the registration window are organisation
+    // OWNER/ADMIN operations on the web, so they are here too.
     manageRegistrations: isAdmin,
     sendEmails: isAdmin,
     schedule: has(EventPermission.PUBLISH_AND_SCHEDULE),

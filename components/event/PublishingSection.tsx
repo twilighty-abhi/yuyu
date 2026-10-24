@@ -3,7 +3,7 @@
 import { useId, useState, type ReactNode } from "react";
 import { EventPrivacyType, EventStatus } from "@prisma/client";
 import * as RadioGroupPrimitive from "@radix-ui/react-radio-group";
-import { Check, EyeOff, Globe, Link2, Lock, Mail, PencilLine, Radio as LiveIcon } from "lucide-react";
+import { Check, EyeOff, Globe, Link2, Mail, PencilLine, Radio as LiveIcon } from "lucide-react";
 import { SegmentedControl, SwitchRow } from "@/components/ui/choice";
 import { Dropdown, Input } from "@/components/ui/field";
 import { cn } from "@/lib/cn";
@@ -19,10 +19,9 @@ import {
   LEAD_UNITS,
   publishingSummary,
   capacityUnitLabel,
-  SOLO_POLICY_OPTIONS,
   type SoloPolicyChoice,
-  teamSizeProblem,
 } from "./publishing";
+import { TeamSettingsFields, type TeamSettingsDraft } from "./TeamSettingsFields";
 
 /** The stored team registration settings (docs/TEAMS.md). */
 export type PublishingTeamSettings = {
@@ -87,12 +86,13 @@ export function PublishingSection({
   const [leadAmount, setLeadAmount] = useState(String(initialLead.amount));
   const [leadUnit, setLeadUnit] = useState<LeadUnit>(initialLead.unit);
   const [closesAt, setClosesAt] = useState(initialClosesAt);
-  const teamHelpId = useId();
-  const [teamMode, setTeamMode] = useState(initialTeam.registrationMode === "TEAM");
-  const [teamMinSize, setTeamMinSize] = useState(initialTeam.teamMinSize != null ? String(initialTeam.teamMinSize) : "");
-  const [teamMaxSize, setTeamMaxSize] = useState(initialTeam.teamMaxSize != null ? String(initialTeam.teamMaxSize) : "4");
-  const [soloPolicy, setSoloPolicy] = useState<SoloPolicyChoice>(initialTeam.soloPolicy);
-  const teamProblem = teamMode ? teamSizeProblem({ minSize: teamMinSize, maxSize: teamMaxSize, largestTeam: largestTeam || undefined }) : null;
+  const [team, setTeam] = useState<TeamSettingsDraft>(() => ({
+    teamMode: initialTeam.registrationMode === "TEAM",
+    teamMinSize: initialTeam.teamMinSize != null ? String(initialTeam.teamMinSize) : "",
+    teamMaxSize: initialTeam.teamMaxSize != null ? String(initialTeam.teamMaxSize) : "4",
+    soloPolicy: initialTeam.soloPolicy,
+  }));
+  const { teamMode, teamMinSize, teamMaxSize, soloPolicy } = team;
 
   const leadMinutes = Number(leadAmount) >= 0 && leadAmount.trim() !== "" ? Math.round(Number(leadAmount) * LEAD_UNITS[leadUnit].minutes) : null;
   const closing = closingSummary({ mode: closeMode, start, leadMinutes, closesAt, timeZone });
@@ -244,72 +244,13 @@ export function PublishingSection({
           </div>
 
           <div className="flex flex-col gap-3 p-4">
-            <SwitchRow
-              label="Team registration"
-              description={
-                teamModeLocked
-                  ? "People have already signed up, so this can't be changed now."
-                  : teamMode
-                    ? "People sign up as teams: one person creates the team and shares a link with the others."
-                    : "Off: everyone signs up on their own."
-              }
-              checked={teamMode}
-              disabled={teamModeLocked}
-              onCheckedChange={touch(setTeamMode)}
+            <TeamSettingsFields
+              value={team}
+              onChange={touch(setTeam)}
+              locked={teamModeLocked}
+              largestTeam={largestTeam}
+              offDescription="Off: everyone signs up on their own."
             />
-            {teamModeLocked ? (
-              <p className="flex items-center gap-1.5 text-caption text-ink-muted">
-                <Lock aria-hidden className="size-3.5 shrink-0" />
-                Locked because this event has registrations.
-              </p>
-            ) : null}
-            {teamMode ? (
-              <div className="flex flex-col gap-3">
-                <div className="flex flex-wrap items-end gap-3">
-                  <label className="flex flex-col gap-1">
-                    <span className="text-caption text-ink-secondary">Smallest team</span>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={100}
-                      inputMode="numeric"
-                      value={teamMinSize}
-                      onChange={(event) => setTeamMinSize(event.target.value)}
-                      placeholder="Any"
-                      className="w-28"
-                      aria-describedby={teamHelpId}
-                    />
-                  </label>
-                  <label className="flex flex-col gap-1">
-                    <span className="text-caption text-ink-secondary">Largest team</span>
-                    <Input
-                      type="number"
-                      min={Math.max(2, largestTeam)}
-                      max={100}
-                      inputMode="numeric"
-                      value={teamMaxSize}
-                      onChange={(event) => setTeamMaxSize(event.target.value)}
-                      className="w-28"
-                      aria-describedby={teamHelpId}
-                      aria-invalid={teamProblem ? true : undefined}
-                    />
-                  </label>
-                  <span className="pb-2.5 text-body-ui text-ink-muted">people</span>
-                </div>
-                <p id={teamHelpId} className={cn("text-caption", teamProblem ? "text-danger-fg" : "text-ink-muted")}>
-                  {teamProblem ?? "Teams smaller than the minimum are marked Incomplete and can't be approved until they grow."}
-                </p>
-                <label className="flex flex-col gap-1">
-                  <span className="text-label text-ink">Can people sign up without a team?</span>
-                  <Dropdown value={soloPolicy} onChange={(event) => touch(setSoloPolicy)(event.target.value as SoloPolicyChoice)} className="sm:max-w-md">
-                    {SOLO_POLICY_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
-                    ))}
-                  </Dropdown>
-                  <span className="text-caption text-ink-muted">{SOLO_POLICY_OPTIONS.find((option) => option.value === soloPolicy)?.description}</span>
-                </label>
-              </div>
-            ) : null}
           </div>
 
           <SwitchRow

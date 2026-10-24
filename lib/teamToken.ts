@@ -38,3 +38,33 @@ export function teamJoinPath(orgSlug: string, eventSlug: string, joinToken: stri
 export function teamManagePath(rawManageToken: string): string {
   return `/team/${encodeURIComponent(rawManageToken)}`;
 }
+
+/**
+ * The join token in something a person pasted: a bare token, or a join link
+ * (absolute or relative) of the form `/{orgSlug}/{eventSlug}/team/{token}`.
+ * A management link (`/team/{token}`) is not a join link and is refused, so
+ * it is never looked up as one. Null when nothing usable was pasted.
+ */
+export function joinTokenFromInput(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const raw = value.trim();
+  if (!raw || raw.length > 2048) return null;
+  if (isTeamTokenShape(raw)) return raw;
+  let path: string;
+  try {
+    path = new URL(raw, "https://join.invalid").pathname;
+  } catch {
+    return null;
+  }
+  // A link pasted without its scheme ("yuyu.example/org/event/team/…") keeps
+  // the host as a leading segment, so only the last four segments count.
+  const segments = path.split("/").filter(Boolean);
+  if (segments.length < 4 || segments[segments.length - 2] !== "team") return null;
+  let token: string;
+  try {
+    token = decodeURIComponent(segments[segments.length - 1]!);
+  } catch {
+    return null;
+  }
+  return isTeamTokenShape(token) ? token : null;
+}

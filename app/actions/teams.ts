@@ -1,5 +1,6 @@
 "use server";
 
+import type { RsvpStatus } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
@@ -13,6 +14,7 @@ import {
   cancelJoinRequest,
   createJoinRequest,
   disbandTeam,
+  joinTeamWithExistingRsvp,
   leaveTeam,
   regenerateJoinToken,
   regenerateManageToken,
@@ -322,4 +324,30 @@ export async function cancelTeamRequestAction(ticketToken: unknown, requestId: u
   if (!parsed.success) return { ok: false, error: "This request is no longer pending." };
   if (await limited("action", `rsvp:${resolved.holder.rsvpId}`)) return { ok: false, error: TOO_MANY };
   return cancelJoinRequest({ actor: { kind: "seeker", holder: resolved.holder }, requestId: parsed.data });
+}
+
+/**
+ * A solo registrant joins a team with its join link (pasted on the ticket
+ * page, or from the join page for their own registration), keeping their
+ * ticket. The ticket token proves the registration; an account-owned one also
+ * needs that account signed in. The join link is only ever matched inside the
+ * registration's own event.
+ */
+export async function joinTeamWithTicketAction(
+  ticketToken: unknown,
+  joinLink: unknown,
+): Promise<ActionResult<{ status: RsvpStatus; teamName: string }>> {
+  const resolved = await resolveHolder(ticketToken);
+  if (!resolved) return { ok: false, error: NOT_FOUND };
+  if (await limited("action", `rsvp:${resolved.holder.rsvpId}`)) return { ok: false, error: TOO_MANY };
+  const result = await joinTeamWithExistingRsvp(resolved.holder, joinLink);
+  if (result.ok) {
+    await afterTeamChange({
+      eventId: resolved.holder.eventId,
+      actorUserId: resolved.actorUserId,
+      action: "TEAM_JOINED_WITH_REGISTRATION",
+      metadata: { rsvpId: resolved.holder.rsvpId },
+    });
+  }
+  return result;
 }

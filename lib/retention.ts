@@ -1,6 +1,6 @@
 import "server-only";
 
-import { OutboxStatus } from "@prisma/client";
+import { OutboxStatus, WebhookDeliveryStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -12,7 +12,8 @@ export async function purgeExpiredOperationalData(now = new Date()) {
     365,
   );
   const sentBefore = new Date(now.getTime() - outboxRetentionDays * DAY_MS);
-  const [tokens, sessions, organisationInvites, collaboratorInvites, undoSnapshots, sentMessages, failedMessages, mobileSessions] = await prisma.$transaction([
+  const webhookBefore = new Date(now.getTime() - 30 * DAY_MS);
+  const [tokens, sessions, organisationInvites, collaboratorInvites, undoSnapshots, sentMessages, failedMessages, mobileSessions, webhookDeliveries] = await prisma.$transaction([
     prisma.verificationToken.deleteMany({ where: { expires: { lt: now } } }),
     prisma.session.deleteMany({ where: { expires: { lt: now } } }),
     prisma.organisationInvite.deleteMany({ where: { usedAt: null, expiresAt: { lt: now } } }),
@@ -29,6 +30,11 @@ export async function purgeExpiredOperationalData(now = new Date()) {
     prisma.mobileSession.deleteMany({
       where: { OR: [{ refreshExpiresAt: { lt: now } }, { revokedAt: { lt: new Date(now.getTime() - 30 * DAY_MS) } }] },
     }),
+    // Organisation webhook delivery log: 30 days. Retries finish within about
+    // a day, so only rows still under a worker lease are kept.
+    prisma.webhookDelivery.deleteMany({
+      where: { createdAt: { lt: webhookBefore }, status: { not: WebhookDeliveryStatus.PROCESSING } },
+    }),
   ]);
   return {
     verificationTokens: tokens.count,
@@ -39,5 +45,6 @@ export async function purgeExpiredOperationalData(now = new Date()) {
     sentOutboxMessages: sentMessages.count,
     failedOutboxMessages: failedMessages.count,
     mobileSessions: mobileSessions.count,
+    webhookDeliveries: webhookDeliveries.count,
   };
 }

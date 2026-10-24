@@ -2,7 +2,8 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowLeft, MapPin, UsersRound, Video } from "lucide-react";
-import { EventStatus, RegistrationMode } from "@prisma/client";
+import { EventStatus, RegistrationMode, RsvpStatus } from "@prisma/client";
+import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { resolvePublicEventAccess } from "@/lib/publicEventAccess";
 import { loadJoinPageTeam } from "@/lib/core/teams";
@@ -14,6 +15,11 @@ import { safeTimeZone } from "@/lib/timeZone";
 import { accentStyle } from "@/lib/theme/accent";
 import { formatDateBlock, formatDayLong, formatTimeRange } from "@/lib/format/datetime";
 import { RsvpForm } from "@/components/rsvp/RsvpForm";
+import {
+  JoinWithAccountRegistration,
+  JoinWithSavedTicket,
+  type JoinPageRegistration,
+} from "@/components/team/JoinTeamWithRegistration";
 import { Button } from "@/components/ui/button";
 import { Callout, Chip, DateBlock } from "@/components/ui/display";
 
@@ -39,6 +45,11 @@ export async function generateMetadata(): Promise<Metadata> {
  * reveals an event its holder could not otherwise see. Unknown, retired and
  * other events' tokens share the same 404. The page shows only the team's
  * name, size and maximum size, never its members.
+ *
+ * Someone already registered can join with that registration instead of
+ * registering again: a signed-in person's own registration is detected here,
+ * and a guest's ticket remembered by this browser on the client. Guests can
+ * also paste the link on their ticket page.
  */
 export default async function TeamJoinPage({ params }: Props) {
   const { orgSlug, eventSlug, joinToken } = await params;
@@ -66,6 +77,7 @@ export default async function TeamJoinPage({ params }: Props) {
   if (event.registrationMode !== RegistrationMode.TEAM) notFound();
   const team = await loadJoinPageTeam(event.id, joinToken);
   if (!team) notFound();
+  const registration = await signedInRegistration(event.id, joinToken);
   const teamConfig = publicTeamRegistrationConfig(event);
   if (!teamConfig) notFound();
 
@@ -124,6 +136,10 @@ export default async function TeamJoinPage({ params }: Props) {
           <h2 id="team-join-title" className="text-h3 text-ink">Join {team.name}</h2>
           {event.status === EventStatus.CANCELLED ? (
             <Callout tone="danger" title="Event cancelled" />
+          ) : registration ? (
+            // Moving an existing registration into a team adds no place, so it
+            // doesn't depend on new registrations being open.
+            <JoinWithAccountRegistration registration={registration} joinToken={joinToken} teamName={team.name} />
           ) : !registrationOpen ? (
             <p className="text-body-ui text-ink-muted">Registration is closed.</p>
           ) : teamFull ? (
@@ -131,15 +147,42 @@ export default async function TeamJoinPage({ params }: Props) {
               Ask the team leader to make room, then open this link again.
             </Callout>
           ) : (
-            <RsvpForm
-              orgSlug={org.slug}
-              eventSlug={event.slug}
-              registrationFields={(form?.fields ?? []).map(toFieldDefinition)}
-              team={{ ...teamConfig, joinTeam: { joinToken, name: team.name, size: team.size, maxSize: team.maxSize } }}
-            />
+            <>
+              <JoinWithSavedTicket orgSlug={org.slug} eventSlug={event.slug} joinToken={joinToken} teamName={team.name} />
+              <RsvpForm
+                orgSlug={org.slug}
+                eventSlug={event.slug}
+                registrationFields={(form?.fields ?? []).map(toFieldDefinition)}
+                team={{ ...teamConfig, joinTeam: { joinToken, name: team.name, size: team.size, maxSize: team.maxSize } }}
+              />
+              <p className="text-caption text-ink-muted">
+                Already registered on your own? Open your ticket page (the link is in your confirmation email) and paste this team link under <span className="font-semibold">Join a team</span>.
+              </p>
+            </>
           )}
         </section>
       </aside>
     </div>
   );
+}
+
+/**
+ * The signed-in person's own registration for this event, if any, and how it
+ * relates to the team behind this join link. Only their own ticket token is
+ * returned, never anyone else's.
+ */
+async function signedInRegistration(eventId: string, joinToken: string): Promise<JoinPageRegistration | null> {
+  const session = await auth();
+  const userId = session?.user?.id;
+  if (!userId) return null;
+  const rsvp = await prisma.rSVP.findFirst({
+    where: { eventId, userId },
+    select: { checkInToken: true, status: true, teamId: true, team: { select: { joinToken: true } } },
+    orderBy: { createdAt: "asc" },
+  });
+  if (!rsvp) return null;
+  const ticketToken = rsvp.checkInToken;
+  if (rsvp.teamId) return { state: rsvp.team?.joinToken === joinToken ? "this-team" : "other-team", ticketToken };
+  if (rsvp.status === RsvpStatus.REJECTED) return { state: "declined", ticketToken };
+  return { state: "solo", ticketToken };
 }

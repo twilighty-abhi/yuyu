@@ -5,6 +5,7 @@ import { CollaboratorInvitePanel } from "@/components/event/CollaboratorInvitePa
 import { EventManageMore } from "@/components/dashboard/EventManageMore";
 import { loadJudgingSettingsCard } from "@/lib/eventDashboard/judging";
 import { JudgingSettingsCard } from "./JudgingPanelSetup";
+import { NoPermission } from "./shared";
 
 /**
  * `judgingInUse`: whether the dashboard shows the Judging tab. While it does
@@ -14,6 +15,13 @@ import { JudgingSettingsCard } from "./JudgingPanelSetup";
 export async function SettingsPanel({ ctx, judgingInUse = false }: { ctx: EventDashboardContext; judgingInUse?: boolean }) {
   const { event, permissions, organisation } = ctx;
   const judgingCard = !judgingInUse && permissions.canManageJudging ? await loadJudgingSettingsCard(ctx) : null;
+  const settings = {
+    changeAddress: permissions.canChangeEventAddress,
+    clone: permissions.canCloneEvent,
+    embed: permissions.canEmbedEvent,
+    delete: permissions.canDeleteEvent,
+  };
+  const anySetting = settings.changeAddress || settings.clone || settings.embed || settings.delete;
   const [collaborators, pending] = permissions.canManageCollaborators
     ? await Promise.all([
         prisma.eventCollaborator.findMany({ where: { eventId: event.id }, include: { user: { select: { name: true, email: true } } }, orderBy: { createdAt: "asc" } }),
@@ -33,7 +41,12 @@ export async function SettingsPanel({ ctx, judgingInUse = false }: { ctx: EventD
         />
       ) : null}
       {judgingCard ? <JudgingSettingsCard scope={judgingCard.scope} settings={judgingCard.settings} now={ctx.now.toISOString()} /> : null}
-      <EventManageMore organisationSlug={organisation.slug} event={toEventClientDto(event)} />
+      {anySetting ? (
+        <EventManageMore organisationSlug={organisation.slug} event={toEventClientDto(event)} can={settings} />
+      ) : null}
+      {!permissions.canManageCollaborators && !anySetting && !judgingCard ? (
+        <NoPermission>Only organisation owners and admins can change this event&apos;s settings, co-organisers, or delete it.</NoPermission>
+      ) : null}
     </div>
   );
 }

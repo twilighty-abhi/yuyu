@@ -1,6 +1,6 @@
 import type { EventDashboardContext } from "@/lib/eventDashboard/context";
 import { loadAttendees, loadEventInvites, loadRegistrationFields } from "@/lib/eventDashboard/data";
-import { loadEventTeams } from "@/lib/eventDashboard/teams";
+import { loadEventTeams, loadTeamMoveTargets } from "@/lib/eventDashboard/teams";
 import { EventInvitePanel } from "@/components/invites/EventInvitePanel";
 import { SubTabs, type SubTab } from "../SubTabs";
 import { GuestsPeople } from "./GuestsPeople";
@@ -10,21 +10,22 @@ import { NoPermission } from "./shared";
 export async function GuestsPanel({ ctx }: { ctx: EventDashboardContext }) {
   const { event, permissions, organisation } = ctx;
   const teamMode = event.registrationMode === "TEAM";
-  const [attendees, fields, invites, teams] = await Promise.all([
+  const teamsAllowed = teamMode && permissions.canManageRegistrations;
+  const [attendees, fields, invites, teamsPage, moveTargets] = await Promise.all([
     permissions.canManageRegistrations ? loadAttendees(event.id, ctx.origin) : Promise.resolve({ attendees: [], truncated: false }),
     loadRegistrationFields(event.id),
     permissions.canManageInvitations ? loadEventInvites(event.id) : Promise.resolve([]),
-    teamMode && permissions.canManageRegistrations ? loadEventTeams(ctx) : Promise.resolve([]),
+    teamsAllowed ? loadEventTeams(ctx) : Promise.resolve(null),
+    teamsAllowed ? loadTeamMoveTargets(ctx) : Promise.resolve([]),
   ]);
-  const moveTargets = teams.map((team) => ({ id: team.id, name: team.name, status: team.status, size: team.size, maxSize: team.maxSize }));
   const teamsTab: SubTab[] = teamMode
     ? [
         {
           value: "teams",
           label: "Teams",
-          count: permissions.canManageRegistrations ? teams.length : undefined,
-          content: permissions.canManageRegistrations ? (
-            <GuestsTeams organisationSlug={organisation.slug} eventId={event.id} teams={teams} approvalRequired={event.privacyType === "APPROVAL_REQUIRED"} />
+          count: teamsPage ? teamsPage.counts.all : undefined,
+          content: teamsPage ? (
+            <GuestsTeams organisationSlug={organisation.slug} eventId={event.id} initialPage={teamsPage} moveTargets={moveTargets} approvalRequired={event.privacyType === "APPROVAL_REQUIRED"} />
           ) : (
             <NoPermission>You do not have permission to view or manage attendee registrations.</NoPermission>
           ),
@@ -49,6 +50,7 @@ export async function GuestsPanel({ ctx }: { ctx: EventDashboardContext }) {
               registrationFields={fields}
               teamMode={teamMode}
               teams={moveTargets}
+              canUndoCheckIn={permissions.canCheckIn}
             />
           ) : (
             <NoPermission>You do not have permission to view or manage attendee registrations.</NoPermission>

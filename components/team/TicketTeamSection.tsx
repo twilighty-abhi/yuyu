@@ -198,7 +198,34 @@ export function TicketSeekerPanel(props: {
   const [skills, setSkills] = useState(profile?.skills.join(", ") ?? "");
   const [visible, setVisible] = useState(profile?.visible ?? true);
   const [errors, setErrors] = useState<Record<string, string[]>>({});
+  const [syncedProfile, setSyncedProfile] = useState(profile);
   const requestedTeamIds = new Set(requests.map((request) => request.teamId));
+
+  /** Put the saved values back in the form fields. */
+  function resetForm(saved: typeof profile) {
+    setHeadline(saved?.headline ?? "");
+    setSkills(saved?.skills.join(", ") ?? "");
+    setVisible(saved?.visible ?? true);
+    setErrors({});
+  }
+
+  // After a save, the refresh brings the stored profile (trimmed, duplicate
+  // skills dropped). While the form is closed, show exactly that next time.
+  if (syncedProfile !== profile) {
+    setSyncedProfile(profile);
+    if (!editing) resetForm(profile);
+  }
+
+  function startEditing() {
+    resetForm(profile);
+    setFeedback(null);
+    setEditing(true);
+  }
+
+  function cancelEditing() {
+    resetForm(profile);
+    setEditing(false);
+  }
 
   function run(id: string, task: () => Promise<void>) {
     setFeedback(null);
@@ -313,7 +340,7 @@ export function TicketSeekerPanel(props: {
             <Button type="submit" variant="primary" size="sm" loading={busyId === "profile"} loadingLabel="Saving…">
               {profile ? "Save" : "List me"}
             </Button>
-            {profile ? <Button variant="quiet" size="sm" onClick={() => setEditing(false)}>Cancel</Button> : null}
+            {profile ? <Button variant="quiet" size="sm" onClick={cancelEditing}>Cancel</Button> : null}
           </div>
         </form>
       ) : profile ? (
@@ -328,7 +355,7 @@ export function TicketSeekerPanel(props: {
           </div>
           <SwitchRow label="Show me on the list" checked={profile.visible} disabled={pending} onCheckedChange={setListed} />
           <div>
-            <Button variant="secondary" size="sm" onClick={() => setEditing(true)}>Edit details</Button>
+            <Button variant="secondary" size="sm" onClick={startEditing}>Edit details</Button>
           </div>
         </div>
       ) : null}

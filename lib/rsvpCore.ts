@@ -22,6 +22,7 @@ import { flattenZodErrors } from "@/app/actions/utils";
 import { enqueueRsvpConfirmation, enqueueTeamCreated } from "@/lib/outbox";
 import { countConfirmedUnits } from "@/lib/teamUnits";
 import { generateTeamManageToken, generateTeamToken } from "@/lib/teamToken";
+import { emitWebhookEvent } from "@/lib/webhooks/emit";
 import { isRegistrationClosed } from "@/lib/registrationCutoff";
 import {
   isValidInternationalPhone,
@@ -93,7 +94,7 @@ async function reserveRsvp(params: {
   /** Organiser manual add: a solo registration is allowed even on a TEAMS_ONLY event. */
   allowSoloWithoutTeam?: boolean;
 }) {
-  return prisma.$transaction(async (tx) => {
+  const reservation = await prisma.$transaction(async (tx) => {
     let capacity = params.capacity;
     let privacyType = params.privacyType;
     let teamEvent: { registrationMode: RegistrationMode; teamMaxSize: number | null; soloPolicy: SoloPolicy } | null = null;
@@ -210,6 +211,8 @@ async function reserveRsvp(params: {
     const count = await tx.rSVP.count({ where: params.target });
     return { ...rsvp, status, count, teamId: team?.id ?? null };
   });
+  emitWebhookEvent({ type: "registration.created", rsvpId: reservation.id });
+  return reservation;
 }
 
 async function resolveAttendeeEmail(

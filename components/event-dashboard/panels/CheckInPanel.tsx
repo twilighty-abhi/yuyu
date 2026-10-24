@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Download, IdCard, ScanLine } from "lucide-react";
+import { Download, IdCard, ListChecks, ScanLine } from "lucide-react";
 import type { EventDashboardContext } from "@/lib/eventDashboard/context";
 import { loadCheckInDesk } from "@/lib/eventDashboard/checkIn";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,8 @@ import { cn } from "@/lib/cn";
 import { doorsStatus, seatDots, type DoorsTone } from "@/components/event-dashboard/check-in/doors";
 import { DoorStationControls } from "@/components/event-dashboard/check-in/DoorStationControls";
 import { NoPermission } from "./shared";
+import { loadCheckInLists, type CheckInListView } from "@/lib/eventDashboard/checkInLists";
+import { ManageCheckInListsDialog } from "@/components/checkin/ManageCheckInListsDialog";
 
 const DOORS_CHIP: Record<DoorsTone, string> = {
   upcoming: "bg-warning-bg text-warning-fg",
@@ -26,10 +28,20 @@ const cardClass = "flex min-w-0 flex-col gap-3 rounded-xl border border-line bg-
 
 export async function CheckInPanel({ ctx }: { ctx: EventDashboardContext }) {
   const { event, permissions, organisation, now } = ctx;
-  if (!permissions.canCheckIn) return <NoPermission>You do not have permission to operate check-in.</NoPermission>;
-
-  const desk = await loadCheckInDesk(ctx);
   const checkInHref = `/dashboard/${organisation.slug}/event/${event.id}/check-in`;
+  if (!permissions.canCheckIn) {
+    if (!permissions.canManageCheckInLists) return <NoPermission>You do not have permission to operate check-in.</NoPermission>;
+    // EDIT_DETAILS co-organisers set up the lists; scanning stays with CHECK_IN.
+    const lists = await loadCheckInLists(event.id);
+    return (
+      <div className="flex flex-col gap-5">
+        <CheckInListsCard organisationSlug={organisation.slug} eventId={event.id} lists={lists} checkInHref={null} canManage />
+        <NoPermission>Checking guests in needs the check-in permission.</NoPermission>
+      </div>
+    );
+  }
+
+  const [desk, lists] = await Promise.all([loadCheckInDesk(ctx), loadCheckInLists(event.id)]);
   const doors = doorsStatus({ start: event.startDateTime, end: event.endDateTime, timezone: event.timezone, now, cancelled: event.status === "CANCELLED" });
   const { seats, lit } = seatDots(desk.checkedIn, desk.confirmed);
 
@@ -105,6 +117,8 @@ export async function CheckInPanel({ ctx }: { ctx: EventDashboardContext }) {
           </ul>
         </section>
 
+        <CheckInListsCard organisationSlug={organisation.slug} eventId={event.id} lists={lists} checkInHref={checkInHref} canManage={permissions.canManageCheckInLists} className="md:col-span-2 xl:col-span-3" />
+
         <section aria-labelledby="checkin-attendance-title" className={cn(cardClass, "md:col-span-2 xl:col-span-1")}>
           <h2 id="checkin-attendance-title" className="text-h4 text-ink">Attendance</h2>
           <p className="text-sm text-ink-secondary">
@@ -130,5 +144,53 @@ export async function CheckInPanel({ ctx }: { ctx: EventDashboardContext }) {
         </section>
       </div>
     </div>
+  );
+}
+
+function CheckInListsCard({ organisationSlug, eventId, lists, checkInHref, canManage, className }: {
+  organisationSlug: string;
+  eventId: string;
+  lists: CheckInListView[];
+  /** The desk link, or null when the viewer cannot scan. */
+  checkInHref: string | null;
+  canManage: boolean;
+  className?: string;
+}) {
+  const open = lists.filter((list) => !list.archived);
+  return (
+    <section aria-labelledby="checkin-lists-title" className={cn(cardClass, className)}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 id="checkin-lists-title" className="text-h4 text-ink">Check-in lists</h2>
+        {canManage ? <ManageCheckInListsDialog organisationSlug={organisationSlug} eventId={eventId} lists={lists} /> : null}
+      </div>
+      <p className="text-sm text-ink-secondary">
+        Track more than the door: swag, meals or workshops. Each list counts who has collected it, separately from entry check-in.
+      </p>
+      {open.length === 0 ? (
+        <p className="text-sm text-ink-muted">{canManage ? "No lists yet. Add one with Manage lists." : "No lists yet. Organisers with page editing rights can add them."}</p>
+      ) : (
+        <ul aria-label="Check-in lists" className="flex flex-col divide-y divide-line">
+          {open.map((list) => (
+            <li key={list.id} className="flex flex-wrap items-center gap-3 py-2.5">
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[15px] font-semibold text-ink">{list.name}</p>
+                <p className="text-caption text-ink-muted">
+                  <span className="font-semibold text-ink">{list.collected}</span> / {list.eligible} collected
+                  {list.requiresEntryCheckIn ? " · after entry check-in" : ""}
+                </p>
+              </div>
+              {checkInHref ? (
+                <Button asChild size="sm" variant="secondary">
+                  <Link href={`${checkInHref}?list=${encodeURIComponent(list.id)}`} aria-label={`Open ${list.name} check-in`}>
+                    <ListChecks aria-hidden className="size-4" />
+                    Open
+                  </Link>
+                </Button>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }

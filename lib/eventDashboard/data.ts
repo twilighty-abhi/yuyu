@@ -47,6 +47,7 @@ export const loadAttendees = cache(async (eventId: string, origin: string) => {
       user: { select: { id: true, name: true, email: true } },
       answers: { include: { field: true } },
       team: { select: { id: true, name: true, leaderRsvpId: true } },
+      checkInListRecords: { select: { checkedInAt: true, list: { select: { name: true, archived: true } } }, orderBy: { list: { sortOrder: "asc" } } },
     },
     orderBy: { createdAt: "desc" },
     take: MAX_BROWSER_ATTENDEES + 1,
@@ -59,6 +60,11 @@ export const loadAttendees = cache(async (eventId: string, origin: string) => {
     guestName: rsvp.guestName,
     user: rsvp.user ? { id: rsvp.user.id, name: rsvp.user.name, email: rsvp.user.email } : null,
     checkedInAt: rsvp.checkedInAt?.toISOString() ?? null,
+    /** Custom check-in lists this guest is in (never changes entry check-in). */
+    listCheckIns: rsvp.checkInListRecords.map((record) => ({
+      listName: record.list.archived ? `${record.list.name} (archived)` : record.list.name,
+      checkedInAt: record.checkedInAt.toISOString(),
+    })),
     ticketUrl: `${origin}/ticket/${rsvp.checkInToken}`,
     // TEAM events: the team this registration belongs to (null when solo).
     team: rsvp.team ? { id: rsvp.team.id, name: rsvp.team.name, isLeader: rsvp.team.leaderRsvpId === rsvp.id } : null,

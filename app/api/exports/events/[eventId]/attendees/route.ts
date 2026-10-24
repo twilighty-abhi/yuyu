@@ -61,20 +61,30 @@ export async function GET(_request: Request, context: RouteContext) {
       registrationForm: {
         select: { fields: { select: { id: true, label: true }, orderBy: { sortOrder: "asc" } } },
       },
+      // One column per custom check-in list, after the registration answers,
+      // so existing columns keep their positions.
+      checkInLists: {
+        select: { id: true, name: true, archived: true },
+        orderBy: [{ archived: "asc" }, { sortOrder: "asc" }, { createdAt: "asc" }],
+      },
     },
   });
   if (!event) return missing();
 
+  // Organisation owners/admins, or anyone (member or not) holding the exact
+  // MANAGE_REGISTRATIONS grant on this event, as in lib/eventDashboard/capabilities.ts.
   const membership = await getMembership(session.user.id, event.organisationId);
-  const collaborator = membership ? null : await prisma.eventCollaborator.findFirst({
+  const isAdmin = Boolean(membership && isOrgAdmin(membership.role));
+  const collaborator = isAdmin ? null : await prisma.eventCollaborator.findFirst({
     where: { eventId: event.id, userId: session.user.id, permissions: { has: EventPermission.MANAGE_REGISTRATIONS } },
     select: { id: true },
   });
-  if ((!membership || !isOrgAdmin(membership.role)) && !collaborator) return missing();
+  if (!isAdmin && !collaborator) return missing();
 
   const fields = event.registrationForm?.fields ?? [];
   // TEAM events add Team and Team role columns (docs/TEAMS.md); other exports keep their columns.
   const teamColumns = event.registrationMode === "TEAM";
+  const lists = event.checkInLists;
   const origin = await getRequestOrigin();
   await recordAuditEvent({
     action: "ATTENDEE_LIST_EXPORTED",
@@ -88,7 +98,7 @@ export async function GET(_request: Request, context: RouteContext) {
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
-        controller.enqueue(encoder.encode(`\uFEFF${buildCsv([["Name", "Email", "Status", ...(teamColumns ? ["Team", "Team role"] : []), "Registration Date", "Checked In At", "Ticket URL", ...fields.map((field) => field.label)]])}\n`));
+        controller.enqueue(encoder.encode(`\uFEFF${buildCsv([["Name", "Email", "Status", ...(teamColumns ? ["Team", "Team role"] : []), "Registration Date", "Checked In At", "Ticket URL", ...fields.map((field) => field.label), ...lists.map((list) => `Check-in: ${list.name}${list.archived ? " (archived)" : ""}`)]])}\n`));
         let cursor: string | undefined;
 
         while (true) {
@@ -101,12 +111,14 @@ export async function GET(_request: Request, context: RouteContext) {
               user: { select: { name: true, email: true } },
               answers: { select: { fieldId: true, valueText: true, valueBool: true, valueNumber: true, valueDate: true } },
               team: { select: { name: true, leaderRsvpId: true } },
+              checkInListRecords: { select: { listId: true, checkedInAt: true } },
             },
           });
           if (!rsvps.length) break;
 
           const rows = rsvps.map((rsvp) => {
             const answers = new Map(rsvp.answers.map((answer) => [answer.fieldId, answerValue(answer)]));
+            const listCheckIns = new Map(rsvp.checkInListRecords.map((record) => [record.listId, record.checkedInAt.toISOString()]));
             return [
               rsvp.user?.name ?? rsvp.guestName ?? "",
               rsvp.user?.email ?? rsvp.guestEmail ?? "",
@@ -116,6 +128,7 @@ export async function GET(_request: Request, context: RouteContext) {
               rsvp.checkedInAt?.toISOString() ?? "",
               `${origin}/ticket/${rsvp.checkInToken}`,
               ...fields.map((field) => answers.get(field.id) ?? ""),
+              ...lists.map((list) => listCheckIns.get(list.id) ?? ""),
             ];
           });
           controller.enqueue(encoder.encode(`${buildCsv(rows)}\n`));

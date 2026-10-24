@@ -6,6 +6,8 @@ import { auth } from "@/lib/auth";
 import { recordAuditEvent } from "@/lib/audit";
 import { isActionRateLimited } from "@/lib/actionRateLimit";
 import {
+  ORGANISER_TEAM_FILTERS,
+  listEventTeamsForOrganiser,
   organiserDeleteTeam,
   organiserMoveMember,
   organiserRenameTeam,
@@ -14,18 +16,20 @@ import {
   type OrganiserEventContext,
   type TeamTransition,
 } from "@/lib/core/teams";
+import { z } from "zod";
 import {
   organiserMoveTeamMemberSchema,
   organiserRenameTeamSchema,
   organiserTeamActionSchema,
 } from "@/lib/validators";
+import { toDashboardTeam, type DashboardTeam } from "@/lib/eventDashboard/teams";
 import type { ActionResult } from "./org";
 import { flattenZodErrors } from "./utils";
 
 /*
  * Organiser actions on whole teams (Guests → Teams, docs/TEAMS.md). The
  * permission check is the one that guards the individual RSVP lifecycle
- * actions (`canManageEvents`, via resolveOrganiserEvent), and the same "rsvp"
+ * actions (`canManageRegistrationsFor`, via resolveOrganiserEvent), and the same "rsvp"
  * rate-limit bucket applies. The rules, the Event lock and the re-read of the
  * team inside its event live in lib/core/teams.ts. Removing one member goes
  * through the existing deleteRsvp action, which keeps its undo snapshot.
@@ -154,4 +158,33 @@ export async function deleteTeam(input: unknown): Promise<ActionResult<{ undoId:
   });
   revalidateTeamPaths(gate.ctx);
   return result;
+}
+
+const teamsPageInputSchema = z
+  .object({
+    organisationSlug: z.string().trim().min(1).max(200),
+    eventId: z.string().trim().min(1).max(128),
+    query: z.string().max(100).optional(),
+    filter: z.enum(ORGANISER_TEAM_FILTERS).optional(),
+    cursor: z.string().max(160).nullable().optional(),
+  })
+  .strict();
+
+/**
+ * One page of Guests → Teams for a search, a status filter, or "Load more"
+ * (bounded by ORGANISER_TEAMS_PAGE_SIZE). Read-only: the same organisation
+ * admin check as the team actions, on the search rate-limit bucket.
+ */
+export async function loadTeamsPage(input: unknown): Promise<ActionResult<{ teams: DashboardTeam[]; nextCursor: string | null }>> {
+  const parsed = teamsPageInputSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Invalid input." };
+  const session = await auth();
+  const userId = session?.user?.id;
+  if (!userId) return { ok: false, error: "You must be signed in." };
+  if (await isActionRateLimited("search", userId)) return { ok: false, error: "Too many searches. Try again shortly." };
+  const ctx = await resolveOrganiserEvent(userId, parsed.data.organisationSlug, parsed.data.eventId);
+  if (!ctx) return { ok: false, error: NO_PERMISSION };
+  const { query, filter, cursor } = parsed.data;
+  const page = await listEventTeamsForOrganiser(ctx, { query, filter, cursor: cursor ?? null });
+  return { ok: true, data: { teams: page.teams.map(toDashboardTeam), nextCursor: page.nextCursor } };
 }

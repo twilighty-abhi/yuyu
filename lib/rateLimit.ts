@@ -15,6 +15,7 @@ export type Bucket =
   | "invite"
   | "broadcast"
   | "broadcastTest"
+  | "broadcastDraft"
   | "checkin"
   | "checkinStationPin"
   | "search"
@@ -26,7 +27,9 @@ export type Bucket =
   | "shortLink"
   | "mobileAuth"
   | "mobileApi"
-  | "clientError";
+  | "clientError"
+  | "webhookManage"
+  | "webhookTest";
 
 const limits: Record<Bucket, { max: number; windowMs: number }> = {
   global: { max: 300, windowMs: 60_000 },
@@ -43,6 +46,9 @@ const limits: Record<Bucket, { max: number; windowMs: number }> = {
   broadcast: { max: 10, windowMs: 60 * 60_000 },
   // Tests only reach the organiser's own inbox; kept apart so testing never blocks the real send.
   broadcastTest: { max: 20, windowMs: 60 * 60_000 },
+  // Draft autosave and discard in the Emails tab. Saves fire about 1.5s after
+  // typing stops, so a steady writer stays well under this.
+  broadcastDraft: { max: 60, windowMs: 60_000 },
   checkin: { max: 180, windowMs: 60_000 },
   checkinStationPin: { max: 5, windowMs: 60_000 },
   search: { max: 60, windowMs: 60_000 },
@@ -62,6 +68,10 @@ const limits: Record<Bucket, { max: number; windowMs: number }> = {
   mobileApi: { max: 300, windowMs: 60_000 },
   // Browser crash reports forwarded to the operator alert webhook.
   clientError: { max: 10, windowMs: 60_000 },
+  // Organisation webhook endpoint changes (create, edit, rotate, enable, delete).
+  webhookManage: { max: 30, windowMs: 60_000 },
+  // Webhook test sends and manual redeliveries each make an outbound request.
+  webhookTest: { max: 20, windowMs: 60 * 60_000 },
 };
 
 // Local fallback store

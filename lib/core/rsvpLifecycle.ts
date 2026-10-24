@@ -4,13 +4,14 @@ import { RsvpStatus } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { enqueueRsvpStatusNotification } from "@/lib/outbox";
-import { canManageEvents, getMembership } from "@/lib/permissions";
+import { canManageRegistrationsFor } from "@/lib/eventAccess";
 import { confirmRsvpWithinCapacity } from "@/lib/rsvpCapacity";
 import { rsvpTransitionSchema } from "@/lib/validators";
 import type { ActionResult } from "@/app/actions/org";
 import { flattenZodErrors } from "@/app/actions/utils";
 import { recordAuditEvent } from "@/lib/audit";
 import { isActionRateLimited } from "@/lib/actionRateLimit";
+import { emitWebhookEvent } from "@/lib/webhooks/emit";
 
 function revalidateRsvpPaths(params: {
   orgSlug: string;
@@ -42,8 +43,8 @@ async function loadRsvpContext(
   });
   if (!org) return { error: "Organisation not found." as const };
 
-  const membership = await getMembership(userId, org.id);
-  if (!canManageEvents(membership)) {
+  // Organisation OWNER/ADMIN, or the exact MANAGE_REGISTRATIONS grant on the event or series.
+  if (!(await canManageRegistrationsFor({ userId, organisationId: org.id, eventId, eventInstanceId }))) {
     return { error: "You do not have permission to manage attendees." as const };
   }
 
@@ -186,6 +187,81 @@ export async function approveRsvpForUser(actorUserId: string | null, input: unkn
   return { ok: true };
 }
 
+/**
+ * Reverses a decline. A REJECTED RSVP goes back through the same locked
+ * capacity transaction as an approval (the event or occurrence must still be
+ * open): it is CONFIRMED when there is room and otherwise WAITLISTED, so it
+ * never oversells and can be promoted later. The attendee gets the approval
+ * email or the waitlist email from the outbox. The row is updated in place, so
+ * the one-RSVP-per-attendee constraint is untouched.
+ */
+export async function reacceptRsvpForUser(
+  actorUserId: string | null,
+  input: unknown,
+): Promise<ActionResult<{ status: "CONFIRMED" | "WAITLISTED" }>> {
+  if (!actorUserId) {
+    return { ok: false, error: "You must be signed in." };
+  }
+  if (await isActionRateLimited("rsvp", actorUserId)) return { ok: false, error: "Too many attendee updates. Try again shortly." };
+
+  const parsed = rsvpTransitionSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: "Invalid input.",
+      fieldErrors: flattenZodErrors(parsed.error),
+    };
+  }
+
+  const { organisationSlug, rsvpId, eventId, eventInstanceId } = parsed.data;
+  const ctx = await loadRsvpContext(organisationSlug, actorUserId, rsvpId, eventId, eventInstanceId);
+  if ("error" in ctx && ctx.error) return { ok: false, error: ctx.error };
+  if (!("rsvp" in ctx)) return { ok: false, error: "Invalid state." };
+
+  const { org, rsvp } = ctx;
+  // A declined team stays declined as a whole; its members are not re-accepted one by one.
+  if (rsvp.teamId) return { ok: false, error: "This registration belongs to a declined team. Team members cannot be re-accepted one by one." };
+  if (rsvp.status !== RsvpStatus.REJECTED) {
+    return { ok: false, error: "Only declined registrations can be re-accepted." };
+  }
+
+  const to = attendeeEmail(rsvp);
+  const eventTitle = ctx.event?.title ?? ctx.instance!.series.title;
+  const result = await confirmRsvpWithinCapacity({
+    rsvpId: rsvp.id,
+    ...(ctx.event ? { eventId: ctx.event.id } : { eventInstanceId: ctx.instance!.id }),
+    expectedStatuses: [RsvpStatus.REJECTED],
+    requireOpen: true,
+    whenFull: "waitlist",
+    ...(to ? { notification: { to, eventTitle, checkInToken: rsvp.checkInToken } } : {}),
+  });
+  if (result === "closed") {
+    return {
+      ok: false,
+      error: ctx.event ? "This event is no longer open for approvals." : "This occurrence is no longer open for approvals.",
+    };
+  }
+  if (result !== "confirmed" && result !== "waitlisted") {
+    return { ok: false, error: "This RSVP was changed by another organiser." };
+  }
+
+  const status = result === "confirmed" ? RsvpStatus.CONFIRMED : RsvpStatus.WAITLISTED;
+  await recordAuditEvent({
+    action: "RSVP_REACCEPTED",
+    actorUserId,
+    organisationId: org.id,
+    targetType: "RSVP",
+    targetId: rsvp.id,
+    metadata: { status },
+  });
+  if (ctx.event) {
+    revalidateRsvpPaths({ orgSlug: org.slug, eventSlug: ctx.event.slug, eventId: ctx.event.id });
+  } else {
+    revalidateRsvpPaths({ orgSlug: org.slug, eventInstanceId: ctx.instance!.id });
+  }
+  return { ok: true, data: { status } };
+}
+
 export async function rejectRsvpForUser(actorUserId: string | null, input: unknown): Promise<ActionResult> {
   if (!actorUserId) {
     return { ok: false, error: "You must be signed in." };
@@ -240,6 +316,7 @@ export async function rejectRsvpForUser(actorUserId: string | null, input: unkno
     return result;
   });
   if (rejected.count !== 1) return { ok: false, error: "This RSVP was changed by another organiser." };
+  emitWebhookEvent({ type: "registration.status_changed", rsvpId: rsvp.id, status: RsvpStatus.REJECTED, previousStatus: rsvp.status });
 
   await recordAuditEvent({ action: "RSVP_REJECTED", actorUserId: session.user.id, organisationId: org.id, targetType: "RSVP", targetId: rsvp.id });
 

@@ -3,7 +3,17 @@ import "server-only";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { canManageEvents, getMembership } from "@/lib/permissions";
-import { broadcastAudienceSchema, previewEventBroadcastSchema, sendEventBroadcastSchema, sendEventBroadcastTestSchema } from "@/lib/validators";
+import {
+  broadcastAudienceSchema,
+  eventBroadcastDraftRefSchema,
+  previewEventBroadcastSchema,
+  saveEventBroadcastDraftSchema,
+  sendEventBroadcastSchema,
+  sendEventBroadcastTestSchema,
+} from "@/lib/validators";
+import type { ZodError } from "zod";
+import { DEFAULT_BROADCAST_DESIGN, isBroadcastDesign } from "@/lib/email/broadcastDesigns";
+import type { EventBroadcastDraftDto } from "@/lib/broadcastDraftAutosave";
 import type { ActionResult } from "@/app/actions/org";
 import { flattenZodErrors } from "@/app/actions/utils";
 import { recordAuditEvent } from "@/lib/audit";
@@ -101,7 +111,16 @@ export async function previewEventBroadcastForUser(
   return { ok: true, data: email };
 }
 
-export async function sendEventBroadcastForUser(actorUserId: string | null, input: unknown): Promise<ActionResult<{ recipientCount: number; broadcastId: string }>> {
+/**
+ * Sends the broadcast. `clearDraft` removes the sender's saved draft for this
+ * event in the same transaction; the dashboard composer passes it because its
+ * editor is that draft. Other surfaces (the mobile API) leave the draft alone.
+ */
+export async function sendEventBroadcastForUser(
+  actorUserId: string | null,
+  input: unknown,
+  options: { clearDraft?: boolean } = {},
+): Promise<ActionResult<{ recipientCount: number; broadcastId: string }>> {
   const userId = actorUserId;
   if (!userId) return { ok: false, error: "You must be signed in." };
   if (await isActionRateLimited("broadcast", userId)) {
@@ -139,6 +158,7 @@ export async function sendEventBroadcastForUser(actorUserId: string | null, inpu
         select: { id: true },
       });
       await enqueueEventBroadcastRecipients(tx, recipients.map((recipient) => ({ to: recipient.email, broadcastId: broadcast.id, rsvpId: recipient.rsvpId })));
+      if (options.clearDraft) await tx.eventBroadcastDraft.deleteMany({ where: { eventId: context.event.id, userId } });
       return { broadcastId: broadcast.id, recipientCount: recipients.length };
     });
     if (!result) return { ok: false, error: "No registrations match the selected audience." };
@@ -208,4 +228,102 @@ export async function sendEventBroadcastTestForUser(actorUserId: string | null, 
     console.error("[event broadcast] test queueing failed");
     return { ok: false, error: "Could not queue the test email. Please try again." };
   }
+}
+
+/*
+ * Drafts: one private, autosaved composer state per organiser and event.
+ * Access is exactly the composer's (requireBroadcastContext). Every query is
+ * keyed by the signed-in user, so an organiser never reads or changes a
+ * teammate's draft. Autosaves are not audited: a draft reaches nobody, holds
+ * only what its author typed, and the send that uses it is audited.
+ */
+
+const draftSelect = { subject: true, body: true, design: true, statuses: true, attendance: true, templateId: true, updatedAt: true } as const;
+
+function invalidDraftInput(error: ZodError) {
+  const fieldErrors = flattenZodErrors(error);
+  return { ok: false as const, error: fieldErrors.subject?.[0] ?? fieldErrors.body?.[0] ?? "Invalid draft.", fieldErrors };
+}
+
+/** The signed-in organiser's saved draft for the event, or null. Read-only, so not rate limited (like the recipient count). */
+export async function loadEventBroadcastDraftForUser(actorUserId: string | null, input: unknown): Promise<ActionResult<{ draft: EventBroadcastDraftDto | null }>> {
+  const userId = actorUserId;
+  if (!userId) return { ok: false, error: "You must be signed in." };
+  const parsed = eventBroadcastDraftRefSchema.safeParse(input);
+  if (!parsed.success) return invalidDraftInput(parsed.error);
+
+  const context = await requireBroadcastContext(userId, parsed.data.organisationSlug, parsed.data.eventId);
+  if (!context.ok) return { ok: false, error: context.error };
+
+  const row = await prisma.eventBroadcastDraft.findUnique({
+    where: { eventId_userId: { eventId: context.event.id, userId } },
+    select: draftSelect,
+  });
+  if (!row) return { ok: true, data: { draft: null } };
+  return {
+    ok: true,
+    data: {
+      draft: {
+        subject: row.subject,
+        body: row.body,
+        design: isBroadcastDesign(row.design) ? row.design : DEFAULT_BROADCAST_DESIGN,
+        statuses: row.statuses,
+        attendance: row.attendance,
+        templateId: row.templateId,
+        updatedAt: row.updatedAt.toISOString(),
+      },
+    },
+  };
+}
+
+/** Creates or replaces the organiser's draft. The body is sanitised exactly as on send. */
+export async function saveEventBroadcastDraftForUser(actorUserId: string | null, input: unknown): Promise<ActionResult<{ updatedAt: string }>> {
+  const userId = actorUserId;
+  if (!userId) return { ok: false, error: "You must be signed in." };
+  if (await isActionRateLimited("broadcastDraft", userId)) {
+    return { ok: false, error: "Saving too often. Your draft will be saved again in a moment." };
+  }
+  const parsed = saveEventBroadcastDraftSchema.safeParse(input);
+  if (!parsed.success) return invalidDraftInput(parsed.error);
+
+  const context = await requireBroadcastContext(userId, parsed.data.organisationSlug, parsed.data.eventId);
+  if (!context.ok) return { ok: false, error: context.error };
+
+  const content = {
+    subject: parsed.data.subject,
+    body: sanitizeBroadcastHtml(parsed.data.body),
+    design: parsed.data.design,
+    statuses: parsed.data.statuses,
+    attendance: parsed.data.attendance,
+    templateId: parsed.data.templateId,
+  };
+  try {
+    const saved = await prisma.eventBroadcastDraft.upsert({
+      where: { eventId_userId: { eventId: context.event.id, userId } },
+      create: { eventId: context.event.id, userId, ...content },
+      update: content,
+      select: { updatedAt: true },
+    });
+    return { ok: true, data: { updatedAt: saved.updatedAt.toISOString() } };
+  } catch {
+    console.error("[event broadcast] draft save failed");
+    return { ok: false, error: "Could not save the draft. Please try again." };
+  }
+}
+
+/** Deletes the organiser's own draft; discarding a draft that is already gone succeeds. */
+export async function discardEventBroadcastDraftForUser(actorUserId: string | null, input: unknown): Promise<ActionResult<{ discarded: boolean }>> {
+  const userId = actorUserId;
+  if (!userId) return { ok: false, error: "You must be signed in." };
+  if (await isActionRateLimited("broadcastDraft", userId)) {
+    return { ok: false, error: "Too many requests. Please wait a moment and try again." };
+  }
+  const parsed = eventBroadcastDraftRefSchema.safeParse(input);
+  if (!parsed.success) return invalidDraftInput(parsed.error);
+
+  const context = await requireBroadcastContext(userId, parsed.data.organisationSlug, parsed.data.eventId);
+  if (!context.ok) return { ok: false, error: context.error };
+
+  const result = await prisma.eventBroadcastDraft.deleteMany({ where: { eventId: context.event.id, userId } });
+  return { ok: true, data: { discarded: result.count > 0 } };
 }

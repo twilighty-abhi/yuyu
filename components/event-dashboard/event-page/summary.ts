@@ -6,6 +6,7 @@
  */
 
 import { normalizeAccentHex } from "@/lib/theme/accent";
+import { registrationActionLabel, type RegistrationLabelTeam } from "@/lib/registrationLabel";
 
 export const SECTION_TYPES = ["HERO", "ABOUT", "HIGHLIGHTS", "SCHEDULE", "SPEAKERS", "SPONSORS", "VENUE", "FAQ", "RESOURCES"] as const;
 export type SectionType = (typeof SECTION_TYPES)[number];
@@ -135,10 +136,10 @@ export function unsavedLabel(count: number): string {
 }
 
 /** The public register button label for an event's audience (matches RegistrationCard). */
-export function registerLabelFor(privacyType: string): string {
-  if (privacyType === "APPROVAL_REQUIRED") return "Request to join";
+export function registerLabelFor(privacyType: string, team: RegistrationLabelTeam | null = null): string {
   if (privacyType === "INVITE_ONLY") return "Register with your invite";
-  return "Register — it's free";
+  // TEAM events use the public card's team wording (docs/TEAMS.md).
+  return registrationActionLabel({ full: false, approvalRequired: privacyType === "APPROVAL_REQUIRED" }, team);
 }
 
 const ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', "#39": "'", apos: "'", nbsp: " " };

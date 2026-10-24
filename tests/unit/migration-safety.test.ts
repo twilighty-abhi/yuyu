@@ -58,6 +58,45 @@ describe("production migration safety contracts", () => {
     expect(sql).toContain('REFERENCES "User"("id") ON DELETE SET NULL');
   });
 
+  it("adds broadcast drafts as a new table that cascades with its event and author", () => {
+    const sql = readFileSync(resolve(root, "prisma/migrations/20261022000000_event_broadcast_drafts/migration.sql"), "utf8");
+    expect(sql).not.toMatch(/\bDROP\b/i);
+    expect(sql).not.toMatch(/ALTER TABLE "(?!EventBroadcastDraft")/);
+    expect(sql).not.toMatch(/^\s*(UPDATE|DELETE FROM|INSERT INTO)\b/m);
+    expect(sql).toContain('CREATE TABLE "EventBroadcastDraft"');
+    expect(sql).toContain('CREATE UNIQUE INDEX "EventBroadcastDraft_eventId_userId_key" ON "EventBroadcastDraft"("eventId", "userId")');
+    expect(sql).toContain('CHECK (char_length("subject") <= 150)');
+    expect(sql).toContain('FOREIGN KEY ("eventId") REFERENCES "Event"("id") ON DELETE CASCADE');
+    expect(sql).toContain('FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE');
+  });
+
+  it("adds organisation webhooks as new tables only, cascading with the organisation", () => {
+    const sql = readFileSync(resolve(root, "prisma/migrations/20261023010000_org_webhooks/migration.sql"), "utf8");
+    expect(sql).not.toMatch(/\bDROP\b/i);
+    expect(sql).not.toMatch(/ALTER TABLE "(?!WebhookEndpoint"|WebhookDelivery")/);
+    expect(sql).not.toMatch(/^\s*(UPDATE|DELETE FROM|INSERT INTO)\b/m);
+    expect(sql).toContain('CREATE TABLE "WebhookEndpoint"');
+    expect(sql).toContain('CREATE TABLE "WebhookDelivery"');
+    expect(sql).toContain('CREATE UNIQUE INDEX "WebhookDelivery_endpointId_eventId_key"');
+    expect(sql).toContain('FOREIGN KEY ("organisationId") REFERENCES "Organisation"("id") ON DELETE CASCADE');
+    expect(sql).toContain('FOREIGN KEY ("endpointId") REFERENCES "WebhookEndpoint"("id") ON DELETE CASCADE');
+    expect(sql).toContain('CHECK (("status" = \'PROCESSING\') = ("lockedAt" IS NOT NULL))');
+  });
+
+  it("adds check-in lists as new tables without touching entry check-in", () => {
+    const sql = readFileSync(resolve(root, "prisma/migrations/20261023000000_check_in_lists/migration.sql"), "utf8");
+    expect(sql).not.toMatch(/\bDROP\b/i);
+    expect(sql).not.toMatch(/ALTER TABLE "(?!CheckInList(Record|Event)?")/);
+    expect(sql).not.toMatch(/^\s*(UPDATE|DELETE FROM|INSERT INTO)\b/m);
+    expect(sql).toContain('CREATE UNIQUE INDEX "CheckInList_eventId_active_name_key" ON "CheckInList"("eventId", lower("name")) WHERE NOT "archived"');
+    expect(sql).toContain('CREATE UNIQUE INDEX "CheckInListRecord_listId_rsvpId_key" ON "CheckInListRecord"("listId", "rsvpId")');
+    expect(sql).toContain('FOREIGN KEY ("eventId") REFERENCES "Event"("id") ON DELETE CASCADE');
+    expect(sql).toContain('"CheckInListRecord_rsvpId_fkey" FOREIGN KEY ("rsvpId") REFERENCES "RSVP"("id") ON DELETE CASCADE');
+    expect(sql).toContain('"CheckInListRecord_actorUserId_fkey" FOREIGN KEY ("actorUserId") REFERENCES "User"("id") ON DELETE SET NULL');
+    expect(sql).toContain('"CheckInListEvent_rsvpId_fkey" FOREIGN KEY ("rsvpId") REFERENCES "RSVP"("id") ON DELETE SET NULL');
+    expect(sql).toContain(`CHECK ("source" IN ('online', 'mobile-scan', 'mobile-manual'))`);
+  });
+
   it("adds team registration without rewriting existing rows", () => {
     const sql = readFileSync(resolve(root, "prisma/migrations/20261024000000_team_registration/migration.sql"), "utf8");
     expect(sql).not.toMatch(/\bDROP\b/i);
@@ -108,3 +147,4 @@ describe("production migration safety contracts", () => {
     expect(sql).toContain('ALTER TABLE "Event" ADD COLUMN "resultsAnnouncedAt" TIMESTAMP(3);');
   });
 });
+

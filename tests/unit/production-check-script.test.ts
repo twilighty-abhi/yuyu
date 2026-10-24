@@ -50,4 +50,12 @@ describe("npm run production:check", () => {
     expect(short.status).toBe(1);
     expect(short.stderr).toMatch(/MFA_ENCRYPTION_KEY/);
   });
+
+  it("refuses the development-only webhook private-target flag outside CI test mode", () => {
+    const refused = run({ ...base, WEBHOOKS_ALLOW_PRIVATE_TARGETS: "1" });
+    expect(refused.status).toBe(1);
+    expect(refused.stderr).toMatch(/WEBHOOKS_ALLOW_PRIVATE_TARGETS/);
+    expect(run({ ...base, WEBHOOKS_ALLOW_PRIVATE_TARGETS: "" }).status).toBe(0);
+    expect(run({ ...base, WEBHOOKS_ALLOW_PRIVATE_TARGETS: "1", CI: "true", ALLOW_INSECURE_PRODUCTION_TESTS: "1" }).status).toBe(0);
+  });
 });

@@ -521,6 +521,9 @@ export async function lookupAttendeesForCheckInForUser(
         { guestName: { contains: q, mode: "insensitive" } },
         { user: { email: { contains: q, mode: "insensitive" } } },
         { user: { name: { contains: q, mode: "insensitive" } } },
+        // TEAM events: typing a team name lists its members. The team is
+        // matched inside this event only.
+        { team: { eventId: ctx.event.id, name: { contains: q, mode: "insensitive" } } },
       ],
     },
     take: 12,

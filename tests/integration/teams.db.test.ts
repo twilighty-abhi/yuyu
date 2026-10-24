@@ -21,11 +21,17 @@ import { cancelRsvpForUser } from "@/lib/core/rsvpCancel";
 import { approveRsvpForUser } from "@/lib/core/rsvpLifecycle";
 import { deleteRsvpForUser, restoreRsvpForUser } from "@/lib/core/rsvpAdmin";
 import { countConfirmedUnits } from "@/lib/teamUnits";
-import { hashTeamManageToken } from "@/lib/teamToken";
+import { lookupAttendeesForCheckInForUser } from "@/lib/core/checkin";
+import { hashTeamManageToken, teamJoinPath } from "@/lib/teamToken";
+import { flushWebhookEmits } from "@/lib/webhooks/emit";
 import {
   addTeamMemberByLeader,
+  countEventTeamsForOrganiser,
   createJoinRequest,
   disbandTeam,
+  joinTeamWithExistingRsvp,
+  listEventTeamsForOrganiser,
+  ORGANISER_TEAMS_PAGE_SIZE,
   leaveTeam,
   listSeekersForLeader,
   loadJoinPageTeam,
@@ -694,5 +700,263 @@ describe.sequential("team registration integration", () => {
     await expect(prisma.teamJoinRequest.create({ data: { teamId: team.id, rsvpId: seeker.rsvpId, direction: "REQUEST" } })).resolves.toMatchObject({
       status: TeamJoinRequestStatus.PENDING,
     });
+  });
+  it("moves a solo registration into a team with its join link, freeing and promoting the solo unit", async () => {
+    const event = await createEvent({ capacity: 2, soloPolicy: SoloPolicy.SOLO_WITH_MATCHING });
+    const { team } = await createTeam(event, "Link joiners");
+    const solo = await registerOk(event, "solo", { mode: "solo", seeker: { headline: "Designer", skills: ["Figma"] } });
+    const waiting = await registerOk(event, "waiting");
+    const waitingTeam = await createTeam(event, "Later team");
+    expect([solo.status, waiting.status, waitingTeam.leader.status]).toEqual([RsvpStatus.CONFIRMED, RsvpStatus.WAITLISTED, RsvpStatus.WAITLISTED]);
+
+    // A pending request to another team is cancelled by the move.
+    const holder = await resolveRsvpByTicketToken(solo.ticketToken, null);
+    if (!holder) throw new Error("solo did not resolve");
+    await expect(setLookingForMembers(await leaderAuth(waitingTeam.team.id), true)).resolves.toEqual({ ok: true });
+    const request = await createJoinRequest({ direction: "REQUEST", seeker: holder, teamId: waitingTeam.team.id });
+    if (!request.ok || !request.data) throw new Error("join request failed");
+
+    const link = `https://yuyu.example${teamJoinPath(orgSlug, event.slug, team.joinToken)}`;
+    await expect(joinTeamWithExistingRsvp(holder, link)).resolves.toEqual({
+      ok: true,
+      data: { status: RsvpStatus.CONFIRMED, teamName: "Link joiners" },
+    });
+    await expect(prisma.rSVP.findUniqueOrThrow({ where: { id: solo.rsvpId } })).resolves.toMatchObject({
+      teamId: team.id,
+      status: RsvpStatus.CONFIRMED,
+      checkInToken: solo.ticketToken,
+    });
+    await expect(prisma.teamSeekerProfile.findUniqueOrThrow({ where: { rsvpId: solo.rsvpId } })).resolves.toMatchObject({ visible: false });
+    await expect(prisma.teamJoinRequest.findUniqueOrThrow({ where: { id: request.data.requestId } })).resolves.toMatchObject({
+      status: TeamJoinRequestStatus.CANCELLED,
+    });
+    // The solo waiter is the oldest waitlisted unit, so it takes the freed place.
+    await expect(statusOf(waiting.rsvpId)).resolves.toBe(RsvpStatus.CONFIRMED);
+    await expect(prisma.team.findUniqueOrThrow({ where: { id: waitingTeam.team.id } })).resolves.toMatchObject({ status: RsvpStatus.WAITLISTED });
+
+    // Joining again, or another team, is refused.
+    const moved = await resolveRsvpByTicketToken(solo.ticketToken, null);
+    if (!moved) throw new Error("moved did not resolve");
+    await expect(joinTeamWithExistingRsvp(moved, team.joinToken)).resolves.toEqual({ ok: false, error: "You're already in this team." });
+    await expect(joinTeamWithExistingRsvp(moved, waitingTeam.team.joinToken)).resolves.toMatchObject({ ok: false, error: expect.stringMatching(/already in a team/) });
+    await expectTeamInvariants(event);
+  });
+
+  it("refuses join links from another event, full teams, and checked-in moves into a team without a place", async () => {
+    const event = await createEvent({ capacity: 2, teamMaxSize: 2 });
+    const otherEvent = await createEvent({ capacity: 5 });
+    const foreignEvent = await createEvent({ capacity: 5, organisation: otherOrganisationId });
+    const { team: full } = await createTeam(event, "Full pair");
+    await joinTeam(event, full.id);
+    const solo = await registerOk(event, "solo");
+    const { team: waitingTeam } = await createTeam(event, "No place yet");
+    const { team: otherTeam } = await createTeam(otherEvent, "Elsewhere");
+    const { team: foreignTeam } = await createTeam(foreignEvent, "Foreign");
+    const holder = await resolveRsvpByTicketToken(solo.ticketToken, null);
+    if (!holder) throw new Error("solo did not resolve");
+
+    for (const token of [otherTeam.joinToken, foreignTeam.joinToken]) {
+      await expect(joinTeamWithExistingRsvp(holder, token)).resolves.toMatchObject({ ok: false, error: expect.stringMatching(/no longer valid/) });
+    }
+    await expect(joinTeamWithExistingRsvp(holder, `https://yuyu.example/team/${full.joinToken}`)).resolves.toMatchObject({ ok: false });
+    await expect(joinTeamWithExistingRsvp(holder, full.joinToken)).resolves.toEqual({ ok: false, error: "This team is already full." });
+
+    await prisma.rSVP.update({ where: { id: solo.rsvpId }, data: { checkedInAt: new Date() } });
+    await expect(joinTeamWithExistingRsvp(holder, waitingTeam.joinToken)).resolves.toMatchObject({
+      ok: false,
+      error: expect.stringMatching(/already checked in/),
+    });
+    await expect(prisma.rSVP.findUniqueOrThrow({ where: { id: solo.rsvpId } })).resolves.toMatchObject({ teamId: null, status: RsvpStatus.CONFIRMED });
+    // A holder from another event can't use this event's links either.
+    const outsider = await registerOk(otherEvent, "outsider");
+    const outsiderHolder = await resolveRsvpByTicketToken(outsider.ticketToken, null);
+    if (!outsiderHolder) throw new Error("outsider did not resolve");
+    await expect(joinTeamWithExistingRsvp(outsiderHolder, waitingTeam.joinToken)).resolves.toMatchObject({ ok: false });
+    // A withdrawn event page resolves no join link, like the join page's 404.
+    await prisma.rSVP.update({ where: { id: solo.rsvpId }, data: { checkedInAt: null } });
+    await prisma.eventPage.update({ where: { eventId: event.id }, data: { isPublished: false } });
+    await expect(joinTeamWithExistingRsvp(holder, waitingTeam.joinToken)).resolves.toEqual({
+      ok: false,
+      error: "This event is no longer taking team changes.",
+    });
+    await prisma.eventPage.update({ where: { eventId: event.id }, data: { isPublished: true } });
+    await expectTeamInvariants(event);
+    await expectTeamInvariants(otherEvent);
+  });
+
+  it("pages and searches the organiser Teams view within one event", async () => {
+    const event = await createEvent({ teamMinSize: 2, teamMaxSize: 4 });
+    const otherEvent = await createEvent();
+    const ctx = await organiser(event);
+    const total = ORGANISER_TEAMS_PAGE_SIZE + 3;
+    for (let i = 0; i < total; i += 1) await createTeam(event, `Squad ${String(i).padStart(3, "0")}${i === 7 ? " 100%_off" : ""}`);
+    const { team: grown } = await createTeam(event, "Grown ups");
+    const member = await joinTeam(event, grown.id, "Zebedee");
+    await createTeam(otherEvent, "Squad elsewhere");
+
+    const first = await listEventTeamsForOrganiser(ctx);
+    expect(first.teams).toHaveLength(ORGANISER_TEAMS_PAGE_SIZE);
+    expect(first.nextCursor).not.toBeNull();
+    const second = await listEventTeamsForOrganiser(ctx, { cursor: first.nextCursor });
+    expect(second.nextCursor).toBeNull();
+    const all = [...first.teams, ...second.teams];
+    expect(all).toHaveLength(total + 1);
+    expect(new Set(all.map((team) => team.id)).size).toBe(total + 1);
+    expect(all.every((team) => team.name !== "Squad elsewhere")).toBe(true);
+
+    // Team names (wildcards literal) and member names/emails, in this event only.
+    await expect(listEventTeamsForOrganiser(ctx, { query: "squad 00" })).resolves.toMatchObject({ nextCursor: null });
+    expect((await listEventTeamsForOrganiser(ctx, { query: "squad 00" })).teams).toHaveLength(10);
+    expect((await listEventTeamsForOrganiser(ctx, { query: "100%_" })).teams.map((team) => team.name)).toEqual(["Squad 007 100%_off"]);
+    expect((await listEventTeamsForOrganiser(ctx, { query: "%" })).teams.map((team) => team.name)).toEqual(["Squad 007 100%_off"]);
+    expect((await listEventTeamsForOrganiser(ctx, { query: member.email.toUpperCase() })).teams.map((team) => team.id)).toEqual([grown.id]);
+    expect((await listEventTeamsForOrganiser(ctx, { query: "elsewhere" })).teams).toEqual([]);
+
+    // Filters and their counts.
+    const incomplete = await listEventTeamsForOrganiser(ctx, { filter: "incomplete" });
+    expect(incomplete.teams).toHaveLength(ORGANISER_TEAMS_PAGE_SIZE);
+    expect(incomplete.teams.every((team) => team.incomplete)).toBe(true);
+    await expect(countEventTeamsForOrganiser(ctx)).resolves.toMatchObject({ all: total + 1, going: total + 1, incomplete: total, approve: 0 });
+    await expect(listEventTeamsForOrganiser(ctx, { filter: "approve" })).resolves.toEqual({ teams: [], nextCursor: null });
+
+    // Another organisation's admin gets nothing for this event.
+    await expect(resolveOrganiserEvent(otherOrganiserId, orgSlug, event.id)).resolves.toBeNull();
+    const foreignCtx = { ...ctx, organisationId: otherOrganisationId };
+    await expect(listEventTeamsForOrganiser(foreignCtx)).resolves.toEqual({ teams: [], nextCursor: null });
+  });
+
+  it("finds members by team name at the check-in desk, within the event", async () => {
+    const event = await createEvent({ capacity: 10 });
+    const otherEvent = await createEvent({ capacity: 10 });
+    const { leader } = await createTeam(event, "Quokka Coders");
+    const member = await joinTeam(event, (await prisma.rSVP.findUniqueOrThrow({ where: { id: leader.rsvpId } })).teamId!);
+    await createTeam(otherEvent, "Quokka Elsewhere");
+
+    const result = await lookupAttendeesForCheckInForUser(organiserId, { organisationSlug: orgSlug, eventId: event.id, query: "quokka" });
+    if (!result.ok || !result.data) throw new Error(result.ok ? "no rows" : result.error);
+    expect(result.data.rows.map((row) => row.rsvpId).sort()).toEqual([leader.rsvpId, member.rsvpId].sort());
+    expect(result.data.rows.every((row) => row.teamName === "Quokka Coders")).toBe(true);
+  });
+
+  it("sends per-member registration webhooks for whole-team changes, deletes, disbanding and undo", async () => {
+    // Endpoints are read straight from the database; nothing is delivered here.
+    await prisma.webhookEndpoint.create({
+      data: {
+        organisationId,
+        url: "https://hooks.example.test/teams",
+        eventTypes: ["registration.created", "registration.status_changed"],
+        secretEncrypted: "v1.placeholder.placeholder.placeholder",
+      },
+    });
+    const since = new Date();
+    async function statusChanges(rsvpIds: string[]) {
+      await flushWebhookEmits();
+      const rows = await prisma.webhookDelivery.findMany({
+        where: { organisationId, eventType: "registration.status_changed", createdAt: { gte: since } },
+        orderBy: { createdAt: "asc" },
+      });
+      return rows
+        .map((row) => (row.payload as { data: { registration: { id: string; status: string }; previousStatus: string | null } }).data)
+        .filter((data) => rsvpIds.includes(data.registration.id))
+        .map((data) => ({ id: data.registration.id, status: data.registration.status, previousStatus: data.previousStatus }));
+    }
+    const byId = <T extends { id: string }>(rows: T[]) => [...rows].sort((a, b) => a.id.localeCompare(b.id));
+
+    // Approval-required event: approving a team sends one change per member.
+    const approval = await createEvent({ capacity: 5, privacyType: EventPrivacyType.APPROVAL_REQUIRED });
+    const pending = await createTeam(approval, "Hook approvers");
+    const pendingMember = await joinTeam(approval, pending.team.id);
+    await expect(transitionTeamStatus(await organiser(approval), pending.team.id, "approve")).resolves.toMatchObject({ ok: true });
+    expect(byId(await statusChanges([pending.leader.rsvpId, pendingMember.rsvpId]))).toEqual(byId([
+      { id: pending.leader.rsvpId, status: RsvpStatus.CONFIRMED, previousStatus: RsvpStatus.PENDING_APPROVAL },
+      { id: pendingMember.rsvpId, status: RsvpStatus.CONFIRMED, previousStatus: RsvpStatus.PENDING_APPROVAL },
+    ]));
+
+    // One unit: team A is confirmed, team B waits.
+    const event = await createEvent({ capacity: 1 });
+    const ctx = await organiser(event);
+    const a = await createTeam(event, "Hook alpha");
+    const added = await addTeamMemberByLeader(await leaderAuth(a.team.id), { name: "Added Person", email: `hook-added-${suffix}@example.test` });
+    if (!added.ok || !added.data) throw new Error("leader add failed");
+    const b = await createTeam(event, "Hook bravo");
+    const bMember = await joinTeam(event, b.team.id);
+    expect(b.leader.status).toBe(RsvpStatus.WAITLISTED);
+    await flushWebhookEmits();
+    const created = await prisma.webhookDelivery.findMany({ where: { organisationId, eventType: "registration.created", createdAt: { gte: since } } });
+    expect(created.some((row) => (row.payload as { data: { registration: { id: string } } }).data.registration.id === added.data!.rsvpId)).toBe(true);
+
+    // Deleting team A removes its members and promotes team B as a whole.
+    const deleted = await organiserDeleteTeam(ctx, a.team.id);
+    if (!deleted.ok || !deleted.data) throw new Error("team delete failed");
+    expect(byId(await statusChanges([a.leader.rsvpId, added.data.rsvpId]))).toEqual(byId([
+      { id: a.leader.rsvpId, status: "REMOVED", previousStatus: RsvpStatus.CONFIRMED },
+      { id: added.data.rsvpId, status: "REMOVED", previousStatus: RsvpStatus.CONFIRMED },
+    ]));
+    expect(byId(await statusChanges([b.leader.rsvpId, bMember.rsvpId]))).toEqual(byId([
+      { id: b.leader.rsvpId, status: RsvpStatus.CONFIRMED, previousStatus: RsvpStatus.WAITLISTED },
+      { id: bMember.rsvpId, status: RsvpStatus.CONFIRMED, previousStatus: RsvpStatus.WAITLISTED },
+    ]));
+
+    // Disbanding team B cancels both registrations.
+    await expect(disbandTeam(await leaderAuth(b.team.id))).resolves.toMatchObject({ ok: true });
+    const bChanges = await statusChanges([b.leader.rsvpId, bMember.rsvpId]);
+    expect(byId(bChanges.filter((change) => change.status === "CANCELLED"))).toEqual(byId([
+      { id: b.leader.rsvpId, status: "CANCELLED", previousStatus: RsvpStatus.CONFIRMED },
+      { id: bMember.rsvpId, status: "CANCELLED", previousStatus: RsvpStatus.CONFIRMED },
+    ]));
+
+    // Undoing team A's deletion restores both members, previously REMOVED.
+    await expect(restoreRsvpForUser(organiserId, { organisationSlug: orgSlug, undoId: deleted.data.undoId })).resolves.toEqual({ ok: true });
+    const aChanges = await statusChanges([a.leader.rsvpId, added.data.rsvpId]);
+    expect(byId(aChanges.filter((change) => change.previousStatus === "REMOVED"))).toEqual(byId([
+      { id: a.leader.rsvpId, status: RsvpStatus.CONFIRMED, previousStatus: "REMOVED" },
+      { id: added.data.rsvpId, status: RsvpStatus.CONFIRMED, previousStatus: "REMOVED" },
+    ]));
+
+    // Payloads stay minimal: no team name, emails or tokens.
+    const payloads = JSON.stringify((await prisma.webhookDelivery.findMany({ where: { organisationId, createdAt: { gte: since } } })).map((row) => row.payload));
+    expect(payloads).not.toContain("Hook alpha");
+    expect(payloads).not.toContain("@example.test");
+    expect(payloads).not.toContain(a.leader.ticketToken);
+    await prisma.webhookEndpoint.deleteMany({ where: { organisationId } });
+  });
+
+  it("restores members' custom check-in list records when a team deletion is undone", async () => {
+    const event = await createEvent({ capacity: 5 });
+    const ctx = await organiser(event);
+    const { leader, team } = await createTeam(event, "Listed crew");
+    const member = await joinTeam(event, team.id);
+    const swag = await prisma.checkInList.create({ data: { eventId: event.id, name: "Swag" } });
+    const dinner = await prisma.checkInList.create({ data: { eventId: event.id, name: "Dinner", sortOrder: 1 } });
+    const at = new Date("2035-01-01T11:00:00.000Z");
+    await prisma.checkInListRecord.createMany({ data: [
+      { listId: swag.id, rsvpId: leader.rsvpId, source: "online", checkedInAt: at },
+      { listId: swag.id, rsvpId: member.rsvpId, source: "mobile-scan", checkedInAt: at },
+      { listId: dinner.id, rsvpId: member.rsvpId, source: "online", checkedInAt: at },
+    ] });
+
+    const deleted = await organiserDeleteTeam(ctx, team.id);
+    if (!deleted.ok || !deleted.data) throw new Error("team delete failed");
+    await expect(prisma.checkInListRecord.count({ where: { listId: { in: [swag.id, dinner.id] } } })).resolves.toBe(0);
+    // A list removed meanwhile is not recreated; the others come back as they were.
+    await prisma.checkInList.delete({ where: { id: dinner.id } });
+    await expect(restoreRsvpForUser(organiserId, { organisationSlug: orgSlug, undoId: deleted.data.undoId })).resolves.toEqual({ ok: true });
+    const restored = await prisma.checkInListRecord.findMany({ where: { listId: swag.id }, orderBy: { source: "asc" } });
+    expect(restored.map((record) => ({ rsvpId: record.rsvpId, source: record.source, checkedInAt: record.checkedInAt.toISOString() }))).toEqual([
+      { rsvpId: member.rsvpId, source: "mobile-scan", checkedInAt: at.toISOString() },
+      { rsvpId: leader.rsvpId, source: "online", checkedInAt: at.toISOString() },
+    ]);
+    await expectTeamInvariants(event);
+
+    // Removing a team's last member (whole-team undo snapshot) keeps them too.
+    const solo = await createTeam(event, "Listed solo");
+    await prisma.checkInListRecord.create({ data: { listId: swag.id, rsvpId: solo.leader.rsvpId, source: "mobile-manual", checkedInAt: at } });
+    const undo = await deleteRsvpForUser(organiserId, { organisationSlug: orgSlug, eventId: event.id, rsvpId: solo.leader.rsvpId });
+    if (!undo.ok || !undo.data) throw new Error("delete failed");
+    await expect(prisma.team.findUnique({ where: { id: solo.team.id } })).resolves.toBeNull();
+    await expect(restoreRsvpForUser(organiserId, { organisationSlug: orgSlug, undoId: undo.data.undoId })).resolves.toEqual({ ok: true });
+    await expect(prisma.checkInListRecord.findMany({ where: { rsvpId: solo.leader.rsvpId }, select: { listId: true, source: true } })).resolves.toEqual([
+      { listId: swag.id, source: "mobile-manual" },
+    ]);
   });
 });

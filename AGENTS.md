@@ -173,6 +173,12 @@ field, constraint, or cascade from a component alone.
   `lib/opsAlerts.ts`, keep the webhook URL write-only and encrypted, and keep
   the public `POST /api/client-errors` same-origin, size-capped, rate limited,
   and answering an empty `204`.
+- Organisation webhooks (`lib/webhooks/*`, `docs/WEBHOOKS.md`) are owner/admin
+  only. Emit only after a transaction commits, through `emitWebhookEvent`
+  (background enqueue, never throws); keep payloads to the strict DTOs (no
+  emails, answers, or tokens), signing secrets write-only and encrypted, and
+  every target SSRF-checked at save and delivery time with the pinned lookup.
+  `WEBHOOKS_ALLOW_PRIVATE_TARGETS` is for development and tests only.
 - Machine API clients are tenant-bound bearer identities, not Auth.js users.
   Require explicit scopes, resolve the tenant solely from the credential, use
   explicit DTOs/selects, and never log or persist a raw credential.
@@ -204,24 +210,30 @@ Other sessions may edit this tree in parallel. Commit with explicit paths, and
 do not sweep in or revert other sessions' uncommitted files. The user manual
 (`docs/manual/`, `docs/Yuyu-User-Manual.pdf`) is committed only when asked.
 
-### Branching: one branch per feature
+### Branching: one branch per feature, merged by pull request
 
-Every new feature gets its own branch; never commit a feature straight onto the
-integration branch (currently `v1-design-overhaul`; `main` and `staging` are
-release branches and are only changed when asked).
+Every new feature or fix gets its own branch from `main` and reaches `main`
+only through a reviewed, tested pull request. Never commit a feature straight
+onto `main`. (`v1-design-overhaul` was the integration branch until the V1
+release landed on `main`; it is no longer used for new work.)
 
-- Branch from the latest integration branch: `git switch -c feat/<short-name>`
-  (use `fix/<short-name>` for a standalone bug fix). One feature per branch.
-- Commit the work there, with checks passing (lint, TypeScript, relevant tests,
-  plus the stronger checks above where they apply).
-- Merge back with a merge commit so the feature stays visible in history:
-  `git switch v1-design-overhaul && git merge --no-ff feat/<short-name>`,
-  then re-run the checks on the merged result.
-- Push the integration branch and the feature branch only when asked. Delete a
-  merged feature branch only when asked.
-- When other sessions are working in parallel, prefer a separate worktree per
-  feature branch (`git worktree add ../yuyu-<short-name> -b feat/<short-name>`)
-  so branches don't switch under someone else's uncommitted work.
+- Branch from the latest `main`: `git fetch origin && git switch -c
+  feat/<short-name> origin/main` (use `fix/<short-name>` for a bug fix). One
+  feature per branch.
+- Commit the work there with the full checks passing: lint,
+  `npx next typegen && npx tsc --noEmit`, unit, integration (disposable
+  `TEST_DATABASE_URL`), build, the relevant e2e specs in production mode, and
+  the stronger checks above where they apply.
+- Push the branch and open a pull request into `main`
+  (`gh pr create --base main`). Describe what changed and how it was tested.
+- Merge only when the PR's CI and Quality gate are green, with a merge commit
+  so the feature stays visible in history (`gh pr merge --merge`, never
+  squash or rebase). When several PRs are open, merge one at a time and update
+  or re-test the others against the new `main`.
+- Delete a merged feature branch only when asked.
+- When other sessions are working in parallel, use a separate worktree per
+  branch (`git worktree add ../yuyu-<short-name> -b feat/<short-name>
+  origin/main`) so branches don't switch under someone else's uncommitted work.
 
 ## Deployment-sensitive changes
 

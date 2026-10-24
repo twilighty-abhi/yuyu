@@ -283,7 +283,7 @@ export function TeamManager(props: TeamManagerProps) {
     },
     rotateManage: {
       title: "Reset the team management link?",
-      message: "The link you used to open this page stops working, including the one in your email. You'll move to the new address; bookmark it.",
+      message: "The link you used to open this page stops working, including the one in your email. You'll move to the new address, and we'll email it to the team leader.",
       label: "Reset link",
       destructive: false,
     },
@@ -323,7 +323,10 @@ export function TeamManager(props: TeamManagerProps) {
 
       {team.incomplete && team.minSize != null ? (
         <Callout tone="warning">
-          Teams need at least {team.minSize} members. The organisers can&apos;t approve your team until it has {team.minSize}.
+          Teams need at least {team.minSize} members.{" "}
+          {team.status === "PENDING_APPROVAL"
+            ? `The organisers can't approve your team until it has ${team.minSize}.`
+            : `Add ${Math.max(1, team.minSize - team.size)} more with the join link so your team is complete.`}
         </Callout>
       ) : null}
       {rejected ? <Callout tone="danger">The organisers declined this team, so it can&apos;t take new members.</Callout> : null}

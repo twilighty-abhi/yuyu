@@ -66,6 +66,7 @@ describe("team outbox payloads", () => {
   it("validates team-created payloads", () => {
     expect(asTeamCreatedPayload({ to: "lead@example.test", teamId: "team_1", manageToken })).not.toBeNull();
     expect(asTeamCreatedPayload({ to: "lead@example.test", teamId: "team_1", manageToken, reason: "leader" })).not.toBeNull();
+    expect(asTeamCreatedPayload({ to: "lead@example.test", teamId: "team_1", manageToken, reason: "reset" })).not.toBeNull();
     expect(asTeamCreatedPayload({ to: "lead@example.test", teamId: "team_1", manageToken, reason: "other" })).toBeNull();
     expect(asTeamCreatedPayload({ to: "not-an-email", teamId: "team_1", manageToken })).toBeNull();
     expect(asTeamCreatedPayload({ to: "lead@example.test", teamId: "team_1", manageToken: "short" })).toBeNull();

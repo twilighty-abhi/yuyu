@@ -55,6 +55,8 @@ export function TeamSettingsFields({
   offDescription?: string;
 }) {
   const helpId = useId();
+  const soloLabelId = useId();
+  const soloHelpId = useId();
   const problem = teamSettingsProblem(value, largestTeam);
   const set = (patch: Partial<TeamSettingsDraft>) => onChange({ ...value, ...patch });
   return (
@@ -114,15 +116,22 @@ export function TeamSettingsFields({
           <p id={helpId} className={cn("text-caption", problem ? "text-danger-fg" : "text-ink-muted")}>
             {problem ?? "Teams smaller than the minimum are marked Incomplete and can't be approved until they grow."}
           </p>
-          <label className="flex flex-col gap-1">
-            <span className="text-label text-ink">Can people sign up without a team?</span>
-            <Dropdown value={value.soloPolicy} onChange={(event) => set({ soloPolicy: event.target.value as SoloPolicyChoice })} className="sm:max-w-md">
+          {/* Not a <label>: it would label the Dropdown's hidden native select, leaving the visible combobox unnamed. */}
+          <div className="flex flex-col gap-1">
+            <span id={soloLabelId} className="text-label text-ink">Can people sign up without a team?</span>
+            <Dropdown
+              value={value.soloPolicy}
+              onChange={(event) => set({ soloPolicy: event.target.value as SoloPolicyChoice })}
+              aria-labelledby={soloLabelId}
+              aria-describedby={soloHelpId}
+              className="sm:max-w-md"
+            >
               {SOLO_POLICY_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}
             </Dropdown>
-            <span className="text-caption text-ink-muted">{SOLO_POLICY_OPTIONS.find((option) => option.value === value.soloPolicy)?.description}</span>
-          </label>
+            <span id={soloHelpId} className="text-caption text-ink-muted">{SOLO_POLICY_OPTIONS.find((option) => option.value === value.soloPolicy)?.description}</span>
+          </div>
         </div>
       ) : null}
     </div>

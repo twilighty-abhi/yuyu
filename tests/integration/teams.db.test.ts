@@ -464,6 +464,12 @@ describe.sequential("team registration integration", () => {
     await expect(resolveTeamByManageToken(teamA.manageToken)).resolves.toBeNull();
     await expect(renameTeam(authA!, { name: "Stale" })).resolves.toEqual({ ok: false, error: "Team not found." });
     await expect(resolveTeamByManageToken(rotated.ok ? rotated.data!.manageToken : "")).resolves.toMatchObject({ teamId: teamA.team.id });
+    // The new link is emailed to the leader, so losing the tab never strands the team.
+    const leaderA = await prisma.rSVP.findUniqueOrThrow({ where: { id: teamA.team.leaderRsvpId! }, select: { guestEmail: true } });
+    const resetMail = await prisma.outboxMessage.findMany({ where: { kind: "team-created", AND: [{ payload: { path: ["teamId"], equals: teamA.team.id } }, { payload: { path: ["reason"], equals: "reset" } }] } });
+    expect(resetMail.map((message) => message.payload)).toEqual([
+      { to: leaderA.guestEmail, teamId: teamA.team.id, manageToken: rotated.ok ? rotated.data!.manageToken : "", reason: "reset" },
+    ]);
     await expectTeamInvariants(event);
   });
 

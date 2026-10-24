@@ -169,12 +169,15 @@ test("an organiser turns on team registration in the event's publishing settings
   await expect(teamSwitch).not.toBeChecked();
   await teamSwitch.click();
   await expect(teamSwitch).toBeChecked();
+  await form.getByRole("spinbutton", { name: "Smallest team" }).fill("2");
   await form.getByRole("spinbutton", { name: "Largest team" }).fill("3");
+  // The solo-policy dropdown is named by its question (not by the hidden native select).
+  await expect(form.getByRole("combobox", { name: "Can people sign up without a team?" })).toHaveText("Teams or on their own");
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByText("Event saved").first()).toBeVisible();
   await expect
-    .poll(async () => prisma.event.findUniqueOrThrow({ where: { id: eventId }, select: { registrationMode: true, teamMaxSize: true } }))
-    .toEqual({ registrationMode: RegistrationMode.TEAM, teamMaxSize: 3 });
+    .poll(async () => prisma.event.findUniqueOrThrow({ where: { id: eventId }, select: { registrationMode: true, teamMinSize: true, teamMaxSize: true } }))
+    .toEqual({ registrationMode: RegistrationMode.TEAM, teamMinSize: 2, teamMaxSize: 3 });
   expect(errors).toEqual([]);
   await context.close();
 });
@@ -187,6 +190,23 @@ test("a leader creates a team through the public form and sees the confirmation"
   await page.getByRole("button", { name: /^Register/ }).first().click();
   const dialog = page.getByRole("dialog", { name: `Register for ${eventTitle}` });
   await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("radio", { name: /Create a team/ })).toBeChecked();
+  // Keyboard: the arrow keys move through the options without focus leaving the group,
+  // including through "Join with a link", which hides the rest of the form.
+  await waitForHydration(page, '[role="dialog"] [role="radio"]');
+  await dialog.getByRole("radio", { name: /Create a team/ }).focus();
+  // Radix moves focus a tick after keydown and checks the option only while the
+  // key is still down, so hold each key briefly as a person does.
+  const pressArrow = async (key: "ArrowDown" | "ArrowUp") => {
+    await page.keyboard.down(key);
+    await page.waitForTimeout(100);
+    await page.keyboard.up(key);
+  };
+  await pressArrow("ArrowDown");
+  await expect(dialog.getByRole("radio", { name: /Join with a link/ })).toBeFocused();
+  await expect(dialog.getByRole("radio", { name: /Join with a link/ })).toBeChecked();
+  await pressArrow("ArrowUp");
+  await expect(dialog.getByRole("radio", { name: /Create a team/ })).toBeFocused();
   await expect(dialog.getByRole("radio", { name: /Create a team/ })).toBeChecked();
   await dialog.getByRole("textbox", { name: /^Team name/ }).fill(teamName);
   await dialog.getByRole("textbox", { name: /^Name/ }).fill(leader.name);
@@ -219,12 +239,18 @@ test("the team page shows the join link and is a private, unindexed page", async
   await expectCapabilityHeaders(await page.request.get(`/team/${manageToken}`), "/team/:token");
 
   await page.goto(`/team/${manageToken}`);
-  const joinCard = page.locator("section", { has: page.locator("#team-join-link") });
+  // The page sits in Yuyu's site chrome: header, a main landmark (skip-link target) and the page gutter.
+  const main = page.locator("main#main-content");
+  await expect(main).toBeVisible();
+  const joinCard = main.locator("section", { has: page.locator("#team-join-link") });
   await expect(joinCard).toBeVisible();
   const joinUrl = (await joinCard.locator(".font-mono").innerText()).trim();
   joinPath = new URL(joinUrl, "http://placeholder.invalid").pathname;
   expect(joinPath).toMatch(new RegExp(`^/${orgSlug}/${eventSlug}/team/[A-Za-z0-9_-]{32,128}$`));
   await expect(page.getByRole("list").filter({ hasText: leader.name }).first()).toBeVisible();
+  // A confirmed team below the minimum on an event without approval is told to grow, not that approval waits.
+  await expect(main.getByText("Teams need at least 2 members. Add 1 more with the join link so your team is complete.")).toBeVisible();
+  await expect(main.getByText(/can't approve your team/)).toHaveCount(0);
 
   // An unknown management token reveals nothing.
   expect((await page.request.get(`/team/${"x".repeat(43)}`)).status()).toBe(404);
@@ -300,6 +326,8 @@ test("a solo registrant joins the team by pasting its link on their ticket page"
 
   const page = await context.newPage();
   const errors = collectPageErrors(page);
+  // The ticket page (with Join a team and the seeker list) is a bearer page like /team/:token.
+  await expectCapabilityHeaders(await page.request.get(`/ticket/${solo.checkInToken}`), "/ticket/:token");
   await page.goto(`/ticket/${solo.checkInToken}`);
   const card = page.locator("section", { has: page.locator("#ticket-join-team-title") });
   await expect(card).toBeVisible();
@@ -316,6 +344,12 @@ test("a solo registrant joins the team by pasting its link on their ticket page"
   const moved = await prisma.rSVP.findUniqueOrThrow({ where: { id: solo.id }, select: { status: true, checkInToken: true, team: { select: { name: true } } } });
   expect(moved).toEqual({ status: "CONFIRMED", checkInToken: solo.checkInToken, team: { name: teamName } });
   expect(await prisma.rSVP.count({ where: { eventId } })).toBe(3);
+  // The team is now full (3 of 3): the join page says so and doesn't promise a form.
+  const fullJoin = await context.newPage();
+  await fullJoin.goto(joinPath);
+  await expect(fullJoin.getByText("This team is full")).toBeVisible();
+  await expect(fullJoin.getByText(/Register below/)).toHaveCount(0);
+  await fullJoin.close();
   await discardQueuedTestEmail();
   expect(errors).toEqual([]);
   await context.close();
@@ -369,4 +403,19 @@ test("an organiser approves a team on an approval-required event and both ticket
   }
   await leaderContext.close();
   await memberContext.close();
+});
+
+test("the check-in desk lookup says it matches teams and finds a team's members", async ({ browser }) => {
+  const { context, page } = await ownerContext(browser);
+  const errors = collectPageErrors(page);
+  await page.goto(`/dashboard/${orgSlug}/event/${eventId}/check-in`);
+  const search = page.getByRole("textbox", { name: "Name, email or team", exact: true });
+  await expect(search).toHaveAttribute("placeholder", "Name, email or team");
+  await waitForHydration(page, "#check-in-search");
+  await search.fill(teamName);
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await expect(page.getByRole("button", { name: leader.name }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: member.name }).first()).toBeVisible();
+  expect(errors).toEqual([]);
+  await context.close();
 });

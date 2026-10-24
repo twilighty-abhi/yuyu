@@ -306,7 +306,7 @@ export async function sendTeamCreatedEmail(params: {
   teamName: string;
   managePath: string;
   joinPath: string;
-  reason: "created" | "leader";
+  reason: "created" | "leader" | "reset";
   recipientName?: string;
   messageId?: string;
 }): Promise<void> {
@@ -319,13 +319,19 @@ export async function sendTeamCreatedEmail(params: {
   const safeTitle = escapeHtml(params.eventTitle);
   const subject = params.reason === "leader"
     ? `You now lead ${headerText(params.teamName)} · ${headerText(params.eventTitle)}`
-    : `Your team ${headerText(params.teamName)} · ${headerText(params.eventTitle)}`;
+    : params.reason === "reset"
+      ? `New team page link for ${headerText(params.teamName)} · ${headerText(params.eventTitle)}`
+      : `Your team ${headerText(params.teamName)} · ${headerText(params.eventTitle)}`;
   const intro = params.reason === "leader"
     ? `You are now the leader of team <strong>${safeTeam}</strong> for <strong>${safeTitle}</strong>.`
-    : `Your team <strong>${safeTeam}</strong> is registered for <strong>${safeTitle}</strong>.`;
+    : params.reason === "reset"
+      ? `The link to the team page of <strong>${safeTeam}</strong> for <strong>${safeTitle}</strong> was reset. Earlier team page links no longer work.`
+      : `Your team <strong>${safeTeam}</strong> is registered for <strong>${safeTitle}</strong>.`;
   const introText = params.reason === "leader"
     ? `You are now the leader of team "${params.teamName}" for "${params.eventTitle}".`
-    : `Your team "${params.teamName}" is registered for "${params.eventTitle}".`;
+    : params.reason === "reset"
+      ? `The link to the team page of "${params.teamName}" for "${params.eventTitle}" was reset. Earlier team page links no longer work.`
+      : `Your team "${params.teamName}" is registered for "${params.eventTitle}".`;
   const html = teamEmailShell(subject, `
           <h2 style="margin-top:0; color:#18181B; font-size:20px;">Your team page</h2>
           <p>${salutation.html}<br><br>${intro}</p>

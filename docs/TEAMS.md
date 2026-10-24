@@ -131,7 +131,8 @@ to 30 characters).
 - The leader receives a **team management link** `/team/{manageToken}` in the
   confirmation email. The raw token is random (at least 128 bits),
   shown once, and stored only as a SHA-256 hash (`Team.manageTokenHash`).
-  Regenerating it invalidates the old link. The check-in token (the ticket
+  Regenerating it invalidates the old link; the page moves to the new address
+  and the new link is emailed to the leader. The check-in token (the ticket
   QR) never grants team management.
 - A signed-in leader also reaches the team page from **Account → Registrations**
   without the token.
@@ -200,7 +201,9 @@ to 30 characters).
 New outbox kinds, following `lib/outbox.ts` conventions (payload type, enqueue
 helper, validator, delivery branch, capability flag because they carry tokens):
 
-- `team-created`: to the leader, with the team page link and the join link.
+- `team-created`: to the leader, with the team page link and the join link
+  (also sent to the new leader on a handover and after the leader resets the
+  team page link).
 - `team-member-added`: to a member added by the leader, with their ticket link.
 
 Status changes reuse the existing RSVP status email per member, naming the team.

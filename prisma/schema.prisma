@@ -154,6 +154,14 @@ enum JudgingStatus {
   CLOSED
 }
 
+/// How judges' result scores are combined (docs/HACKATHON.md).
+/// RAW: plain mean of judges' scores. ZSCORE: each judge's scores are
+/// standardised before averaging, to correct for harsh or lenient judges.
+enum ScoreNormalization {
+  RAW
+  ZSCORE
+}
+
 model User {
   id                 String    @id @default(cuid())
   name               String?
@@ -426,6 +434,11 @@ model Event {
   /// First delivery of the results-published announcement; kept across
   /// unpublish/republish so nobody is emailed twice.
   resultsAnnouncedAt                  DateTime?
+  /// Target number of judges per project for automatic assignment and the
+  /// progress dashboard; null means not set. CHECK keeps it in 1..20.
+  reviewsPerProject                   Int?
+  /// How result scores are combined across judges.
+  scoreNormalization                  ScoreNormalization @default(RAW)
   createdAt             DateTime         @default(now())
 
   organisation     Organisation           @relation(fields: [organisationId], references: [id], onDelete: Cascade)

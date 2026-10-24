@@ -8,6 +8,7 @@ import {
   OutboxStatus,
   Prisma,
   RsvpStatus,
+  ScoreNormalization,
   SubmissionStatus,
 } from "@prisma/client";
 import { prisma } from "@/lib/db";
@@ -78,6 +79,7 @@ import {
   judgingSettingsSchema,
   judgingStatusSchema,
   removeAwardWinnerSchema,
+  scoreNormalizationSchema,
   submissionContentSchema,
 } from "@/lib/validators";
 
@@ -795,10 +797,10 @@ async function isEligibleJudge(tx: Prisma.TransactionClient, organisationId: str
   return Boolean((membership && isOrgAdmin(membership.role)) || grant);
 }
 
-type ConflictKeys = { rsvpIds: Set<string>; teamIds: Set<string> };
+export type ConflictKeys = { rsvpIds: Set<string>; teamIds: Set<string> };
 
 /** Registrations the judge's own account owns on this event: those entrants are off limits. */
-async function conflictKeysFor(tx: Prisma.TransactionClient, eventId: string, userIds: string[]): Promise<Map<string, ConflictKeys>> {
+export async function conflictKeysFor(tx: Prisma.TransactionClient, eventId: string, userIds: string[]): Promise<Map<string, ConflictKeys>> {
   const result = new Map<string, ConflictKeys>(userIds.map((id) => [id, { rsvpIds: new Set<string>(), teamIds: new Set<string>() }]));
   if (userIds.length === 0) return result;
   const rows = await tx.rSVP.findMany({ where: { eventId, userId: { in: userIds } }, select: { id: true, teamId: true, userId: true } });
@@ -911,6 +913,36 @@ export async function setJudgingStatus(ctx: JudgingOrganiserContext, status: unk
       metadata: { from, to: next },
     });
     return ok({ judgingStatus: next });
+  });
+}
+
+/**
+ * "Adjust for harsh/generous judges": which result score ranks the projects
+ * (lib/judgingScore.ts). Both scores are always computed and shown to
+ * organisers; this only picks the one that ranks, in the Results table, the
+ * Awards picker, and the CSV's rank. It can change at any time, since ranks
+ * only guide the organisers' manual award choices and public pages never
+ * show scores or ranks. Audited (JUDGING_SCORE_NORMALIZATION_CHANGED).
+ */
+export async function setScoreNormalization(ctx: JudgingOrganiserContext, input: unknown): Promise<JudgingResult<{ scoreNormalization: ScoreNormalization }>> {
+  const parsed = scoreNormalizationSchema.safeParse(input);
+  if (!parsed.success) return fail("Invalid score method.");
+  const next = parsed.data as ScoreNormalization;
+  return withOrganiserLock(ctx, async (tx, event) => {
+    const current = await tx.event.findUnique({ where: { id: event.id }, select: { scoreNormalization: true } });
+    const from = current?.scoreNormalization ?? ScoreNormalization.RAW;
+    if (from === next) return ok({ scoreNormalization: next });
+    await tx.event.update({ where: { id: event.id }, data: { scoreNormalization: next } });
+    await recordAuditEvent({
+      client: tx,
+      action: "JUDGING_SCORE_NORMALIZATION_CHANGED",
+      actorUserId: ctx.userId,
+      organisationId: ctx.organisationId,
+      targetType: "Event",
+      targetId: event.id,
+      metadata: { from, to: next },
+    });
+    return ok({ scoreNormalization: next });
   });
 }
 
@@ -1214,6 +1246,49 @@ export async function loadSubmissionForJudge(ctx: JudgeContext, submissionId: st
   };
 }
 
+export type JudgeNextDto = {
+  /** The project to score next, loaded as for scoring; null when nothing is left (or judging is not open). */
+  next: JudgeSubmissionDetailDto | null;
+  /** Projects this judge may still review, including `next`. */
+  remaining: number;
+};
+
+/**
+ * "Score next project": among the projects this judge may score now (judging
+ * OPEN; SUBMITTED; assigned unless judgesSeeAll; no conflict of interest)
+ * that they have not submitted a review for, the one they already started
+ * (saved scores or a draft comment), then the one with the fewest submitted
+ * reviews from anyone, then the oldest `submittedAt`, then id. So the
+ * workload spreads evenly and a half-done review is finished first. Chosen on
+ * the server in one query with the list's visibility rules; the pick is then
+ * loaded through `loadSubmissionForJudge`, which re-checks access. Null when
+ * the user is not a judge for this event.
+ */
+export async function nextSubmissionForJudge(ctx: JudgeContext): Promise<JudgeNextDto | null> {
+  const scope = await judgeListScope(ctx);
+  if (!scope) return null;
+  if (scope.event.judgingStatus !== JudgingStatus.OPEN) return { next: null, remaining: 0 };
+  const notReviewed = Prisma.sql`NOT ${reviewedBySql(ctx.userId)}`;
+  const conditions = [...scope.visible, notReviewed];
+  const started = Prisma.sql`(${scoredBySql(ctx.userId)} OR EXISTS (SELECT 1 FROM "JudgeReview" jd WHERE jd."submissionId" = s."id" AND jd."judgeUserId" = ${ctx.userId}))`;
+  const [picked, [remainingRow]] = await Promise.all([
+    prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT s."id" FROM "Submission" s
+      WHERE ${Prisma.join(conditions, " AND ")}
+      ORDER BY (CASE WHEN ${started} THEN 0 ELSE 1 END) ASC,
+               (SELECT count(*) FROM "JudgeReview" rc WHERE rc."submissionId" = s."id" AND rc."submittedAt" IS NOT NULL) ASC,
+               s."submittedAt" ASC NULLS LAST,
+               s."id" ASC
+      LIMIT 1`,
+    prisma.$queryRaw<Array<{ count: bigint }>>`SELECT count(*) AS "count" FROM "Submission" s WHERE ${Prisma.join(conditions, " AND ")}`,
+  ]);
+  const remaining = Number(remainingRow?.count ?? 0);
+  const id = picked[0]?.id;
+  if (!id) return { next: null, remaining: 0 };
+  const next = await loadSubmissionForJudge(ctx, id);
+  return { next, remaining: next ? remaining : 0 };
+}
+
 /** Lock the event, then confirm judging is open and this judge may score this submission. */
 async function lockedJudgeTarget(tx: Prisma.TransactionClient, ctx: JudgeContext, submissionId: string): Promise<JudgingResult<{ event: JudgingEvent }>> {
   const event = await lockEventShared(tx, ctx.eventId);
@@ -1439,7 +1514,10 @@ export type ResultRowDto = {
   title: string;
   entrantName: string;
   status: SubmissionStatus;
+  /** The active method's score, which ranks (rawScore or adjustedScore). */
   score: number | null;
+  rawScore: number | null;
+  adjustedScore: number | null;
   judgesCounted: number;
   rank: number | null;
   criterionAverages: CriterionAverage[];
@@ -1456,6 +1534,8 @@ export type JudgeProgressDto = {
 export type JudgingResultsDto = {
   judgingStatus: JudgingStatus;
   resultsPublishedAt: Date | null;
+  /** Which score ranks: RAW, or ZSCORE ("Adjust for harsh/generous judges"). */
+  scoreNormalization: ScoreNormalization;
   criteria: JudgingCriterionDto[];
   /** SUBMITTED projects ranked; DISQUALIFIED ones follow with no rank. */
   rows: ResultRowDto[];
@@ -1470,7 +1550,7 @@ export type JudgingResultsDto = {
  * Per-judge progress comes from `loadJudgeProgress`, with aggregates.
  */
 export async function loadJudgingResults(ctx: JudgingOrganiserContext): Promise<JudgingResultsDto | null> {
-  const event = await prisma.event.findFirst({ where: { id: ctx.eventId, organisationId: ctx.organisationId }, select: judgingEventSelect });
+  const event = await prisma.event.findFirst({ where: { id: ctx.eventId, organisationId: ctx.organisationId }, select: { ...judgingEventSelect, scoreNormalization: true } });
   if (!event) return null;
   const [criteria, submissions, scores, reviews, eligible] = await Promise.all([
     criteriaFor(prisma, event.id),
@@ -1501,7 +1581,7 @@ export async function loadJudgingResults(ctx: JudgingOrganiserContext): Promise<
         !hasConflictOfInterest(row, authorConflicts.get(review.judgeUserId)),
     );
   });
-  const results = computeJudgingResults({ submissionIds: submitted.map((row) => row.id), criteria, scores, submittedReviews });
+  const results = computeJudgingResults({ submissionIds: submitted.map((row) => row.id), criteria, scores, submittedReviews, method: event.scoreNormalization });
   const rows: ResultRowDto[] = [
     ...results.map((result) => {
       const row = byId.get(result.submissionId)!;
@@ -1515,6 +1595,8 @@ export async function loadJudgingResults(ctx: JudgingOrganiserContext): Promise<
         entrantName: entrantDisplayName(row),
         status: row.status,
         score: null,
+        rawScore: null,
+        adjustedScore: null,
         judgesCounted: 0,
         rank: null,
         criterionAverages: criteria.map((criterion) => ({ criterionId: criterion.id, average: null })),
@@ -1522,11 +1604,12 @@ export async function loadJudgingResults(ctx: JudgingOrganiserContext): Promise<
   ];
 
   const countedReviewKeys = submittedReviews.map((review) => `${review.submissionId}\u0000${review.judgeUserId}`);
-  return { judgingStatus: event.judgingStatus, resultsPublishedAt: event.resultsPublishedAt, criteria, rows, countedReviewKeys };
+  return { judgingStatus: event.judgingStatus, resultsPublishedAt: event.resultsPublishedAt, scoreNormalization: event.scoreNormalization, criteria, rows, countedReviewKeys };
 }
 
 export type JudgingResultsPageDto = NumberedPage<ResultRowDto> & {
   criteria: JudgingCriterionDto[];
+  scoreNormalization: ScoreNormalization;
   /** The search the page was filtered by ("" for none). */
   query: string;
   /** Every row in the ranking, before any search. */
@@ -1545,7 +1628,13 @@ export async function loadJudgingResultsPage(ctx: JudgingOrganiserContext, input
   if (!results) return null;
   const { query, page } = parsed.data;
   const matching = query ? results.rows.filter((row) => matchesProjectQuery(row, query)) : results.rows;
-  return { ...numberedPage(matching, page, JUDGING_RESULTS_PAGE_SIZE), criteria: results.criteria, query, rankedTotal: results.rows.length };
+  return {
+    ...numberedPage(matching, page, JUDGING_RESULTS_PAGE_SIZE),
+    criteria: results.criteria,
+    scoreNormalization: results.scoreNormalization,
+    query,
+    rankedTotal: results.rows.length,
+  };
 }
 
 export type AwardCandidateDto = { submissionId: string; title: string; entrantName: string; rank: number | null; score: number | null };
@@ -1654,8 +1743,9 @@ export async function loadJudgeProgress(ctx: JudgingOrganiserContext): Promise<J
 
 /**
  * Rows for `/api/exports/events/{eventId}/judging` (owners and admins only):
- * one row per submitted review, with the result score and rank. Judge names,
- * no emails, no comments. Pass the result to `buildCsv` from lib/csv.ts.
+ * one row per submitted review, with the result score (the active method's,
+ * which ranks) and both the raw and the adjusted score. Judge names, no
+ * emails, no comments. Pass the result to `buildCsv` from lib/csv.ts.
  */
 export async function buildJudgingExportRows(ctx: JudgingOrganiserContext): Promise<string[][] | null> {
   const results = await loadJudgingResults(ctx);
@@ -1674,11 +1764,20 @@ export async function buildJudgingExportRows(ctx: JudgingOrganiserContext): Prom
   // Same clock as the dashboard: ISO 8601 in the event timezone, with its offset.
   const timeZone = safeTimeZone(event.timezone);
   const counted = new Set(results.countedReviewKeys);
-  const header = ["Rank", "Project", "Entrant", "Status", "Result score", "Judges counted", "Judge", `Review submitted (${timeZone})`, "Counted in score", ...results.criteria.map((criterion) => `${criterion.name} (/${criterion.maxScore}, weight ${criterion.weight})`)];
+  const header = ["Rank", "Project", "Entrant", "Status", "Result score", "Raw score", "Adjusted score", "Judges counted", "Judge", `Review submitted (${timeZone})`, "Counted in score", ...results.criteria.map((criterion) => `${criterion.name} (/${criterion.maxScore}, weight ${criterion.weight})`)];
   const rows: string[][] = [header];
   for (const row of results.rows) {
     const rowReviews = reviews.filter((review) => review.submissionId === row.submissionId);
-    const base = [row.rank?.toString() ?? "", row.title, row.entrantName, row.status, row.score?.toFixed(1) ?? "", String(row.judgesCounted)];
+    const base = [
+      row.rank?.toString() ?? "",
+      row.title,
+      row.entrantName,
+      row.status,
+      row.score?.toFixed(1) ?? "",
+      row.rawScore?.toFixed(1) ?? "",
+      row.adjustedScore?.toFixed(1) ?? "",
+      String(row.judgesCounted),
+    ];
     if (rowReviews.length === 0) {
       rows.push([...base, "", "", "", ...results.criteria.map(() => "")]);
       continue;

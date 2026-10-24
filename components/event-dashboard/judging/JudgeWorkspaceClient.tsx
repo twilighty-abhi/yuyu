@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ChevronRight, ExternalLink, Users } from "lucide-react";
+import { ArrowLeft, ArrowRight, CheckCircle2, ChevronRight, ExternalLink, Users } from "lucide-react";
 import type { JudgingStatus } from "@prisma/client";
-import { loadJudgeSubmission, loadJudgeSubmissionsPage, saveJudgeReviewAction } from "@/app/actions/judging";
+import { loadJudgeSubmission, loadJudgeSubmissionsPage, loadNextJudgeSubmission, saveJudgeReviewAction } from "@/app/actions/judging";
 import { useToast } from "@/components/feedback/ToastProvider";
 import { Button } from "@/components/ui/button";
 import { useLoadMoreFocus } from "@/components/ui/use-load-more-focus";
@@ -24,6 +24,7 @@ import {
   linkLabel,
   noRubricNotice,
   scoreMapFrom,
+  scoreNextToast,
   scoresToSave,
   type ScoreMap,
   type WorkspaceAudience,
@@ -45,6 +46,12 @@ type ListView = { query: string; filter: JudgeSubmissionFilter };
  * the panel; filters, search and "Load more" fetch bounded pages through
  * `loadJudgeSubmissionsPage`. The list state stays here while a submission
  * is open, so "All submissions" returns to the same filter, search and pages.
+ *
+ * "Score next project" asks the server which project to score next
+ * (`loadNextJudgeSubmission`: one already started, then the fewest reviews,
+ * then the oldest) and opens it. After a fresh review is submitted, the next
+ * one opens on its own with a toast that leads back to the list; when nothing
+ * is left, the list shows a done state. Focus moves to the project heading.
  */
 export function JudgeWorkspaceClient({
   organisationSlug,
@@ -180,6 +187,21 @@ export function JudgeWorkspaceClient({
   const noRubric = noRubricNotice(audience);
   const summary = judgeProgressFromCounts(counts);
 
+  // Score next: the server said nothing is left, for the totals showing then
+  // (fresh totals after a refresh replace `counts`, which ends it).
+  const [exhaustedAt, setExhaustedAt] = useState<JudgeSubmissionCounts | null>(null);
+  const nextExhausted = exhaustedAt === counts;
+  const [findingNext, setFindingNext] = useState(false);
+  const focusDone = useRef(false);
+  const doneRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (detail || !focusDone.current) return;
+    focusDone.current = false;
+    (doneRef.current ?? headingRef.current)?.focus({ preventScroll: true });
+  }, [detail, exhaustedAt]);
+  const canScore = judgingStatus === "OPEN" && criteria.length > 0;
+  const allReviewed = canScore && counts.all > 0 && (counts.todo === 0 || nextExhausted);
+
   function open(submissionId: string) {
     const ticket = ++request.current;
     setOpeningId(submissionId);
@@ -199,8 +221,40 @@ export function JudgeWorkspaceClient({
   function close() {
     request.current++;
     setOpeningId(null);
+    setFindingNext(false);
     setReturnFocusId(detail?.submission.id ?? null);
     setDetail(null);
+  }
+
+  /**
+   * Open the project the server picks next. `advancing` is set after a
+   * submitted review: the toast says what opened (with a way back to the
+   * list), and when nothing is left the list's done state takes focus.
+   */
+  function scoreNext(advancing: boolean) {
+    const ticket = ++request.current;
+    setFindingNext(true);
+    startTransition(async () => {
+      const res = await loadNextJudgeSubmission({ organisationSlug, eventId });
+      if (ticket !== request.current) return;
+      setFindingNext(false);
+      if (!res.ok || !res.data) {
+        showToast(res.ok ? "Could not find the next project." : res.error, "error");
+        return;
+      }
+      const { next, remaining } = res.data;
+      if (!next) {
+        focusDone.current = true;
+        setExhaustedAt(counts);
+        setReturnFocusId(null);
+        setDetail(null);
+        showToast(advancing ? scoreNextToast(null) : "Nothing left to score. Every review is submitted.", advancing ? "success" : "info");
+        return;
+      }
+      setDetail(next);
+      window.scrollTo({ top: 0, behavior: "auto" });
+      if (advancing) showToast(scoreNextToast({ title: next.submission.title, remaining }), "success", { label: "Back to list", onClick: close });
+    });
   }
 
   if (detail) {
@@ -211,6 +265,8 @@ export function JudgeWorkspaceClient({
         detail={detail}
         onBack={close}
         audience={audience}
+        advancing={findingNext}
+        onSubmitted={() => scoreNext(true)}
         onSaved={(next) => {
           setDetail(next);
           // Keep the loaded list in step until the refreshed page arrives.
@@ -260,7 +316,25 @@ export function JudgeWorkspaceClient({
               {summary.started > 0 ? <p className="text-caption text-ink-muted">{summary.started} in progress</p> : null}
             </div>
             <ProgressBar value={summary.submitted} max={summary.total} tone="success" label="Reviews submitted" />
+            {canScore && !allReviewed ? (
+              <div className="flex flex-wrap items-center justify-between gap-2.5 pt-1">
+                <p className="text-caption text-ink-muted">Picks a project you started, or the one with the fewest reviews so far.</p>
+                <Button variant="primary" onClick={() => scoreNext(false)} loading={findingNext} loadingLabel="Finding the next project…" disabled={openingId !== null} endIcon={<ArrowRight aria-hidden className="size-4" />}>
+                  Score next project
+                </Button>
+              </div>
+            ) : null}
           </Card>
+
+          {allReviewed ? (
+            <div className="flex flex-col items-center gap-2 rounded-lg border border-line bg-canvas px-5 py-6 text-center">
+              <CheckCircle2 aria-hidden className="size-7 text-success-fg" />
+              <h3 ref={doneRef} tabIndex={-1} className="text-title text-ink focus:outline-none">You&apos;re all caught up</h3>
+              <p className="max-w-[46ch] text-body-ui text-ink-muted">
+                You&apos;ve submitted a review for every project you can score. You can still open any project below to update your review while judging is open.
+              </p>
+            </div>
+          ) : null}
 
           <div className="flex flex-wrap items-center gap-2.5">
             <div role="group" aria-label="Filter submissions by your progress" className="flex flex-wrap gap-1.5">
@@ -359,6 +433,8 @@ function ScoringView({
   detail,
   onBack,
   onSaved,
+  onSubmitted,
+  advancing,
   audience,
 }: {
   scope: Scope;
@@ -366,6 +442,10 @@ function ScoringView({
   onBack: () => void;
   audience: WorkspaceAudience;
   onSaved: (next: JudgeSubmissionDetailDto) => void;
+  /** A fresh review was submitted: the workspace opens the next project. */
+  onSubmitted: () => void;
+  /** The next project is loading. */
+  advancing: boolean;
 }) {
   const router = useRouter();
   const { showToast } = useToast();
@@ -411,8 +491,12 @@ function ScoringView({
         myScores: entered,
         myReview: { comment, submittedAt: nowSubmitted ? (detail.myReview?.submittedAt ?? new Date()) : null },
       });
-      showToast(submit ? (submitted ? "Review updated." : "Review submitted.") : "Scores saved.", "success");
       router.refresh();
+      if (submit && nowSubmitted && !submitted) {
+        onSubmitted();
+        return;
+      }
+      showToast(submit ? (submitted ? "Review updated." : "Review submitted.") : "Scores saved.", "success");
     });
   }
 
@@ -501,7 +585,7 @@ function ScoringView({
             <Button type="button" variant="secondary" onClick={() => save(false)} loading={saving === "draft"} disabled={pending}>
               Save scores
             </Button>
-            <Button type="submit" variant="primary" loading={saving === "submit"} disabled={pending || !complete}>
+            <Button type="submit" variant="primary" loading={saving === "submit" || advancing} loadingLabel={advancing ? "Opening the next project…" : undefined} disabled={pending || advancing || !complete}>
               {submitted ? "Update review" : "Submit review"}
             </Button>
           </div>

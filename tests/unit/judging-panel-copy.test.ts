@@ -12,8 +12,10 @@ vi.mock("@/app/actions/judging-admin", () => ({
   changeJudgingStatus: vi.fn(),
   publishJudgingResults: vi.fn(),
   unpublishJudgingResults: vi.fn(),
+  changeScoreNormalization: vi.fn(),
+  loadResultsPage: vi.fn(),
 }));
-vi.mock("@/app/actions/judging", () => ({ loadJudgeSubmission: vi.fn(), saveJudgeReviewAction: vi.fn() }));
+vi.mock("@/app/actions/judging", () => ({ loadJudgeSubmission: vi.fn(), loadNextJudgeSubmission: vi.fn(), saveJudgeReviewAction: vi.fn() }));
 
 import { JudgingPanelJudges, JudgingPanelResults } from "@/components/event-dashboard/panels/JudgingPanelResults";
 import { JudgingSettingsCard, judgingSettingsSavedMessage } from "@/components/event-dashboard/panels/JudgingPanelSetup";
@@ -24,6 +26,7 @@ import {
   ordinal,
   reinstateImpact,
   resultsPublishHint,
+  scoreMethodCopy,
 } from "@/components/event-dashboard/panels/judgingCopy";
 import { JudgeWorkspaceClient } from "@/components/event-dashboard/judging/JudgeWorkspaceClient";
 import { judgingStatusNotice, noRubricNotice } from "@/components/event-dashboard/judging/judgeProgress";
@@ -104,7 +107,7 @@ describe("Results publish hint (2)", () => {
       renderToString(
         createElement(JudgingPanelResults, {
           scope,
-          initialPage: { rows: [], page: 1, totalPages: 1, total: 0, start: 0, pageSize: 50, query: "", rankedTotal: 0 },
+          initialPage: { rows: [], page: 1, totalPages: 1, total: 0, start: 0, pageSize: 50, query: "", rankedTotal: 0, scoreNormalization: "RAW" },
           criteria: [],
           judgingStatus: "NOT_STARTED",
           resultsPublishedAt: null,
@@ -229,5 +232,52 @@ describe("judging CSV timestamps (7)", () => {
     expect(zonedIsoWithOffset(new Date("2026-03-29T00:59:59Z"), "Europe/London")).toBe("2026-03-29T00:59:59+00:00");
     expect(zonedIsoWithOffset(new Date("2026-03-29T01:00:00Z"), "Europe/London")).toBe("2026-03-29T02:00:00+01:00");
     expect(zonedIsoWithOffset(new Date("nope"), "UTC")).toBe("");
+  });
+});
+
+describe("Results: adjust for harsh/generous judges", () => {
+  const row = {
+    submissionId: "sub_1",
+    title: "Robo",
+    entrantName: "Team Robo",
+    status: "SUBMITTED" as const,
+    score: 68.4,
+    rawScore: 50,
+    adjustedScore: 68.4,
+    judgesCounted: 1,
+    rank: 1,
+    criterionAverages: [],
+  };
+  function render(method: "RAW" | "ZSCORE") {
+    return renderToString(
+      createElement(JudgingPanelResults, {
+        scope,
+        initialPage: { rows: [row], page: 1, totalPages: 1, total: 1, start: 0, pageSize: 50, query: "", rankedTotal: 1, scoreNormalization: method },
+        criteria: [],
+        judgingStatus: "CLOSED",
+        resultsPublishedAt: null,
+        resultsUrl: "https://yuyu.example/org/hack/results",
+        exportHref: "/api/exports/events/event_1/judging",
+        timezone: "UTC",
+      }),
+    );
+  }
+
+  it("shows raw and adjusted scores, and says which one ranks", () => {
+    const adjusted = render("ZSCORE");
+    expect(text(adjusted)).toContain("Adjust for harsh/generous judges");
+    expect(adjusted).toMatch(/role="switch"[^>]*aria-checked="true"/);
+    expect(text(adjusted)).toContain("50.0");
+    expect(text(adjusted)).toContain("68.4");
+    expect(text(adjusted)).toContain(scoreMethodCopy("ZSCORE").description.slice(0, 30));
+    const raw = render("RAW");
+    expect(raw).toMatch(/role="switch"[^>]*aria-checked="false"/);
+    expect(text(raw)).toContain("Ranked by the raw score");
+  });
+
+  it("explains each method and its toast", () => {
+    expect(scoreMethodCopy("ZSCORE").description).toMatch(/fewer than 3 reviews/);
+    expect(scoreMethodCopy("RAW").description).toMatch(/^Ranked by the raw score/);
+    expect(scoreMethodCopy("ZSCORE").savedToast).not.toBe(scoreMethodCopy("RAW").savedToast);
   });
 });

@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   listSubmissions: vi.fn(),
   resultsPage: vi.fn(),
   awardCandidates: vi.fn(),
+  setNormalization: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ auth: mocks.auth }));
@@ -36,10 +37,12 @@ vi.mock("@/lib/core/judging", () => ({
   listSubmissionsForOrganiser: mocks.listSubmissions,
   loadJudgingResultsPage: mocks.resultsPage,
   searchAwardCandidates: mocks.awardCandidates,
+  setScoreNormalization: mocks.setNormalization,
 }));
 
 import {
   changeJudgingStatus,
+  changeScoreNormalization,
   disqualifyProject,
   loadProjectReviews,
   loadResultsPage,
@@ -219,5 +222,20 @@ describe("judging scores CSV export route", () => {
     expect(body).toContain("'@team");
     expect(mocks.resolveOrganiser).toHaveBeenCalledWith("user_1", "club", "event_1");
     expect(mocks.audit).toHaveBeenCalledWith(expect.objectContaining({ action: "JUDGING_SCORES_EXPORTED", organisationId: "org_1", targetId: "event_1" }));
+  });
+});
+
+describe("score method switch", () => {
+  it("passes the method to the core for an organiser and revalidates", async () => {
+    mocks.setNormalization.mockResolvedValue({ ok: true, data: { scoreNormalization: "ZSCORE" } });
+    expect(await changeScoreNormalization({ ...scope, scoreNormalization: "ZSCORE" })).toEqual({ ok: true, data: { scoreNormalization: "ZSCORE" } });
+    expect(mocks.setNormalization).toHaveBeenCalledWith(organiser, "ZSCORE");
+    expect(mocks.revalidatePath).toHaveBeenCalled();
+  });
+
+  it("refuses anyone who is not an organisation owner or admin", async () => {
+    mocks.resolveOrganiser.mockResolvedValue(null);
+    expect(await changeScoreNormalization({ ...scope, scoreNormalization: "ZSCORE" })).toMatchObject({ ok: false });
+    expect(mocks.setNormalization).not.toHaveBeenCalled();
   });
 });

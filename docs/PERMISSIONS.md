@@ -84,9 +84,10 @@ would be allowed. `tests/unit/event-capabilities.test.ts` pins this table.
 | Schedule page (`…/schedule`) | page and `saveSession`/track/delay actions: `PUBLISH_AND_SCHEDULE` | Yes | 404 | 404 | 404 | 404 | 404 | Yes | 404 | Yes |
 | Check-in page (`…/check-in`) | page and check-in actions: `CHECK_IN` | Yes | 404 | 404 | 404 | 404 | Yes | 404 | 404 | Yes |
 | Judging tab: shown | page render; `canJudge` or `canManageJudging`, and the event uses judging (`eventUsesJudging`) | Yes | — | — | — | — | — | — | Yes | Yes |
-| Judging: workspace (submissions to judge, scores, private review) | `lib/judgingAccess.ts` `resolveJudgeContext`, `lib/core/judging.ts`: admin or `JUDGE`; conflict-of-interest entries hidden | Yes | — | — | — | — | — | — | Yes | Yes |
+| Judging: workspace (submissions to judge, scores, private review, Score next project) | `lib/judgingAccess.ts` `resolveJudgeContext`, `lib/core/judging.ts` (`nextSubmissionForJudge` uses the list's visibility query): admin or `JUDGE`; conflict-of-interest entries hidden | Yes | — | — | — | — | — | — | Yes | Yes |
 | Judging: settings, window, rubric, assignments, judging status | `resolveJudgingOrganiser`: admin (`canManageJudging`) | Yes | — | — | — | — | — | — | — | — |
-| Judging: disqualify, reinstate, awards, publish and unpublish results | `resolveJudgingOrganiser`: admin | Yes | — | — | — | — | — | — | — | — |
+| Judging: disqualify, reinstate, awards, Adjust for harsh/generous judges, publish and unpublish results | `resolveJudgingOrganiser`: admin | Yes | — | — | — | — | — | — | — | — |
+| Judging: Progress, review target, automatic assignment (preview and apply) | `resolveJudgingOrganiser` (`app/actions/judging-ops.ts`, `lib/core/judgingOps.ts`): admin | Yes | — | — | — | — | — | — | — | — |
 | Judging: scores CSV | `GET /api/exports/events/:id/judging`: admin | Yes | — | — | — | — | — | — | — | — |
 | Settings: turn submissions on (before the Judging tab appears) | `updateJudgingSettings`: admin | Yes | — | — | — | — | — | — | — | — |
 

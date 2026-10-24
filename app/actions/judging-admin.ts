@@ -95,6 +95,11 @@ export async function changeJudgingStatus(input: unknown): Promise<ActionResult<
   return run(input, (ctx, fields) => judging.setJudgingStatus(ctx, fields.status));
 }
 
+/** "Adjust for harsh/generous judges": RAW or ZSCORE ranks the Results table (audited in the core). */
+export async function changeScoreNormalization(input: unknown): Promise<ActionResult<{ scoreNormalization: string }>> {
+  return run(input, (ctx, fields) => judging.setScoreNormalization(ctx, fields.scoreNormalization));
+}
+
 // ---------------------------------------------------------------------------
 // Rubric
 // ---------------------------------------------------------------------------

@@ -264,22 +264,33 @@ test("a JUDGE-only collaborator scores with the keyboard; focus follows the scor
   await waitForHydration(page, "li button");
 
   const scores = { [teams.alpha.project]: { Impact: 8, Execution: 4 }, [teams.beta.project]: { Impact: 5, Execution: 5 } };
-  for (const [project, byCriterion] of Object.entries(scores)) {
-    const opener = page.getByRole("button", { name: new RegExp(project) });
-    await opener.focus();
-    await page.keyboard.press("Enter");
-    const heading = page.getByRole("heading", { name: project });
-    await expect(heading).toBeFocused();
-    for (const [criterion, score] of Object.entries(byCriterion)) {
+  async function scoreAndSubmit(project: string) {
+    for (const [criterion, score] of Object.entries(scores[project]!)) {
       const max = criterion === "Impact" ? 10 : 5;
       await page.getByRole("group", { name: criterion, exact: true }).getByRole("radio", { name: `${score} out of ${max}` }).check({ force: true });
     }
     await page.getByLabel(/^Private comment/).fill(`Private note on ${project}`);
     await page.getByRole("button", { name: "Submit review" }).click();
-    await expect(page.getByText("Review submitted").first()).toBeVisible();
-    await page.getByRole("button", { name: "All submissions" }).click();
-    await expect(page.getByRole("button", { name: new RegExp(project) })).toBeFocused();
   }
+
+  // "Score next project" picks on the server: neither project has a review, so the older one (Alpha) first.
+  await page.getByRole("button", { name: "Score next project" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("heading", { name: teams.alpha.project })).toBeFocused();
+  await scoreAndSubmit(teams.alpha.project);
+  // Submitting moves on to the next project, with a toast and focus on its heading.
+  await expect(page.getByText(`Next up: “${teams.beta.project}” (this is the last one)`)).toBeVisible();
+  await expect(page.getByRole("heading", { name: teams.beta.project })).toBeFocused();
+  // The way back to the list returns focus to that project's row.
+  await page.getByRole("button", { name: "All submissions" }).click();
+  await expect(page.getByRole("button", { name: new RegExp(teams.beta.project) })).toBeFocused();
+
+  // Opening from the list still works with the keyboard; the last review ends in the done state.
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("heading", { name: teams.beta.project })).toBeFocused();
+  await scoreAndSubmit(teams.beta.project);
+  await expect(page.getByRole("heading", { name: "You're all caught up" })).toBeFocused();
+  await expect(page.getByRole("button", { name: "Score next project" })).toHaveCount(0);
   await expect.poll(() => prisma.judgeReview.count({ where: { judgeUserId: judgeId, submittedAt: { not: null } } })).toBe(2);
   expect(errors).toEqual([]);
   await context.close();
@@ -298,6 +309,20 @@ test("the organiser closes judging, ranks, awards and publishes once", async ({ 
   await expect(rows.nth(1)).toContainText(teams.alpha.project);
   await expect(rows.nth(1)).toContainText("80.0");
   await expect(rows.nth(2)).toContainText("66.7");
+
+  // "Adjust for harsh/generous judges": both scores stay in the table. One judge
+  // with two reviews (fewer than 3) keeps raw scores, so the ranking is unchanged.
+  await waitForHydration(page, "button");
+  const adjust = page.getByRole("switch", { name: /Adjust for harsh\/generous judges/ });
+  await expect(adjust).not.toBeChecked();
+  await expect(page.getByRole("columnheader", { name: /Adjusted/ })).toBeVisible();
+  await adjust.click();
+  await expect.poll(async () => (await prisma.event.findUniqueOrThrow({ where: { id: eventId } })).scoreNormalization).toBe("ZSCORE");
+  await expect(adjust).toBeChecked();
+  await expect(page.getByText(/Ranked by the adjusted score/)).toBeVisible();
+  await expect(rows.nth(1)).toContainText(teams.alpha.project);
+  await adjust.click();
+  await expect.poll(async () => (await prisma.event.findUniqueOrThrow({ where: { id: eventId } })).scoreNormalization).toBe("RAW");
 
   await page.goto(`${dashboard()}?tab=judging&sub=judging-awards`);
   await waitForHydration(page, "button");

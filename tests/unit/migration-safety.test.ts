@@ -146,5 +146,16 @@ describe("production migration safety contracts", () => {
     expect(sql).not.toMatch(/^\s*UPDATE\s/im);
     expect(sql).toContain('ALTER TABLE "Event" ADD COLUMN "resultsAnnouncedAt" TIMESTAMP(3);');
   });
+
+  it("adds judging operations settings without rewriting existing rows", () => {
+    const sql = readFileSync(resolve(root, "prisma/migrations/20261025000000_judging_ops/migration.sql"), "utf8");
+    expect(sql).not.toMatch(/\bDROP\b/i);
+    expect(sql).not.toMatch(/^\s*UPDATE\s/im);
+    expect(sql).toContain(`CREATE TYPE "ScoreNormalization" AS ENUM ('RAW', 'ZSCORE');`);
+    expect(sql).toContain('ALTER TABLE "Event" ADD COLUMN "reviewsPerProject" INTEGER;');
+    expect(sql).toContain('ALTER TABLE "Event" ADD COLUMN "scoreNormalization" "ScoreNormalization" NOT NULL DEFAULT \'RAW\';');
+    expect(sql).toContain('"Event_reviews_per_project_range"');
+    expect(sql).toContain('CHECK ("reviewsPerProject" IS NULL OR "reviewsPerProject" BETWEEN 1 AND 20)');
+  });
 });
 

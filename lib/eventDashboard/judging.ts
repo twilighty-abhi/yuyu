@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { EventStatus, JudgingStatus, SubmissionStatus } from "@prisma/client";
+import type { EventStatus, JudgingStatus, ScoreNormalization, SubmissionStatus } from "@prisma/client";
 import {
   listSubmissionsForOrganiser,
   loadJudgeProgress,
@@ -74,7 +74,10 @@ export type JudgingDashboardResultRow = {
   title: string;
   entrantName: string;
   status: SubmissionStatus;
+  /** The active method's score, which ranks. */
   score: number | null;
+  rawScore: number | null;
+  adjustedScore: number | null;
   judgesCounted: number;
   rank: number | null;
   criterionAverages: Array<{ criterionId: string; average: number | null }>;
@@ -99,6 +102,8 @@ export type JudgingDashboardResultsPage = {
   query: string;
   /** Rows in the whole ranking, before any search. */
   rankedTotal: number;
+  /** Which score ranks: RAW, or ZSCORE ("Adjust for harsh/generous judges"). */
+  scoreNormalization: ScoreNormalization;
 };
 
 /** A project the Awards winner picker offers (SUBMITTED only). */
@@ -209,6 +214,8 @@ function toDashboardResultRow(row: ResultRowDto): JudgingDashboardResultRow {
     entrantName: row.entrantName,
     status: row.status,
     score: row.score,
+    rawScore: row.rawScore,
+    adjustedScore: row.adjustedScore,
     judgesCounted: row.judgesCounted,
     rank: row.rank,
     criterionAverages: row.criterionAverages.map((average) => ({ ...average })),
@@ -225,6 +232,7 @@ export function toDashboardResultsPage(page: JudgingResultsPageDto): JudgingDash
     pageSize: page.pageSize,
     query: page.query,
     rankedTotal: page.rankedTotal,
+    scoreNormalization: page.scoreNormalization,
   };
 }
 

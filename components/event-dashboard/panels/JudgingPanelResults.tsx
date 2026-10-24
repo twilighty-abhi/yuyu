@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Download, ExternalLink } from "lucide-react";
 import type { JudgingStatus } from "@prisma/client";
-import { loadResultsPage, publishJudgingResults, unpublishJudgingResults } from "@/app/actions/judging-admin";
+import { changeScoreNormalization, loadResultsPage, publishJudgingResults, unpublishJudgingResults } from "@/app/actions/judging-admin";
 import { ConfirmationDialog } from "@/components/feedback/ConfirmationDialog";
 import { Button } from "@/components/ui/button";
+import { SwitchRow } from "@/components/ui/choice";
 import { Callout, Card, CardHeader, Chip, EmptyState, ProgressBar } from "@/components/ui/display";
 import { SearchInput } from "@/components/ui/field";
 import { Spinner } from "@/components/ui/spinner";
@@ -14,15 +15,16 @@ import { formatDayTime } from "@/lib/format/datetime";
 import { numberedPageLabel } from "@/lib/judgingOrganiserPaging";
 import { OpenTabButton } from "../EventDashboardTabs";
 import type { JudgingDashboardCriterion, JudgingDashboardJudge, JudgingDashboardResultsPage } from "@/lib/eventDashboard/judging";
-import { resultsPublishHint } from "./judgingCopy";
+import { resultsPublishHint, scoreMethodCopy } from "./judgingCopy";
 import { PageNumberPager } from "@/components/ui/page-number-pager";
 import { formatScore, useJudgingAction, type JudgingScope } from "./JudgingPanelShared";
 
 const SEARCH_DELAY_MS = 300;
 
 /**
- * Judging → Results: the ranked score table (score, judges counted,
- * per-criterion averages), CSV export, and publishing. Scores and comments
+ * Judging → Results: the ranked score table (raw and adjusted scores, judges
+ * counted, per-criterion averages), the "Adjust for harsh/generous judges"
+ * switch that picks which score ranks, CSV export, and publishing. Scores and comments
  * stay organiser-only; the public results page shows awards and winners.
  *
  * The ranking is computed on the server over every project, so ranks and
@@ -102,6 +104,16 @@ export function JudgingPanelResults({
     return () => window.clearTimeout(timer);
   }, [query, fetchPage, initialPage]);
 
+  const scoreMethod = useJudgingAction();
+  const [pendingMethod, setPendingMethod] = useState<"RAW" | "ZSCORE" | null>(null);
+  const method = pendingMethod ?? initialPage.scoreNormalization;
+  const adjusted = method === "ZSCORE";
+  const copy = scoreMethodCopy(method);
+  function changeMethod(next: "RAW" | "ZSCORE") {
+    setPendingMethod(next);
+    scoreMethod.run("method", () => changeScoreNormalization({ organisationSlug, eventId, scoreNormalization: next }), scoreMethodCopy(next).savedToast, () => setPendingMethod(null));
+  }
+
   const searching = Boolean(query.trim());
   return (
     <div className="flex flex-col gap-5">
@@ -109,7 +121,7 @@ export function JudgingPanelResults({
       <Card as="section">
         <CardHeader
           title="Ranking"
-          description="Each judge's weighted percentage, averaged over judges who submitted a review. Projects with the same score share a rank."
+          description={copy.description}
           action={
             <Button asChild variant="secondary" size="sm">
               <a href={exportHref} download>
@@ -118,6 +130,14 @@ export function JudgingPanelResults({
               </a>
             </Button>
           }
+        />
+        <SwitchRow
+          className="mb-4 rounded-lg border border-line p-3.5"
+          label="Adjust for harsh/generous judges"
+          description="Rank by each judge's scores relative to their own average. Both scores stay in the table and the CSV. Scores are never public."
+          checked={adjusted}
+          disabled={scoreMethod.pending}
+          onCheckedChange={(on) => changeMethod(on ? "ZSCORE" : "RAW")}
         />
         {initialPage.rankedTotal === 0 ? (
           <EmptyState title="No submitted projects">The ranking fills in as judges submit their reviews.</EmptyState>
@@ -150,7 +170,14 @@ export function JudgingPanelResults({
                     <tr>
                       <TH>Rank</TH>
                       <TH>Project</TH>
-                      <TH className="text-right">Score</TH>
+                      <TH className="text-right" aria-sort={adjusted ? undefined : "descending"}>
+                        Raw
+                        <span className="block font-normal">{adjusted ? "score" : "ranks"}</span>
+                      </TH>
+                      <TH className="text-right" aria-sort={adjusted ? "descending" : undefined}>
+                        Adjusted
+                        <span className="block font-normal">{adjusted ? "ranks" : "score"}</span>
+                      </TH>
                       <TH className="text-right">Judges</TH>
                       {criteria.map((criterion) => (
                         <TH key={criterion.id} className="text-right" title={`Average out of ${criterion.maxScore}`}>
@@ -175,7 +202,8 @@ export function JudgingPanelResults({
                               </Chip>
                             ) : null}
                           </TD>
-                          <TD className="text-right font-semibold tabular-nums">{formatScore(row.score)}</TD>
+                          <TD className={adjusted ? "text-right tabular-nums text-ink-secondary" : "text-right font-semibold tabular-nums"}>{formatScore(row.rawScore)}</TD>
+                          <TD className={adjusted ? "text-right font-semibold tabular-nums" : "text-right tabular-nums text-ink-secondary"}>{formatScore(row.adjustedScore)}</TD>
                           <TD className="text-right tabular-nums">{row.judgesCounted}</TD>
                           {criteria.map((criterion) => (
                             <TD key={criterion.id} className="text-right tabular-nums">

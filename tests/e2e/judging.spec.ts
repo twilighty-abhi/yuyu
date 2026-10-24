@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { EventPermission, EventPrivacyType, EventStatus, MembershipRole, PrismaClient, RegistrationMode } from "@prisma/client";
-import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
+import { expect, test, type Browser, type BrowserContext, type Locator, type Page } from "@playwright/test";
 
 // Hackathon judging journey (docs/HACKATHON.md): the organiser turns project
 // submissions on, builds a rubric, two teams and a solo registrant submit, a
@@ -364,6 +364,15 @@ test("the organiser closes judging, ranks, awards and publishes once", async ({ 
   await context.close();
 });
 
+/** The tab lies fully inside its scrolling row, horizontally (the row's scroll position was set to show it). */
+async function expectScrolledIntoRow(tab: Locator) {
+  await expect.poll(() => tab.evaluate((node) => {
+    const row = node.closest('[role="tablist"]')!.getBoundingClientRect();
+    const box = node.getBoundingClientRect();
+    return box.left >= row.left - 1 && box.right <= row.right + 1 && box.right <= window.innerWidth;
+  })).toBe(true);
+}
+
 test("on a phone the active tab and sub-tab are scrolled into view", async ({ browser }) => {
   const { context, page } = await userContext(browser, ownerEmail);
   await page.setViewportSize({ width: 390, height: 844 });
@@ -375,11 +384,13 @@ test("on a phone the active tab and sub-tab are scrolled into view", async ({ br
   await expect(subTab).toHaveAttribute("aria-selected", "true");
   // Both rows overflow at this width, so the active tabs had to be scrolled to.
   expect(await page.getByRole("tablist", { name: "Manage event" }).evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
-  await expect(mainTab).toBeInViewport({ ratio: 1 });
-  await expect(subTab).toBeInViewport({ ratio: 1 });
+  // Horizontal only: the rows sit low on a phone (TEAM events add a detail
+  // line to the header stats), so vertical position is not what's tested.
+  await expectScrolledIntoRow(mainTab);
+  await expectScrolledIntoRow(subTab);
   // The last main tab, deep-linked, is brought into view as well.
   await page.goto(`${dashboard()}?tab=settings`);
   await waitForHydration(page, '[role="tab"]');
-  await expect(page.getByRole("tablist", { name: "Manage event" }).getByRole("tab", { name: "Settings", exact: true })).toBeInViewport({ ratio: 1 });
+  await expectScrolledIntoRow(page.getByRole("tablist", { name: "Manage event" }).getByRole("tab", { name: "Settings", exact: true }));
   await context.close();
 });

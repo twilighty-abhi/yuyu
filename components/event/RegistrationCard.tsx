@@ -6,6 +6,7 @@ import type { RsvpStatus } from "@prisma/client";
 import { ArrowRight, Share2 } from "lucide-react";
 import { RsvpForm } from "@/components/rsvp/RsvpForm";
 import type { RegistrationFieldDefinition } from "@/components/rsvp/registrationTypes";
+import type { TeamRegistrationConfig } from "@/components/rsvp/TeamRegistrationFields";
 import { Button } from "@/components/ui/button";
 import { Callout, Chip, OrgLogo, ProgressBar } from "@/components/ui/display";
 import { Dialog, DialogBody, DialogContent, DialogHeader } from "@/components/ui/dialog";
@@ -65,8 +66,10 @@ export function RegistrationCard(props: {
   title?: string;
   /** The event's accent. The sign-up dialog renders in a portal outside the page's accent scope, so it re-applies it. */
   accentColor?: string | null;
+  /** Team event settings (docs/TEAMS.md): counts become places (one per team or solo entrant). */
+  team?: TeamRegistrationConfig | null;
 }) {
-  const { orgSlug, eventSlug, eventInstanceId, eventTitle, organisation, registrationFields, confirmedCount, capacity, state, accentColor } = props;
+  const { orgSlug, eventSlug, eventInstanceId, eventTitle, organisation, registrationFields, confirmedCount, capacity, state, accentColor, team } = props;
   const storageKey = eventInstanceId ? `yuyu:rsvp:${orgSlug}:i:${eventInstanceId}` : `yuyu:rsvp:${orgSlug}:e:${eventSlug ?? ""}`;
   const [saved, setSaved] = useSavedRsvp(storageKey);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -120,10 +123,11 @@ export function RegistrationCard(props: {
         {confirmedCount != null ? (
           <div className="flex flex-col gap-2">
             <div className="flex items-baseline justify-between gap-3 text-sm">
-              <span className="font-semibold text-ink">{confirmedCount} going</span>
-              {spotsLeft != null ? <span className="text-ink-muted">{spotsLeft} {spotsLeft === 1 ? "spot" : "spots"} left</span> : null}
+              <span className="font-semibold text-ink">{team ? `${confirmedCount} ${confirmedCount === 1 ? "place" : "places"} taken` : `${confirmedCount} going`}</span>
+              {spotsLeft != null ? <span className="text-ink-muted">{spotsLeft} {team ? (spotsLeft === 1 ? "place" : "places") : spotsLeft === 1 ? "spot" : "spots"} left</span> : null}
             </div>
             {capacity != null ? <ProgressBar value={confirmedCount} max={capacity} label="Places taken" /> : null}
+            {team ? <p className="text-caption text-ink-muted">{team.soloPolicy === "TEAMS_ONLY" ? "Each team takes one place." : "Each team, and each solo entrant, takes one place."}</p> : null}
           </div>
         ) : null}
         {state.cancelled ? <Callout tone="danger" title="Event cancelled" /> : null}
@@ -159,10 +163,13 @@ export function RegistrationCard(props: {
               eventSlug={eventSlug}
               eventInstanceId={eventInstanceId}
               registrationFields={registrationFields}
-              onRsvpSaved={({ ticketToken, status }) => {
-                // Same as before: close the dialog and let the card switch to the ticket link.
+              team={team}
+              onRsvpSaved={({ ticketToken, status, teamMode }) => {
                 if (ticketToken) setSaved({ token: ticketToken, status });
-                setDialogOpen(false);
+                // A new team leader needs the form's done message (the team page
+                // link is on its way by email), so that dialog stays open.
+                // Otherwise close it and let the card switch to the ticket link.
+                if (teamMode !== "create") setDialogOpen(false);
               }}
             />
           </DialogBody>

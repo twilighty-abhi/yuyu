@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import type { RsvpStatus } from "@prisma/client";
 import { useRouter } from "next/navigation";
-import { Check, CloudCheck, CloudOff, Download, Info, Printer, RefreshCw, Search, X } from "lucide-react";
+import { Check, CloudCheck, CloudOff, Download, Info, Printer, RefreshCw, Search, Users, X } from "lucide-react";
 import { Button, IconButton } from "@/components/ui/button";
 import { Switch } from "@/components/ui/choice";
 import { Callout, Chip, ProgressBar, type ChipTone } from "@/components/ui/display";
@@ -127,10 +127,12 @@ export function EventCheckInClient(props: {
   stationMode?: boolean;
   eventSlug?: string;
   registrationFields: Array<{ key: string; label: string }>;
+  /** TEAM event: team names on badges ({{team}} and the Team line). */
+  teamEvent?: boolean;
   stats: { confirmed: number; checkedIn: number };
   recent: CheckInRecentRow[];
 }) {
-  const { organisationSlug, organisationName, organisationLogoUrl, eventId, eventTitle, registrationFields, stats, recent, stationMode = false, eventSlug } = props;
+  const { organisationSlug, organisationName, organisationLogoUrl, eventId, eventTitle, registrationFields, stats, recent, stationMode = false, eventSlug, teamEvent = false } = props;
   const router = useRouter();
   const { showToast } = useToast();
   const [pending, startTransition] = useTransition();
@@ -324,6 +326,7 @@ export function EventCheckInClient(props: {
       checkInQrToken: attendee.ticketToken,
       checkInDetails: attendee.checkInDetails ?? [],
       registrationDetails: attendee.registrationDetails ?? [],
+      teamName: attendee.teamName ?? null,
       kind: "success",
     });
     if (idCardPrintingEnabled) showIdCard({
@@ -336,6 +339,7 @@ export function EventCheckInClient(props: {
       checkInQrToken: attendee.ticketToken,
       checkInDetails: attendee.checkInDetails ?? [],
       registrationDetails: attendee.registrationDetails ?? [],
+      teamName: attendee.teamName ?? null,
     });
     playSuccessFeedback();
     await refreshOfflineState();
@@ -368,6 +372,7 @@ export function EventCheckInClient(props: {
             checkInQrToken: attendee.ticketToken,
             checkInDetails: attendee.checkInDetails ?? [],
             registrationDetails: attendee.registrationDetails ?? [],
+            teamName: attendee.teamName ?? null,
             gate,
           });
           setScanIsOffline(true);
@@ -486,9 +491,9 @@ export function EventCheckInClient(props: {
           q.length < 2
             ? []
             : roster.rows
-                .filter((row) => row.displayName.toLowerCase().includes(q) || row.email?.toLowerCase().includes(q))
+                .filter((row) => row.displayName.toLowerCase().includes(q) || row.email?.toLowerCase().includes(q) || row.teamName?.toLowerCase().includes(q))
                 .slice(0, 12)
-                .map(({ rsvpId, displayName, email, status, checkedInAt }) => ({ rsvpId, displayName, email, status, checkedInAt })),
+                .map(({ rsvpId, displayName, email, status, checkedInAt, teamName }) => ({ rsvpId, displayName, email, status, checkedInAt, teamName })),
         );
       })();
       return;
@@ -533,6 +538,7 @@ export function EventCheckInClient(props: {
           checkInQrToken: attendee.ticketToken,
           checkInDetails: attendee.checkInDetails ?? [],
           registrationDetails: attendee.registrationDetails ?? [],
+          teamName: attendee.teamName ?? null,
           gate,
         });
         setScanIsOffline(true);
@@ -726,6 +732,7 @@ export function EventCheckInClient(props: {
               <div>
                 <p className="text-[15px] font-semibold">{lastResult.kind === "already" ? "Already checked in" : "Checked in"}</p>
                 <p className="break-words font-display text-[34px] font-extrabold leading-none tracking-[-0.03em]">{lastResult.displayName}</p>
+                {lastResult.teamName ? <p className="mt-1.5 flex items-center gap-1.5 text-[15px] font-semibold"><Users aria-hidden className="size-4 shrink-0" /><span className="sr-only">Team: </span>{lastResult.teamName}</p> : null}
                 <p className="mt-2 text-sm opacity-90">
                   {lastResult.email ?? ""}
                   {lastResult.email && lastResult.checkedInAt ? " · " : ""}
@@ -775,6 +782,7 @@ export function EventCheckInClient(props: {
                         {row.displayName}
                       </button>
                       {row.email ? <p className="truncate text-sm text-ink-muted">{row.email}</p> : null}
+                      {row.teamName ? <p className="truncate text-sm text-ink-secondary"><span className="sr-only">Team: </span>{row.teamName}</p> : null}
                       <div className="mt-1 flex flex-wrap gap-1">
                         <StatusChip status={row.status} />
                         {row.checkedInAt ? <Chip size="sm" tone="success" icon={<Check />}>Checked in</Chip> : null}
@@ -810,6 +818,7 @@ export function EventCheckInClient(props: {
               <>
                 <p className="font-display text-[24px] font-extrabold leading-tight text-ink">{scanPreview.displayName}</p>
                 <p className="text-sm text-ink-muted">{scanPreview.email ?? "—"}</p>
+                {scanPreview.teamName ? <p className="flex items-center gap-1.5 text-sm font-semibold text-ink"><Users aria-hidden className="size-4 shrink-0" />Team: {scanPreview.teamName}</p> : null}
                 <div className="flex flex-wrap gap-1.5 pt-1">
                   <StatusChip status={scanPreview.status} />
                   {scanPreview.alreadyCheckedIn ? <Chip size="sm" tone="neutral">Already checked in</Chip> : null}
@@ -851,8 +860,10 @@ export function EventCheckInClient(props: {
           checkInQrToken: idCardAttendee.checkInQrToken,
           checkInDetails: idCardAttendee.checkInDetails,
           registrationDetails: idCardAttendee.registrationDetails,
+          teamName: idCardAttendee.teamName ?? null,
         } : null}
         registrationFields={registrationFields}
+        teamEvent={teamEvent}
       />
 
       <Dialog open={Boolean(detailsAttendee)} onOpenChange={(next) => { if (!next) setDetailsAttendee(null); }}>
@@ -863,6 +874,7 @@ export function EventCheckInClient(props: {
               <>
                 <p className="text-[19px] font-bold">{detailsAttendee.displayName}</p>
                 <p className="text-sm text-ink-muted">{detailsAttendee.email ?? "No email address"}</p>
+                {detailsAttendee.teamName ? <p className="text-sm">Team: <span className="font-semibold">{detailsAttendee.teamName}</span></p> : null}
                 <div className="flex flex-wrap gap-1.5">
                   <StatusChip status={detailsAttendee.status} />
                   {detailsAttendee.alreadyCheckedIn ? <Chip size="sm" tone="success">Already checked in</Chip> : null}

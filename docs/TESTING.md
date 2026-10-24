@@ -18,6 +18,8 @@ Mobile API coverage includes token hashing, rotation and refresh-reuse revocatio
 
 Other security-relevant unit suites include `super-admin-page-guards` (fails if any `app/super-admin/**/page.tsx` omits `await requireSuperAdminMfa()`), the live-ticket suites (`ticket-check-in-events`, `ticket-check-in-publish`, `ticket-check-in-routes`, `ticket-check-in-watcher`, `use-ticket-check-in`), `account-data-export` and `account-organisations-actions`, `short-link-actions` and `short-link-resolve`, `broadcast-designs`, `event-publishing`, `safe-http-url`, and `image-validation`.
 
+Team registration unit suites are `team-validators` (event team settings, series refusal, team names, registration intents, seeker limits), `team-units` (unit counting, oldest-unit promotion, leadership handover), `team-token` (token shape and SHA-256 storage), `team-dto` (join page and seeker list never expose member names, emails, answers, or tickets), `team-outbox` (the `team-created` and `team-member-added` kinds, dropped when the link was retired), and `guest-list-teams` (the Guests list "In a team" and "Solo" filters and team-name search).
+
 Instance settings and operations are covered by `ops-alerts` (redaction, de-duplication, and rate caps), `instance-settings` (saved SMTP replaces the environment as a whole), `instance-config-secrets` (a named error for an unreadable secret after a key change), `auth-google-runtime` (Google SSO follows saved settings and fails safe), `instance-admin-actions` (fresh MFA gate, no plaintext secrets to Prisma, webhook settings), `super-admin-maintenance-actions` (failed-email requeue limited to the last 7 days, UI-safe errors, rate limits), and `production-check-script` (no SMTP or Google environment required, blank placeholders treated as unset).
 
 ### PostgreSQL integration tests
@@ -54,6 +56,7 @@ inherit the application's database. Files run one at a time.
 | `rsvp-lifecycle.db.test.ts` | No registration for an unreleased website, final-slot races, mandatory approval when full, and per-occurrence capacity |
 | `rsvpCapacity.db.test.ts` | No overselling, waitlist promotion, and promotion that respects a concurrent status change |
 | `schema-invariants.db.test.ts` | Database CHECK constraints for event times and capacity, collaborator targets, feedback identity, and outbox states |
+| `teams.db.test.ts` | Team registration: unchanged `INDIVIDUAL` events, `TEAM_REQUIRED`, case-insensitive team names, concurrent team creation for the last unit, concurrent joins against `teamMaxSize`, atomic whole-team approval (refused below `teamMinSize`), no joins into rejected teams, seeker acceptance freeing a unit and promoting the oldest waitlisted unit, cross-event and cross-organisation team ids, a management token used against another team, leadership handover on leader cancel, disband promotion, organiser move/remove/delete with undo, the team CHECK constraints and one-pending-request index, and the member-status-equals-team-status invariant after every mutation |
 | `short-links.db.test.ts` | Owner/admin-only creation, cross-tenant rejection, idempotent and concurrent creation, regeneration, the unique index, and resolution for every non-published status |
 
 ### Coverage

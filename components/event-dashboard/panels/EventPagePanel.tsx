@@ -1,6 +1,7 @@
 import { toEventClientDto } from "@/lib/eventDto";
 import type { EventDashboardContext } from "@/lib/eventDashboard/context";
 import { loadRegistrationFields } from "@/lib/eventDashboard/data";
+import { loadRegistrationLock } from "@/lib/eventDashboard/teams";
 import { formatDayShort, formatTime } from "@/lib/format/datetime";
 import { EditEventForm } from "@/components/event/EditEventForm";
 import { EventWebsiteManager, type EventPagePreviewData } from "@/components/event/EventWebsiteManager";
@@ -12,7 +13,10 @@ import { NoPermission } from "./shared";
 
 export async function EventPagePanel({ ctx }: { ctx: EventDashboardContext }) {
   const { event, permissions, organisation, now } = ctx;
-  const fields = await loadRegistrationFields(event.id);
+  const [fields, registrations] = await Promise.all([
+    loadRegistrationFields(event.id),
+    permissions.canEditDetails ? loadRegistrationLock(event.id) : Promise.resolve(undefined),
+  ]);
   const website = {
     page: event.page,
     highlights: event.highlights.map((x) => ({ id: x.id, title: x.title, description: x.description, visibility: x.visibility, values: { icon: x.icon, sortOrder: x.sortOrder } })),
@@ -48,7 +52,7 @@ export async function EventPagePanel({ ctx }: { ctx: EventDashboardContext }) {
         {
           value: "details",
           label: "Details",
-          content: permissions.canEditDetails ? <EditEventForm organisationSlug={organisation.slug} event={dto} page={website.page} /> : <NoPermission>You do not have permission to edit event details.</NoPermission>,
+          content: permissions.canEditDetails ? <EditEventForm organisationSlug={organisation.slug} event={dto} page={website.page} registrations={registrations} /> : <NoPermission>You do not have permission to edit event details.</NoPermission>,
         },
         {
           value: "page",

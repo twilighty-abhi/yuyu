@@ -1,6 +1,6 @@
 "use server";
 
-import { EventPrivacyType, EventStatus } from "@prisma/client";
+import { EventPrivacyType, EventStatus, RegistrationMode } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
@@ -15,9 +15,11 @@ import {
   createEventSchema,
   cloneEventSchema,
   deleteEventSchema,
+  normalizedTeamSettings,
   updateEventSchema,
   updateEventSlugSchema,
 } from "@/lib/validators";
+import { countConfirmedForCapacity } from "@/lib/teamUnits";
 import type { ActionResult } from "./org";
 import { flattenZodErrors } from "./utils";
 import { getPublicUrl, uploadFile } from "@/lib/storage";
@@ -206,6 +208,7 @@ export async function createEvent(
         privacyType: data.privacyType ?? EventPrivacyType.PUBLIC,
         registrationClosesAt: data.registrationClosesAt ?? null,
         registrationLeadMinutes: data.registrationLeadMinutes ?? null,
+        ...(normalizedTeamSettings(data) ?? {}),
         page: {
           create: {
             isPublished: data.status === EventStatus.PUBLISHED,
@@ -295,14 +298,32 @@ export async function updateEvent(input: unknown): Promise<ActionResult> {
     return { ok: false, error: "Choose an uploaded event page logo." };
   }
 
+  const teamSettings = normalizedTeamSettings(data);
   try {
     const saved = await prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT "id" FROM "Event" WHERE "id" = ${event.id} FOR UPDATE`;
+      const locked = await tx.event.findUnique({ where: { id: event.id }, select: { registrationMode: true } });
+      if (!locked) return "missing" as const;
       if (data.capacity != null) {
-        const confirmed = await tx.rSVP.count({
-          where: { eventId: event.id, status: "CONFIRMED" },
-        });
-        if (confirmed > data.capacity) return false;
+        // TEAM events count units (docs/TEAMS.md); INDIVIDUAL events keep the
+        // confirmed-RSVP count.
+        const confirmed = await countConfirmedForCapacity(tx, event.id, locked.registrationMode);
+        if (confirmed > data.capacity) return locked.registrationMode === RegistrationMode.TEAM ? ("capacityUnits" as const) : ("capacity" as const);
+      }
+      if (teamSettings) {
+        if (teamSettings.registrationMode !== locked.registrationMode && (await tx.rSVP.count({ where: { eventId: event.id } })) > 0) {
+          return "mode" as const;
+        }
+        if (teamSettings.registrationMode === RegistrationMode.TEAM && teamSettings.teamMaxSize != null) {
+          const largest = await tx.rSVP.groupBy({
+            by: ["teamId"],
+            where: { eventId: event.id, teamId: { not: null } },
+            _count: { _all: true },
+            orderBy: { _count: { teamId: "desc" } },
+            take: 1,
+          });
+          if ((largest[0]?._count._all ?? 0) > teamSettings.teamMaxSize) return "teamSize" as const;
+        }
       }
       await tx.event.update({
         where: { id: event.id },
@@ -324,6 +345,8 @@ export async function updateEvent(input: unknown): Promise<ActionResult> {
           listedPublicly: data.privacyType === EventPrivacyType.APPROVAL_REQUIRED && data.listedPublicly,
           registrationClosesAt: data.registrationClosesAt ?? null,
           registrationLeadMinutes: data.registrationLeadMinutes ?? null,
+          // Omitted team settings (older forms) leave the stored ones untouched.
+          ...(teamSettings ?? {}),
           // The form's explicit cutoff wins over a mobile "close sign-ups".
           registrationManuallyClosedAt: null,
           registrationCutoffBeforeManualClose: null,
@@ -352,13 +375,29 @@ export async function updateEvent(input: unknown): Promise<ActionResult> {
             : {}),
         },
       });
-      return true;
+      return "saved" as const;
     });
-    if (!saved)
+    if (saved === "missing") return { ok: false, error: "Event not found." };
+    if (saved === "capacity")
       return {
         ok: false,
         error:
           "Capacity cannot be lower than the current confirmed attendance.",
+      };
+    if (saved === "capacityUnits")
+      return {
+        ok: false,
+        error: "Capacity cannot be lower than the number of teams and solo registrants who already have a place.",
+      };
+    if (saved === "mode")
+      return {
+        ok: false,
+        error: "Team registration can't be turned on or off once people have registered.",
+      };
+    if (saved === "teamSize")
+      return {
+        ok: false,
+        error: "Maximum team size cannot be lower than the largest current team.",
       };
 
     await recordAuditEvent({
@@ -581,6 +620,10 @@ export async function cloneEvent(
         status: EventStatus.DRAFT,
         privacyType: source.privacyType,
         listedPublicly: source.listedPublicly,
+        registrationMode: source.registrationMode,
+        teamMinSize: source.teamMinSize,
+        teamMaxSize: source.teamMaxSize,
+        soloPolicy: source.soloPolicy,
       },
     });
 

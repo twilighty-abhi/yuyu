@@ -28,6 +28,9 @@ export const POST = mobileRoute("POST /api/mobile/v1/rsvp", async (request, _par
   const limits = await Promise.all(subjects.map((subject) => checkRateLimitById("rsvp", subject)));
   if (limits.some((allowed) => !allowed)) return mobileError("RATE_LIMITED", "Too many registration attempts. Please try again shortly.");
 
+  // No team intent: the app always registers solo (docs/TEAMS.md). A team
+  // event that registers teams only fails with code TEAM_REQUIRED, which
+  // mobileActionError maps to the TEAM_REQUIRED error code.
   const result = await submitRsvpCore(body.value, { userId: auth?.userId ?? null });
   if (!result.ok) return mobileActionError(result);
   if (!result.data) return mobileError("INTERNAL_ERROR");

@@ -48,6 +48,8 @@ export async function sendRSVPConfirmation(params: {
   };
   messageId?: string;
   recipientName?: string;
+  /** Names the team for a registration on a TEAM event. */
+  teamName?: string;
 }): Promise<void> {
   const { transporter, from } = await getEmailTransport();
   const baseUrl = getBaseUrl();
@@ -93,7 +95,7 @@ export async function sendRSVPConfirmation(params: {
             <h2 style="margin-top: 0; color: #18181B; font-size: 20px; font-weight: 600;">RSVP Status: ${statusText}</h2>
             <p style="font-size: 16px; line-height: 1.5; color: #49454f; margin-bottom: 24px;">
               ${salutation.html}<br><br>
-              Thank you for registering for <strong>${safeTitle}</strong>. ${statusMessage}
+              Thank you for registering for <strong>${safeTitle}</strong>${params.teamName ? ` with team <strong>${escapeHtml(params.teamName)}</strong>` : ""}. ${statusMessage}
             </p>
             ${eventDetails ? `
               <div style="margin: 24px 0; padding: 20px; border: 1px solid #e0e0e0; border-radius: 12px; background-color: #f8f9fa;">
@@ -136,7 +138,7 @@ export async function sendRSVPConfirmation(params: {
     </html>
   `;
 
-  const text = `RSVP ${statusText}: ${params.eventTitle}\n\n${salutation.text}\n\nThank you for registering for "${params.eventTitle}". ${statusMessage}${eventDetails ? `\n\nEvent details\nStarts: ${eventDetails.startsAt}\nEnds: ${eventDetails.endsAt}${eventDetails.location ? `\nLocation: ${eventDetails.location}` : ""}` : ""}${calendarUrl ? `\n\nAdd to Google Calendar: ${calendarUrl}\nAn .ics calendar invite is also attached for other calendar apps.` : ""}${ticketUrl && params.status === "CONFIRMED" ? `\n\nView your ticket here: ${ticketUrl}` : ""}\n\nBest regards,\nYuyu Events`;
+  const text = `RSVP ${statusText}: ${params.eventTitle}\n\n${salutation.text}\n\nThank you for registering for "${params.eventTitle}"${params.teamName ? ` with team "${params.teamName}"` : ""}. ${statusMessage}${eventDetails ? `\n\nEvent details\nStarts: ${eventDetails.startsAt}\nEnds: ${eventDetails.endsAt}${eventDetails.location ? `\nLocation: ${eventDetails.location}` : ""}` : ""}${calendarUrl ? `\n\nAdd to Google Calendar: ${calendarUrl}\nAn .ics calendar invite is also attached for other calendar apps.` : ""}${ticketUrl && params.status === "CONFIRMED" ? `\n\nView your ticket here: ${ticketUrl}` : ""}\n\nBest regards,\nYuyu Events`;
 
   if (!transporter) {
     // Email bodies can contain attendee PII and bearer ticket links. Mock
@@ -174,6 +176,8 @@ export async function sendApprovalNotification(params: {
   approved: boolean;
   messageId?: string;
   recipientName?: string;
+  /** Team status changes name the team the decision applied to. */
+  teamName?: string;
 }): Promise<void> {
   const { transporter, from } = await getEmailTransport();
 
@@ -181,9 +185,11 @@ export async function sendApprovalNotification(params: {
   const safeTitle = escapeHtml(params.eventTitle);
   const subjectTitle = headerText(params.eventTitle);
   const salutation = greeting(params.recipientName);
+  const safeTeam = params.teamName ? ` (team <strong>${escapeHtml(params.teamName)}</strong>)` : "";
+  const textTeam = params.teamName ? ` (team "${params.teamName}")` : "";
   const statusMessage = params.approved
-    ? `Great news! Your RSVP request for <strong>${safeTitle}</strong> has been approved by the organizer.`
-    : `We regret to inform you that your RSVP request for <strong>${safeTitle}</strong> has been declined by the organizer.`;
+    ? `Great news! Your RSVP request for <strong>${safeTitle}</strong>${safeTeam} has been approved by the organizer.`
+    : `We regret to inform you that your RSVP request for <strong>${safeTitle}</strong>${safeTeam} has been declined by the organizer.`;
 
   const html = `
     <!DOCTYPE html>
@@ -211,7 +217,7 @@ export async function sendApprovalNotification(params: {
     </html>
   `;
 
-  const text = `RSVP Update: ${statusText}\n\n${salutation.text}\n\n${params.approved ? `Your RSVP for "${params.eventTitle}" was approved!` : `Your RSVP for "${params.eventTitle}" was declined.`}\n\nBest regards,\nYuyu Events`;
+  const text = `RSVP Update: ${statusText}\n\n${salutation.text}\n\n${params.approved ? `Your RSVP for "${params.eventTitle}"${textTeam} was approved!` : `Your RSVP for "${params.eventTitle}"${textTeam} was declined.`}\n\nBest regards,\nYuyu Events`;
 
   if (!transporter) {
     console.log("[EMAIL MOCK] RSVP update queued");
@@ -264,6 +270,116 @@ export async function sendEventInvitation(params: {
     return;
   }
 
+  await transporter.sendMail({ messageId: params.messageId, from, to: params.to, subject, text, html });
+}
+
+function teamEmailShell(title: string, bodyHtml: string) {
+  return `
+    <!DOCTYPE html>
+    <html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title></head>
+    <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background:#f8f9fa; margin:0; padding:20px; color:#1c1b1f;">
+      <div style="max-width:600px; margin:40px auto; background:#fff; border:1px solid #e0e0e0; border-radius:16px; overflow:hidden;">
+        ${emailBrandHeader()}
+        <div style="padding:32px; font-size:16px; line-height:1.5; color:#49454f;">${bodyHtml}</div>
+        <div style="background-color:#f4f4f2; padding:16px; text-align:center; font-size:12px; color:#79747e; border-top:1px solid #e0e0e0;">
+          This email was sent by Yuyu Events.<br>
+          © ${new Date().getFullYear()} Yuyu. All rights reserved.
+        </div>
+      </div>
+    </body></html>`;
+}
+
+function teamButton(url: string, label: string) {
+  const safeUrl = escapeHtml(url);
+  return `<p style="margin:28px 0;"><a href="${safeUrl}" style="background:#18181B; color:#fff; padding:14px 24px; border-radius:999px; text-decoration:none; font-weight:600;">${escapeHtml(label)}</a></p>
+          <p style="font-size:13px; color:#666; overflow-wrap:anywhere;">${safeUrl}</p>`;
+}
+
+/**
+ * Team page link for a team leader. The management link is a bearer
+ * capability shown only here; the join link is safe to share with teammates.
+ * Paths are site-relative and made absolute with NEXT_PUBLIC_BASE_URL.
+ */
+export async function sendTeamCreatedEmail(params: {
+  to: string;
+  eventTitle: string;
+  teamName: string;
+  managePath: string;
+  joinPath: string;
+  reason: "created" | "leader";
+  recipientName?: string;
+  messageId?: string;
+}): Promise<void> {
+  const { transporter, from } = await getEmailTransport();
+  const baseUrl = getBaseUrl();
+  const manageUrl = `${baseUrl}${params.managePath}`;
+  const joinUrl = `${baseUrl}${params.joinPath}`;
+  const salutation = greeting(params.recipientName);
+  const safeTeam = escapeHtml(params.teamName);
+  const safeTitle = escapeHtml(params.eventTitle);
+  const subject = params.reason === "leader"
+    ? `You now lead ${headerText(params.teamName)} · ${headerText(params.eventTitle)}`
+    : `Your team ${headerText(params.teamName)} · ${headerText(params.eventTitle)}`;
+  const intro = params.reason === "leader"
+    ? `You are now the leader of team <strong>${safeTeam}</strong> for <strong>${safeTitle}</strong>.`
+    : `Your team <strong>${safeTeam}</strong> is registered for <strong>${safeTitle}</strong>.`;
+  const introText = params.reason === "leader"
+    ? `You are now the leader of team "${params.teamName}" for "${params.eventTitle}".`
+    : `Your team "${params.teamName}" is registered for "${params.eventTitle}".`;
+  const html = teamEmailShell(subject, `
+          <h2 style="margin-top:0; color:#18181B; font-size:20px;">Your team page</h2>
+          <p>${salutation.html}<br><br>${intro}</p>
+          <p>Use your private team page to add or remove members, rename the team, and share the join link. Keep this link to yourself: anyone with it can manage the team.</p>
+          ${teamButton(manageUrl, "Manage your team")}
+          <h3 style="margin:24px 0 8px; color:#18181B; font-size:16px;">Invite teammates</h3>
+          <p>Share this join link with your teammates so they can register into your team:</p>
+          <p style="font-size:13px; color:#666; overflow-wrap:anywhere;"><a href="${escapeHtml(joinUrl)}" style="color:#18181B;">${escapeHtml(joinUrl)}</a></p>`);
+  const text = `${subject}\n\n${salutation.text}\n\n${introText}\n\nManage your team (keep this link private):\n${manageUrl}\n\nShare this join link with your teammates:\n${joinUrl}\n\nBest regards,\nYuyu Events`;
+
+  if (!transporter) {
+    // The management link is a bearer capability; never log it.
+    console.log("[EMAIL MOCK] team page link queued");
+    return;
+  }
+  await transporter.sendMail({ messageId: params.messageId, from, to: params.to, subject, text, html });
+}
+
+/** A member the team leader added receives their own ticket link. */
+export async function sendTeamMemberAddedEmail(params: {
+  to: string;
+  eventTitle: string;
+  teamName: string;
+  status: RsvpStatus;
+  checkInToken: string;
+  addedByName?: string;
+  recipientName?: string;
+  messageId?: string;
+}): Promise<void> {
+  const { transporter, from } = await getEmailTransport();
+  const ticketUrl = `${getBaseUrl()}/ticket/${params.checkInToken}`;
+  const salutation = greeting(params.recipientName);
+  const addedBy = params.addedByName?.replace(/[\u0000-\u001F\u007F]+/g, " ").trim().slice(0, 200) || "";
+  const subject = `You're on team ${headerText(params.teamName)} · ${headerText(params.eventTitle)}`;
+  const statusLine = params.status === "CONFIRMED"
+    ? "Your place is confirmed."
+    : params.status === "WAITLISTED"
+      ? "The team is on the waitlist for now. We will email you if it gets a place."
+      : params.status === "PENDING_APPROVAL"
+        ? "The team is waiting for organiser approval. We will email you once it's reviewed."
+        : "";
+  const who = addedBy ? `${escapeHtml(addedBy)} added you` : "Your team leader added you";
+  const whoText = addedBy ? `${addedBy} added you` : "Your team leader added you";
+  const html = teamEmailShell(subject, `
+          <h2 style="margin-top:0; color:#18181B; font-size:20px;">You're on the team</h2>
+          <p>${salutation.html}<br><br>${who} to team <strong>${escapeHtml(params.teamName)}</strong> for <strong>${escapeHtml(params.eventTitle)}</strong>. ${statusLine}</p>
+          <p>Your registration page shows your ticket, your team, and lets you leave the team if you can't make it.</p>
+          ${teamButton(ticketUrl, "View your registration")}`);
+  const text = `${subject}\n\n${salutation.text}\n\n${whoText} to team "${params.teamName}" for "${params.eventTitle}". ${statusLine}\n\nView your registration: ${ticketUrl}\n\nBest regards,\nYuyu Events`;
+
+  if (!transporter) {
+    console.log("[EMAIL MOCK] team member ticket queued");
+    return;
+  }
   await transporter.sendMail({ messageId: params.messageId, from, to: params.to, subject, text, html });
 }
 

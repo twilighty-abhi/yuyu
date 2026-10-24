@@ -43,7 +43,11 @@ export const MAX_BROWSER_ATTENDEES = 250;
 export const loadAttendees = cache(async (eventId: string, origin: string) => {
   const rsvps = await prisma.rSVP.findMany({
     where: { eventId },
-    include: { user: { select: { id: true, name: true, email: true } }, answers: { include: { field: true } } },
+    include: {
+      user: { select: { id: true, name: true, email: true } },
+      answers: { include: { field: true } },
+      team: { select: { id: true, name: true, leaderRsvpId: true } },
+    },
     orderBy: { createdAt: "desc" },
     take: MAX_BROWSER_ATTENDEES + 1,
   });
@@ -56,6 +60,8 @@ export const loadAttendees = cache(async (eventId: string, origin: string) => {
     user: rsvp.user ? { id: rsvp.user.id, name: rsvp.user.name, email: rsvp.user.email } : null,
     checkedInAt: rsvp.checkedInAt?.toISOString() ?? null,
     ticketUrl: `${origin}/ticket/${rsvp.checkInToken}`,
+    // TEAM events: the team this registration belongs to (null when solo).
+    team: rsvp.team ? { id: rsvp.team.id, name: rsvp.team.name, isLeader: rsvp.team.leaderRsvpId === rsvp.id } : null,
     rawAnswers: rsvp.answers.map((answer) => ({
       fieldId: answer.fieldId,
       valueText: answer.valueText,

@@ -12,6 +12,8 @@ import {
   exportIdCardDesign,
   ID_CARD_GRID_SIZES_MM,
   ID_CARD_PAPER_PRESETS,
+  ID_CARD_TEAM_FIELD_KEY,
+  ID_CARD_TEAM_MERGE_FIELD,
   importIdCardDesign,
   layoutForPaper,
   matchPaperPreset,
@@ -51,6 +53,7 @@ export function IdCardDesigner({
   organisationLogoUrl,
   attendee,
   registrationFields,
+  teamEvent = false,
   onClose,
 }: {
   eventId: string;
@@ -59,6 +62,8 @@ export function IdCardDesigner({
   organisationLogoUrl: string | null;
   attendee: IdCardAttendee | null;
   registrationFields: RegistrationField[];
+  /** TEAM event: offers the Team line and the {{team}} merge field. */
+  teamEvent?: boolean;
   onClose: () => void;
 }) {
   const { settings, update, checkpoint, undo, redo, canUndo, canRedo } = useIdCardSettings(eventId, eventTitle, organisationName);
@@ -68,7 +73,7 @@ export function IdCardDesigner({
   const [notice, setNotice] = useState<{ tone: "danger" | "success"; text: string } | null>(null);
   const [printing, setPrinting] = useState(false);
 
-  const previewPerson = sample === "attendee" && attendee ? attendee : sampleAttendee(registrationFields, sample === "long");
+  const previewPerson = sample === "attendee" && attendee ? attendee : sampleAttendee(registrationFields, sample === "long", teamEvent);
   const logoUrl = settings.showLogo ? safeLogoUrl(organisationLogoUrl) : null;
 
   // Undo/redo from the keyboard while the designer is open (not while typing).
@@ -169,6 +174,11 @@ export function IdCardDesigner({
             <ToggleField label="Footer" checked={settings.showFooter} onCheckedChange={(showFooter) => update({ showFooter })}>
               <Input maxLength={80} value={settings.footerText} disabled={!settings.showFooter} onChange={(event) => update({ footerText: event.target.value })} />
             </ToggleField>
+            {teamEvent ? (
+              <p className="text-caption text-ink-muted">
+                Type <code className="rounded bg-subtle px-1 font-mono text-[12px] text-ink">{ID_CARD_TEAM_MERGE_FIELD}</code> in any of these to print the attendee&apos;s team name.
+              </p>
+            ) : null}
           </Section>
 
           <Section title="Show on the badge">
@@ -183,7 +193,7 @@ export function IdCardDesigner({
             <SwitchLine label="Shrink long names to fit" hint="Keeps names on one line, down to 60% of the size." checked={settings.nameAutoFit} onCheckedChange={(nameAutoFit) => update({ nameAutoFit })} />
           </Section>
 
-          <AnswersSection settings={settings} fields={registrationFields} update={update} />
+          <AnswersSection settings={settings} fields={registrationFields} teamEvent={teamEvent} update={update} />
         </aside>
 
         {/* Canvas */}
@@ -254,7 +264,7 @@ export function IdCardDesigner({
         />
         <span className="hidden text-caption text-ink-muted md:inline">Print at 100% (actual size), no headers or footers.</span>
         <div className="ml-auto flex flex-wrap gap-2">
-          <Button variant="secondary" startIcon={<Printer />} disabled={printing} onClick={() => runPrint(sampleAttendee(registrationFields))}>
+          <Button variant="secondary" startIcon={<Printer />} disabled={printing} onClick={() => runPrint(sampleAttendee(registrationFields, false, teamEvent))}>
             Print test card
           </Button>
           {attendee ? (
@@ -396,8 +406,11 @@ function PaperSection({
   );
 }
 
-function AnswersSection({ settings, fields, update }: { settings: IdCardPrintSettings; fields: RegistrationField[]; update: (patch: Partial<IdCardPrintSettings>) => void }) {
-  const options = fields.map((field) => ({ key: registrationFieldKey(field.key), label: field.label }));
+function AnswersSection({ settings, fields, teamEvent, update }: { settings: IdCardPrintSettings; fields: RegistrationField[]; teamEvent: boolean; update: (patch: Partial<IdCardPrintSettings>) => void }) {
+  const options = [
+    ...(teamEvent ? [{ key: ID_CARD_TEAM_FIELD_KEY, label: "Team" }] : []),
+    ...fields.map((field) => ({ key: registrationFieldKey(field.key), label: field.label })),
+  ];
   const chosen = settings.printFieldKeys.flatMap((key) => options.find((option) => option.key === key) ?? []);
   const available = options.filter((option) => !settings.printFieldKeys.includes(option.key));
   const moveField = (index: number, by: -1 | 1) => {

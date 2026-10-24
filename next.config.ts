@@ -61,6 +61,16 @@ const nextConfig: NextConfig = {
         source: "/api/feedback/certificate/:token",
         headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
       },
+      // Team management and join links are bearer capabilities too
+      // (docs/TEAMS.md); the pages also set a no-referrer meta tag.
+      {
+        source: "/team/:token",
+        headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
+      },
+      {
+        source: "/:orgSlug/:eventSlug/team/:joinToken",
+        headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
+      },
     ];
   },
 };

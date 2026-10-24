@@ -8,6 +8,8 @@ export type OfflineAttendee = {
   // Older rosters stored on a shared device do not have these fields yet.
   checkInDetails?: Array<{ label: string; value: string }>;
   registrationDetails?: Array<{ key: string; label: string; value: string }>;
+  /** TEAM events: the attendee's team name. */
+  teamName?: string | null;
 };
 
 export type OfflineRoster = {

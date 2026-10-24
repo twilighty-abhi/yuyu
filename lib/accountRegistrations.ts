@@ -110,6 +110,8 @@ const rsvpSelect = {
   checkedInAt: true,
   checkInToken: true,
   createdAt: true,
+  // Team events (docs/TEAMS.md): the name, and whether this registration leads it.
+  team: { select: { id: true, name: true, leaderRsvpId: true } },
   event: { select: eventSelect },
   eventInstance: { select: instanceSelect },
 } satisfies Prisma.RSVPSelect;
@@ -133,6 +135,8 @@ export type AccountRegistrationRow = {
   eventHref: string | null;
   /** Present only when the existing cancel action may be offered. */
   cancelToken: string | null;
+  /** Team registrations: the team name, and for its leader the signed-in team page. */
+  team: { name: string; isLeader: boolean; manageHref: string | null } | null;
 };
 
 export type AccountCertificateRow = {
@@ -225,7 +229,16 @@ function toRow(item: NormalisedAccountRegistration, now: Date): AccountRegistrat
     ticketHref: showTicket ? `/ticket/${rsvp.checkInToken}` : null,
     eventHref: item.eventHref,
     cancelToken: cancellable ? rsvp.checkInToken : null,
+    team: teamView(rsvp),
   };
+}
+
+/** The leader link resolves only for the signed-in leader (`resolveLeaderForUser`); the id alone grants nothing. */
+function teamView(rsvp: AccountRsvpRow): AccountRegistrationRow["team"] {
+  const team = rsvp.team;
+  if (!team) return null;
+  const isLeader = team.leaderRsvpId === rsvp.id;
+  return { name: team.name, isLeader, manageHref: isLeader ? `/account/teams/${encodeURIComponent(team.id)}` : null };
 }
 
 /**

@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Team registration** for one-off events (hackathons, game jams, competitions), specified in `docs/TEAMS.md`. Event settings `registrationMode`, `teamMinSize`, `teamMaxSize` and `soloPolicy` in the Publishing section. In team mode capacity counts units (each team or solo registrant is one), under the same event row lock as every other capacity change. Registrants create a team, join one through its link (`/:orgSlug/:eventSlug/team/:joinToken`), or register solo where allowed. Leaders manage their team from a private link (`/team/:token`, stored hashed) or **Account → Registrations**: rename, regenerate links, add and remove members, hand over leadership, and disband. *Looking for a team* profiles, invitations and join requests on *Solo with matching* events. Organisers approve, reject, promote, rename, move members, and delete teams (with undo) from the Guests tab's Teams view. New outbox kinds `team-created` and `team-member-added`; status emails name the team. Team cores live in `lib/core/teams.ts` and `lib/teamUnits.ts`.
+- Migration `20261024000000_team_registration` (additive only: new enums, columns, tables, CHECK constraints, and a partial unique index for one pending join request per team and registration).
+- PostgreSQL integration suite `tests/integration/teams.db.test.ts`.
+
+### Changed
+
+- On team events, approving, rejecting, or promoting a single registration that belongs to a team is refused; organisers act on the whole team instead. Self-cancellation, organiser delete and restore, and the capacity-lowering check in `updateEvent` count units on team events. `INDIVIDUAL` events behave as before.
+- `POST /api/mobile/v1/rsvp` returns `TEAM_REQUIRED` (409) for an event that registers teams only.
+
 ## [1.0.0] - 2026-10-21
 
 The V1 release: everything the `v1-design-overhaul` integration branch adds on top of production `main`. See the upgrade notes before deploying.

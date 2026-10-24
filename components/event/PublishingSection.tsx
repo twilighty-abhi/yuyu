@@ -3,7 +3,7 @@
 import { useId, useState, type ReactNode } from "react";
 import { EventPrivacyType, EventStatus } from "@prisma/client";
 import * as RadioGroupPrimitive from "@radix-ui/react-radio-group";
-import { Check, EyeOff, Globe, Link2, Mail, PencilLine, Radio as LiveIcon } from "lucide-react";
+import { Check, EyeOff, Globe, Link2, Lock, Mail, PencilLine, Radio as LiveIcon } from "lucide-react";
 import { SegmentedControl, SwitchRow } from "@/components/ui/choice";
 import { Dropdown, Input } from "@/components/ui/field";
 import { cn } from "@/lib/cn";
@@ -18,14 +18,28 @@ import {
   type LeadUnit,
   LEAD_UNITS,
   publishingSummary,
+  capacityUnitLabel,
+  SOLO_POLICY_OPTIONS,
+  type SoloPolicyChoice,
+  teamSizeProblem,
 } from "./publishing";
+
+/** The stored team registration settings (docs/TEAMS.md). */
+export type PublishingTeamSettings = {
+  registrationMode: "INDIVIDUAL" | "TEAM";
+  teamMinSize: number | null;
+  teamMaxSize: number | null;
+  soloPolicy: SoloPolicyChoice;
+};
 
 /**
  * The Publishing card of the event details form, as three plain questions:
  * who can see the event, who can join, and how sign-ups work. It renders the
  * same form fields the save handler already reads (status, privacyType,
  * capacity, registrationClosesAt, registrationLeadMinutes,
- * showRegistrationCount), and only ever sends one closing rule.
+ * showRegistrationCount, and the team settings), and only ever sends one
+ * closing rule. Team registration can't be switched on or off once people
+ * have registered; the server enforces that too.
  */
 export function PublishingSection({
   status,
@@ -41,6 +55,9 @@ export function PublishingSection({
   start,
   timeZone,
   onDirty,
+  initialTeam,
+  teamModeLocked = false,
+  largestTeam = 0,
 }: {
   status: EventStatus;
   onStatusChange: (status: EventStatus) => void;
@@ -57,6 +74,11 @@ export function PublishingSection({
   start: string;
   timeZone: string;
   onDirty: () => void;
+  initialTeam: PublishingTeamSettings;
+  /** The event already has registrations, so the registration mode can't change. */
+  teamModeLocked?: boolean;
+  /** Size of the largest current team; the maximum can't go below it. */
+  largestTeam?: number;
 }) {
   const [limitSpots, setLimitSpots] = useState(initialCapacity != null);
   const [capacity, setCapacity] = useState(initialCapacity != null ? String(initialCapacity) : "");
@@ -65,6 +87,12 @@ export function PublishingSection({
   const [leadAmount, setLeadAmount] = useState(String(initialLead.amount));
   const [leadUnit, setLeadUnit] = useState<LeadUnit>(initialLead.unit);
   const [closesAt, setClosesAt] = useState(initialClosesAt);
+  const teamHelpId = useId();
+  const [teamMode, setTeamMode] = useState(initialTeam.registrationMode === "TEAM");
+  const [teamMinSize, setTeamMinSize] = useState(initialTeam.teamMinSize != null ? String(initialTeam.teamMinSize) : "");
+  const [teamMaxSize, setTeamMaxSize] = useState(initialTeam.teamMaxSize != null ? String(initialTeam.teamMaxSize) : "4");
+  const [soloPolicy, setSoloPolicy] = useState<SoloPolicyChoice>(initialTeam.soloPolicy);
+  const teamProblem = teamMode ? teamSizeProblem({ minSize: teamMinSize, maxSize: teamMaxSize, largestTeam: largestTeam || undefined }) : null;
 
   const leadMinutes = Number(leadAmount) >= 0 && leadAmount.trim() !== "" ? Math.round(Number(leadAmount) * LEAD_UNITS[leadUnit].minutes) : null;
   const closing = closingSummary({ mode: closeMode, start, leadMinutes, closesAt, timeZone });
@@ -73,7 +101,7 @@ export function PublishingSection({
     onAudienceChange(privacyFromAudience({ ...audience, ...next }));
     onDirty();
   };
-  const summary = publishingSummary({ status, privacyType, listedPublicly, capacity: limitSpots && capacity ? Number(capacity) : null, closing: closing.short });
+  const summary = publishingSummary({ status, privacyType, listedPublicly, capacity: limitSpots && capacity ? Number(capacity) : null, closing: closing.short, teamMode });
   const live = status === EventStatus.PUBLISHED;
   const touch = <T,>(set: (value: T) => void) => (value: T) => {
     set(value);
@@ -135,13 +163,19 @@ export function PublishingSection({
           <div className="flex flex-col gap-3 p-4">
             <SwitchRow
               label="Limit the number of spots"
-              description={limitSpots ? "When it's full, new sign-ups join the waitlist." : "Unlimited. Everyone who signs up gets a place."}
+              description={
+                limitSpots
+                  ? teamMode
+                    ? "Each team counts as one place, and so does each person signing up on their own. When it's full, new sign-ups join the waitlist."
+                    : "When it's full, new sign-ups join the waitlist."
+                  : "Unlimited. Everyone who signs up gets a place."
+              }
               checked={limitSpots}
               onCheckedChange={touch(setLimitSpots)}
             />
             {limitSpots ? (
               <label className="flex items-center gap-3">
-                <span className="sr-only">Number of spots</span>
+                <span className="sr-only">{teamMode ? "Number of teams and solo registrants" : "Number of spots"}</span>
                 <Input
                   type="number"
                   min={1}
@@ -150,9 +184,9 @@ export function PublishingSection({
                   onChange={(event) => setCapacity(event.target.value)}
                   placeholder="100"
                   className="w-32"
-                  aria-label="Number of spots"
+                  aria-label={teamMode ? "Number of teams and solo registrants" : "Number of spots"}
                 />
-                <span className="text-body-ui text-ink-muted">spots</span>
+                <span className="text-body-ui text-ink-muted">{capacityUnitLabel(teamMode)}</span>
               </label>
             ) : null}
           </div>
@@ -209,6 +243,75 @@ export function PublishingSection({
             </p>
           </div>
 
+          <div className="flex flex-col gap-3 p-4">
+            <SwitchRow
+              label="Team registration"
+              description={
+                teamModeLocked
+                  ? "People have already signed up, so this can't be changed now."
+                  : teamMode
+                    ? "People sign up as teams: one person creates the team and shares a link with the others."
+                    : "Off: everyone signs up on their own."
+              }
+              checked={teamMode}
+              disabled={teamModeLocked}
+              onCheckedChange={touch(setTeamMode)}
+            />
+            {teamModeLocked ? (
+              <p className="flex items-center gap-1.5 text-caption text-ink-muted">
+                <Lock aria-hidden className="size-3.5 shrink-0" />
+                Locked because this event has registrations.
+              </p>
+            ) : null}
+            {teamMode ? (
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-wrap items-end gap-3">
+                  <label className="flex flex-col gap-1">
+                    <span className="text-caption text-ink-secondary">Smallest team</span>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={100}
+                      inputMode="numeric"
+                      value={teamMinSize}
+                      onChange={(event) => setTeamMinSize(event.target.value)}
+                      placeholder="Any"
+                      className="w-28"
+                      aria-describedby={teamHelpId}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-caption text-ink-secondary">Largest team</span>
+                    <Input
+                      type="number"
+                      min={Math.max(2, largestTeam)}
+                      max={100}
+                      inputMode="numeric"
+                      value={teamMaxSize}
+                      onChange={(event) => setTeamMaxSize(event.target.value)}
+                      className="w-28"
+                      aria-describedby={teamHelpId}
+                      aria-invalid={teamProblem ? true : undefined}
+                    />
+                  </label>
+                  <span className="pb-2.5 text-body-ui text-ink-muted">people</span>
+                </div>
+                <p id={teamHelpId} className={cn("text-caption", teamProblem ? "text-danger-fg" : "text-ink-muted")}>
+                  {teamProblem ?? "Teams smaller than the minimum are marked Incomplete and can't be approved until they grow."}
+                </p>
+                <label className="flex flex-col gap-1">
+                  <span className="text-label text-ink">Can people sign up without a team?</span>
+                  <Dropdown value={soloPolicy} onChange={(event) => touch(setSoloPolicy)(event.target.value as SoloPolicyChoice)} className="sm:max-w-md">
+                    {SOLO_POLICY_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </Dropdown>
+                  <span className="text-caption text-ink-muted">{SOLO_POLICY_OPTIONS.find((option) => option.value === soloPolicy)?.description}</span>
+                </label>
+              </div>
+            ) : null}
+          </div>
+
           <SwitchRow
             name="showRegistrationCount"
             label="Show how many are going"
@@ -227,6 +330,10 @@ export function PublishingSection({
       <input type="hidden" name="capacity" value={limitSpots ? capacity : ""} />
       <input type="hidden" name="registrationLeadMinutes" value={closeMode === "before" && leadMinutes != null ? String(leadMinutes) : ""} />
       <input type="hidden" name="registrationClosesAt" value={closeMode === "at" ? closesAt : ""} />
+      <input type="hidden" name="registrationMode" value={teamMode ? "TEAM" : "INDIVIDUAL"} />
+      <input type="hidden" name="teamMinSize" value={teamMode ? teamMinSize : ""} />
+      <input type="hidden" name="teamMaxSize" value={teamMode ? teamMaxSize : ""} />
+      <input type="hidden" name="soloPolicy" value={teamMode ? soloPolicy : ""} />
     </div>
   );
 }

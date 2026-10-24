@@ -144,4 +144,34 @@ describe("account registrations loader", () => {
     expect(JSON.stringify(upcoming[1])).not.toContain("tok_rejected_2");
     expect(mocks.eventInvites).not.toHaveBeenCalled();
   });
+
+  it("names the team and links only its leader to the signed-in team page", async () => {
+    const event = {
+      id: "e1",
+      title: "Jam",
+      slug: "jam",
+      startDateTime: at("2030-06-20T10:00:00Z"),
+      endDateTime: at("2030-06-20T12:00:00Z"),
+      timezone: "Asia/Kolkata",
+      location: "",
+      isOnline: true,
+      status: "PUBLISHED",
+      privacyType: "PUBLIC",
+      page: { isPublished: true },
+      organisation: { name: "Org", slug: "org" },
+    };
+    mocks.rsvps
+      .mockResolvedValueOnce([
+        { id: "r1", status: "CONFIRMED", checkedInAt: null, checkInToken: "tok_lead_1", team: { id: "t1", name: "Owls", leaderRsvpId: "r1" }, event, eventInstance: null },
+        { id: "r2", status: "CONFIRMED", checkedInAt: null, checkInToken: "tok_member_2", team: { id: "t2", name: "Larks", leaderRsvpId: "someone" }, event, eventInstance: null },
+      ])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+
+    const { upcoming } = await loadAccountRegistrations("user_1", now);
+
+    expect(upcoming[0]?.team).toEqual({ name: "Owls", isLeader: true, manageHref: "/account/teams/t1" });
+    expect(upcoming[1]?.team).toEqual({ name: "Larks", isLeader: false, manageHref: null });
+  });
 });

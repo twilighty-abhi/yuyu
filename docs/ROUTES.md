@@ -20,11 +20,13 @@ Dynamic segments are shown as `:name` for readability.
 | `/:orgSlug/:eventSlug/sessions/:sessionSlug` | Public session page (published sessions and resources only) |
 | `/:orgSlug/:eventSlug/speakers/:speakerSlug` | Public speaker page (published speakers only) |
 | `/:orgSlug/:eventSlug/feedback` | Event feedback form when open |
+| `/:orgSlug/:eventSlug/team/:joinToken` | Team join link ([Team registration](TEAMS.md)): the registration form with the team fixed. Same access rules as the event page; shows only the team name, size and maximum size; unknown, retired and other events' tokens are a 404; `noindex`, `no-referrer` |
 | `/:orgSlug/:eventSlug/check-in` | PIN-protected venue check-in station; usable by trusted on-site staff without an account |
 | `/:orgSlug/i/:instanceId` | Recurring-series instance and RSVP |
 | `/:orgSlug/i/:instanceId/schedule` | Programme for one recurring occurrence |
 | `/:shortCode` | Event short link: a 7-character code (letters and digits, always at least one uppercase letter, so it never matches a lowercase organisation slug) that temporarily redirects to the event's current public page. Unknown, unpublished, and unreleased codes, and lookups over the `shortLink` limit (30/min per IP), return the same not-found page as an unknown organisation. Publishing releases the event page in the same step, so a Live event's code works immediately |
-| `/ticket/:token` | Attendee ticket status and QR page; tears off the QR stub live when the attendee is checked in |
+| `/ticket/:token` | Attendee ticket status and QR page; tears off the QR stub live when the attendee is checked in. On a team event it also shows the team (name, leader, member names), leaving the team, and the *Looking for a team* profile and list |
+| `/team/:token` | Team page for the leader ([Team registration](TEAMS.md)), opened by the opaque management token (stored only as a SHA-256 hash; regenerating it retires the old link). A signed-in leader reaches the same page at `/account/teams/:teamId` without the token. `noindex`, private cache, `no-referrer`; the ticket's check-in token never opens it |
 | `/join/org/:token` | Accept an organisation invitation |
 | `/join/event-collaborator/:token` | Accept an event co-organiser invitation |
 | `/login` | Password and Google sign-in/signup |
@@ -33,6 +35,7 @@ Dynamic segments are shown as `:name` for readability.
 | `/account` | Authenticated account profile settings |
 | `/account/security` | Authenticated password, MFA, recovery-code, and session controls |
 | `/account/registrations` | Authenticated list of the signed-in user's own registrations, tickets, certificates, and personal data download |
+| `/account/teams/:teamId` | Authenticated team page for the team's signed-in leader (linked from `/account/registrations`); a 404 for anyone else. Same controls as `/team/:token` except resetting the management link; `noindex`, private cache |
 | `/account/organisations` | Authenticated list of the user's memberships and roles, event co-organiser roles, pending co-organiser invites, and leave-organisation control (blocked for the sole owner) |
 
 ## User and organisation dashboard
@@ -63,7 +66,7 @@ Every super-admin page additionally requires a current TOTP verification, and ea
 
 | Method and route | Authentication | Purpose |
 | --- | --- | --- |
-| `POST /api/rsvp` | Optional session | Submit an event or instance RSVP |
+| `POST /api/rsvp` | Optional session | Submit an event or instance RSVP; on a team event the optional `team` field creates a team, joins one by join token, or registers solo |
 | `POST /api/feedback` | Public, rate-limited | Submit feedback; email is used only for certificate-enabled forms |
 | `POST /api/check-in/station` | PIN-scoped station session, rate-limited | Open and operate a venue check-in station |
 | `GET /api/search?q=...` | Public, rate-limited | Return matching public events |
@@ -86,7 +89,7 @@ Every super-admin page additionally requires a current TOTP verification, and ea
 | `GET /.well-known/assetlinks.json` | Public | Android App Links statement from `ANDROID_APP_SHA256_CERT_FINGERPRINTS` (`[]` when unset) |
 | `GET /.well-known/apple-app-site-association` | Public | iOS Universal Links association (JSON, no extension) from `APPLE_APP_IDS` (empty details when unset) |
 
-Opaque ticket and certificate URLs are bearer capabilities. Do not log them or place them in analytics payloads.
+Opaque ticket, certificate, team join, and team management URLs are bearer capabilities. Do not log them or place them in analytics payloads.
 
 ## Metadata routes
 

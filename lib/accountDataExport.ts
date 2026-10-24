@@ -26,12 +26,16 @@ export type AccountExportSource = {
   signInProviders: Array<{ provider: string }>;
   memberships: Array<{ role: MembershipRole; createdAt: Date; organisation: { name: string; slug: string } }>;
   registrations: Array<{
+    /** Used only to tell whether the user leads their team; never exported. */
+    id?: string;
     status: RsvpStatus;
     createdAt: Date;
     checkedInAt: Date | null;
     event: { title: string; startDateTime: Date; endDateTime: Date; timezone: string; organisation: { name: string } } | null;
     eventInstance: { startDateTime: Date; endDateTime: Date; series: { title: string; timezone: string; organisation: { name: string } } } | null;
     answers: Array<AnswerValue & { field: { label: string } }>;
+    /** TEAM events: the user's team (name and who leads it). */
+    team?: { name: string; leaderRsvpId: string | null } | null;
   }>;
   feedback: Array<{
     submittedAt: Date;
@@ -101,6 +105,8 @@ export function buildAccountDataExport(source: AccountExportSource, generatedAt:
         status: rsvp.status,
         registeredAt: rsvp.createdAt.toISOString(),
         checkedInAt: iso(rsvp.checkedInAt),
+        team: rsvp.team?.name ?? null,
+        teamRole: rsvp.team ? (rsvp.id != null && rsvp.team.leaderRsvpId === rsvp.id ? "leader" : "member") : null,
         answers: rsvp.answers.map((answer) => ({ question: answer.field.label, answer: answerValue(answer) })),
       }];
     }),
@@ -159,9 +165,12 @@ export async function loadAccountExportSource(userId: string): Promise<AccountEx
       orderBy: { createdAt: "desc" },
       take,
       select: {
+        id: true,
         status: true,
         createdAt: true,
         checkedInAt: true,
+        // Team name and leader only; join and management tokens are never read.
+        team: { select: { name: true, leaderRsvpId: true } },
         event: { select: { title: true, startDateTime: true, endDateTime: true, timezone: true, organisation: { select: { name: true } } } },
         eventInstance: { select: { startDateTime: true, endDateTime: true, series: { select: { title: true, timezone: true, organisation: { select: { name: true } } } } } },
         answers: { select: { ...answerSelect, field: { select: { label: true } } }, orderBy: { field: { sortOrder: "asc" } }, take: 200 },

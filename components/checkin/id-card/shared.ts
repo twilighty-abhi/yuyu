@@ -2,7 +2,9 @@
 
 import { useCallback, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
+  applyIdCardMergeFields,
   defaultIdCardPrintSettings,
+  ID_CARD_TEAM_FIELD_KEY,
   normalizeIdCardPrintSettings,
   type IdCardLayoutElement,
   type IdCardPrintSettings,
@@ -15,6 +17,8 @@ export type IdCardAttendee = {
   checkInQrToken: string;
   checkInDetails: Array<{ label: string; value: string }>;
   registrationDetails: Array<{ key: string; label: string; value: string }>;
+  /** TEAM events: the attendee's team, for the {{team}} merge field and the Team line. */
+  teamName?: string | null;
 };
 
 export type RegistrationField = { key: string; label: string };
@@ -147,18 +151,33 @@ export function safeLogoUrl(value: string | null) {
   }
 }
 
-/** The registration answers chosen for the card, in the chosen order, that this attendee actually has. */
+/** The registration answers (and the Team line) chosen for the card, in the chosen order, that this attendee actually has. */
 export function printableFields(settings: IdCardPrintSettings, attendee: IdCardAttendee): PrintableField[] {
   const details = new Map(attendee.registrationDetails.map((detail) => [detail.key, detail]));
   return settings.printFieldKeys.flatMap((key) => {
+    if (key === ID_CARD_TEAM_FIELD_KEY) {
+      const team = attendee.teamName?.trim();
+      return team ? [{ key, label: "Team", value: team }] : [];
+    }
     const detail = details.get(key.startsWith("registration:") ? key.slice("registration:".length) : key);
     return detail ? [{ key, label: detail.label, value: detail.value }] : [];
   });
 }
 
+/** The settings with `{{team}}` filled in the heading, badge label and footer for this attendee. */
+export function withMergeFields(settings: IdCardPrintSettings, attendee: IdCardAttendee): IdCardPrintSettings {
+  const values = { team: attendee.teamName };
+  const heading = applyIdCardMergeFields(settings.heading, values);
+  const badgeLabel = applyIdCardMergeFields(settings.badgeLabel, values);
+  const footerText = applyIdCardMergeFields(settings.footerText, values);
+  if (heading === settings.heading && badgeLabel === settings.badgeLabel && footerText === settings.footerText) return settings;
+  return { ...settings, heading, badgeLabel, footerText };
+}
+
 /** Sample people for the designer: a typical name and a long one to test fitting. */
-export function sampleAttendee(fields: RegistrationField[], long = false): IdCardAttendee {
+export function sampleAttendee(fields: RegistrationField[], long = false, teamEvent = false): IdCardAttendee {
   return {
+    teamName: teamEvent ? (long ? "The Midnight Debugging Collective" : "Night Owls") : null,
     displayName: long ? "Alexandra Montgomery-Fitzgerald" : "Priya Raman",
     email: long ? "alexandra.montgomery-fitzgerald@example.com" : "priya@example.com",
     checkInQrToken: "preview-check-in-token",

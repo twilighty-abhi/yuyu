@@ -1,6 +1,6 @@
 import "server-only";
 
-import { Prisma, RsvpStatus } from "@prisma/client";
+import { Prisma, RegistrationMode, RsvpStatus } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
@@ -13,6 +13,8 @@ import { submitManualGuestRsvpCore } from "@/lib/rsvpCore";
 import { validateAndNormalizeAnswers } from "@/lib/rsvpCore";
 import { isActionRateLimited } from "@/lib/actionRateLimit";
 import { hasCapacityToRestoreConfirmedRsvp } from "@/lib/rsvpCapacity";
+import { promoteOldestWaitlistedUnit, settleTeamAfterMemberLeft } from "@/lib/teamUnits";
+import { isTeamDeletionSnapshot, restoreTeamDeletionSnapshot, soleMemberTeamSnapshotTx } from "@/lib/core/teams";
 
 const UNDO_TTL_MS = 5 * 60_000;
 
@@ -138,6 +140,8 @@ const snapshotSchema = z.object({
   checkInToken: z.string().min(8).max(256),
   checkedInAt: z.string().datetime().nullable(),
   createdAt: z.string().datetime(),
+  /** Team the RSVP belonged to (TEAM events); restored into it only if it still exists with room. */
+  teamId: z.string().min(1).max(128).nullable().optional(),
   answers: z.array(z.object({
     fieldId: z.string().min(1),
     valueText: z.string().nullable(),
@@ -183,10 +187,11 @@ export async function deleteRsvpForUser(actorUserId: string | null, input: unkno
     },
     include: {
       answers: true,
-      event: { select: { slug: true } },
+      event: { select: { slug: true, registrationMode: true } },
     },
   });
   if (!rsvp) return { ok: false, error: "RSVP not found." };
+  const teamEvent = rsvp.eventId && rsvp.event?.registrationMode === RegistrationMode.TEAM ? rsvp.eventId : null;
 
   const snapshot = {
     eventId: rsvp.eventId,
@@ -199,6 +204,7 @@ export async function deleteRsvpForUser(actorUserId: string | null, input: unkno
     checkInToken: rsvp.checkInToken,
     checkedInAt: rsvp.checkedInAt?.toISOString() ?? null,
     createdAt: rsvp.createdAt.toISOString(),
+    ...(teamEvent ? { teamId: rsvp.teamId } : {}),
     answers: rsvp.answers.map((answer) => ({
       fieldId: answer.fieldId,
       valueText: answer.valueText,
@@ -209,6 +215,20 @@ export async function deleteRsvpForUser(actorUserId: string | null, input: unkno
   };
 
   const undo = await prisma.$transaction(async (tx) => {
+    // TEAM events: take the shared Event lock and re-read the team under it,
+    // so leadership passes on or an emptied team is deleted (freeing its unit).
+    let teamId: string | null = null;
+    let payload: Prisma.InputJsonValue = snapshot as Prisma.InputJsonValue;
+    if (teamEvent) {
+      await tx.$queryRaw`SELECT "id" FROM "Event" WHERE "id" = ${teamEvent} FOR UPDATE`;
+      const current = await tx.rSVP.findUnique({ where: { id: rsvp.id }, select: { teamId: true } });
+      teamId = current?.teamId ?? null;
+      snapshot.teamId = teamId;
+      // The last member's delete also deletes the emptied team, so a member
+      // snapshot could never be restored into it. Keep the whole team instead.
+      const teamSnapshot = teamId ? await soleMemberTeamSnapshotTx(tx, { teamId, eventId: teamEvent, rsvpId: rsvp.id }) : null;
+      if (teamSnapshot) payload = teamSnapshot as Prisma.InputJsonValue;
+    }
     // Keep the short-lived undo table bounded even when no scheduled cleanup is
     // configured. Expired snapshots are never eligible for restoration.
     await tx.rsvpDeletionUndo.deleteMany({ where: { expiresAt: { lte: new Date() } } });
@@ -216,12 +236,19 @@ export async function deleteRsvpForUser(actorUserId: string | null, input: unkno
       data: {
         organisationId: org.id,
         deletedByUserId: session.user.id,
-        payload: snapshot as Prisma.InputJsonValue,
+        payload,
         expiresAt: new Date(Date.now() + UNDO_TTL_MS),
       },
       select: { id: true },
     });
     await tx.rSVP.delete({ where: { id: rsvp.id } });
+    if (teamEvent && teamId) {
+      const settled = await settleTeamAfterMemberLeft(tx, { teamId, eventId: teamEvent, leftRsvpId: rsvp.id });
+      if (settled.freedConfirmedUnit) {
+        const event = await tx.event.findUnique({ where: { id: teamEvent }, select: { id: true, title: true, capacity: true, privacyType: true } });
+        if (event) await promoteOldestWaitlistedUnit(tx, event);
+      }
+    }
     return created;
   });
 
@@ -253,6 +280,13 @@ export async function restoreRsvpForUser(actorUserId: string | null, input: unkn
     },
   });
   if (!undo) return { ok: false, error: "This undo has expired or is unavailable." };
+  if (isTeamDeletionSnapshot(undo.payload)) {
+    const restoredTeam = await restoreTeamDeletionSnapshot(undo, org.id);
+    if (!restoredTeam.ok || !restoredTeam.data) return restoredTeam.ok ? { ok: false, error: "Could not restore the team." } : restoredTeam;
+    revalidateRsvpPaths(org.slug, { eventId: restoredTeam.data.eventId, eventInstanceId: null, eventSlug: restoredTeam.data.eventSlug });
+    await recordAuditEvent({ action: "TEAM_RESTORED", actorUserId: session.user.id, organisationId: org.id, targetType: "Team", targetId: restoredTeam.data.teamId });
+    return { ok: true };
+  }
   const snapshot = snapshotSchema.safeParse(undo.payload);
   if (!snapshot.success) return { ok: false, error: "Could not restore this RSVP safely." };
 
@@ -262,9 +296,26 @@ export async function restoreRsvpForUser(actorUserId: string | null, input: unkn
   if (!targetExists) return { ok: false, error: "The original event no longer exists." };
 
   let restoredId: string;
+  let refusal = "This RSVP cannot be restored because the event is now at capacity.";
   try {
     const restored = await prisma.$transaction(async (tx) => {
-      if (snapshot.data.status === RsvpStatus.CONFIRMED) {
+      let status = snapshot.data.status;
+      let teamId: string | null = null;
+      if (snapshot.data.teamId && snapshot.data.eventId) {
+        // A team member goes back into their team (taking its current status)
+        // only if it still exists with room; joining never uses a unit.
+        await tx.$queryRaw`SELECT "id" FROM "Event" WHERE "id" = ${snapshot.data.eventId} FOR UPDATE`;
+        const team = await tx.team.findFirst({
+          where: { id: snapshot.data.teamId, eventId: snapshot.data.eventId },
+          select: { id: true, status: true, _count: { select: { members: true } }, event: { select: { teamMaxSize: true } } },
+        });
+        if (!team || team.status === RsvpStatus.REJECTED || team.event.teamMaxSize == null || team._count.members >= team.event.teamMaxSize) {
+          refusal = "This RSVP cannot be restored because its team no longer exists or is full.";
+          return null;
+        }
+        status = team.status;
+        teamId = team.id;
+      } else if (snapshot.data.status === RsvpStatus.CONFIRMED) {
         const target = snapshot.data.eventId ? { eventId: snapshot.data.eventId } : { eventInstanceId: snapshot.data.eventInstanceId! };
         if (!(await hasCapacityToRestoreConfirmedRsvp(tx, target))) return null;
       }
@@ -275,7 +326,8 @@ export async function restoreRsvpForUser(actorUserId: string | null, input: unkn
           userId: snapshot.data.userId,
           guestEmail: snapshot.data.guestEmail,
           guestName: snapshot.data.guestName,
-          status: snapshot.data.status,
+          status,
+          ...(teamId ? { teamId } : {}),
           attendeeKey: snapshot.data.attendeeKey,
           checkInToken: snapshot.data.checkInToken,
           checkedInAt: snapshot.data.checkedInAt ? new Date(snapshot.data.checkedInAt) : null,
@@ -292,7 +344,7 @@ export async function restoreRsvpForUser(actorUserId: string | null, input: unkn
       await tx.rsvpDeletionUndo.delete({ where: { id: undo.id } });
       return created;
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-    if (!restored) return { ok: false, error: "This RSVP cannot be restored because the event is now at capacity." };
+    if (!restored) return { ok: false, error: refusal };
     restoredId = restored.id;
   } catch (error) {
     if (typeof error === "object" && error !== null && "code" in error && (error as { code?: string }).code === "P2002") {

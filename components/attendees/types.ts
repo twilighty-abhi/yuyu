@@ -11,6 +11,8 @@ export type AttendeeRow = {
   user: { id: string; name: string | null; email: string | null } | null;
   checkedInAt: string | null;
   ticketUrl: string;
+  /** TEAM events: the registration's team (null when solo; absent elsewhere). */
+  team?: { id: string; name: string; isLeader: boolean } | null;
   answers?: { label: string; value: string }[];
   rawAnswers?: Array<{
     fieldId: string;

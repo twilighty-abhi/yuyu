@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { Award, ExternalLink, Globe, MapPin, Ticket } from "lucide-react";
+import { Award, ExternalLink, Globe, MapPin, Ticket, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Chip, DateBlock, EmptyState } from "@/components/ui/display";
 import { cn } from "@/lib/cn";
@@ -46,6 +46,12 @@ function RegistrationItem({ row, past }: { row: AccountRegistrationRow; past: bo
               <span className="truncate">{row.isOnline ? "Online" : row.location}</span>
             </p>
           ) : null}
+          {row.team ? (
+            <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-sm text-ink-muted">
+              <Users aria-hidden className="size-3.5 shrink-0" />
+              <span className="truncate">{row.team.isLeader ? `Leading ${row.team.name}` : `In team ${row.team.name}`}</span>
+            </p>
+          ) : null}
           <div className="mt-2 flex flex-wrap gap-1.5">
             <Chip tone={row.status.tone} size="sm">{row.status.label}</Chip>
             {row.isSeries ? <Chip tone="outline" size="sm">Series</Chip> : null}
@@ -60,6 +66,14 @@ function RegistrationItem({ row, past }: { row: AccountRegistrationRow; past: bo
             <Link href={row.ticketHref} prefetch={false} rel="noreferrer">
               <Ticket aria-hidden className="size-4" />
               View ticket
+            </Link>
+          </Button>
+        ) : null}
+        {row.team?.manageHref && !past ? (
+          <Button asChild variant="secondary" size="sm">
+            <Link href={row.team.manageHref} prefetch={false}>
+              <Users aria-hidden className="size-4" />
+              Manage team
             </Link>
           </Button>
         ) : null}

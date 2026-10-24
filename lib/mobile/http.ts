@@ -17,6 +17,7 @@ export type MobileErrorCode =
   | "CONFLICT"
   | "NEEDS_FORCE"
   | "RATE_LIMITED"
+  | "TEAM_REQUIRED"
   | "INTERNAL_ERROR";
 
 export const MOBILE_ERROR_STATUS: Record<MobileErrorCode, number> = {
@@ -29,6 +30,7 @@ export const MOBILE_ERROR_STATUS: Record<MobileErrorCode, number> = {
   CONFLICT: 409,
   NEEDS_FORCE: 409,
   RATE_LIMITED: 429,
+  TEAM_REQUIRED: 409,
   INTERNAL_ERROR: 500,
 };
 
@@ -42,6 +44,7 @@ const DEFAULT_MESSAGES: Record<MobileErrorCode, string> = {
   CONFLICT: "That change could not be made.",
   NEEDS_FORCE: "This guest needs a staff override to check in.",
   RATE_LIMITED: "Too many requests. Try again shortly.",
+  TEAM_REQUIRED: "This event registers teams only. Register on the event website to create or join a team.",
   INTERNAL_ERROR: "Something went wrong. Please try again.",
 };
 
@@ -75,7 +78,7 @@ export function mobileError(
 export const unauthenticated = () => mobileError("UNAUTHENTICATED");
 export const notFound = () => mobileError("NOT_FOUND");
 
-type FailedActionResult = { ok: false; error: string; fieldErrors?: Record<string, string[]>; needsForce?: boolean };
+type FailedActionResult = { ok: false; error: string; fieldErrors?: Record<string, string[]>; needsForce?: boolean; code?: "TEAM_REQUIRED" };
 
 /**
  * Map a Server Action failure (UI-safe message) to a mobile error code. The
@@ -84,6 +87,7 @@ type FailedActionResult = { ok: false; error: string; fieldErrors?: Record<strin
 export function classifyActionError(result: FailedActionResult): MobileErrorCode {
   const message = result.error;
   if (result.needsForce) return "NEEDS_FORCE";
+  if (result.code === "TEAM_REQUIRED") return "TEAM_REQUIRED";
   if (/^You must be signed in/i.test(message)) return "UNAUTHENTICATED";
   if (/^Too many/i.test(message)) return "RATE_LIMITED";
   if (result.fieldErrors) return "INVALID_REQUEST";

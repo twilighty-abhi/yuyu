@@ -29,6 +29,10 @@ export function toEventClientDto(event: Event): EventClientDto {
     registrationClosesAt: event.registrationClosesAt,
     registrationLeadMinutes: event.registrationLeadMinutes,
     shortCode: event.shortCode,
+    registrationMode: event.registrationMode,
+    teamMinSize: event.teamMinSize,
+    teamMaxSize: event.teamMaxSize,
+    soloPolicy: event.soloPolicy,
     createdAt: event.createdAt,
   };
 }

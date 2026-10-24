@@ -236,6 +236,7 @@ paths:
     post:
       tags: [Public]
       summary: Register for an event (same body and rules as POST /api/rsvp)
+      description: On a team event this always registers solo. When the event registers teams only, it fails with `TEAM_REQUIRED`.
       security: [{}, { bearerAuth: [] }]
       requestBody:
         required: true
@@ -255,7 +256,7 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/RsvpResultResponse" } } } }
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Error" }
-        "409": { $ref: "#/components/responses/Error" }
+        "409": { description: "`TEAM_REQUIRED` (a team event that registers teams only; register on the website) or `CONFLICT`.", content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } } }
         "429": { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/orgs/{orgSlug}/events:
@@ -810,7 +811,7 @@ components:
           additionalProperties: false
           required: [code, message]
           properties:
-            code: { type: string, enum: [INVALID_REQUEST, UNAUTHENTICATED, MFA_REQUIRED, EMAIL_VERIFICATION_REQUIRED, FORBIDDEN, NOT_FOUND, CONFLICT, NEEDS_FORCE, RATE_LIMITED, INTERNAL_ERROR] }
+            code: { type: string, enum: [INVALID_REQUEST, UNAUTHENTICATED, MFA_REQUIRED, EMAIL_VERIFICATION_REQUIRED, FORBIDDEN, NOT_FOUND, CONFLICT, NEEDS_FORCE, RATE_LIMITED, TEAM_REQUIRED, INTERNAL_ERROR] }
             message: { type: string, description: UI-safe text. }
             fieldErrors: { type: object, additionalProperties: { type: array, items: { type: string } } }
 

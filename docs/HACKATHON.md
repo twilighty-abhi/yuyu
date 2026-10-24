@@ -27,6 +27,14 @@ Builds on [team registration](TEAMS.md). This page is the design contract;
 Settings changes, disqualification, closing judging, and publishing or
 unpublishing results write audit events.
 
+Entrants only reach the submission form on a live event (`PUBLISHED`, website
+released). Submissions can be switched on while the event is a draft, so the
+settings card shows a warning whenever the switch is on and the event is a
+draft, offline (`HIDDEN`), or cancelled, and the save toast repeats it. On a
+draft or offline event an entrant's ticket shows "Your project" with a line
+saying submissions open once the event is published (or are unavailable while
+it is offline) instead of a form; the submission pages themselves stay 404.
+
 ## Submissions
 
 `Submission`: `eventId`; exactly one of `teamId` (unique) or `rsvpId` (unique),
@@ -48,6 +56,8 @@ Who may edit an entrant's submission (always re-scoped by event):
   regenerating it retires the old one.
 
 Entrants can save a draft, submit, edit while the window is open, and withdraw.
+The editor's window line says when submissions open or close, that they are
+closed, or, if the dates are missing, that the organisers haven't set them.
 A team that is disbanded or a solo RSVP that is cancelled has its submission
 deleted with it (cascade). An organiser's deletion of a team or registration
 keeps the submission and its judging record (scores, reviews, assignments,
@@ -64,7 +74,10 @@ is withdrawn (or disqualified); a `DISQUALIFIED` one refuses a join from the
 entrant side and is deleted by an organiser move; a `DRAFT` or `WITHDRAWN`
 one is deleted. The solo submission link is retired. `submission-received` email goes to the person
 who submitted. Organisers can disqualify (with a reason the entrant does not
-see) and reinstate.
+see) and reinstate. Disqualifying removes the project's award places; the
+dialog lists the awards it holds and, once results are published, warns that
+the live results page changes straight away. Reinstating asks first and says
+that lost awards are not given back (reassign them on the Awards tab).
 
 ## Judges
 
@@ -88,6 +101,11 @@ see) and reinstate.
   dedicated grant could delegate it.
 - Organisers choose **All judges see all submissions** or assign specific
   submissions to specific judges (`JudgeAssignment`).
+- The **Judges** tab lists **Invited judges** (`JUDGE` grants; its count is
+  theirs alone) with an empty state linking to Settings, then **Organisers who
+  can also judge** (owners and admins). Inside the Judging tab, the **Score**
+  view speaks to organisers as organisers: an empty rubric links to the rubric
+  editor on Setup, and "not started" says to open judging there.
 - **Conflict of interest:** a judge whose own account owns an RSVP on that
   entrant is never shown that submission and cannot score it (checked
   server-side).
@@ -118,7 +136,13 @@ see) and reinstate.
   the ranked score table. Only `SUBMITTED` submissions can win.
 - Organiser **Results** view: ranked table (score, judges counted, per-criterion
   averages), judging progress per judge, and CSV export of scores
-  (`/api/exports/events/{eventId}/judging`, owners and admins only).
+  (`/api/exports/events/{eventId}/judging`, owners and admins only). The CSV's
+  review times are ISO 8601 in the event timezone with an explicit offset
+  (`2026-10-25T14:30:00+05:30`), and the column header names the zone
+  (`Review submitted (Asia/Kolkata)`). Until results are published, the
+  publish card's hint follows the judging status: open judging first (not
+  started), close judging to finalise the scores (open), or pick winners and
+  publish (closed).
 - **Publishing results** sets `resultsPublishedAt`, shows
   `/{orgSlug}/{eventSlug}/results` (awards, winners' project titles, team or
   entrant display names, and links), and queues one `results-published` email
@@ -150,8 +174,15 @@ see) and reinstate.
   restoring the project, judging record, and custom check-in list records,
   with older snapshot formats still restoring; a `JUDGE`-only collaborator
   refused by registration, check-in list, email draft, webhook, and attendee
-  export surfaces.
+  export surfaces; CSV review times in the event timezone with an offset.
 - Unit tests: `tests/unit/event-capabilities.test.ts` (judging flags for every
   role and grant), validators (URLs `https:` only), the score formula, DTOs for
-  public results, gallery, and judge views (forbidden fields), and the outbox
-  payloads.
+  public results, gallery, and judge views (forbidden fields), the outbox
+  payloads, and `tests/unit/judging-panel-copy.test.ts` (not-live warnings,
+  publish hints, organiser versus judge copy, invited judges versus
+  organisers, disqualify and reinstate impact, entrant window lines, the
+  zoned CSV timestamp, and the active-tab scroll target).
+- End to end (`tests/e2e/judging.spec.ts`): the core journey, plus the draft
+  warning, state-accurate publish hints, the organiser rubric link, the judges
+  split, the disqualify warning after publication, and the active tab scrolled
+  into view on a phone.

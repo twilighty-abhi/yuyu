@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { JudgingStatus, SubmissionStatus } from "@prisma/client";
+import type { EventStatus, JudgingStatus, SubmissionStatus } from "@prisma/client";
 import {
   listEligibleJudges,
   listSubmissionsForOrganiser,
@@ -36,6 +36,8 @@ export type JudgingDashboardSettings = {
   projectGalleryPublic: boolean;
   resultsPublishedAt: string | null;
   timezone: string;
+  /** Entrants only reach the submission form on a PUBLISHED event; the panels warn otherwise. */
+  eventStatus: EventStatus;
 };
 
 export type JudgingDashboardCriterion = { id: string; name: string; description: string; weight: number; maxScore: number };
@@ -110,7 +112,7 @@ const iso = (value: Date | null) => (value ? value.toISOString() : null);
 
 type JudgingSetup = NonNullable<Awaited<ReturnType<typeof loadJudgingSetup>>>;
 
-function settingsView(settings: JudgingSetup["settings"]): JudgingDashboardSettings {
+function settingsView(settings: JudgingSetup["settings"], eventStatus: EventStatus): JudgingDashboardSettings {
   const timezone = safeTimeZone(settings.timezone);
   return {
     submissionsEnabled: settings.submissionsEnabled,
@@ -123,6 +125,7 @@ function settingsView(settings: JudgingSetup["settings"]): JudgingDashboardSetti
     projectGalleryPublic: settings.projectGalleryPublic,
     resultsPublishedAt: iso(settings.resultsPublishedAt),
     timezone,
+    eventStatus,
   };
 }
 
@@ -147,7 +150,7 @@ export async function loadJudgingSettingsCard(
   if (!organiser) return null;
   const setup = await loadJudgingSetup(organiser);
   if (!setup) return null;
-  return { scope: { organisationSlug: ctx.organisation.slug, eventId: ctx.event.id }, settings: settingsView(setup.settings) };
+  return { scope: { organisationSlug: ctx.organisation.slug, eventId: ctx.event.id }, settings: settingsView(setup.settings, ctx.event.status) };
 }
 
 /** Everything the organiser Judging tab renders. Null without permission or when the event is gone. */
@@ -181,7 +184,7 @@ export async function loadJudgingDashboard(ctx: EventDashboardContext): Promise<
 
   return {
     scope: { organisationSlug: ctx.organisation.slug, eventId: ctx.event.id },
-    settings: settingsView(setup.settings),
+    settings: settingsView(setup.settings, ctx.event.status),
     criteria: setup.criteria.map((criterion) => ({ ...criterion })),
     awards: setup.awards.map((award) => ({ ...award, winners: award.winners.map((winner) => ({ ...winner })) })),
     counts: setup.counts,

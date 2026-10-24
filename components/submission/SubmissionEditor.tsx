@@ -13,13 +13,15 @@ import {
   withdrawSubmissionAction,
   type SubmissionRef,
 } from "@/app/actions/submissions";
+import { windowText, type SubmissionWindowPhase } from "./submissionWindow";
+
+export type { SubmissionWindowPhase };
 
 // Mirrors SUBMISSION_*_MAX_LENGTH in lib/validators.ts (the server enforces them).
 const TITLE_MAX = 120;
 const SUMMARY_MAX = 4000;
 const URL_MAX = 500;
 
-export type SubmissionWindowPhase = "open" | "upcoming" | "closed" | "unscheduled";
 type SubmissionStatus = "DRAFT" | "SUBMITTED" | "WITHDRAWN" | "DISQUALIFIED";
 
 /** Serializable view built on the server: labels only, no ids, tokens, or reasons. */
@@ -57,19 +59,6 @@ function statusChip(status: SubmissionStatus): { label: string; tone: ChipTone }
     case "DISQUALIFIED":
       // Shown neutrally; the organisers' reason is never sent to entrants.
       return { label: "Not in judging", tone: "neutral" };
-  }
-}
-
-function windowText(view: SubmissionEditorView): string {
-  switch (view.phase) {
-    case "open":
-      return view.closesLabel ? `Submissions close ${view.closesLabel}.` : "Submissions are open.";
-    case "upcoming":
-      return view.opensLabel ? `Submissions open ${view.opensLabel}.` : "Submissions haven't opened yet.";
-    case "closed":
-      return "Submissions are closed.";
-    case "unscheduled":
-      return "Submissions aren't open right now.";
   }
 }
 

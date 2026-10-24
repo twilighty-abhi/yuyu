@@ -796,9 +796,24 @@ describe.sequential("hackathon judging integration", () => {
 
     // The CSV rows carry the result and per-judge scores, never comments or emails.
     const csv = await buildJudgingExportRows(ctx);
-    expect(csv?.[0]).toEqual(["Rank", "Project", "Entrant", "Status", "Result score", "Judges counted", "Judge", "Review submitted", "Counted in score", "Design (/5, weight 2)", "Impact (/10, weight 1)"]);
+    expect(csv?.[0]).toEqual(["Rank", "Project", "Entrant", "Status", "Result score", "Judges counted", "Judge", "Review submitted (UTC)", "Counted in score", "Design (/5, weight 2)", "Impact (/10, weight 1)"]);
     expect(csv?.filter((line) => line[4] === "76.7")).toHaveLength(3);
     expect(JSON.stringify(csv)).not.toMatch(/Private note|@example\.test/);
+    // Review times use the event's clock, as ISO 8601 with the offset, like the dashboard.
+    expect(csv?.slice(1).filter((line) => line[7]).every((line) => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+00:00$/.test(line[7]!))).toBe(true);
+    await prisma.event.update({ where: { id: event.id }, data: { timezone: "Asia/Kolkata" } });
+    const zoned = await buildJudgingExportRows(ctx);
+    expect(zoned?.[0]?.[7]).toBe("Review submitted (Asia/Kolkata)");
+    const stamped = zoned?.slice(1).map((line) => line[7]).filter(Boolean) ?? [];
+    expect(stamped.length).toBeGreaterThan(0);
+    for (const stamp of stamped) {
+      expect(stamp).toMatch(/\+05:30$/);
+      // Same instant as the stored review time.
+      expect(Number.isNaN(new Date(stamp!).getTime())).toBe(false);
+    }
+    const stored = await prisma.judgeReview.findMany({ where: { submission: { eventId: event.id }, submittedAt: { not: null } }, select: { submittedAt: true } });
+    const instants = new Set(stored.map((review) => Math.floor(review.submittedAt!.getTime() / 1000)));
+    expect(stamped.every((stamp) => instants.has(new Date(stamp!).getTime() / 1000))).toBe(true);
 
     // A disqualified project drops out of the ranking; the rest re-rank.
     expect(await disqualifySubmission(ctx, { submissionId: s2, reason: "Rules" })).toMatchObject({ ok: true });

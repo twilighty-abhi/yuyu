@@ -18,10 +18,13 @@ import {
   judgeProgressSummary,
   judgingStatusNotice,
   linkLabel,
+  noRubricNotice,
   scoreMapFrom,
   scoresToSave,
   type ScoreMap,
+  type WorkspaceAudience,
 } from "./judgeProgress";
+import { OpenTabButton } from "../EventDashboardTabs";
 
 const COMMENT_MAX_LENGTH = 2000;
 
@@ -38,7 +41,10 @@ export function JudgeWorkspaceClient({
   judgingStatus,
   criteria,
   submissions,
+  audience = "judge",
 }: Scope & {
+  /** Organisers (owners/admins in the Judging tab) get organiser copy and a link to the rubric editor. */
+  audience?: WorkspaceAudience;
   judgingStatus: JudgingStatus;
   criteria: JudgingCriterionDto[];
   submissions: JudgeSubmissionDto[];
@@ -56,7 +62,8 @@ export function JudgeWorkspaceClient({
     if (detail || !returnFocusId) return;
     listRef.current?.querySelector<HTMLButtonElement>(`button[data-submission-id="${CSS.escape(returnFocusId)}"]`)?.focus();
   }, [detail, returnFocusId]);
-  const notice = judgingStatusNotice(judgingStatus);
+  const notice = judgingStatusNotice(judgingStatus, audience);
+  const noRubric = noRubricNotice(audience);
   const summary = judgeProgressSummary(submissions);
 
   function open(submissionId: string) {
@@ -89,6 +96,7 @@ export function JudgeWorkspaceClient({
         scope={{ organisationSlug, eventId }}
         detail={detail}
         onBack={close}
+        audience={audience}
         onSaved={(next) => setDetail(next)}
       />
     );
@@ -105,7 +113,19 @@ export function JudgeWorkspaceClient({
 
       {notice ? <Callout tone={judgingStatus === "CLOSED" ? "info" : "warning"} title={notice.title}>{notice.body}</Callout> : null}
       {criteria.length === 0 ? (
-        <Callout tone="warning" title="No rubric yet">The organisers have not added judging criteria, so there is nothing to score yet.</Callout>
+        <Callout
+          tone="warning"
+          title={noRubric.title}
+          action={
+            audience === "organiser" ? (
+              <OpenTabButton tab="judging" sub="judging-setup" className="inline-flex min-h-9 items-center text-sm font-semibold text-ink underline underline-offset-2 hover:text-ink-secondary">
+                Edit the rubric
+              </OpenTabButton>
+            ) : undefined
+          }
+        >
+          {noRubric.body}
+        </Callout>
       ) : null}
 
       {submissions.length === 0 ? (
@@ -166,10 +186,12 @@ function ScoringView({
   detail,
   onBack,
   onSaved,
+  audience,
 }: {
   scope: Scope;
   detail: JudgeSubmissionDetailDto;
   onBack: () => void;
+  audience: WorkspaceAudience;
   onSaved: (next: JudgeSubmissionDetailDto) => void;
 }) {
   const router = useRouter();
@@ -186,7 +208,8 @@ function ScoringView({
   }, []);
   const { submission, criteria, judgingStatus } = detail;
   const readOnly = judgingStatus !== "OPEN";
-  const notice = judgingStatusNotice(judgingStatus);
+  const notice = judgingStatusNotice(judgingStatus, audience);
+  const noRubric = noRubricNotice(audience);
   const submitted = Boolean(detail.myReview?.submittedAt);
   const complete = isFullyScored(scores, criteria);
   const links = [
@@ -275,7 +298,7 @@ function ScoringView({
         <fieldset disabled={readOnly || pending} className="flex flex-col gap-4">
           <legend className="mb-1 text-title text-ink">Rubric</legend>
           {criteria.length === 0 ? (
-            <p className="text-body-ui text-ink-muted">The organisers have not added judging criteria yet.</p>
+            <p className="text-body-ui text-ink-muted">{noRubric.body}</p>
           ) : (
             criteria.map((criterion) => (
               <CriterionInput

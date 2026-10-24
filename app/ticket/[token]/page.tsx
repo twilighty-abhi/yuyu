@@ -273,6 +273,14 @@ export default async function TicketPage({ params }: Props) {
             ? { kind: "email" }
             : { kind: "not-confirmed" };
     submissionSection = <TicketSubmissionCard ticketToken={rsvp.checkInToken} mode={mode} />;
+  } else if (
+    rsvp.event?.submissionsEnabled &&
+    (rsvp.event.status === "DRAFT" || rsvp.event.status === "HIDDEN") &&
+    rsvp.status !== "REJECTED"
+  ) {
+    // Submissions are on but the event isn't live: say why there is no form
+    // yet instead of nothing (the submission pages themselves stay 404).
+    submissionSection = <TicketSubmissionCard ticketToken={rsvp.checkInToken} mode={{ kind: "not-live", offline: rsvp.event.status === "HIDDEN" }} />;
   }
 
   const ticketMain = (

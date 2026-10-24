@@ -34,6 +34,7 @@ export async function JudgeWorkspace({ ctx }: { ctx: EventDashboardContext }) {
     <JudgeWorkspaceClient
       organisationSlug={ctx.organisation.slug}
       eventId={ctx.event.id}
+      audience={ctx.permissions.canManageJudging ? "organiser" : "judge"}
       judgingStatus={workspace.judgingStatus}
       criteria={workspace.criteria}
       submissions={workspace.submissions}

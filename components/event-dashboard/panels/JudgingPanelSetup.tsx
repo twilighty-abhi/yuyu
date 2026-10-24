@@ -11,6 +11,8 @@ import { Field, Input } from "@/components/ui/field";
 import { formatDayTime, formatTimeZoneName } from "@/lib/format/datetime";
 import { zonedInputToIso } from "@/lib/timeZone";
 import type { JudgingDashboardSettings } from "@/lib/eventDashboard/judging";
+import { OpenTabButton } from "../EventDashboardTabs";
+import { eventNotLiveWarning } from "./judgingCopy";
 import {
   JUDGING_STATUS_LABELS,
   JUDGING_STATUS_TONES,
@@ -55,9 +57,14 @@ export function JudgingSettingsCard({ scope, settings, now }: { scope: JudgingSc
   return <SettingsCard scope={scope} settings={settings} now={now} inSettingsTab />;
 }
 
-/** Toast after saving. From the Settings tab, turning submissions on moves this card to the new Judging tab, so say where it went. */
-export function judgingSettingsSavedMessage(enabled: boolean, inSettingsTab: boolean) {
-  return inSettingsTab && enabled ? "Project submissions are on. Their settings, the rubric and judging are now on the Judging tab." : "Judging settings saved.";
+/**
+ * Toast after saving. From the Settings tab, turning submissions on moves this
+ * card to the new Judging tab, so say where it went; on an event that isn't
+ * live, say that entrants can't submit yet.
+ */
+export function judgingSettingsSavedMessage(enabled: boolean, inSettingsTab: boolean, eventLive = true) {
+  const saved = inSettingsTab && enabled ? "Project submissions are on. Their settings, the rubric and judging are now on the Judging tab." : "Judging settings saved.";
+  return enabled && !eventLive ? `${saved} Entrants can't submit until the event is published.` : saved;
 }
 
 function SettingsCard({ scope, settings, now, inSettingsTab = false }: { scope: JudgingScope; settings: JudgingDashboardSettings; now: string; inSettingsTab?: boolean }) {
@@ -69,6 +76,8 @@ function SettingsCard({ scope, settings, now, inSettingsTab = false }: { scope: 
   const [galleryPublic, setGalleryPublic] = useState(settings.projectGalleryPublic);
   const [errors, setErrors] = useState<Record<string, string[]> | undefined>();
   const zone = formatTimeZoneName(settings.opensAt ?? now, settings.timezone);
+  // Shown as soon as the switch is on, before saving, so nobody opens submissions on a draft unawares.
+  const notLive = enabled ? eventNotLiveWarning(settings.eventStatus) : null;
   // The switch runs the whole feature (judging, results, gallery), so it stays
   // on once judging has started; the server refuses turning it off too.
   const lockedOn = settings.submissionsEnabled && (settings.judgingStatus !== "NOT_STARTED" || Boolean(settings.resultsPublishedAt));
@@ -97,7 +106,7 @@ function SettingsCard({ scope, settings, now, inSettingsTab = false }: { scope: 
             projectGalleryPublic: galleryPublic,
           },
         }),
-      judgingSettingsSavedMessage(enabled, inSettingsTab),
+      judgingSettingsSavedMessage(enabled, inSettingsTab, settings.eventStatus === "PUBLISHED"),
       (result) => setErrors(result.ok ? undefined : result.fieldErrors),
     );
   }
@@ -126,6 +135,21 @@ function SettingsCard({ scope, settings, now, inSettingsTab = false }: { scope: 
           disabled={lockedOn}
           onCheckedChange={setEnabled}
         />
+        {notLive ? (
+          <Callout
+            tone="warning"
+            title={notLive.title}
+            action={
+              settings.eventStatus === "DRAFT" ? (
+                <OpenTabButton tab="overview" className="inline-flex min-h-9 items-center text-sm font-semibold text-ink underline underline-offset-2 hover:text-ink-secondary">
+                  Go to Overview
+                </OpenTabButton>
+              ) : undefined
+            }
+          >
+            {notLive.body}
+          </Callout>
+        ) : null}
         <div className="grid gap-3.5 sm:grid-cols-2">
           <Field label={`Opens (${zone})`} optional={!enabled} error={fieldError(errors, "submissionsOpenAt")}>
             <Input type="datetime-local" value={opensAt} onChange={(event) => setOpensAt(event.target.value)} />

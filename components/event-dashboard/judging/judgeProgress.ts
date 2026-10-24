@@ -24,13 +24,25 @@ export function judgeProgressSummary(items: readonly JudgeProgressItem[]) {
   return { total: items.length, submitted, started, remaining: items.length - submitted };
 }
 
+/** Who is looking at the workspace: an organiser (owner/admin, inside the Judging tab) or a judge. */
+export type WorkspaceAudience = "organiser" | "judge";
+
 /** Banner text for the judging status; null when scoring is open. */
-export function judgingStatusNotice(status: JudgingStatus): { title: string; body: string } | null {
+export function judgingStatusNotice(status: JudgingStatus, audience: WorkspaceAudience = "judge"): { title: string; body: string } | null {
   if (status === "OPEN") return null;
   if (status === "NOT_STARTED") {
-    return { title: "Judging has not started", body: "You can read the submissions now. Scoring opens when the organisers start judging." };
+    return audience === "organiser"
+      ? { title: "Judging has not started", body: "You can read the submissions now. Open judging on the Setup tab when you're ready for judges to score." }
+      : { title: "Judging has not started", body: "You can read the submissions now. Scoring opens when the organisers start judging." };
   }
   return { title: "Judging is closed", body: "Scores and reviews are final and can no longer be changed." };
+}
+
+/** Callout when the rubric is empty: organisers are told to add criteria, judges that there is nothing to score yet. */
+export function noRubricNotice(audience: WorkspaceAudience): { title: string; body: string } {
+  return audience === "organiser"
+    ? { title: "No rubric yet", body: "Add at least one judging criterion to the rubric before you open judging. Judges score each project against it." }
+    : { title: "No rubric yet", body: "The organisers have not added judging criteria, so there is nothing to score yet." };
 }
 
 export type ScoreMap = Record<string, number | undefined>;

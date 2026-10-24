@@ -280,7 +280,7 @@ Rules: destructive actions are never `primary`; destructive confirmations end wi
 
 ### 4.4 Tabs & navigation
 
-- Tab rows that overflow scroll sideways and show a faded arrow on each side with hidden tabs; clicking it scrolls the row (`components/ui/tabs.tsx`).
+- Tab rows that overflow scroll sideways and show a faded arrow on each side with hidden tabs; clicking it scrolls the row (`components/ui/tabs.tsx`). The active tab (underline tabs, link tabs and the dashboard's pill sub-tabs) is scrolled into view inside its row, never the page: instantly on load, smoothly when it changes, instantly under reduced motion (`useActiveTabIntoView`).
 
 - **Underline tabs** (page sub-sections): 2px bottom border on active (ink in app, accent on event page), muted text inactive, horizontal scroll on overflow. Max 8 tabs.
 - **Section nav** on event page: About · Schedule · Speakers · Venue · FAQ, anchors.

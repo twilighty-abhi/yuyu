@@ -17,7 +17,9 @@ export type TicketSubmissionMode =
   /** An account-owned registration viewed while signed out or as someone else. */
   | { kind: "sign-in" }
   /** Not confirmed yet. */
-  | { kind: "not-confirmed" };
+  | { kind: "not-confirmed" }
+  /** Submissions are on but the event is a draft (or offline): no form until it is published. */
+  | { kind: "not-live"; offline: boolean };
 
 /**
  * The ticket page's "Your project" card (docs/HACKATHON.md). The ticket token
@@ -82,6 +84,15 @@ export function TicketSubmissionCard({ ticketToken, mode }: { ticketToken: strin
       break;
     case "not-confirmed":
       body = <p className="text-body-ui text-ink-muted">You can submit a project once your place is confirmed.</p>;
+      break;
+    case "not-live":
+      body = (
+        <p className="text-body-ui text-ink-muted">
+          {mode.offline
+            ? "Project submissions are unavailable while the event page is offline."
+            : "Project submissions open once the organisers publish the event. Check back here then."}
+        </p>
+      );
       break;
   }
 

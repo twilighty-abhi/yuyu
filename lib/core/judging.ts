@@ -19,6 +19,7 @@ import { asResultsPublishedPayload, enqueueResultsPublished, enqueueSubmissionLi
 import { generateSubmissionLinkToken, hashSubmissionLinkToken, isSubmissionTokenShape } from "@/lib/submissionToken";
 import { computeJudgingResults, type CriterionAverage } from "@/lib/judgingScore";
 import type { JudgeContext, JudgingOrganiserContext } from "@/lib/judgingAccess";
+import { safeTimeZone, zonedIsoWithOffset } from "@/lib/timeZone";
 import {
   entrantDisplayName,
   entrantSubmissionView,
@@ -1338,8 +1339,12 @@ export async function buildJudgingExportRows(ctx: JudgingOrganiserContext): Prom
     select: { submissionId: true, judgeUserId: true, submittedAt: true, judge: { select: { name: true } } },
     orderBy: { createdAt: "asc" },
   });
+  const event = await prisma.event.findFirst({ where: { id: ctx.eventId, organisationId: ctx.organisationId }, select: { timezone: true } });
+  if (!event) return null;
+  // Same clock as the dashboard: ISO 8601 in the event timezone, with its offset.
+  const timeZone = safeTimeZone(event.timezone);
   const counted = new Set(results.countedReviewKeys);
-  const header = ["Rank", "Project", "Entrant", "Status", "Result score", "Judges counted", "Judge", "Review submitted", "Counted in score", ...results.criteria.map((criterion) => `${criterion.name} (/${criterion.maxScore}, weight ${criterion.weight})`)];
+  const header = ["Rank", "Project", "Entrant", "Status", "Result score", "Judges counted", "Judge", `Review submitted (${timeZone})`, "Counted in score", ...results.criteria.map((criterion) => `${criterion.name} (/${criterion.maxScore}, weight ${criterion.weight})`)];
   const rows: string[][] = [header];
   for (const row of results.rows) {
     const rowReviews = reviews.filter((review) => review.submissionId === row.submissionId);
@@ -1353,7 +1358,7 @@ export async function buildJudgingExportRows(ctx: JudgingOrganiserContext): Prom
       rows.push([
         ...base,
         review.judge.name?.trim() || "Judge",
-        review.submittedAt ? review.submittedAt.toISOString() : "",
+        review.submittedAt ? zonedIsoWithOffset(review.submittedAt, timeZone) : "",
         counted.has(`${row.submissionId}\u0000${review.judgeUserId}`) ? "Yes" : "No",
         ...results.criteria.map((criterion) => judgeScores.get(criterion.id)?.toString() ?? ""),
       ]);

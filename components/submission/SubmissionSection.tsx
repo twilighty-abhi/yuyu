@@ -4,16 +4,8 @@ import { loadEntrantSubmission, type EntrantAuth } from "@/lib/core/judging";
 import { formatDayTime, formatTimeZoneName } from "@/lib/format/datetime";
 import { safeTimeZone } from "@/lib/timeZone";
 import type { SubmissionRef } from "@/app/actions/submissions";
-import { SubmissionEditor, type SubmissionEditorView, type SubmissionWindowPhase } from "./SubmissionEditor";
-
-function windowPhase(window: { opensAt: Date | null; closesAt: Date | null; isOpen: boolean }, now: Date): SubmissionWindowPhase {
-  if (window.isOpen) return "open";
-  if (!window.opensAt || !window.closesAt) return "unscheduled";
-  if (now < window.opensAt) return "upcoming";
-  if (now >= window.closesAt) return "closed";
-  // Inside the dates but not open: the event itself is not published.
-  return "unscheduled";
-}
+import { SubmissionEditor, type SubmissionEditorView } from "./SubmissionEditor";
+import { windowPhase } from "./submissionWindow";
 
 /**
  * Loads the entrant's own submission through the core (which re-checks the

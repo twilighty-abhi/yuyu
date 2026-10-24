@@ -83,6 +83,8 @@ export async function JudgingPanel({ ctx }: { ctx: EventDashboardContext }) {
               criteria={data.criteria}
               judgesSeeAll={settings.judgesSeeAll}
               timezone={settings.timezone}
+              awards={data.awards}
+              resultsPublished={Boolean(settings.resultsPublishedAt)}
               limits={LIMITS}
             />
           ),
@@ -90,7 +92,8 @@ export async function JudgingPanel({ ctx }: { ctx: EventDashboardContext }) {
         {
           value: "judging-judges",
           label: "Judges",
-          count: data.judges.length,
+          // Invited judges only: organisers can always judge, so counting them would never show 0.
+          count: data.judges.filter((judge) => judge.kind === "judge").length,
           content: <JudgingPanelJudges judges={data.judges} judgesSeeAll={settings.judgesSeeAll} />,
         },
         {

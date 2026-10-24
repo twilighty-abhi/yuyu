@@ -9,11 +9,13 @@ import { Button, IconButton } from "@/components/ui/button";
 import { CheckboxField, FilterChip } from "@/components/ui/choice";
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader } from "@/components/ui/dialog";
 import { Callout, Chip, EmptyState } from "@/components/ui/display";
+import { ConfirmationDialog } from "@/components/feedback/ConfirmationDialog";
 import { Field, Input, SearchInput } from "@/components/ui/field";
 import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { Spinner } from "@/components/ui/spinner";
 import { formatDayTime } from "@/lib/format/datetime";
-import type { JudgingDashboardCriterion, JudgingDashboardJudge, JudgingDashboardSubmission } from "@/lib/eventDashboard/judging";
+import type { JudgingDashboardAward, JudgingDashboardCriterion, JudgingDashboardJudge, JudgingDashboardSubmission } from "@/lib/eventDashboard/judging";
+import { awardsHeldBy, disqualifyImpact, reinstateImpact } from "./judgingCopy";
 import {
   SUBMISSION_STATUS_LABELS,
   SUBMISSION_STATUS_TONES,
@@ -45,6 +47,8 @@ export function JudgingPanelSubmissions({
   criteria,
   judgesSeeAll,
   timezone,
+  awards,
+  resultsPublished,
   limits,
 }: {
   scope: JudgingScope;
@@ -53,6 +57,10 @@ export function JudgingPanelSubmissions({
   criteria: JudgingDashboardCriterion[];
   judgesSeeAll: boolean;
   timezone: string;
+  /** Award winners, to say which awards a disqualification takes away. */
+  awards: JudgingDashboardAward[];
+  /** Once results are published, disqualifying changes the live results page. */
+  resultsPublished: boolean;
   limits: JudgingLimits;
 }) {
   const { run, busy } = useJudgingAction();
@@ -61,6 +69,7 @@ export function JudgingPanelSubmissions({
   const [viewing, setViewing] = useState<JudgingDashboardSubmission | null>(null);
   const [assigningId, setAssigningId] = useState<string | null>(null);
   const [disqualifying, setDisqualifying] = useState<JudgingDashboardSubmission | null>(null);
+  const [reinstating, setReinstating] = useState<JudgingDashboardSubmission | null>(null);
   const [reviewing, setReviewing] = useState<JudgingDashboardSubmission | null>(null);
   const [reviews, setReviews] = useState<{ id: string; rows: SubmissionReviewView[] } | null>(null);
   const [, startLoading] = useTransition();
@@ -177,8 +186,8 @@ export function JudgingPanelSubmissions({
                       </>
                     ) : null}
                     {submission.status === "DISQUALIFIED" ? (
-                      <MenuItem icon={<RotateCcw />} onSelect={() => run(submission.id, () => reinstateProject({ ...scope, submissionId: submission.id }), "Project reinstated.")}>
-                        Reinstate
+                      <MenuItem icon={<RotateCcw />} onSelect={() => setReinstating(submission)}>
+                        Reinstate…
                       </MenuItem>
                     ) : null}
                   </MenuContent>
@@ -191,7 +200,27 @@ export function JudgingPanelSubmissions({
 
       <ProjectDialog submission={viewing} onClose={() => setViewing(null)} />
       <AssignDialog scope={scope} submission={assigning} judges={judges} onClose={() => setAssigningId(null)} />
-      <DisqualifyDialog scope={scope} submission={disqualifying} maxLength={limits.disqualifyReason} onClose={() => setDisqualifying(null)} />
+      <DisqualifyDialog
+        scope={scope}
+        submission={disqualifying}
+        awardsHeld={disqualifying ? awardsHeldBy(awards, disqualifying.id) : []}
+        resultsPublished={resultsPublished}
+        maxLength={limits.disqualifyReason}
+        onClose={() => setDisqualifying(null)}
+      />
+      <ConfirmationDialog
+        open={reinstating !== null}
+        title="Reinstate this project?"
+        message={reinstating ? reinstateImpact({ title: reinstating.title, resultsPublished }) : ""}
+        confirmLabel="Reinstate"
+        destructive={false}
+        loading={reinstating !== null && busy === reinstating.id}
+        onConfirm={() => {
+          if (!reinstating) return;
+          run(reinstating.id, () => reinstateProject({ ...scope, submissionId: reinstating.id }), "Project reinstated.", () => setReinstating(null));
+        }}
+        onCancel={() => setReinstating(null)}
+      />
       <ReviewsDialog
         submission={reviewing}
         reviews={reviewing && reviews?.id === reviewing.id ? reviews.rows : null}
@@ -286,7 +315,21 @@ function AssignDialog({
   );
 }
 
-function DisqualifyDialog({ scope, submission, maxLength, onClose }: { scope: JudgingScope; submission: JudgingDashboardSubmission | null; maxLength: number; onClose: () => void }) {
+function DisqualifyDialog({
+  scope,
+  submission,
+  awardsHeld,
+  resultsPublished,
+  maxLength,
+  onClose,
+}: {
+  scope: JudgingScope;
+  submission: JudgingDashboardSubmission | null;
+  awardsHeld: string[];
+  resultsPublished: boolean;
+  maxLength: number;
+  onClose: () => void;
+}) {
   const { run, busy } = useJudgingAction();
   const [reason, setReason] = useState("");
   const [errors, setErrors] = useState<Record<string, string[]> | undefined>();
@@ -298,7 +341,10 @@ function DisqualifyDialog({ scope, submission, maxLength, onClose }: { scope: Ju
   return (
     <Dialog open={submission !== null} onOpenChange={(next) => (!next && busy === null ? close() : undefined)}>
       <DialogContent role="alertdialog" size="sm">
-        <DialogHeader title="Disqualify this project?" description={submission ? `"${submission.title}" stops being judged and loses any award it holds. You can reinstate it later.` : undefined} />
+        <DialogHeader
+          title="Disqualify this project?"
+          description={submission ? disqualifyImpact({ title: submission.title, awardsHeld, resultsPublished }) : undefined}
+        />
         <form
           onSubmit={(event) => {
             event.preventDefault();
@@ -309,7 +355,16 @@ function DisqualifyDialog({ scope, submission, maxLength, onClose }: { scope: Ju
             });
           }}
         >
-          <DialogBody>
+          <DialogBody className="flex flex-col gap-4">
+            {resultsPublished && awardsHeld.length > 0 ? (
+              <Callout tone="warning" title="The live results page will change">
+                <ul className="list-disc pl-5">
+                  {awardsHeld.map((award) => (
+                    <li key={award}>{award}</li>
+                  ))}
+                </ul>
+              </Callout>
+            ) : null}
             <Field label="Reason" helperText="Only organisers see this. The entrant isn't told the reason." error={fieldError(errors, "reason")}>
               <Input value={reason} maxLength={maxLength} required onChange={(event) => setReason(event.target.value)} />
             </Field>

@@ -66,13 +66,23 @@ export function weekOverWeek(current: number, previous: number, period: { previo
 
 export type FillStatus = { label: string; tone: "success" | "warning" | "neutral" };
 
-/** The chip on an event row: approvals first, then full/waitlist, then how many are going. */
-export function eventFillStatus(counts: { confirmed: number; waitlisted: number; pending: number }, capacity: number | null): FillStatus {
+/**
+ * The chip on an event row: approvals first, then full/waitlist, then how many are going.
+ * `units` is for TEAM events, whose capacity counts registration units (teams
+ * plus solo registrants) rather than people: `used` units against capacity,
+ * labelled with `noun` ("teams" or "places").
+ */
+export function eventFillStatus(
+  counts: { confirmed: number; waitlisted: number; pending: number },
+  capacity: number | null,
+  units?: { used: number; noun: string },
+): FillStatus {
   if (counts.pending > 0) return { label: `${counts.pending} to approve`, tone: "warning" };
-  if (capacity != null && counts.confirmed >= capacity) {
+  const used = units?.used ?? counts.confirmed;
+  if (capacity != null && used >= capacity) {
     return { label: counts.waitlisted > 0 ? `Full · ${counts.waitlisted} waiting` : "Full", tone: "warning" };
   }
-  if (capacity != null) return { label: `${counts.confirmed} / ${capacity} going`, tone: counts.confirmed > 0 ? "success" : "neutral" };
+  if (capacity != null) return { label: units ? `${used} / ${capacity} ${units.noun}` : `${used} / ${capacity} going`, tone: used > 0 ? "success" : "neutral" };
   return { label: `${counts.confirmed} going`, tone: counts.confirmed > 0 ? "success" : "neutral" };
 }
 

@@ -44,6 +44,13 @@ mutations serialise with every other capacity change. A shared helper
 wherever the event is in `TEAM` mode; `INDIVIDUAL` events keep the current
 query untouched.
 
+Displays follow the same rule. The public registration card shows places taken
+in units. Organiser screens (event header, analytics, overview, dashboard home
+and organisation event lists, super-admin activity) show units against capacity
+("3 / 3 teams & solo places", or "teams" when solo registration is off) and
+the number of people going separately. The mobile organiser `EventCounts`
+carries `capacityUsed` for the same purpose (docs/MOBILE_API.md).
+
 ## Team status
 
 `Team.status` reuses `RsvpStatus` (`CONFIRMED`, `WAITLISTED`,

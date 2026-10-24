@@ -275,8 +275,12 @@ does, but `manageRegistrations` stays admin-only in this contract version (see
 [Permissions](PERMISSIONS.md#mobile-api)). The flags only hide controls; every
 mutation is re-checked server-side.
 
-`EventCounts = { "confirmed", "waitlisted", "pending", "checkedIn", "capacity|null" }`,
+`EventCounts = { "confirmed", "waitlisted", "pending", "checkedIn", "capacity|null", "capacityUsed" }`,
 returned only when the caller has `manageRegistrations` or `checkIn`, else `null`.
+`capacityUsed` is what `capacity` is compared with: it equals `confirmed` on
+individual events, and on team events counts confirmed teams plus confirmed
+solo registrants (`confirmed` stays a count of people). Show
+`capacityUsed / capacity` for fill, not `confirmed / capacity`.
 
 ### `GET /orgs/:orgSlug/events?filter=upcoming|past|all`
 

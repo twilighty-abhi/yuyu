@@ -1111,13 +1111,19 @@ components:
     EventCounts:
       type: object
       additionalProperties: false
-      required: [confirmed, waitlisted, pending, checkedIn, capacity]
+      required: [confirmed, waitlisted, pending, checkedIn, capacity, capacityUsed]
       properties:
         confirmed: { type: integer }
         waitlisted: { type: integer }
         pending: { type: integer }
         checkedIn: { type: integer }
         capacity: { type: [integer, "null"] }
+        capacityUsed:
+          type: integer
+          description: >-
+            What capacity is compared with. Equals confirmed on individual
+            events; on team events it counts confirmed teams plus confirmed
+            solo registrants, while confirmed stays a count of people.
 
     OrgEvents:
       type: object

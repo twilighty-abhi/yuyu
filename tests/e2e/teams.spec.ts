@@ -560,3 +560,62 @@ test("a leader's team page lists invited seekers accurately and a declined team 
   expect(errors).toEqual([]);
   await context.close();
 });
+
+test("dashboards show team units against capacity and people separately; individual events are unchanged", async ({ browser }) => {
+  // Three confirmed teams of two fill a capacity of 3 units with 6 people.
+  const unitsEvent = await createTeamEvent({ slug: `units-${suffix}`, title: `Units Night ${suffix}`, privacyType: EventPrivacyType.PUBLIC });
+  await prisma.event.update({ where: { id: unitsEvent.id }, data: { registrationMode: RegistrationMode.TEAM, teamMaxSize: 4, capacity: 3 } });
+  for (const index of [1, 2, 3]) {
+    const name = `Units Team ${index} ${suffix}`;
+    const team = await prisma.team.create({
+      data: { eventId: unitsEvent.id, name, nameKey: name.toLowerCase(), status: RsvpStatus.CONFIRMED, joinToken: `units-join-${index}-${suffix}`, manageTokenHash: `units-manage-${index}-${suffix}` },
+    });
+    for (const person of ["a", "b"]) {
+      const email = `units-${index}${person}-${suffix}@example.test`;
+      await prisma.rSVP.create({ data: { eventId: unitsEvent.id, guestEmail: email, guestName: `Units ${index}${person}`, attendeeKey: `guest:${email}`, status: RsvpStatus.CONFIRMED, teamId: team.id } });
+    }
+  }
+  // An individual event keeps the plain "Going" people count.
+  const individualSlug = `solo-night-${suffix}`;
+  const individual = await createTeamEvent({ slug: individualSlug, title: `Solo Night ${suffix}`, privacyType: EventPrivacyType.PUBLIC });
+  await prisma.event.update({ where: { id: individual.id }, data: { capacity: 5 } });
+  for (const person of ["x", "y"]) {
+    const email = `units-ind-${person}-${suffix}@example.test`;
+    await prisma.rSVP.create({ data: { eventId: individual.id, guestEmail: email, guestName: `Ind ${person}`, attendeeKey: `guest:${email}`, status: RsvpStatus.CONFIRMED } });
+  }
+
+  const { context, page } = await ownerContext(browser);
+  const errors = collectPageErrors(page);
+  const headerStat = (label: string) => page.locator("header dl > div:visible", { has: page.locator("dt", { hasText: new RegExp(`^${label}$`) }) });
+
+  await page.goto(`/dashboard/${orgSlug}/event/${unitsEvent.id}`);
+  const places = headerStat("Places taken");
+  await expect(places.locator("dd")).toContainText("3 / 3");
+  await expect(places.locator("dd")).toContainText("teams & solo places · 6 people going");
+  await expect(headerStat("Going")).toHaveCount(0);
+  await expect(page.locator("header dl:visible").first()).not.toContainText("6 / 3");
+
+  await page.goto(`/dashboard/${orgSlug}/event/${unitsEvent.id}?tab=analytics`);
+  await expect(page.getByText("3 / 3 teams & solo places · full").filter({ visible: true }).first()).toBeVisible();
+  await expect(page.getByText(/places left/)).toHaveCount(0);
+
+  // The organisation event list chip compares units with capacity.
+  await page.goto(`/dashboard/${orgSlug}`);
+  await expect(page.getByRole("link", { name: new RegExp(`Units Night ${suffix}`) }).filter({ hasText: "Full", visible: true }).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: new RegExp(`Solo Night ${suffix}`) }).filter({ hasText: "2 / 5 going", visible: true }).first()).toBeVisible();
+
+  await page.goto(`/dashboard/${orgSlug}/event/${individual.id}`);
+  await expect(headerStat("Going").locator("dd")).toContainText("2 / 5");
+  await expect(headerStat("Places taken")).toHaveCount(0);
+  expect(errors).toEqual([]);
+  await context.close();
+
+  // The public card already counts units: full, with no places left.
+  const visitor = await newContext(browser);
+  const publicPage = await visitor.newPage();
+  await publicPage.goto(`/${orgSlug}/units-${suffix}`);
+  const joinCard = publicPage.locator("section", { has: publicPage.locator("#join-title") });
+  await expect(joinCard.getByText("3 places taken")).toBeVisible();
+  await expect(joinCard.getByText("0 places left")).toBeVisible();
+  await visitor.close();
+});

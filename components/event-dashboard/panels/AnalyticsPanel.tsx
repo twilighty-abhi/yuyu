@@ -1,7 +1,8 @@
 import { EventReportDownloadButton } from "@/components/reports/EventReportDownloadButton";
 import { EmptyState } from "@/components/ui/display";
 import type { EventDashboardContext } from "@/lib/eventDashboard/context";
-import { loadRsvpStatusCounts } from "@/lib/eventDashboard/data";
+import { loadCapacityUsed, loadRsvpStatusCounts } from "@/lib/eventDashboard/data";
+import { teamCapacityLabel } from "@/lib/teamCapacityDisplay";
 import { loadAllSignupDates, loadFeedbackCount } from "@/lib/eventDashboard/overview";
 import { FunnelCard, KeyNumbers, StatusMixCard, TimelineCard, type MixPart } from "../analytics/AnalyticsSections";
 import { busiestDay, capacityStatus, funnelSentence, funnelSteps, percentOf, signupsLastWeek, signupTimeline } from "../analytics/metrics";
@@ -12,7 +13,14 @@ export async function AnalyticsPanel({ ctx }: { ctx: EventDashboardContext }) {
   const { event, permissions, now } = ctx;
   if (!permissions.canViewAnalytics) return <NoPermission>You do not have permission to see registration numbers for this event.</NoPermission>;
 
-  const [counts, feedback, signupDates] = await Promise.all([loadRsvpStatusCounts(event.id), loadFeedbackCount(event.id), loadAllSignupDates(event.id)]);
+  // TEAM events fill capacity in units (teams plus solo registrants), not people.
+  const teamMode = event.registrationMode === "TEAM";
+  const [counts, feedback, signupDates, units] = await Promise.all([
+    loadRsvpStatusCounts(event.id),
+    loadFeedbackCount(event.id),
+    loadAllSignupDates(event.id),
+    teamMode ? loadCapacityUsed(event.id, event.registrationMode) : null,
+  ]);
   const ended = event.endDateTime < now;
   const steps = funnelSteps({ responded: counts.total, going: counts.confirmed, checkedIn: counts.checkedIn, feedback, ended });
   const checkedIn = steps.find((step) => step.key === "checkedIn")!.value;
@@ -25,7 +33,14 @@ export async function AnalyticsPanel({ ctx }: { ctx: EventDashboardContext }) {
     { key: "declined", label: "Declined", hint: "Declined by an organiser", value: counts.rejected, tone: "bg-danger-solid" },
   ];
 
-  const capacity = capacityStatus(counts.confirmed, event.capacity);
+  const capacity = capacityStatus(units ?? counts.confirmed, event.capacity);
+  const capacityDetail = !capacity
+    ? "No capacity limit set"
+    : units != null
+      ? `${teamCapacityLabel(units, event.capacity, event.soloPolicy)}${capacity.full ? " · full" : ""}`
+      : capacity.full
+        ? `Full · all ${event.capacity} places taken`
+        : `${capacity.left} of ${event.capacity} places left`;
   const turnout = checkedIn != null ? percentOf(checkedIn, counts.confirmed) : null;
   const keyNumbers = [
     {
@@ -34,7 +49,7 @@ export async function AnalyticsPanel({ ctx }: { ctx: EventDashboardContext }) {
       value: String(counts.confirmed),
       tone: "bg-success-solid",
       bar: capacity ? capacity.percent / 100 : undefined,
-      detail: capacity ? (capacity.full ? `Full · all ${event.capacity} places taken` : `${capacity.left} of ${event.capacity} places left`) : "No capacity limit set",
+      detail: capacityDetail,
     },
     {
       key: "waitlist",

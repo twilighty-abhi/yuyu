@@ -214,6 +214,8 @@ export const eventCountsSchema = z.object({
   pending: z.number().int(),
   checkedIn: z.number().int(),
   capacity: z.number().int().nullable(),
+  /** What `capacity` is compared with: confirmed RSVPs, or on TEAM events confirmed teams plus solo registrants. */
+  capacityUsed: z.number().int(),
 }).strict();
 
 export const orgEventsDtoSchema = z.object({

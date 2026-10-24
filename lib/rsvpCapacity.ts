@@ -1,7 +1,7 @@
 import { EventStatus, Prisma, RegistrationMode, RsvpStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { enqueueRsvpConfirmation, enqueueRsvpStatusNotification } from "@/lib/outbox";
-import { countConfirmedUnits } from "@/lib/teamUnits";
+import { countConfirmedForCapacity, countConfirmedUnits } from "@/lib/teamUnits";
 import { emitWebhookEvent } from "@/lib/webhooks/emit";
 
 export { countConfirmedUnits };
@@ -12,16 +12,7 @@ export { countConfirmedUnits };
  * registrants); INDIVIDUAL events count confirmed RSVPs as before.
  */
 export async function countConfirmedForEvent(eventId: string, registrationMode?: RegistrationMode): Promise<number> {
-  if (registrationMode === RegistrationMode.TEAM) {
-    const [teams, solo] = await Promise.all([
-      prisma.team.count({ where: { eventId, status: RsvpStatus.CONFIRMED } }),
-      prisma.rSVP.count({ where: { eventId, teamId: null, status: RsvpStatus.CONFIRMED } }),
-    ]);
-    return teams + solo;
-  }
-  return prisma.rSVP.count({
-    where: { eventId, status: RsvpStatus.CONFIRMED },
-  });
+  return countConfirmedForCapacity(prisma, eventId, registrationMode);
 }
 
 export async function countConfirmedForInstance(

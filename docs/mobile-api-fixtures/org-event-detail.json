@@ -24,7 +24,7 @@
       "eventUrl": "https://yuyu.example/civic-tech/spring-hack-night",
       "shortUrl": "https://yuyu.example/Ab3dEf9"
     },
-    "counts": { "confirmed": 42, "waitlisted": 5, "pending": 0, "checkedIn": 0, "capacity": 80 },
+    "counts": { "confirmed": 42, "waitlisted": 5, "pending": 0, "checkedIn": 0, "capacity": 80, "capacityUsed": 42 },
     "myPermissions": { "checkIn": true, "manageRegistrations": true, "sendEmails": true, "schedule": true, "manageFeedback": true, "manageRegistrationWindow": true }
   }
 }

@@ -8,7 +8,7 @@ import type { ActionResult } from "@/app/actions/org";
 import { z } from "zod";
 import { isActionRateLimited } from "@/lib/actionRateLimit";
 import { EventPrivacyType, RegistrationMode, RsvpStatus } from "@prisma/client";
-import { promoteOldestWaitlistedUnit, settleTeamAfterMemberLeft } from "@/lib/teamUnits";
+import { emitTeamWebhooks, promoteOldestWaitlistedUnit, settleTeamAfterMemberLeft } from "@/lib/teamUnits";
 import { emitWebhookEvent, type RsvpWebhookSnapshot } from "@/lib/webhooks/emit";
 
 const cancelRsvpSchema = z.object({ checkInToken: z.string().trim().min(8).max(256) }).strict();
@@ -96,9 +96,8 @@ export async function cancelRsvpForUser(actorUserId: string | null, input: unkno
           freedUnit = settled.freedConfirmedUnit;
         }
         const promotedUnit = freedUnit ? await promoteOldestWaitlistedUnit(tx, event) : null;
-        // Whole-team promotions do not raise per-member webhooks yet (see docs/TEAMS.md).
-        if (promotedUnit?.kind === "rsvp") promotedId = promotedUnit.rsvpId;
-        return { error: null, snapshot, previousStatus: current.status, promotedId };
+        // A promoted team raises one webhook per member; a promoted solo RSVP, one.
+        return { error: null, snapshot, previousStatus: current.status, promotedId, promotedWebhooks: promotedUnit?.webhooks ?? [] };
       }
     }
     const privacyType = rsvp.event?.privacyType ?? rsvp.eventInstance?.series.privacyType;
@@ -126,7 +125,7 @@ export async function cancelRsvpForUser(actorUserId: string | null, input: unkno
         }
       }
     }
-    return { error: null, snapshot, previousStatus: current.status, promotedId };
+    return { error: null, snapshot, previousStatus: current.status, promotedId, promotedWebhooks: [] };
   });
   if (cancellation.error) return { ok: false, error: cancellation.error };
   if (cancellation.snapshot && cancellation.previousStatus) {
@@ -135,6 +134,7 @@ export async function cancelRsvpForUser(actorUserId: string | null, input: unkno
   if (cancellation.promotedId) {
     emitWebhookEvent({ type: "registration.status_changed", rsvpId: cancellation.promotedId, status: RsvpStatus.CONFIRMED, previousStatus: RsvpStatus.WAITLISTED });
   }
+  emitTeamWebhooks(cancellation.promotedWebhooks ?? []);
 
   await recordAuditEvent({
     action: "RSVP_CANCELLED",

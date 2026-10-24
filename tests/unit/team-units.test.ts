@@ -13,7 +13,7 @@ vi.mock("@/lib/outbox", () => ({
   enqueueTeamCreated: mocks.enqueueTeamCreated,
 }));
 
-import { countConfirmedForCapacity, countConfirmedUnits, promoteOldestWaitlistedUnit, settleTeamAfterMemberLeft } from "@/lib/teamUnits";
+import { countConfirmedForCapacity, countConfirmedUnits, promoteOldestWaitlistedUnit, setTeamStatusTx, settleTeamAfterMemberLeft } from "@/lib/teamUnits";
 import { confirmRsvpWithinCapacity, hasCapacityToRestoreConfirmedRsvp } from "@/lib/rsvpCapacity";
 import { decideRsvpStatus } from "@/lib/rsvpCore";
 
@@ -54,6 +54,31 @@ describe("countConfirmedUnits", () => {
   });
 });
 
+describe("setTeamStatusTx", () => {
+  it("returns null and emits nothing when the team is no longer in a `from` status", async () => {
+    tx.team.updateMany.mockResolvedValue({ count: 0 });
+    await expect(setTeamStatusTx(tx as never, { teamId: "team_1", eventId: "event_1", eventTitle: "Jam", from: [RsvpStatus.PENDING_APPROVAL], to: RsvpStatus.REJECTED })).resolves.toBeNull();
+    expect(tx.rSVP.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("returns one status webhook per member that changed, even without emails", async () => {
+    tx.team.updateMany.mockResolvedValue({ count: 1 });
+    tx.team.findUnique.mockResolvedValue({ name: "Byte Me" });
+    tx.rSVP.findMany.mockResolvedValue([
+      { id: "m1", status: RsvpStatus.PENDING_APPROVAL, checkInToken: "ticket-1", guestEmail: "a@example.test", guestName: "A", user: null },
+      { id: "m2", status: RsvpStatus.PENDING_APPROVAL, checkInToken: "ticket-2", guestEmail: null, guestName: null, user: null },
+    ]);
+    tx.rSVP.updateMany.mockResolvedValue({ count: 2 });
+    tx.teamJoinRequest.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(setTeamStatusTx(tx as never, { teamId: "team_1", eventId: "event_1", eventTitle: "Jam", from: [RsvpStatus.PENDING_APPROVAL], to: RsvpStatus.REJECTED, notify: false })).resolves.toEqual([
+      { type: "registration.status_changed", rsvpId: "m1", status: RsvpStatus.REJECTED, previousStatus: RsvpStatus.PENDING_APPROVAL },
+      { type: "registration.status_changed", rsvpId: "m2", status: RsvpStatus.REJECTED, previousStatus: RsvpStatus.PENDING_APPROVAL },
+    ]);
+    expect(mocks.enqueueStatus).not.toHaveBeenCalled();
+  });
+});
+
 describe("promoteOldestWaitlistedUnit", () => {
   it("does nothing on approval-required events", async () => {
     await expect(promoteOldestWaitlistedUnit(tx as never, { ...event, privacyType: EventPrivacyType.APPROVAL_REQUIRED })).resolves.toBeNull();
@@ -75,12 +100,20 @@ describe("promoteOldestWaitlistedUnit", () => {
     tx.team.updateMany.mockResolvedValue({ count: 1 });
     tx.team.findUnique.mockResolvedValue({ name: "Byte Me" });
     tx.rSVP.findMany.mockResolvedValue([
-      { id: "m1", checkInToken: "ticket-1", guestEmail: "a@example.test", guestName: "A", user: null },
-      { id: "m2", checkInToken: "ticket-2", guestEmail: null, guestName: null, user: { email: "b@example.test", name: "B" } },
+      { id: "m1", status: RsvpStatus.WAITLISTED, checkInToken: "ticket-1", guestEmail: "a@example.test", guestName: "A", user: null },
+      { id: "m2", status: RsvpStatus.WAITLISTED, checkInToken: "ticket-2", guestEmail: null, guestName: null, user: { email: "b@example.test", name: "B" } },
     ]);
     tx.rSVP.updateMany.mockResolvedValue({ count: 2 });
 
-    await expect(promoteOldestWaitlistedUnit(tx as never, event)).resolves.toEqual({ kind: "team", teamId: "team_1" });
+    // One registration.status_changed per member, for the caller to emit after commit.
+    await expect(promoteOldestWaitlistedUnit(tx as never, event)).resolves.toEqual({
+      kind: "team",
+      teamId: "team_1",
+      webhooks: [
+        { type: "registration.status_changed", rsvpId: "m1", status: RsvpStatus.CONFIRMED, previousStatus: RsvpStatus.WAITLISTED },
+        { type: "registration.status_changed", rsvpId: "m2", status: RsvpStatus.CONFIRMED, previousStatus: RsvpStatus.WAITLISTED },
+      ],
+    });
     expect(tx.team.updateMany).toHaveBeenCalledWith({
       where: { id: "team_1", eventId: "event_1", status: { in: [RsvpStatus.WAITLISTED] } },
       data: { status: RsvpStatus.CONFIRMED },
@@ -100,7 +133,11 @@ describe("promoteOldestWaitlistedUnit", () => {
     tx.rSVP.findFirst.mockResolvedValue({ id: "solo_1", createdAt: new Date("2030-02-01"), checkInToken: "ticket-s", guestEmail: "s@example.test", user: null });
     tx.rSVP.updateMany.mockResolvedValue({ count: 1 });
 
-    await expect(promoteOldestWaitlistedUnit(tx as never, event)).resolves.toEqual({ kind: "rsvp", rsvpId: "solo_1" });
+    await expect(promoteOldestWaitlistedUnit(tx as never, event)).resolves.toEqual({
+      kind: "rsvp",
+      rsvpId: "solo_1",
+      webhooks: [{ type: "registration.status_changed", rsvpId: "solo_1", status: RsvpStatus.CONFIRMED, previousStatus: RsvpStatus.WAITLISTED }],
+    });
     expect(tx.rSVP.updateMany).toHaveBeenCalledWith({
       where: { id: "solo_1", eventId: "event_1", teamId: null, status: RsvpStatus.WAITLISTED },
       data: { status: RsvpStatus.CONFIRMED },

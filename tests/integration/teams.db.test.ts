@@ -23,6 +23,7 @@ import { deleteRsvpForUser, restoreRsvpForUser } from "@/lib/core/rsvpAdmin";
 import { countConfirmedUnits } from "@/lib/teamUnits";
 import { lookupAttendeesForCheckInForUser } from "@/lib/core/checkin";
 import { hashTeamManageToken, teamJoinPath } from "@/lib/teamToken";
+import { flushWebhookEmits } from "@/lib/webhooks/emit";
 import {
   addTeamMemberByLeader,
   countEventTeamsForOrganiser,
@@ -835,5 +836,127 @@ describe.sequential("team registration integration", () => {
     if (!result.ok || !result.data) throw new Error(result.ok ? "no rows" : result.error);
     expect(result.data.rows.map((row) => row.rsvpId).sort()).toEqual([leader.rsvpId, member.rsvpId].sort());
     expect(result.data.rows.every((row) => row.teamName === "Quokka Coders")).toBe(true);
+  });
+
+  it("sends per-member registration webhooks for whole-team changes, deletes, disbanding and undo", async () => {
+    // Endpoints are read straight from the database; nothing is delivered here.
+    await prisma.webhookEndpoint.create({
+      data: {
+        organisationId,
+        url: "https://hooks.example.test/teams",
+        eventTypes: ["registration.created", "registration.status_changed"],
+        secretEncrypted: "v1.placeholder.placeholder.placeholder",
+      },
+    });
+    const since = new Date();
+    async function statusChanges(rsvpIds: string[]) {
+      await flushWebhookEmits();
+      const rows = await prisma.webhookDelivery.findMany({
+        where: { organisationId, eventType: "registration.status_changed", createdAt: { gte: since } },
+        orderBy: { createdAt: "asc" },
+      });
+      return rows
+        .map((row) => (row.payload as { data: { registration: { id: string; status: string }; previousStatus: string | null } }).data)
+        .filter((data) => rsvpIds.includes(data.registration.id))
+        .map((data) => ({ id: data.registration.id, status: data.registration.status, previousStatus: data.previousStatus }));
+    }
+    const byId = <T extends { id: string }>(rows: T[]) => [...rows].sort((a, b) => a.id.localeCompare(b.id));
+
+    // Approval-required event: approving a team sends one change per member.
+    const approval = await createEvent({ capacity: 5, privacyType: EventPrivacyType.APPROVAL_REQUIRED });
+    const pending = await createTeam(approval, "Hook approvers");
+    const pendingMember = await joinTeam(approval, pending.team.id);
+    await expect(transitionTeamStatus(await organiser(approval), pending.team.id, "approve")).resolves.toMatchObject({ ok: true });
+    expect(byId(await statusChanges([pending.leader.rsvpId, pendingMember.rsvpId]))).toEqual(byId([
+      { id: pending.leader.rsvpId, status: RsvpStatus.CONFIRMED, previousStatus: RsvpStatus.PENDING_APPROVAL },
+      { id: pendingMember.rsvpId, status: RsvpStatus.CONFIRMED, previousStatus: RsvpStatus.PENDING_APPROVAL },
+    ]));
+
+    // One unit: team A is confirmed, team B waits.
+    const event = await createEvent({ capacity: 1 });
+    const ctx = await organiser(event);
+    const a = await createTeam(event, "Hook alpha");
+    const added = await addTeamMemberByLeader(await leaderAuth(a.team.id), { name: "Added Person", email: `hook-added-${suffix}@example.test` });
+    if (!added.ok || !added.data) throw new Error("leader add failed");
+    const b = await createTeam(event, "Hook bravo");
+    const bMember = await joinTeam(event, b.team.id);
+    expect(b.leader.status).toBe(RsvpStatus.WAITLISTED);
+    await flushWebhookEmits();
+    const created = await prisma.webhookDelivery.findMany({ where: { organisationId, eventType: "registration.created", createdAt: { gte: since } } });
+    expect(created.some((row) => (row.payload as { data: { registration: { id: string } } }).data.registration.id === added.data!.rsvpId)).toBe(true);
+
+    // Deleting team A removes its members and promotes team B as a whole.
+    const deleted = await organiserDeleteTeam(ctx, a.team.id);
+    if (!deleted.ok || !deleted.data) throw new Error("team delete failed");
+    expect(byId(await statusChanges([a.leader.rsvpId, added.data.rsvpId]))).toEqual(byId([
+      { id: a.leader.rsvpId, status: "REMOVED", previousStatus: RsvpStatus.CONFIRMED },
+      { id: added.data.rsvpId, status: "REMOVED", previousStatus: RsvpStatus.CONFIRMED },
+    ]));
+    expect(byId(await statusChanges([b.leader.rsvpId, bMember.rsvpId]))).toEqual(byId([
+      { id: b.leader.rsvpId, status: RsvpStatus.CONFIRMED, previousStatus: RsvpStatus.WAITLISTED },
+      { id: bMember.rsvpId, status: RsvpStatus.CONFIRMED, previousStatus: RsvpStatus.WAITLISTED },
+    ]));
+
+    // Disbanding team B cancels both registrations.
+    await expect(disbandTeam(await leaderAuth(b.team.id))).resolves.toMatchObject({ ok: true });
+    const bChanges = await statusChanges([b.leader.rsvpId, bMember.rsvpId]);
+    expect(byId(bChanges.filter((change) => change.status === "CANCELLED"))).toEqual(byId([
+      { id: b.leader.rsvpId, status: "CANCELLED", previousStatus: RsvpStatus.CONFIRMED },
+      { id: bMember.rsvpId, status: "CANCELLED", previousStatus: RsvpStatus.CONFIRMED },
+    ]));
+
+    // Undoing team A's deletion restores both members, previously REMOVED.
+    await expect(restoreRsvpForUser(organiserId, { organisationSlug: orgSlug, undoId: deleted.data.undoId })).resolves.toEqual({ ok: true });
+    const aChanges = await statusChanges([a.leader.rsvpId, added.data.rsvpId]);
+    expect(byId(aChanges.filter((change) => change.previousStatus === "REMOVED"))).toEqual(byId([
+      { id: a.leader.rsvpId, status: RsvpStatus.CONFIRMED, previousStatus: "REMOVED" },
+      { id: added.data.rsvpId, status: RsvpStatus.CONFIRMED, previousStatus: "REMOVED" },
+    ]));
+
+    // Payloads stay minimal: no team name, emails or tokens.
+    const payloads = JSON.stringify((await prisma.webhookDelivery.findMany({ where: { organisationId, createdAt: { gte: since } } })).map((row) => row.payload));
+    expect(payloads).not.toContain("Hook alpha");
+    expect(payloads).not.toContain("@example.test");
+    expect(payloads).not.toContain(a.leader.ticketToken);
+    await prisma.webhookEndpoint.deleteMany({ where: { organisationId } });
+  });
+
+  it("restores members' custom check-in list records when a team deletion is undone", async () => {
+    const event = await createEvent({ capacity: 5 });
+    const ctx = await organiser(event);
+    const { leader, team } = await createTeam(event, "Listed crew");
+    const member = await joinTeam(event, team.id);
+    const swag = await prisma.checkInList.create({ data: { eventId: event.id, name: "Swag" } });
+    const dinner = await prisma.checkInList.create({ data: { eventId: event.id, name: "Dinner", sortOrder: 1 } });
+    const at = new Date("2035-01-01T11:00:00.000Z");
+    await prisma.checkInListRecord.createMany({ data: [
+      { listId: swag.id, rsvpId: leader.rsvpId, source: "online", checkedInAt: at },
+      { listId: swag.id, rsvpId: member.rsvpId, source: "mobile-scan", checkedInAt: at },
+      { listId: dinner.id, rsvpId: member.rsvpId, source: "online", checkedInAt: at },
+    ] });
+
+    const deleted = await organiserDeleteTeam(ctx, team.id);
+    if (!deleted.ok || !deleted.data) throw new Error("team delete failed");
+    await expect(prisma.checkInListRecord.count({ where: { listId: { in: [swag.id, dinner.id] } } })).resolves.toBe(0);
+    // A list removed meanwhile is not recreated; the others come back as they were.
+    await prisma.checkInList.delete({ where: { id: dinner.id } });
+    await expect(restoreRsvpForUser(organiserId, { organisationSlug: orgSlug, undoId: deleted.data.undoId })).resolves.toEqual({ ok: true });
+    const restored = await prisma.checkInListRecord.findMany({ where: { listId: swag.id }, orderBy: { source: "asc" } });
+    expect(restored.map((record) => ({ rsvpId: record.rsvpId, source: record.source, checkedInAt: record.checkedInAt.toISOString() }))).toEqual([
+      { rsvpId: member.rsvpId, source: "mobile-scan", checkedInAt: at.toISOString() },
+      { rsvpId: leader.rsvpId, source: "online", checkedInAt: at.toISOString() },
+    ]);
+    await expectTeamInvariants(event);
+
+    // Removing a team's last member (whole-team undo snapshot) keeps them too.
+    const solo = await createTeam(event, "Listed solo");
+    await prisma.checkInListRecord.create({ data: { listId: swag.id, rsvpId: solo.leader.rsvpId, source: "mobile-manual", checkedInAt: at } });
+    const undo = await deleteRsvpForUser(organiserId, { organisationSlug: orgSlug, eventId: event.id, rsvpId: solo.leader.rsvpId });
+    if (!undo.ok || !undo.data) throw new Error("delete failed");
+    await expect(prisma.team.findUnique({ where: { id: solo.team.id } })).resolves.toBeNull();
+    await expect(restoreRsvpForUser(organiserId, { organisationSlug: orgSlug, undoId: undo.data.undoId })).resolves.toEqual({ ok: true });
+    await expect(prisma.checkInListRecord.findMany({ where: { rsvpId: solo.leader.rsvpId }, select: { listId: true, source: true } })).resolves.toEqual([
+      { listId: swag.id, source: "mobile-manual" },
+    ]);
   });
 });

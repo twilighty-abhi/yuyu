@@ -13,7 +13,7 @@ import { submitManualGuestRsvpCore } from "@/lib/rsvpCore";
 import { validateAndNormalizeAnswers } from "@/lib/rsvpCore";
 import { isActionRateLimited } from "@/lib/actionRateLimit";
 import { hasCapacityToRestoreConfirmedRsvp } from "@/lib/rsvpCapacity";
-import { promoteOldestWaitlistedUnit, settleTeamAfterMemberLeft } from "@/lib/teamUnits";
+import { emitTeamWebhooks, promoteOldestWaitlistedUnit, settleTeamAfterMemberLeft, type RegistrationStatusWebhook } from "@/lib/teamUnits";
 import { isTeamDeletionSnapshot, restoreTeamDeletionSnapshot, soleMemberTeamSnapshotTx } from "@/lib/core/teams";
 import { emitWebhookEvent } from "@/lib/webhooks/emit";
 import { CHECK_IN_LIST_SOURCES, MAX_CHECK_IN_LISTS } from "@/lib/checkInLists";
@@ -229,6 +229,7 @@ export async function deleteRsvpForUser(actorUserId: string | null, input: unkno
     })),
   };
 
+  const promotedWebhooks: RegistrationStatusWebhook[] = [];
   const undo = await prisma.$transaction(async (tx) => {
     // TEAM events: take the shared Event lock and re-read the team under it,
     // so leadership passes on or an emptied team is deleted (freeing its unit).
@@ -261,7 +262,8 @@ export async function deleteRsvpForUser(actorUserId: string | null, input: unkno
       const settled = await settleTeamAfterMemberLeft(tx, { teamId, eventId: teamEvent, leftRsvpId: rsvp.id });
       if (settled.freedConfirmedUnit) {
         const event = await tx.event.findUnique({ where: { id: teamEvent }, select: { id: true, title: true, capacity: true, privacyType: true } });
-        if (event) await promoteOldestWaitlistedUnit(tx, event);
+        const promoted = event ? await promoteOldestWaitlistedUnit(tx, event) : null;
+        if (promoted) promotedWebhooks.push(...promoted.webhooks);
       }
     }
     return created;
@@ -274,6 +276,7 @@ export async function deleteRsvpForUser(actorUserId: string | null, input: unkno
     previousStatus: rsvp.status,
     snapshot: { id: rsvp.id, eventId: rsvp.eventId, eventInstanceId: rsvp.eventInstanceId, userId: rsvp.userId, guestName: rsvp.guestName, createdAt: rsvp.createdAt, checkedInAt: rsvp.checkedInAt },
   });
+  emitTeamWebhooks(promotedWebhooks);
   await recordAuditEvent({ action: "RSVP_DELETED", actorUserId: session.user.id, organisationId: org.id, targetType: "RSVP", targetId: rsvp.id });
 
   revalidateRsvpPaths(org.slug, { eventId: rsvp.eventId, eventInstanceId: rsvp.eventInstanceId, eventSlug: rsvp.event?.slug });

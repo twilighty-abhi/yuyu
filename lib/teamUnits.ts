@@ -3,6 +3,7 @@ import "server-only";
 import { EventPrivacyType, Prisma, RegistrationMode, RsvpStatus, TeamJoinRequestStatus } from "@prisma/client";
 import { enqueueRsvpStatusNotification, enqueueTeamCreated } from "@/lib/outbox";
 import { generateTeamManageToken } from "@/lib/teamToken";
+import { emitWebhookEvent, type RsvpWebhookSnapshot, type WebhookEmission } from "@/lib/webhooks/emit";
 
 /**
  * Registration-unit helpers for TEAM events (docs/TEAMS.md). Every function
@@ -30,6 +31,41 @@ export async function countConfirmedForCapacity(
   return tx.rSVP.count({ where: { eventId, status: RsvpStatus.CONFIRMED } });
 }
 
+/**
+ * Organisation webhooks for team changes (docs/WEBHOOKS.md). Team cores
+ * collect one emission per member registration whose status changed inside
+ * the transaction and call `emitTeamWebhooks` only after it has committed,
+ * the same commit-point rule as the individual RSVP cores.
+ */
+export type RegistrationStatusWebhook = Extract<WebhookEmission, { type: "registration.status_changed" }>;
+
+export function emitTeamWebhooks(emissions: readonly WebhookEmission[]) {
+  for (const emission of emissions) emitWebhookEvent(emission);
+}
+
+/** The fields a webhook needs once the registration row is gone (cancel, remove). */
+export function rsvpWebhookSnapshot(rsvp: RsvpWebhookSnapshot): RsvpWebhookSnapshot {
+  return {
+    id: rsvp.id,
+    eventId: rsvp.eventId,
+    eventInstanceId: rsvp.eventInstanceId,
+    userId: rsvp.userId,
+    guestName: rsvp.guestName,
+    createdAt: rsvp.createdAt,
+    checkedInAt: rsvp.checkedInAt,
+  };
+}
+
+export const rsvpWebhookSnapshotSelect = {
+  id: true,
+  eventId: true,
+  eventInstanceId: true,
+  userId: true,
+  guestName: true,
+  createdAt: true,
+  checkedInAt: true,
+} as const satisfies Prisma.RSVPSelect;
+
 function memberEmail(member: { guestEmail: string | null; user: { email: string | null } | null }) {
   return member.user?.email?.trim() || member.guestEmail || null;
 }
@@ -42,7 +78,9 @@ function memberName(member: { guestName: string | null; user: { name: string | n
  * Move a whole team from one of `from` to `to`. The team row update is the
  * conditional guard; members follow in the same transaction so the
  * "member status = team status" invariant holds. Queues one status email per
- * member for confirmations and rejections.
+ * member for confirmations and rejections. Returns one status webhook per
+ * member whose status changed (emit after commit), or null when the team was
+ * no longer in one of `from`.
  */
 export async function setTeamStatusTx(
   tx: Prisma.TransactionClient,
@@ -54,16 +92,16 @@ export async function setTeamStatusTx(
     to: RsvpStatus;
     notify?: boolean;
   },
-): Promise<boolean> {
+): Promise<RegistrationStatusWebhook[] | null> {
   const updated = await tx.team.updateMany({
     where: { id: params.teamId, eventId: params.eventId, status: { in: params.from } },
     data: { status: params.to },
   });
-  if (updated.count !== 1) return false;
+  if (updated.count !== 1) return null;
   const team = await tx.team.findUnique({ where: { id: params.teamId }, select: { name: true } });
   const members = await tx.rSVP.findMany({
     where: { teamId: params.teamId, eventId: params.eventId, status: { not: params.to } },
-    select: { id: true, checkInToken: true, guestEmail: true, guestName: true, user: { select: { email: true, name: true } } },
+    select: { id: true, status: true, checkInToken: true, guestEmail: true, guestName: true, user: { select: { email: true, name: true } } },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
   });
   await tx.rSVP.updateMany({
@@ -77,8 +115,14 @@ export async function setTeamStatusTx(
       data: { status: TeamJoinRequestStatus.CANCELLED },
     });
   }
-  if (params.notify === false) return true;
-  if (params.to !== RsvpStatus.CONFIRMED && params.to !== RsvpStatus.REJECTED) return true;
+  const webhooks: RegistrationStatusWebhook[] = members.map((member) => ({
+    type: "registration.status_changed",
+    rsvpId: member.id,
+    status: params.to,
+    previousStatus: member.status,
+  }));
+  if (params.notify === false) return webhooks;
+  if (params.to !== RsvpStatus.CONFIRMED && params.to !== RsvpStatus.REJECTED) return webhooks;
   for (const member of members) {
     const to = memberEmail(member);
     if (!to) continue;
@@ -90,18 +134,23 @@ export async function setTeamStatusTx(
       ...(team?.name ? { teamName: team.name } : {}),
     });
   }
-  return true;
+  return webhooks;
 }
 
 /**
  * Auto-promotion after a unit was freed on a TEAM event: the oldest
  * waitlisted unit (team or solo RSVP) becomes confirmed, but only when the
- * event is not approval-required and a unit is actually free.
+ * event is not approval-required and a unit is actually free. `webhooks`
+ * lists the promoted registrations' status changes, to emit after commit.
  */
 export async function promoteOldestWaitlistedUnit(
   tx: Prisma.TransactionClient,
   event: { id: string; title: string; capacity: number | null; privacyType: EventPrivacyType },
-): Promise<{ kind: "team"; teamId: string } | { kind: "rsvp"; rsvpId: string } | null> {
+): Promise<
+  | { kind: "team"; teamId: string; webhooks: RegistrationStatusWebhook[] }
+  | { kind: "rsvp"; rsvpId: string; webhooks: RegistrationStatusWebhook[] }
+  | null
+> {
   if (event.privacyType === EventPrivacyType.APPROVAL_REQUIRED) return null;
   if (event.capacity != null && (await countConfirmedUnits(tx, event.id)) >= event.capacity) return null;
   const team = await tx.team.findFirst({
@@ -122,7 +171,7 @@ export async function promoteOldestWaitlistedUnit(
       from: [RsvpStatus.WAITLISTED],
       to: RsvpStatus.CONFIRMED,
     });
-    return promoted ? { kind: "team", teamId: team.id } : null;
+    return promoted ? { kind: "team", teamId: team.id, webhooks: promoted } : null;
   }
   if (!solo) return null;
   const promoted = await tx.rSVP.updateMany({
@@ -139,7 +188,11 @@ export async function promoteOldestWaitlistedUnit(
       checkInToken: solo.checkInToken,
     });
   }
-  return { kind: "rsvp", rsvpId: solo.id };
+  return {
+    kind: "rsvp",
+    rsvpId: solo.id,
+    webhooks: [{ type: "registration.status_changed", rsvpId: solo.id, status: RsvpStatus.CONFIRMED, previousStatus: RsvpStatus.WAITLISTED }],
+  };
 }
 
 /**

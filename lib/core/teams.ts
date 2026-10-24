@@ -22,10 +22,15 @@ import { enqueueRsvpStatusNotification, enqueueTeamMemberAdded } from "@/lib/out
 import {
   assignTeamLeaderTx,
   countConfirmedUnits,
+  emitTeamWebhooks,
   promoteOldestWaitlistedUnit,
+  rsvpWebhookSnapshot,
+  rsvpWebhookSnapshotSelect,
   setTeamStatusTx,
   settleTeamAfterMemberLeft,
 } from "@/lib/teamUnits";
+import type { WebhookEmission } from "@/lib/webhooks/emit";
+import { CHECK_IN_LIST_SOURCES, MAX_CHECK_IN_LISTS } from "@/lib/checkInLists";
 import {
   generateTeamManageToken,
   generateTeamToken,
@@ -135,6 +140,19 @@ const lockedEventSelect = {
 } satisfies Prisma.EventSelect;
 
 type LockedEvent = Prisma.EventGetPayload<{ select: typeof lockedEventSelect }>;
+
+/**
+ * Run a team mutation and, once it has committed, emit the organisation
+ * webhooks it collected (one per member registration that was created,
+ * changed status, or was cancelled or removed). Nothing is emitted when the
+ * transaction throws and rolls back.
+ */
+async function teamTransaction<T>(fn: (tx: Prisma.TransactionClient, webhooks: WebhookEmission[]) => Promise<T>): Promise<T> {
+  const webhooks: WebhookEmission[] = [];
+  const result = await prisma.$transaction((tx) => fn(tx, webhooks));
+  emitTeamWebhooks(webhooks);
+  return result;
+}
 
 /** Take the Event row lock shared with every capacity change, then read it. */
 async function lockEvent(tx: Prisma.TransactionClient, eventId: string): Promise<LockedEvent | null> {
@@ -283,7 +301,7 @@ export async function addTeamMemberByLeader(
   if (!parsed.success) return { ok: false, error: "Invalid input.", fieldErrors: flattenZodErrors(parsed.error) };
   const email = parsed.data.email.trim().toLowerCase();
   try {
-    return await prisma.$transaction(async (tx): Promise<TeamResult<{ rsvpId: string; status: RsvpStatus }>> => {
+    return await teamTransaction(async (tx, webhooks): Promise<TeamResult<{ rsvpId: string; status: RsvpStatus }>> => {
       const event = await lockEvent(tx, auth.eventId);
       if (!event) return fail(TEAM_NOT_FOUND);
       if (event.registrationMode !== RegistrationMode.TEAM) return fail(NOT_A_TEAM_EVENT);
@@ -316,6 +334,7 @@ export async function addTeamMemberByLeader(
         checkInToken: rsvp.checkInToken,
         ...(leaderName && leaderName !== "Guest" ? { addedByName: leaderName } : {}),
       });
+      webhooks.push({ type: "registration.created", rsvpId: rsvp.id });
       return { ok: true, data: { rsvpId: rsvp.id, status: team.status } };
     });
   } catch (error) {
@@ -328,18 +347,23 @@ export async function addTeamMemberByLeader(
 /** Remove a member (not the leader). Cancels their registration. */
 export async function removeTeamMember(auth: TeamLeaderAuth, rsvpId: string): Promise<TeamResult> {
   if (!rsvpId || rsvpId.length > 128) return fail("Member not found.");
-  return prisma.$transaction(async (tx): Promise<TeamResult> => {
+  return teamTransaction(async (tx, webhooks): Promise<TeamResult> => {
     const event = await lockEvent(tx, auth.eventId);
     if (!event) return fail(TEAM_NOT_FOUND);
     const team = await lockedLeaderTeam(tx, auth);
     if (!team) return fail(TEAM_NOT_FOUND);
     if (team.leaderRsvpId === rsvpId) return fail("You can't remove yourself. Transfer leadership or disband the team instead.");
-    const member = await tx.rSVP.findFirst({ where: { id: rsvpId, eventId: event.id, teamId: team.id }, select: { id: true, checkedInAt: true } });
+    const member = await tx.rSVP.findFirst({
+      where: { id: rsvpId, eventId: event.id, teamId: team.id },
+      select: { ...rsvpWebhookSnapshotSelect, status: true },
+    });
     if (!member) return fail("Member not found.");
     if (member.checkedInAt) return fail("This member has already checked in.");
     await tx.rSVP.delete({ where: { id: member.id } });
+    // The team side of the registration cancels it, as when the member leaves.
+    webhooks.push({ type: "registration.status_changed", rsvpId: member.id, status: "CANCELLED", previousStatus: member.status, snapshot: rsvpWebhookSnapshot(member) });
     const settled = await settleTeamAfterMemberLeft(tx, { teamId: team.id, eventId: event.id, leftRsvpId: member.id });
-    if (settled.freedConfirmedUnit) await promoteOldestWaitlistedUnit(tx, event);
+    if (settled.freedConfirmedUnit) webhooks.push(...((await promoteOldestWaitlistedUnit(tx, event))?.webhooks ?? []));
     return { ok: true };
   });
 }
@@ -442,16 +466,25 @@ export async function setLookingForMembers(auth: TeamLeaderAuth, looking: boolea
 
 /** Disband: cancels every member registration, deletes the team, frees its unit. */
 export async function disbandTeam(auth: TeamLeaderAuth): Promise<TeamResult<{ cancelled: number }>> {
-  return prisma.$transaction(async (tx): Promise<TeamResult<{ cancelled: number }>> => {
+  return teamTransaction(async (tx, webhooks): Promise<TeamResult<{ cancelled: number }>> => {
     const event = await lockEvent(tx, auth.eventId);
     if (!event) return fail(TEAM_NOT_FOUND);
     const team = await lockedLeaderTeam(tx, auth);
     if (!team) return fail(TEAM_NOT_FOUND);
     const checkedIn = await tx.rSVP.count({ where: { teamId: team.id, checkedInAt: { not: null } } });
     if (checkedIn > 0) return fail("Someone in this team has already checked in, so it can't be disbanded.");
+    const members = await tx.rSVP.findMany({
+      where: { teamId: team.id, eventId: event.id },
+      select: { ...rsvpWebhookSnapshotSelect, status: true },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    });
+    // Same set as `members`: every member change takes the Event lock held here.
     const removed = await tx.rSVP.deleteMany({ where: { teamId: team.id, eventId: event.id } });
     await tx.team.delete({ where: { id: team.id } });
-    if (team.status === RsvpStatus.CONFIRMED) await promoteOldestWaitlistedUnit(tx, event);
+    for (const member of members) {
+      webhooks.push({ type: "registration.status_changed", rsvpId: member.id, status: "CANCELLED", previousStatus: member.status, snapshot: rsvpWebhookSnapshot(member) });
+    }
+    if (team.status === RsvpStatus.CONFIRMED) webhooks.push(...((await promoteOldestWaitlistedUnit(tx, event))?.webhooks ?? []));
     return { ok: true, data: { cancelled: removed.count } };
   });
 }
@@ -579,7 +612,7 @@ export async function respondToJoinRequest(params: {
 }): Promise<TeamResult<{ accepted: boolean }>> {
   const eventId = params.actor.kind === "leader" ? params.actor.auth.eventId : params.actor.holder.eventId;
   if (!params.requestId || params.requestId.length > 128) return fail("This request is no longer pending.");
-  return prisma.$transaction(async (tx): Promise<TeamResult<{ accepted: boolean }>> => {
+  return teamTransaction(async (tx, webhooks): Promise<TeamResult<{ accepted: boolean }>> => {
     const event = await lockEvent(tx, eventId);
     if (!event) return fail("This request is no longer pending.");
     const request = await lockedRequestForActor(tx, params.requestId, event.id, params.actor, "responder");
@@ -594,7 +627,7 @@ export async function respondToJoinRequest(params: {
     const rsvp = await tx.rSVP.findFirst({ where: { id: request.rsvpId, eventId: event.id }, select: soloRsvpSelect });
     if (!rsvp || rsvp.teamId) return fail("This person is already in a team.");
     if (rsvp.status === RsvpStatus.REJECTED) return fail("This registration was declined.");
-    const moved = await moveSoloRsvpIntoTeamTx(tx, event, rsvp, team, { acceptedRequestId: request.id });
+    const moved = await moveSoloRsvpIntoTeamTx(tx, event, rsvp, team, webhooks, { acceptedRequestId: request.id });
     if (!moved.ok) return moved;
     await tx.teamJoinRequest.update({ where: { id: request.id }, data: { status: TeamJoinRequestStatus.ACCEPTED } });
     return { ok: true, data: { accepted: true } };
@@ -620,13 +653,15 @@ type SoloRsvpRow = Prisma.RSVPGetPayload<{ select: typeof soloRsvpSelect }>;
  * other pending invitations and requests are cancelled, and when its solo
  * unit was confirmed the freed unit promotes the oldest waitlisted unit. A
  * checked-in person can only join a confirmed team: otherwise their unit
- * would go to the waitlist while they are already inside.
+ * would go to the waitlist while they are already inside. Status webhooks
+ * (the moved registration's, and any promotion's) go into `webhooks`.
  */
 async function moveSoloRsvpIntoTeamTx(
   tx: Prisma.TransactionClient,
   event: LockedEvent,
   rsvp: SoloRsvpRow,
   team: { id: string; name: string; status: RsvpStatus },
+  webhooks: WebhookEmission[],
   opts: { acceptedRequestId?: string } = {},
 ): Promise<TeamResult<{ status: RsvpStatus }>> {
   if (rsvp.teamId) return fail("This registration is already in a team.");
@@ -641,6 +676,9 @@ async function moveSoloRsvpIntoTeamTx(
     data: { teamId: team.id, status: team.status },
   });
   if (moved.count !== 1) return fail("This registration was changed. Try again.");
+  if (rsvp.status !== team.status) {
+    webhooks.push({ type: "registration.status_changed", rsvpId: rsvp.id, status: team.status, previousStatus: rsvp.status });
+  }
   await tx.teamJoinRequest.updateMany({
     where: {
       rsvpId: rsvp.id,
@@ -655,7 +693,7 @@ async function moveSoloRsvpIntoTeamTx(
     if (to) await enqueueRsvpStatusNotification(tx, { to, eventTitle: event.title, approved: true, checkInToken: rsvp.checkInToken, teamName: team.name });
   }
   // The solo unit is gone; if it was confirmed, a unit is free.
-  if (rsvp.status === RsvpStatus.CONFIRMED) await promoteOldestWaitlistedUnit(tx, event);
+  if (rsvp.status === RsvpStatus.CONFIRMED) webhooks.push(...((await promoteOldestWaitlistedUnit(tx, event))?.webhooks ?? []));
   return { ok: true, data: { status: team.status } };
 }
 
@@ -675,7 +713,7 @@ export async function joinTeamWithExistingRsvp(
 ): Promise<TeamResult<{ status: RsvpStatus; teamName: string }>> {
   const joinToken = joinTokenFromInput(joinLink);
   if (!joinToken) return fail("Paste the full team link your team leader shared.");
-  return prisma.$transaction(async (tx): Promise<TeamResult<{ status: RsvpStatus; teamName: string }>> => {
+  return teamTransaction(async (tx, webhooks): Promise<TeamResult<{ status: RsvpStatus; teamName: string }>> => {
     const event = await lockEvent(tx, holder.eventId);
     if (!event || event.organisationId !== holder.organisationId) return fail("Registration not found.");
     if (event.registrationMode !== RegistrationMode.TEAM) return fail(NOT_A_TEAM_EVENT);
@@ -691,7 +729,7 @@ export async function joinTeamWithExistingRsvp(
     if (rsvp.teamId === team.id) return fail("You're already in this team.");
     if (rsvp.teamId) return fail("You're already in a team. Leave it from your ticket page before joining another.");
     if (rsvp.status === RsvpStatus.REJECTED) return fail("This registration was declined.");
-    const moved = await moveSoloRsvpIntoTeamTx(tx, event, rsvp, team);
+    const moved = await moveSoloRsvpIntoTeamTx(tx, event, rsvp, team, webhooks);
     return moved.ok ? { ok: true, data: { status: team.status, teamName: team.name } } : moved;
   });
 }
@@ -728,7 +766,7 @@ export async function transitionTeamStatus(
   action: TeamTransition,
 ): Promise<TeamResult<{ status: RsvpStatus }>> {
   if (!teamId || teamId.length > 128) return fail(TEAM_NOT_FOUND);
-  return prisma.$transaction(async (tx): Promise<TeamResult<{ status: RsvpStatus }>> => {
+  return teamTransaction(async (tx, webhooks): Promise<TeamResult<{ status: RsvpStatus }>> => {
     const event = await lockEvent(tx, ctx.eventId);
     if (!event || event.organisationId !== ctx.organisationId) return fail("Event not found.");
     const team = await tx.team.findFirst({ where: { id: teamId, eventId: event.id }, select: { id: true, status: true } });
@@ -736,8 +774,10 @@ export async function transitionTeamStatus(
     const changed = fail("This team was changed by another organiser.");
     if (action === "reject") {
       if (team.status !== RsvpStatus.PENDING_APPROVAL && team.status !== RsvpStatus.WAITLISTED) return fail("This team cannot be rejected.");
-      const ok = await setTeamStatusTx(tx, { teamId: team.id, eventId: event.id, eventTitle: event.title, from: [team.status], to: RsvpStatus.REJECTED });
-      return ok ? { ok: true, data: { status: RsvpStatus.REJECTED } } : changed;
+      const rejected = await setTeamStatusTx(tx, { teamId: team.id, eventId: event.id, eventTitle: event.title, from: [team.status], to: RsvpStatus.REJECTED });
+      if (!rejected) return changed;
+      webhooks.push(...rejected);
+      return { ok: true, data: { status: RsvpStatus.REJECTED } };
     }
     if (action === "approve") {
       if (team.status !== RsvpStatus.PENDING_APPROVAL) return fail("Only pending teams can be approved.");
@@ -752,8 +792,10 @@ export async function transitionTeamStatus(
     if (event.capacity != null && (await countConfirmedUnits(tx, event.id)) >= event.capacity) {
       return fail(action === "approve" ? "Event is at capacity. Free a spot or promote from waitlist first." : "Event is still at capacity.");
     }
-    const ok = await setTeamStatusTx(tx, { teamId: team.id, eventId: event.id, eventTitle: event.title, from: [team.status], to: RsvpStatus.CONFIRMED });
-    return ok ? { ok: true, data: { status: RsvpStatus.CONFIRMED } } : changed;
+    const confirmed = await setTeamStatusTx(tx, { teamId: team.id, eventId: event.id, eventTitle: event.title, from: [team.status], to: RsvpStatus.CONFIRMED });
+    if (!confirmed) return changed;
+    webhooks.push(...confirmed);
+    return { ok: true, data: { status: RsvpStatus.CONFIRMED } };
   });
 }
 
@@ -766,7 +808,7 @@ export async function organiserMoveMember(
 ): Promise<TeamResult<{ status: RsvpStatus }>> {
   const parsed = moveMemberSchema.safeParse(input);
   if (!parsed.success) return fail("Invalid input.");
-  return prisma.$transaction(async (tx): Promise<TeamResult<{ status: RsvpStatus }>> => {
+  return teamTransaction(async (tx, webhooks): Promise<TeamResult<{ status: RsvpStatus }>> => {
     const event = await lockEvent(tx, ctx.eventId);
     if (!event || event.organisationId !== ctx.organisationId) return fail("Event not found.");
     if (event.registrationMode !== RegistrationMode.TEAM) return fail(NOT_A_TEAM_EVENT);
@@ -791,6 +833,9 @@ export async function organiserMoveMember(
       data: { teamId: target.id, status: target.status },
     });
     if (moved.count !== 1) return fail("This registration was changed by another organiser.");
+    if (rsvp.status !== target.status) {
+      webhooks.push({ type: "registration.status_changed", rsvpId: rsvp.id, status: target.status, previousStatus: rsvp.status });
+    }
     await tx.teamJoinRequest.updateMany({ where: { rsvpId: rsvp.id, status: TeamJoinRequestStatus.PENDING }, data: { status: TeamJoinRequestStatus.CANCELLED } });
     await tx.teamSeekerProfile.updateMany({ where: { rsvpId: rsvp.id }, data: { visible: false } });
     let freedUnit = !rsvp.teamId && rsvp.status === RsvpStatus.CONFIRMED;
@@ -802,7 +847,7 @@ export async function organiserMoveMember(
       const to = personEmail(rsvp);
       if (to) await enqueueRsvpStatusNotification(tx, { to, eventTitle: event.title, approved: true, checkInToken: rsvp.checkInToken, teamName: target.name });
     }
-    if (freedUnit) await promoteOldestWaitlistedUnit(tx, event);
+    if (freedUnit) webhooks.push(...((await promoteOldestWaitlistedUnit(tx, event))?.webhooks ?? []));
     return { ok: true, data: { status: target.status } };
   });
 }
@@ -843,6 +888,12 @@ const teamSnapshotRsvpSchema = z.object({
     valueNumber: z.number().finite().nullable(),
     valueDate: z.string().datetime().nullable(),
   })).max(200),
+  /** Custom check-in list records (same shape as the single-RSVP undo); optional for older snapshots. */
+  listCheckIns: z.array(z.object({
+    listId: z.string().min(1).max(128),
+    checkedInAt: z.string().datetime(),
+    source: z.enum(CHECK_IN_LIST_SOURCES),
+  })).max(MAX_CHECK_IN_LISTS).optional(),
 });
 
 const teamDeletionSnapshotSchema = z.object({
@@ -868,7 +919,10 @@ export function isTeamDeletionSnapshot(payload: unknown): boolean {
 }
 
 const teamSnapshotInclude = {
-  members: { include: { answers: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] },
+  members: {
+    include: { answers: true, checkInListRecords: { select: { listId: true, checkedInAt: true, source: true } } },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+  },
 } satisfies Prisma.TeamInclude;
 
 type TeamWithSnapshotMembers = Prisma.TeamGetPayload<{ include: typeof teamSnapshotInclude }>;
@@ -905,6 +959,11 @@ function teamDeletionSnapshot(team: TeamWithSnapshotMembers, eventId: string) {
         valueNumber: answer.valueNumber,
         valueDate: answer.valueDate?.toISOString() ?? null,
       })),
+      listCheckIns: rsvp.checkInListRecords.map((record) => ({
+        listId: record.listId,
+        checkedInAt: record.checkedInAt.toISOString(),
+        source: record.source,
+      })),
     })),
   };
 }
@@ -931,7 +990,7 @@ export async function soleMemberTeamSnapshotTx(
  */
 export async function organiserDeleteTeam(ctx: OrganiserEventContext, teamId: string): Promise<TeamResult<{ undoId: string; removed: number }>> {
   if (!teamId || teamId.length > 128) return fail(TEAM_NOT_FOUND);
-  return prisma.$transaction(async (tx): Promise<TeamResult<{ undoId: string; removed: number }>> => {
+  return teamTransaction(async (tx, webhooks): Promise<TeamResult<{ undoId: string; removed: number }>> => {
     const event = await lockEvent(tx, ctx.eventId);
     if (!event || event.organisationId !== ctx.organisationId) return fail("Event not found.");
     const team = await tx.team.findFirst({
@@ -955,7 +1014,10 @@ export async function organiserDeleteTeam(ctx: OrganiserEventContext, teamId: st
       : null;
     const removed = await tx.rSVP.deleteMany({ where: { teamId: team.id, eventId: event.id } });
     await tx.team.delete({ where: { id: team.id } });
-    if (team.status === RsvpStatus.CONFIRMED) await promoteOldestWaitlistedUnit(tx, event);
+    for (const member of team.members) {
+      webhooks.push({ type: "registration.status_changed", rsvpId: member.id, status: "REMOVED", previousStatus: member.status, snapshot: rsvpWebhookSnapshot(member) });
+    }
+    if (team.status === RsvpStatus.CONFIRMED) webhooks.push(...((await promoteOldestWaitlistedUnit(tx, event))?.webhooks ?? []));
     return { ok: true, data: { undoId: undo?.id ?? "", removed: removed.count } };
   });
 }
@@ -974,7 +1036,7 @@ export async function restoreTeamDeletionSnapshot(
   if (!snapshot.success) return fail("Could not restore this team safely.");
   const data = snapshot.data;
   try {
-    return await prisma.$transaction(async (tx): Promise<TeamResult<{ eventId: string; eventSlug: string; teamId: string }>> => {
+    return await teamTransaction(async (tx, webhooks): Promise<TeamResult<{ eventId: string; eventSlug: string; teamId: string }>> => {
       const event = await lockEvent(tx, data.eventId);
       if (!event || event.organisationId !== organisationId) return fail("The original event no longer exists.");
       if (event.registrationMode !== RegistrationMode.TEAM) return fail("This event no longer uses team registration.");
@@ -1019,6 +1081,23 @@ export async function restoreTeamDeletionSnapshot(
               valueDate: answer.valueDate ? new Date(answer.valueDate) : null,
             })) },
           },
+        });
+        webhooks.push({ type: "registration.status_changed", rsvpId: rsvp.id, status: data.team.status, previousStatus: "REMOVED" });
+      }
+      // Custom check-in list records, exactly as the single-RSVP undo restores
+      // them: only lists that still belong to this event; history is not rewritten.
+      const listCheckIns = data.rsvps.flatMap((rsvp) => (rsvp.listCheckIns ?? []).map((entry) => ({ ...entry, rsvpId: rsvp.id })));
+      if (listCheckIns.length > 0) {
+        const lists = await tx.checkInList.findMany({ where: { eventId: event.id, id: { in: [...new Set(listCheckIns.map((entry) => entry.listId))] } }, select: { id: true } });
+        const live = new Set(lists.map((list) => list.id));
+        await tx.checkInListRecord.createMany({
+          data: listCheckIns.filter((entry) => live.has(entry.listId)).map((entry) => ({
+            listId: entry.listId,
+            rsvpId: entry.rsvpId,
+            source: entry.source,
+            checkedInAt: new Date(entry.checkedInAt),
+          })),
+          skipDuplicates: true,
         });
       }
       const leaderRsvpId = data.team.leaderRsvpId && data.rsvps.some((rsvp) => rsvp.id === data.team.leaderRsvpId)

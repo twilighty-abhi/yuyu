@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, ChevronRight, ExternalLink, Users } from "lucide-react";
 import type { JudgingStatus } from "@prisma/client";
@@ -48,6 +48,14 @@ export function JudgeWorkspaceClient({
   const [openingId, setOpeningId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
   const request = useRef(0);
+  // Keyboard and screen-reader focus: the list button that opened a submission
+  // unmounts with the list, so focus returns to it when the judge goes back.
+  const [returnFocusId, setReturnFocusId] = useState<string | null>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+  useEffect(() => {
+    if (detail || !returnFocusId) return;
+    listRef.current?.querySelector<HTMLButtonElement>(`button[data-submission-id="${CSS.escape(returnFocusId)}"]`)?.focus();
+  }, [detail, returnFocusId]);
   const notice = judgingStatusNotice(judgingStatus);
   const summary = judgeProgressSummary(submissions);
 
@@ -70,6 +78,7 @@ export function JudgeWorkspaceClient({
   function close() {
     request.current++;
     setOpeningId(null);
+    setReturnFocusId(detail?.submission.id ?? null);
     setDetail(null);
   }
 
@@ -115,7 +124,7 @@ export function JudgeWorkspaceClient({
             <ProgressBar value={summary.submitted} max={summary.total} tone="success" label="Reviews submitted" />
           </Card>
 
-          <ul className="flex flex-col gap-2.5">
+          <ul ref={listRef} className="flex flex-col gap-2.5">
             {submissions.map((submission) => {
               const chip = judgeProgressChip(submission, criteria.length);
               const busy = openingId === submission.id;
@@ -123,6 +132,7 @@ export function JudgeWorkspaceClient({
                 <li key={submission.id}>
                   <button
                     type="button"
+                    data-submission-id={submission.id}
                     onClick={() => open(submission.id)}
                     disabled={openingId !== null}
                     aria-busy={busy || undefined}
@@ -169,6 +179,11 @@ function ScoringView({
   const [scores, setScores] = useState<ScoreMap>(() => scoreMapFrom(detail.myScores, detail.criteria));
   const [comment, setComment] = useState(detail.myReview?.comment ?? "");
   const [error, setError] = useState<string | null>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  // The list button that opened this view is gone: move focus to the project's heading.
+  useEffect(() => {
+    headingRef.current?.focus({ preventScroll: true });
+  }, []);
   const { submission, criteria, judgingStatus } = detail;
   const readOnly = judgingStatus !== "OPEN";
   const notice = judgingStatusNotice(judgingStatus);
@@ -224,7 +239,7 @@ function ScoringView({
             {submission.isTeam ? <Chip size="sm" icon={<Users />}>Team</Chip> : null}
             {submitted ? <Chip size="sm" tone="success">Review submitted</Chip> : null}
           </div>
-          <h2 id="judge-submission-title" className="text-h3 break-words text-ink">{submission.title}</h2>
+          <h2 id="judge-submission-title" ref={headingRef} tabIndex={-1} className="text-h3 break-words text-ink focus:outline-none">{submission.title}</h2>
           <p className="text-body-ui text-ink-muted">{submission.entrantName}</p>
         </div>
         {submission.summary ? <p className="whitespace-pre-wrap break-words text-body text-ink-secondary">{submission.summary}</p> : null}

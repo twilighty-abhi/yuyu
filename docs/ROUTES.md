@@ -103,7 +103,7 @@ Opaque ticket, certificate, team join, team management, and submission URLs are 
 | Route | Purpose |
 | --- | --- |
 | `/manifest.webmanifest` | PWA manifest (`app/manifest.ts`): name "Yuyu", `id` `/`, start URL `/dashboard` |
-| `/robots.txt` | Crawler rules (`app/robots.ts`); disallows `/dashboard/`, `/super-admin/`, `/ticket/`, and `/join/` |
+| `/robots.txt` | Crawler rules (`app/robots.ts`); disallows `/dashboard/`, `/super-admin/`, `/ticket/`, `/team/`, `/{org}/{event}/team/`, `/submit/`, and `/join/` |
 | `/sitemap.xml` | Public sitemap (`app/sitemap.ts`) |
 | `/:orgSlug/:eventSlug/opengraph-image`, `/:orgSlug/i/:instanceId/opengraph-image` | Generated social share cards for events and occurrences |
 

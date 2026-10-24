@@ -52,10 +52,15 @@ export function JudgingPanelSetup({
  * without a ninth dashboard tab on every event.
  */
 export function JudgingSettingsCard({ scope, settings, now }: { scope: JudgingScope; settings: JudgingDashboardSettings; now: string }) {
-  return <SettingsCard scope={scope} settings={settings} now={now} />;
+  return <SettingsCard scope={scope} settings={settings} now={now} inSettingsTab />;
 }
 
-function SettingsCard({ scope, settings, now }: { scope: JudgingScope; settings: JudgingDashboardSettings; now: string }) {
+/** Toast after saving. From the Settings tab, turning submissions on moves this card to the new Judging tab, so say where it went. */
+export function judgingSettingsSavedMessage(enabled: boolean, inSettingsTab: boolean) {
+  return inSettingsTab && enabled ? "Project submissions are on. Their settings, the rubric and judging are now on the Judging tab." : "Judging settings saved.";
+}
+
+function SettingsCard({ scope, settings, now, inSettingsTab = false }: { scope: JudgingScope; settings: JudgingDashboardSettings; now: string; inSettingsTab?: boolean }) {
   const { run, busy } = useJudgingAction();
   const [enabled, setEnabled] = useState(settings.submissionsEnabled);
   const [opensAt, setOpensAt] = useState(settings.opensAtLocal);
@@ -92,7 +97,7 @@ function SettingsCard({ scope, settings, now }: { scope: JudgingScope; settings:
             projectGalleryPublic: galleryPublic,
           },
         }),
-      "Judging settings saved.",
+      judgingSettingsSavedMessage(enabled, inSettingsTab),
       (result) => setErrors(result.ok ? undefined : result.fieldErrors),
     );
   }

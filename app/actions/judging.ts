@@ -7,7 +7,9 @@ import { isActionRateLimited } from "@/lib/actionRateLimit";
 import { resolveJudgeContext, type JudgeContext } from "@/lib/judgingAccess";
 import { loadSubmissionForJudge, saveJudgeScores, submitJudgeReview } from "@/lib/core/judging";
 import type { JudgeSubmissionDetailDto } from "@/lib/judgingDto";
+import { judgeReviewSchema } from "@/lib/validators";
 import type { ActionResult } from "./org";
+import { flattenZodErrors } from "./utils";
 
 /*
  * Judging Server Actions (docs/HACKATHON.md).
@@ -74,10 +76,14 @@ export async function saveJudgeReviewAction(input: unknown): Promise<ActionResul
   const gate = await judgeGate(input);
   if (!gate.ok) return gate;
   const { submissionId, scores, comment, submit } = gate.rest;
+  // Check the review half first: an invalid comment must not leave the scores
+  // half-saved behind an error.
+  const review = judgeReviewSchema.safeParse({ submissionId, comment, submit: submit === true });
+  if (!review.success) return { ok: false, error: "Check the highlighted fields.", fieldErrors: flattenZodErrors(review.error) };
   const saved = await saveJudgeScores(gate.ctx, { submissionId, scores });
   if (!saved.ok) return saved;
-  const review = await submitJudgeReview(gate.ctx, { submissionId, comment, submit: submit === true });
+  const reviewed = await submitJudgeReview(gate.ctx, { submissionId, comment, submit: submit === true });
   revalidateJudgeWorkspace(gate.ctx);
-  if (!review.ok) return review;
-  return { ok: true, data: { ...saved.data, submitted: review.data.submitted } };
+  if (!reviewed.ok) return reviewed;
+  return { ok: true, data: { ...saved.data, submitted: reviewed.data.submitted } };
 }

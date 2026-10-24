@@ -33,7 +33,9 @@ const manageTokens: Record<string, string> = {};
 
 async function newContext(browser: Browser, options: Parameters<Browser["newContext"]>[0] = {}) {
   const context = await browser.newContext(options);
-  await context.setExtraHTTPHeaders({ "cf-connecting-ip": `198.51.100.${(ipCounter++ % 200) + 20}` });
+  // Its own TEST-NET-3 range: teams.spec.ts counts up through 198.51.100.x
+  // in a parallel worker, and a shared IP shares the per-IP action limit.
+  await context.setExtraHTTPHeaders({ "cf-connecting-ip": `203.0.113.${(ipCounter++ % 240) + 10}` });
   return context;
 }
 

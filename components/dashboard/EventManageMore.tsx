@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition, type ReactNode } from "react";
+import { useMemo, useState, useSyncExternalStore, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import type { EventClientDto } from "@/lib/eventDto";
 import { Copy, CopyPlus, Link2 } from "lucide-react";
@@ -11,9 +11,19 @@ import { cloneEvent, deleteEvent, updateEventSlug } from "@/app/actions/event";
 import { useToast } from "@/components/feedback/ToastProvider";
 import { cn } from "@/lib/cn";
 
-function originFromWindow() {
-  if (typeof window === "undefined") return "";
-  return window.location.origin;
+const noSubscription = () => () => {};
+
+/**
+ * The page origin once hydrated; "" while rendering on the server and during
+ * hydration, so the embed snippets match the server HTML (React #418
+ * otherwise) and gain the absolute origin straight after.
+ */
+function useWindowOrigin() {
+  return useSyncExternalStore(
+    noSubscription,
+    () => window.location.origin,
+    () => "",
+  );
 }
 
 function escapeHtml(value: string) {
@@ -73,11 +83,11 @@ export function EventManageMore(props: {
   // A fresh key per opening remounts the dialog so the typed slug always starts empty.
   const [deleteKey, setDeleteKey] = useState(0);
 
+  const origin = useWindowOrigin();
   const publicUrl = useMemo(() => {
-    const o = originFromWindow();
     const path = `/${organisationSlug}/${slug}`;
-    return o ? `${o}${path}` : path;
-  }, [organisationSlug, slug]);
+    return origin ? `${origin}${path}` : path;
+  }, [origin, organisationSlug, slug]);
 
   const embedButtonSnippet = useMemo(() => {
     const label = `Register for ${event.title}`;
@@ -85,9 +95,9 @@ export function EventManageMore(props: {
   }, [event.title, publicUrl]);
 
   const embedPageSnippet = useMemo(() => {
-    const embedUrl = `${originFromWindow()}/embed/${organisationSlug}/${slug}`;
+    const embedUrl = `${origin}/embed/${organisationSlug}/${slug}`;
     return `<iframe src="${embedUrl}" title="${escapeHtml(`${event.title} registration`)}" style="width:100%;height:720px;border:1px solid rgba(255,255,255,0.12);border-radius:16px;overflow:hidden;"></iframe>`;
-  }, [event.title, organisationSlug, slug]);
+  }, [event.title, origin, organisationSlug, slug]);
 
   const doUpdateSlug = () => {
     startTransition(async () => {

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { RsvpStatus } from "@prisma/client";
+import { EventPermission, RsvpStatus } from "@prisma/client";
 import { loadAccountRegistrationRecords, canCancelRegistration, type NormalisedAccountRegistration } from "@/lib/accountRegistrations";
 import { prisma } from "@/lib/db";
 import { absoluteUrl, mobileUserSelect, toUserDto } from "@/lib/mobile/dto";
@@ -31,12 +31,17 @@ export async function loadMe(userId: string, baseUrl: string) {
       logoUrl: absoluteUrl(membership.organisation.logoUrl, baseUrl),
       role: membership.role,
     })),
-    collaborations: collaborations.flatMap((grant) => grant.event ? [{
-      organisation: { slug: grant.event.organisation.slug, name: grant.event.organisation.name },
-      eventId: grant.event.id,
-      eventTitle: grant.event.title,
-      permissions: grant.permissions,
-    }] : []),
+    // JUDGE is web-only (docs/HACKATHON.md) and not part of the mobile DTO:
+    // drop it, and drop JUDGE-only grants entirely.
+    collaborations: collaborations.flatMap((grant) => {
+      const permissions = grant.permissions.filter((permission) => permission !== EventPermission.JUDGE);
+      return grant.event && permissions.length > 0 ? [{
+        organisation: { slug: grant.event.organisation.slug, name: grant.event.organisation.name },
+        eventId: grant.event.id,
+        eventTitle: grant.event.title,
+        permissions,
+      }] : [];
+    }),
   });
 }
 

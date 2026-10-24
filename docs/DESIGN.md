@@ -280,7 +280,7 @@ Rules: destructive actions are never `primary`; destructive confirmations end wi
 
 ### 4.4 Tabs & navigation
 
-- Tab rows that overflow scroll sideways and show a faded arrow on each side with hidden tabs; clicking it scrolls the row (`components/ui/tabs.tsx`).
+- Tab rows that overflow scroll sideways and show a faded arrow on each side with hidden tabs; clicking it scrolls the row (`components/ui/tabs.tsx`). The active tab (underline tabs, link tabs and the dashboard's pill sub-tabs) is scrolled into view inside its row, never the page: instantly on load, smoothly when it changes, instantly under reduced motion (`useActiveTabIntoView`).
 
 - **Underline tabs** (page sub-sections): 2px bottom border on active (ink in app, accent on event page), muted text inactive, horizontal scroll on overflow. Max 8 tabs.
 - **Section nav** on event page: About · Schedule · Speakers · Venue · FAQ, anchors.
@@ -440,7 +440,7 @@ Built in `app/dashboard/page.tsx` from `lib/dashboardHome.ts`; every number come
 
 ### 5.4 Event dashboard tabs
 
-Eight tabs: Overview, Guests (People · Invites), Event page (Details · Page & programme · Registration form), Emails, Check-in, Feedback, Analytics, and Settings. Deep links use `?tab=` and `?sub=`.
+Eight tabs: Overview, Guests (People · Invites), Event page (Details · Page & programme · Registration form), Emails, Check-in, Feedback, Analytics, and Settings. Deep links use `?tab=` and `?sub=`. A ninth tab, **Judging** (between Check-in and Feedback), appears only on events that use hackathon judging ([Hackathon](HACKATHON.md)); until then its on switch sits in Settings, so ordinary events keep eight tabs.
 
 - **Overview:** a readiness checklist whose **Publish event** button sets the event Live and releases its public page in one step (`publishEvent`), so the page, sign-ups and short link work at once.
 - **Overview** also adds a **Short link** control for owners/admins (Create → copy `/aB3x9Kq`; Regenerate confirms that the old link stops working).

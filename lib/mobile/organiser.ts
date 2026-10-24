@@ -11,6 +11,7 @@ import { getMembership, isOrgAdmin } from "@/lib/permissions";
 import { attendeeDisplayName, eventSummarySelect, guestRsvpSelect, toEventSummary, toGuest } from "@/lib/mobile/dto";
 import type { EventCountsDto, EventPermissionsDto } from "@/lib/mobile/schemas";
 import { canSeeGuests, eventPermissionsFor } from "@/lib/mobile/permissions";
+import { hasNonJudgePermission } from "@/lib/judgingPermissions";
 
 export { canSeeGuests, eventPermissionsFor };
 import {
@@ -56,7 +57,9 @@ export async function resolveEventContext(userId: string, orgSlug: string, event
   const grant = isAdmin
     ? null
     : await prisma.eventCollaborator.findFirst({ where: { eventId: event.id, userId }, select: { permissions: true } });
-  if (!access.membership && !grant) return null;
+  // A JUDGE-only grant opens the web judging workspace and nothing else; the
+  // mobile organiser API has no judging surface (docs/HACKATHON.md).
+  if (!access.membership && !(grant && hasNonJudgePermission(grant.permissions))) return null;
   return {
     organisation: access.organisation,
     membership: access.membership,
@@ -104,7 +107,7 @@ export async function listOrgEvents(userId: string, orgSlug: string, filter: "up
     : await prisma.eventCollaborator.findMany({
         where: { userId, eventId: { not: null }, event: { organisationId: access.organisation.id } },
         select: { eventId: true, permissions: true },
-      });
+      }).then((rows) => rows.filter((row) => hasNonJudgePermission(row.permissions)));
   if (!access.membership && grants.length === 0) return null;
   const grantByEvent = new Map(grants.map((grant) => [grant.eventId!, grant.permissions]));
 

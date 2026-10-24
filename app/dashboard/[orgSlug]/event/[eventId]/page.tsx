@@ -13,7 +13,10 @@ import { CheckInPanel } from "@/components/event-dashboard/panels/CheckInPanel";
 import { FeedbackPanel } from "@/components/event-dashboard/panels/FeedbackPanel";
 import { AnalyticsPanel } from "@/components/event-dashboard/panels/AnalyticsPanel";
 import { SettingsPanel } from "@/components/event-dashboard/panels/SettingsPanel";
+import { JudgingPanel } from "@/components/event-dashboard/panels/JudgingPanel";
+import { JudgeWorkspace } from "@/components/event-dashboard/judging/JudgeWorkspace";
 import { loadEventDashboard } from "@/lib/eventDashboard/context";
+import { eventUsesJudging } from "@/lib/eventDashboard/judging";
 import { loadCapacityUsed, loadRsvpStatusCounts } from "@/lib/eventDashboard/data";
 import { peopleCount, teamUnitNoun } from "@/lib/teamCapacityDisplay";
 
@@ -27,6 +30,28 @@ export default async function EventManagePage({ params }: Props) {
   const { orgSlug, eventId } = await params;
   const ctx = await loadEventDashboard(orgSlug, eventId);
   const { organisation, event, permissions } = ctx;
+
+  // A JUDGE-only collaborator sees the judging workspace and nothing else:
+  // no tabs, header stats, page link, or check-in (docs/HACKATHON.md).
+  if (permissions.isJudgeOnly) {
+    return (
+      <div className="flex flex-col gap-6">
+        <EventManageHeader
+          back={{ href: `/dashboard/${organisation.slug}`, label: "Your events" }}
+          event={{
+            title: event.title,
+            status: event.status,
+            privacyType: event.privacyType,
+            startDateTime: event.startDateTime,
+            endDateTime: event.endDateTime,
+            timezone: event.timezone,
+            accentColor: event.page?.accentColor,
+          }}
+        />
+        <JudgeWorkspace ctx={ctx} />
+      </div>
+    );
+  }
 
   // Live numbers in the header are registration data (admins and MANAGE_REGISTRATIONS).
   const teamMode = event.registrationMode === "TEAM";
@@ -51,6 +76,10 @@ export default async function EventManagePage({ params }: Props) {
         { label: "Checked in", value: counts.checkedIn, meter: counts.confirmed ? { filled: counts.checkedIn, total: counts.confirmed, tone: "success" } : undefined },
       ]
     : undefined;
+
+  // Judging tab: only on events that use judging, so ordinary events keep
+  // eight tabs. Until then owners and admins turn submissions on in Settings.
+  const showJudging = (permissions.canManageJudging || permissions.canJudge) && (await eventUsesJudging(ctx));
 
   const publicPath = `/${organisation.slug}/${event.slug}`;
   return (
@@ -93,15 +122,17 @@ export default async function EventManagePage({ params }: Props) {
 
       <EventDashboardTabs
         badges={{ guests: counts?.pendingApproval ?? 0 }}
+        hidden={showJudging ? [] : ["judging"]}
         panels={{
           overview: <OverviewPanel ctx={ctx} />,
           guests: <GuestsPanel ctx={ctx} />,
           page: <EventPagePanel ctx={ctx} />,
           emails: <EmailsPanel ctx={ctx} />,
           "check-in": <CheckInPanel ctx={ctx} />,
+          judging: showJudging ? <JudgingPanel ctx={ctx} /> : null,
           feedback: <FeedbackPanel ctx={ctx} />,
           analytics: <AnalyticsPanel ctx={ctx} />,
-          settings: <SettingsPanel ctx={ctx} />,
+          settings: <SettingsPanel ctx={ctx} judgingInUse={showJudging} />,
         }}
       />
     </div>

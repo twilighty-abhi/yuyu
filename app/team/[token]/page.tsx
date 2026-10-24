@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { resolveTeamByManageToken } from "@/lib/core/teams";
 import { isTeamTokenShape } from "@/lib/teamToken";
+import { resolveEntrantByTeamManageToken } from "@/lib/core/judging";
 import { TeamPageView } from "@/components/team/TeamPageView";
+import { SubmissionSection } from "@/components/submission/SubmissionSection";
 
 type Props = {
   params: Promise<{ token: string }>;
@@ -25,5 +27,8 @@ export default async function TeamManagePage({ params }: Props) {
   if (!isTeamTokenShape(raw)) notFound();
   const leader = await resolveTeamByManageToken(raw);
   if (!leader) notFound();
-  return <TeamPageView auth={leader} teamRef={{ manageToken: raw }} tokenPage />;
+  // The same management link edits the team's hackathon submission (docs/HACKATHON.md).
+  const entrant = await resolveEntrantByTeamManageToken(raw);
+  const submission = entrant ? <SubmissionSection auth={entrant} submissionRef={{ manageToken: raw }} /> : null;
+  return <TeamPageView auth={leader} teamRef={{ manageToken: raw }} tokenPage submission={submission} />;
 }

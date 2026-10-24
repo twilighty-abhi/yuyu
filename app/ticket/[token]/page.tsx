@@ -27,6 +27,7 @@ import {
   type TicketHolder,
 } from "@/lib/core/teams";
 import { TicketSeekerPanel, TicketTeamCard } from "@/components/team/TicketTeamSection";
+import { TicketSubmissionCard, type TicketSubmissionMode } from "@/components/submission/TicketSubmissionCard";
 import { TicketJoinTeamForm } from "@/components/team/JoinTeamWithRegistration";
 
 type Props = {
@@ -109,7 +110,9 @@ export default async function TicketPage({ params }: Props) {
           organisationId: true,
           registrationMode: true,
           soloPolicy: true,
-          page: { select: { accentColor: true } },
+          status: true,
+          submissionsEnabled: true,
+          page: { select: { accentColor: true, isPublished: true } },
           organisation: { select: { slug: true, name: true } },
         },
       },
@@ -191,10 +194,15 @@ export default async function TicketPage({ params }: Props) {
   // registration needs that account signed in before anything can change,
   // and the private seeker lists are only shown to someone who can act.
   const teamEvent = rsvp.event?.registrationMode === RegistrationMode.TEAM && rsvp.eventId ? rsvp.event : null;
+  // Same publication rule as the submission pages themselves (loadEntrantSubmission).
+  const submissionsEvent =
+    rsvp.event?.submissionsEnabled && rsvp.event.status === "PUBLISHED" && rsvp.event.page?.isPublished && rsvp.eventId
+      ? rsvp.event
+      : null;
+  const session = teamEvent || submissionsEvent ? await auth() : null;
+  const viewerId = session?.user?.id ?? null;
   let teamSection: ReactNode = null;
   if (teamEvent && rsvp.eventId) {
-    const session = await auth();
-    const viewerId = session?.user?.id ?? null;
     const canAct = !rsvp.userId || rsvp.userId === viewerId;
     const holder: TicketHolder = {
       rsvpId: rsvp.id,
@@ -246,6 +254,33 @@ export default async function TicketPage({ params }: Props) {
         }
       }
     }
+  }
+
+  // Hackathon submissions (docs/HACKATHON.md). The ticket token never edits a
+  // project: a signed-in owner opens their account submission page, and a
+  // solo guest registration can only have its submission link emailed to the
+  // registration's own address.
+  let submissionSection: ReactNode = null;
+  if (submissionsEvent && rsvp.eventId && rsvp.status !== "REJECTED") {
+    const ownsAccount = Boolean(rsvp.userId && rsvp.userId === viewerId);
+    const mode: TicketSubmissionMode = ownsAccount
+      ? { kind: "account", href: `/account/submissions/${encodeURIComponent(rsvp.eventId)}`, isTeam: Boolean(rsvp.teamId) }
+      : rsvp.teamId
+        ? { kind: "team-info" }
+        : rsvp.userId
+          ? { kind: "sign-in" }
+          : confirmed
+            ? { kind: "email" }
+            : { kind: "not-confirmed" };
+    submissionSection = <TicketSubmissionCard ticketToken={rsvp.checkInToken} mode={mode} />;
+  } else if (
+    rsvp.event?.submissionsEnabled &&
+    (rsvp.event.status === "DRAFT" || rsvp.event.status === "HIDDEN") &&
+    rsvp.status !== "REJECTED"
+  ) {
+    // Submissions are on but the event isn't live: say why there is no form
+    // yet instead of nothing (the submission pages themselves stay 404).
+    submissionSection = <TicketSubmissionCard ticketToken={rsvp.checkInToken} mode={{ kind: "not-live", offline: rsvp.event.status === "HIDDEN" }} />;
   }
 
   const ticketMain = (
@@ -347,6 +382,8 @@ export default async function TicketPage({ params }: Props) {
         ) : null}
 
         {teamSection}
+
+        {submissionSection}
 
         {!isCheckedIn && rsvp.status !== "REJECTED" && !rsvp.teamId ? (
           <HideAfterLiveCheckIn>

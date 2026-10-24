@@ -4,6 +4,9 @@ import type { Event } from "@prisma/client";
 export type EventClientDto = Omit<Event,
   "checkInStationPinHash" | "checkInStationPinEncrypted" | "checkInStationSecretVersion"
   | "registrationManuallyClosedAt" | "registrationCutoffBeforeManualClose" | "registrationLeadBeforeManualClose"
+  // Judging settings have their own DTOs (lib/core/judging.ts).
+  | "submissionsEnabled" | "submissionsOpenAt" | "submissionsCloseAt" | "judgingStatus" | "judgesSeeAll"
+  | "projectGalleryPublic" | "resultsPublishedAt" | "resultsAnnouncedAt"
 >;
 
 export function toEventClientDto(event: Event): EventClientDto {

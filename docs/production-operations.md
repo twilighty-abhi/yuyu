@@ -66,6 +66,8 @@ The same page holds an optional **Alerts webhook**: a Mattermost (or Slack-compa
 - browser crashes caught by the app error boundaries, through `POST /api/client-errors`;
 - an *Instance started* note each time a process boots, which marks deploys and restarts.
 
+A browser that leaves or closes a page while it is still streaming is not an error: React aborts the render with "The destination stream closed early.", which Next.js still logs (`⨯ Error: … digest: …`) and passes to `onRequestError`. Neither path turns it into an alert.
+
 The URL embeds its own credential, so it is encrypted like the SMTP password and only its host is shown. Use **Send test message** after saving. Alert text is redacted before it leaves the instance (URLs and connection strings, email addresses, bearer values, `token=`-style parameters, and long opaque strings), identical alerts are collapsed for five minutes with a repeat count afterwards, and each process sends at most 30 alerts a minute. Delivery is best effort with a 5-second timeout and never fails the request that raised it. With several replicas, expect one *Instance started* note per replica; each process re-reads the webhook setting at most every 60 seconds, so a change saved on one replica reaches the others within a minute. Every app process needs outbound HTTPS to the webhook host.
 
 The backup fields do not run, retain, or restore backups. Keep those controls with the database provider and record successful backups and restore drills in the instance operations area.

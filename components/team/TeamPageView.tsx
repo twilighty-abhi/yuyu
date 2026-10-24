@@ -1,5 +1,6 @@
 import "server-only";
 
+import type { ReactNode } from "react";
 import { notFound } from "next/navigation";
 import { SoloPolicy } from "@prisma/client";
 import { prisma } from "@/lib/db";
@@ -16,7 +17,18 @@ import { TeamManager } from "./TeamManager";
  * Callers resolve `auth` first; this re-checks it while loading and 404s on
  * any mismatch so a stale or foreign link reveals nothing.
  */
-export async function TeamPageView({ auth, teamRef, tokenPage }: { auth: TeamLeaderAuth; teamRef: TeamRef; tokenPage: boolean }) {
+export async function TeamPageView({
+  auth,
+  teamRef,
+  tokenPage,
+  submission = null,
+}: {
+  auth: TeamLeaderAuth;
+  teamRef: TeamRef;
+  tokenPage: boolean;
+  /** The team's submission section (components/submission), when the event takes submissions. */
+  submission?: ReactNode;
+}) {
   const [page, seekers, accent] = await Promise.all([
     loadTeamPage(auth),
     listSeekersForLeader(auth),
@@ -46,6 +58,7 @@ export async function TeamPageView({ auth, teamRef, tokenPage }: { auth: TeamLea
         members={page.members}
         pendingRequests={page.pendingRequests}
         seekers={seekers}
+        submissionSlot={submission}
       />
     </div>
   );

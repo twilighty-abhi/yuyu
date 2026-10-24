@@ -39,6 +39,8 @@ try {
         'EventVenueRoom', 'EventSession', 'EventSpeaker',
         'EventSessionSpeaker', 'EventSponsor', 'EventFaq', 'EventResource',
         'EventBroadcast', 'Team', 'TeamSeekerProfile', 'TeamJoinRequest',
+        'Submission', 'SubmissionLink', 'JudgingCriterion', 'JudgeAssignment',
+        'JudgeScore', 'JudgeReview', 'EventAward', 'EventAwardWinner',
         'CheckInList', 'CheckInListRecord', 'CheckInListEvent'
       )
     `,
@@ -83,6 +85,11 @@ try {
         'Event_team_max_size_at_least_two', 'Event_team_size_order',
         'Event_team_mode_requires_max_size', 'TeamSeekerProfile_skills_limit',
         'RSVP_teamId_fkey', 'Team_eventId_fkey', 'Team_leaderRsvpId_fkey',
+        'Submission_exactly_one_entrant', 'Submission_links_https',
+        'Event_submission_window_order', 'SubmissionLink_token_hash_shape',
+        'JudgingCriterion_weight_range', 'JudgingCriterion_max_score_range',
+        'JudgeScore_score_range', 'EventAwardWinner_place_positive',
+        'Submission_teamId_fkey', 'Submission_rsvpId_fkey',
         'CheckInListRecord_known_source', 'CheckInListEvent_known_action',
         'CheckInListEvent_known_source'
       )
@@ -90,7 +97,7 @@ try {
     prisma.$queryRaw`
       SELECT indexname
       FROM pg_indexes
-      WHERE schemaname = 'public' AND indexname IN ('Asset_key_key', 'RSVP_event_attendee_unique', 'RSVP_instance_attendee_unique', 'ApiClient_organisationId_status_idx', 'ApiCredential_apiClientId_revokedAt_idx', 'Team_eventId_nameKey_key', 'Team_joinToken_key', 'Team_manageTokenHash_key', 'TeamJoinRequest_one_pending_per_team_rsvp', 'CheckInList_eventId_active_name_key', 'CheckInListRecord_listId_rsvpId_key')
+      WHERE schemaname = 'public' AND indexname IN ('Asset_key_key', 'RSVP_event_attendee_unique', 'RSVP_instance_attendee_unique', 'ApiClient_organisationId_status_idx', 'ApiCredential_apiClientId_revokedAt_idx', 'Team_eventId_nameKey_key', 'Team_joinToken_key', 'Team_manageTokenHash_key', 'TeamJoinRequest_one_pending_per_team_rsvp', 'Submission_teamId_key', 'Submission_rsvpId_key', 'SubmissionLink_tokenHash_key', 'JudgeScore_submissionId_judgeUserId_criterionId_key', 'JudgeReview_submissionId_judgeUserId_key', 'JudgeAssignment_judgeUserId_submissionId_key', 'EventAwardWinner_awardId_place_key', 'EventAwardWinner_awardId_submissionId_key', 'CheckInList_eventId_active_name_key', 'CheckInListRecord_listId_rsvpId_key')
     `,
     prisma.$queryRaw`
       SELECT trigger_name
@@ -128,15 +135,17 @@ try {
     ...["fieldKey", "fieldLabel", "fieldType"].filter((column) => !feedbackAnswerColumnNames.has(column)),
     ...["fieldId"].filter((column) => !nullableFeedbackAnswerColumns.has(column)),
     ...["secretHash", "revokedAt", "expiresAt", "lastUsedAt"].filter((column) => !apiCredentialColumnNames.has(column)),
-    ...["EventCollaborator", "EventCollaboratorInvite", "EventScheduleItem", "EventPage", "EventPageSection", "EventHighlight", "EventVenue", "EventVenueRoom", "EventSession", "EventSpeaker", "EventSessionSpeaker", "EventSponsor", "EventFaq", "EventResource", "Team", "TeamSeekerProfile", "TeamJoinRequest", "CheckInList", "CheckInListRecord", "CheckInListEvent"].filter((table) => !featureTableNames.has(table)),
-    ...["registrationClosesAt", "registrationLeadMinutes", "checkInStationPinHash", "checkInStationPinEncrypted", "checkInStationSecretVersion", "registrationMode", "teamMinSize", "teamMaxSize", "soloPolicy"].filter((column) => !eventColumnNames.has(column)),
+    ...["EventCollaborator", "EventCollaboratorInvite", "EventScheduleItem", "EventPage", "EventPageSection", "EventHighlight", "EventVenue", "EventVenueRoom", "EventSession", "EventSpeaker", "EventSessionSpeaker", "EventSponsor", "EventFaq", "EventResource", "Team", "TeamSeekerProfile", "TeamJoinRequest", "Submission", "SubmissionLink", "JudgingCriterion", "JudgeAssignment", "JudgeScore", "JudgeReview", "EventAward", "EventAwardWinner", "CheckInList", "CheckInListRecord", "CheckInListEvent"].filter((table) => !featureTableNames.has(table)),
+    ...["registrationClosesAt", "registrationLeadMinutes", "checkInStationPinHash", "checkInStationPinEncrypted", "checkInStationSecretVersion", "registrationMode", "teamMinSize", "teamMaxSize", "soloPolicy", "submissionsEnabled", "submissionsOpenAt", "submissionsCloseAt", "judgingStatus", "judgesSeeAll", "projectGalleryPublic", "resultsPublishedAt", "resultsAnnouncedAt"].filter((column) => !eventColumnNames.has(column)),
     ...["isPublished"].filter((column) => !eventPageColumnNames.has(column)),
     ...["delayMinutes"].filter((column) => !eventSessionColumnNames.has(column)),
     ...["smtpPasswordEncrypted", "googleClientSecretEncrypted", "opsWebhookUrlEncrypted", "opsWebhookEnabled", "opsWebhookIncludeWarnings"].filter((column) => !instanceSettingColumnNames.has(column)).map((column) => `InstanceSetting.${column}`),
-    ...["RSVP_exactly_one_target", "CheckInEvent_rsvpId_fkey", "AuditEvent_organisationId_fkey", "ApiClient_organisationId_fkey", "AuditEvent_actorApiClientId_fkey", "ApiCredential_secret_hash_length", "AuditEvent_single_actor", "Event_registration_cutoff_mode", "EventCollaborator_one_target", "EventCollaboratorInvite_one_target", "EventResource_one_parent", "EventResource_one_source", "Event_valid_time_range", "Event_positive_capacity", "EventSeries_positive_duration", "EventInstance_valid_time_range", "EventSession_valid_time_range", "OrganisationInvite_usage_pair", "EventCollaboratorInvite_usage_pair", "CheckInEvent_known_action", "CheckInEvent_known_source", "EventFeedbackAnswer_fieldId_fkey", "EventFeedbackResponse_identity_capability_pair", "EventFeedbackAnswer_typed_value", "OutboxMessage_attempts_nonnegative", "OutboxMessage_state_shape", "Event_team_min_size_positive", "Event_team_max_size_at_least_two", "Event_team_size_order", "Event_team_mode_requires_max_size", "TeamSeekerProfile_skills_limit", "RSVP_teamId_fkey", "Team_eventId_fkey", "Team_leaderRsvpId_fkey", "CheckInListRecord_known_source", "CheckInListEvent_known_action", "CheckInListEvent_known_source"].filter((name) => !constraintNames.has(name)),
+    ...["RSVP_exactly_one_target", "CheckInEvent_rsvpId_fkey", "AuditEvent_organisationId_fkey", "ApiClient_organisationId_fkey", "AuditEvent_actorApiClientId_fkey", "ApiCredential_secret_hash_length", "AuditEvent_single_actor", "Event_registration_cutoff_mode", "EventCollaborator_one_target", "EventCollaboratorInvite_one_target", "EventResource_one_parent", "EventResource_one_source", "Event_valid_time_range", "Event_positive_capacity", "EventSeries_positive_duration", "EventInstance_valid_time_range", "EventSession_valid_time_range", "OrganisationInvite_usage_pair", "EventCollaboratorInvite_usage_pair", "CheckInEvent_known_action", "CheckInEvent_known_source", "EventFeedbackAnswer_fieldId_fkey", "EventFeedbackResponse_identity_capability_pair", "EventFeedbackAnswer_typed_value", "OutboxMessage_attempts_nonnegative", "OutboxMessage_state_shape", "Event_team_min_size_positive", "Event_team_max_size_at_least_two", "Event_team_size_order", "Event_team_mode_requires_max_size", "TeamSeekerProfile_skills_limit", "RSVP_teamId_fkey", "Team_eventId_fkey", "Team_leaderRsvpId_fkey", "Submission_exactly_one_entrant", "Submission_links_https", "Event_submission_window_order", "SubmissionLink_token_hash_shape", "JudgingCriterion_weight_range", "JudgingCriterion_max_score_range", "JudgeScore_score_range", "EventAwardWinner_place_positive", "Submission_teamId_fkey", "Submission_rsvpId_fkey", "CheckInListRecord_known_source", "CheckInListEvent_known_action", "CheckInListEvent_known_source"].filter((name) => !constraintNames.has(name)),
     ...(constraints.some((row) => row.conname === "RSVP_teamId_fkey" && row.confdeltype === "n") ? [] : ["RSVP_teamId_fkey:ON DELETE SET NULL"]),
+    ...(constraints.some((row) => row.conname === "Submission_teamId_fkey" && row.confdeltype === "c") ? [] : ["Submission_teamId_fkey:ON DELETE CASCADE"]),
+    ...(constraints.some((row) => row.conname === "Submission_rsvpId_fkey" && row.confdeltype === "c") ? [] : ["Submission_rsvpId_fkey:ON DELETE CASCADE"]),
     ...(constraints.some((row) => row.conname === "EventFeedbackAnswer_fieldId_fkey" && row.confdeltype === "n") ? [] : ["EventFeedbackAnswer_fieldId_fkey:ON DELETE SET NULL"]),
-    ...["Asset_key_key", "RSVP_event_attendee_unique", "RSVP_instance_attendee_unique", "ApiClient_organisationId_status_idx", "ApiCredential_apiClientId_revokedAt_idx", "Team_eventId_nameKey_key", "Team_joinToken_key", "Team_manageTokenHash_key", "TeamJoinRequest_one_pending_per_team_rsvp", "CheckInList_eventId_active_name_key", "CheckInListRecord_listId_rsvpId_key"].filter((name) => !indexNames.has(name)),
+    ...["Asset_key_key", "RSVP_event_attendee_unique", "RSVP_instance_attendee_unique", "ApiClient_organisationId_status_idx", "ApiCredential_apiClientId_revokedAt_idx", "Team_eventId_nameKey_key", "Team_joinToken_key", "Team_manageTokenHash_key", "TeamJoinRequest_one_pending_per_team_rsvp", "Submission_teamId_key", "Submission_rsvpId_key", "SubmissionLink_tokenHash_key", "JudgeScore_submissionId_judgeUserId_criterionId_key", "JudgeReview_submissionId_judgeUserId_key", "JudgeAssignment_judgeUserId_submissionId_key", "EventAwardWinner_awardId_place_key", "EventAwardWinner_awardId_submissionId_key", "CheckInList_eventId_active_name_key", "CheckInListRecord_listId_rsvpId_key"].filter((name) => !indexNames.has(name)),
     ...["audit_fallback_organisation", "audit_fallback_membership", "audit_fallback_event", "audit_fallback_eventseries", "audit_fallback_organisationinvite", "audit_fallback_eventinvite", "audit_fallback_seriesinvite", "audit_fallback_rsvp", "audit_fallback_eventcollaborator", "audit_fallback_eventcollaboratorinvite", "audit_fallback_apiclient", "audit_fallback_apiclientscope", "audit_fallback_apicredential"].filter((name) => !triggerNames.has(name)),
   ];
   if (missing.length > 0) {

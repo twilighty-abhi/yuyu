@@ -8,7 +8,10 @@ import { eventCapabilities, seriesCapabilities, type EventCapabilities, type Ser
  * `grant` names the single EventPermission that unlocks a flag for someone
  * who is not an organisation owner/admin; `null` means owners/admins only.
  */
-const EVENT_MATRIX: Record<keyof EventCapabilities, EventPermission | null> = {
+/** `isJudgeOnly` describes the viewer rather than unlocking a control; checked separately below. */
+type EventMatrixKey = Exclude<keyof EventCapabilities, "isJudgeOnly">;
+
+const EVENT_MATRIX: Record<EventMatrixKey, EventPermission | null> = {
   isAdmin: null,
   canManageRegistrations: EventPermission.MANAGE_REGISTRATIONS,
   canExportAttendees: EventPermission.MANAGE_REGISTRATIONS,
@@ -33,6 +36,8 @@ const EVENT_MATRIX: Record<keyof EventCapabilities, EventPermission | null> = {
   canEmbedEvent: null,
   canDeleteEvent: null,
   canManageCollaborators: null,
+  canJudge: EventPermission.JUDGE,
+  canManageJudging: null,
 };
 
 const SERIES_MATRIX: Record<keyof SeriesCapabilities, EventPermission | null> = {
@@ -63,11 +68,26 @@ const cases = ROLES.flatMap((role) => GRANTS.map(([name, grant]) => [role ?? "no
 
 describe("eventCapabilities", () => {
   it("covers every flag in the matrix", () => {
-    expect(Object.keys(eventCapabilities(null, [])).sort()).toEqual(Object.keys(EVENT_MATRIX).sort());
+    expect(Object.keys(eventCapabilities(null, [])).sort()).toEqual([...Object.keys(EVENT_MATRIX), "isJudgeOnly"].sort());
   });
 
   it.each(cases)("%s with %s", (_role, _grant, role, grant) => {
-    expect(eventCapabilities(role, grant)).toEqual(expected(EVENT_MATRIX, role, grant));
+    const judgeOnly = role === null && grant.length > 0 && grant.every((permission) => permission === EventPermission.JUDGE);
+    expect(eventCapabilities(role, grant)).toEqual({ ...expected(EVENT_MATRIX, role, grant), isJudgeOnly: judgeOnly });
+  });
+
+  it("gives a JUDGE-only collaborator the judging workspace and nothing else (docs/HACKATHON.md)", () => {
+    const can = eventCapabilities(null, [EventPermission.JUDGE]);
+    expect(can.canJudge).toBe(true);
+    expect(can.isJudgeOnly).toBe(true);
+    const others = Object.entries(can).filter(([key]) => key !== "canJudge" && key !== "isJudgeOnly");
+    expect(others.filter(([, value]) => value)).toEqual([]);
+    // Judging management stays with owners and admins, never a grant.
+    expect(eventCapabilities(null, ALL).canManageJudging).toBe(false);
+    expect(eventCapabilities(MembershipRole.MEMBER, [EventPermission.JUDGE])).toMatchObject({ canJudge: true, isJudgeOnly: false, canManageJudging: false });
+    expect(eventCapabilities(MembershipRole.ADMIN, [])).toMatchObject({ canJudge: true, canManageJudging: true, isJudgeOnly: false });
+    // A judge who also holds another grant is not judge-only.
+    expect(eventCapabilities(null, [EventPermission.JUDGE, EventPermission.CHECK_IN]).isJudgeOnly).toBe(false);
   });
 
   it("never lets a co-organiser with every grant delete, clone, embed, publish or manage collaborators", () => {

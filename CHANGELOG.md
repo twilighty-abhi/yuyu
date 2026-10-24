@@ -23,6 +23,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Team changes send organisation webhooks like individual RSVPs: one `registration.status_changed` per member for whole-team approve, reject and promote, automatic team promotion, moves into a team, leader removals and disbanding (`CANCELLED`), organiser team deletion (`REMOVED`) and its undo, and `registration.created` when a leader adds a member. Undoing a team deletion (or a last-member deletion) restores the members' custom check-in list records, like the single-RSVP undo.
 - `POST /api/mobile/v1/rsvp` returns `TEAM_REQUIRED` (409) for an event that registers teams only.
 
+### Security
+
+- **Dependency advisories patched.** `next` 16.3.8 → 16.4.2 (GHSA-2464-fhr4-w9xw, GHSA-673q-mjm6-r5xr, GHSA-p3m5-59mp-jv5r) with `eslint-config-next` in step, `zod` 4.3.6 → 4.6.7 (GHSA-mrhx-c7xc-m3w5) and `nodemailer` 10.0.10 → 10.2.1 (addressparser GHSA-8c8m-p3m8-cjg8, GHSA-m943-m63m-w62w, GHSA-85x2-q946-cp5h). No application code changes; `npm audit --omit=dev` reports 0 vulnerabilities.
+
 ### Fixed
 
 - **Co-organiser permissions.** Collaborators no longer see owner/admin-only controls (Delete event, clone, event address, embed, publishing, the registration form, emails, feedback settings and the certificate builder, the series details form, and series invites or schedule without the grant), and the event and series dashboards now show each grant's own controls: `EDIT_DETAILS` the event page content editor, `MANAGE_REGISTRATIONS` the guest list with approvals, manual guests, edits, removals, the attendee CSV and registration numbers, and `MANAGE_INVITATIONS` the invite list. Server-side, `MANAGE_INVITATIONS` now authorises event and series invites and `MANAGE_REGISTRATIONS` the RSVP lifecycle and guest-management cores (on the event, or on the series for occurrences), which were owner/admin only although the dashboard offered them; delete, clone, collaborator management, publishing and short links stay owner/admin only. Visibility comes from one capability object (`lib/eventDashboard/capabilities.ts`); the matrix is in `docs/PERMISSIONS.md`.

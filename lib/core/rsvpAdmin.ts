@@ -15,6 +15,7 @@ import { isActionRateLimited } from "@/lib/actionRateLimit";
 import { hasCapacityToRestoreConfirmedRsvp } from "@/lib/rsvpCapacity";
 import { promoteOldestWaitlistedUnit, settleTeamAfterMemberLeft } from "@/lib/teamUnits";
 import { isTeamDeletionSnapshot, restoreTeamDeletionSnapshot, soleMemberTeamSnapshotTx } from "@/lib/core/teams";
+import { captureSubmissionSnapshotTx, restoreSubmissionSnapshotTx, submissionSnapshotSchema, type SubmissionSnapshot } from "@/lib/core/submissionLifecycle";
 
 const UNDO_TTL_MS = 5 * 60_000;
 
@@ -149,6 +150,8 @@ const snapshotSchema = z.object({
     valueNumber: z.number().finite().nullable(),
     valueDate: z.string().datetime().nullable(),
   })).max(200),
+  /** A solo registrant's project and its judging record (docs/HACKATHON.md), recreated on undo. */
+  submission: submissionSnapshotSchema.nullable().optional(),
 }).refine(
   (value) => Boolean(value.eventId) !== Boolean(value.eventInstanceId),
   { message: "Invalid RSVP target." },
@@ -193,7 +196,7 @@ export async function deleteRsvpForUser(actorUserId: string | null, input: unkno
   if (!rsvp) return { ok: false, error: "RSVP not found." };
   const teamEvent = rsvp.eventId && rsvp.event?.registrationMode === RegistrationMode.TEAM ? rsvp.eventId : null;
 
-  const snapshot = {
+  const snapshot: Record<string, unknown> & { teamId?: string | null; submission?: SubmissionSnapshot | null } = {
     eventId: rsvp.eventId,
     eventInstanceId: rsvp.eventInstanceId,
     userId: rsvp.userId,
@@ -228,6 +231,15 @@ export async function deleteRsvpForUser(actorUserId: string | null, input: unkno
       // snapshot could never be restored into it. Keep the whole team instead.
       const teamSnapshot = teamId ? await soleMemberTeamSnapshotTx(tx, { teamId, eventId: teamEvent, rsvpId: rsvp.id }) : null;
       if (teamSnapshot) payload = teamSnapshot as Prisma.InputJsonValue;
+    } else if (rsvp.eventId) {
+      // Same lock order as entrant submission writes (Event, then RSVP).
+      await tx.$queryRaw`SELECT "id" FROM "Event" WHERE "id" = ${rsvp.eventId} FOR UPDATE`;
+    }
+    // A solo registration's project (and its scores) cascades with the RSVP;
+    // keep it in the undo snapshot so restoring brings it back.
+    if (rsvp.eventId && !teamId) {
+      snapshot.submission = await captureSubmissionSnapshotTx(tx, { eventId: rsvp.eventId, rsvpId: rsvp.id });
+      payload = snapshot as Prisma.InputJsonValue;
     }
     // Keep the short-lived undo table bounded even when no scheduled cleanup is
     // configured. Expired snapshots are never eligible for restoration.
@@ -341,6 +353,9 @@ export async function restoreRsvpForUser(actorUserId: string | null, input: unkn
           })) },
         },
       });
+      if (snapshot.data.submission && snapshot.data.eventId && !teamId) {
+        await restoreSubmissionSnapshotTx(tx, snapshot.data.submission, { eventId: snapshot.data.eventId, rsvpId: created.id });
+      }
       await tx.rsvpDeletionUndo.delete({ where: { id: undo.id } });
       return created;
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });

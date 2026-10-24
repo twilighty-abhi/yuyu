@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { requireAuth } from "@/lib/permissions";
 import { resolveLeaderForUser } from "@/lib/core/teams";
+import { resolveEntrantForUser } from "@/lib/core/judging";
 import { TeamPageView } from "@/components/team/TeamPageView";
+import { SubmissionSection } from "@/components/submission/SubmissionSection";
 
 type Props = {
   params: Promise<{ teamId: string }>;
@@ -27,5 +29,8 @@ export default async function AccountTeamPage({ params }: Props) {
   const { teamId } = await params;
   const leader = await resolveLeaderForUser(session.user.id, teamId);
   if (!leader) notFound();
-  return <TeamPageView auth={leader} teamRef={{ teamId: leader.teamId }} tokenPage={false} />;
+  // The signed-in leader edits the team's submission as a member of the team (docs/HACKATHON.md).
+  const entrant = await resolveEntrantForUser(session.user.id, leader.eventId);
+  const submission = entrant ? <SubmissionSection auth={entrant} submissionRef={{ eventId: leader.eventId }} /> : null;
+  return <TeamPageView auth={leader} teamRef={{ teamId: leader.teamId }} tokenPage={false} submission={submission} />;
 }

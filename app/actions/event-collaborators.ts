@@ -14,9 +14,19 @@ import { startOutboxWorker } from "@/lib/outboxWorker";
 import { isActionRateLimited } from "@/lib/actionRateLimit";
 import type { ActionResult } from "./org";
 
-const permissions = z.array(z.nativeEnum(EventPermission)).min(1).max(5);
-const target = z.object({ organisationSlug: z.string().min(1), eventId: z.string().min(1).optional(), eventSeriesId: z.string().min(1).optional() }).refine((v) => Boolean(v.eventId) !== Boolean(v.eventSeriesId));
-const inviteSchema = target.extend({ email: z.string().trim().email(), permissions });
+const permissions = z
+  .array(z.nativeEnum(EventPermission))
+  .min(1)
+  .max(Object.keys(EventPermission).length)
+  .refine((values) => new Set(values).size === values.length, "Each permission can be granted once.");
+const targetFields = z.object({ organisationSlug: z.string().min(1), eventId: z.string().min(1).optional(), eventSeriesId: z.string().min(1).optional() });
+const target = targetFields.refine((v) => Boolean(v.eventId) !== Boolean(v.eventSeriesId));
+/** Judging is one-off-event only (docs/HACKATHON.md): a series grant can never carry JUDGE. */
+const judgeOnlyOnEvents = (v: { eventSeriesId?: string; permissions: EventPermission[] }) => !(v.eventSeriesId && v.permissions.includes(EventPermission.JUDGE));
+const inviteSchema = targetFields
+  .extend({ email: z.string().trim().email(), permissions })
+  .refine((v) => Boolean(v.eventId) !== Boolean(v.eventSeriesId))
+  .refine(judgeOnlyOnEvents);
 
 
 async function requireAdmin(orgSlug: string, userId: string) {
@@ -81,7 +91,7 @@ export async function revokeEventCollaborator(input: unknown): Promise<ActionRes
 
 export async function updateEventCollaboratorPermissions(input: unknown): Promise<ActionResult> {
   const session = await auth();
-  const parsed = target.extend({ collaboratorId: z.string().min(1), permissions }).safeParse(input);
+  const parsed = targetFields.extend({ collaboratorId: z.string().min(1), permissions }).refine((v) => Boolean(v.eventId) !== Boolean(v.eventSeriesId)).refine(judgeOnlyOnEvents).safeParse(input);
   if (!session?.user?.id || !parsed.success) return { ok: false, error: "Invalid collaborator permissions." };
   const org = await requireAdmin(parsed.data.organisationSlug, session.user.id);
   if (!org) return { ok: false, error: "You do not have permission." };

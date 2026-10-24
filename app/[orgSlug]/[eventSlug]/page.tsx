@@ -14,6 +14,8 @@ import { plainTextToSafeHtml, sanitizeRichText } from "@/lib/richText";
 import { isRegistrationClosed } from "@/lib/registrationCutoff";
 import { toFieldDefinition } from "@/lib/registrationFields";
 import { publicTeamRegistrationConfig } from "@/lib/publicTeamConfig";
+import { isProjectGalleryVisible } from "@/lib/core/judging";
+import { projectGalleryPath, resultsPath } from "@/lib/submissionToken";
 
 type Props = { params: Promise<{ orgSlug: string; eventSlug: string }> };
 
@@ -217,6 +219,10 @@ export default async function EventPage({ params }: Props) {
       registrationFull={event.capacity != null && confirmed >= event.capacity}
       approvalRequired={event.privacyType === EventPrivacyType.APPROVAL_REQUIRED}
       team={publicTeamRegistrationConfig(event)}
+      judging={{
+        resultsHref: event.submissionsEnabled && event.resultsPublishedAt ? resultsPath(org.slug, event.slug) : null,
+        projectsHref: isProjectGalleryVisible(event) ? projectGalleryPath(org.slug, event.slug) : null,
+      }}
     />
   );
 }

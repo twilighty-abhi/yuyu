@@ -3,9 +3,17 @@ import { toEventClientDto } from "@/lib/eventDto";
 import type { EventDashboardContext } from "@/lib/eventDashboard/context";
 import { CollaboratorInvitePanel } from "@/components/event/CollaboratorInvitePanel";
 import { EventManageMore } from "@/components/dashboard/EventManageMore";
+import { loadJudgingSettingsCard } from "@/lib/eventDashboard/judging";
+import { JudgingSettingsCard } from "./JudgingPanelSetup";
 
-export async function SettingsPanel({ ctx }: { ctx: EventDashboardContext }) {
+/**
+ * `judgingInUse`: whether the dashboard shows the Judging tab. While it does
+ * not, owners and admins turn hackathon submissions on from here
+ * (docs/HACKATHON.md); once on, the settings move to the Judging tab.
+ */
+export async function SettingsPanel({ ctx, judgingInUse = false }: { ctx: EventDashboardContext; judgingInUse?: boolean }) {
   const { event, permissions, organisation } = ctx;
+  const judgingCard = !judgingInUse && permissions.canManageJudging ? await loadJudgingSettingsCard(ctx) : null;
   const [collaborators, pending] = permissions.canManageCollaborators
     ? await Promise.all([
         prisma.eventCollaborator.findMany({ where: { eventId: event.id }, include: { user: { select: { name: true, email: true } } }, orderBy: { createdAt: "asc" } }),
@@ -24,6 +32,7 @@ export async function SettingsPanel({ ctx }: { ctx: EventDashboardContext }) {
           pendingInvites={pending.map((invite) => ({ id: invite.id, email: invite.email, expiresAt: invite.expiresAt.toISOString(), permissions: invite.permissions }))}
         />
       ) : null}
+      {judgingCard ? <JudgingSettingsCard scope={judgingCard.scope} settings={judgingCard.settings} now={ctx.now.toISOString()} /> : null}
       <EventManageMore organisationSlug={organisation.slug} event={toEventClientDto(event)} />
     </div>
   );

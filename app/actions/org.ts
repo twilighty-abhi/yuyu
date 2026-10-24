@@ -179,6 +179,8 @@ const RESERVED_SLUGS = new Set([
   "super-admin",
   "api",
   "ticket",
+  "submit",
+  "team",
   "join",
   "new",
   "org",

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { Award, ExternalLink, Globe, MapPin, Ticket, Users } from "lucide-react";
+import { Award, ExternalLink, Globe, MapPin, Send, Ticket, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Chip, DateBlock, EmptyState } from "@/components/ui/display";
 import { cn } from "@/lib/cn";
@@ -74,6 +74,14 @@ function RegistrationItem({ row, past }: { row: AccountRegistrationRow; past: bo
             <Link href={row.team.manageHref} prefetch={false}>
               <Users aria-hidden className="size-4" />
               Manage team
+            </Link>
+          </Button>
+        ) : null}
+        {row.submissionHref ? (
+          <Button asChild variant="secondary" size="sm">
+            <Link href={row.submissionHref} prefetch={false}>
+              <Send aria-hidden className="size-4" />
+              {row.team ? "Team project" : "Project"}
             </Link>
           </Button>
         ) : null}

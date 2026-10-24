@@ -76,4 +76,35 @@ describe("production migration safety contracts", () => {
     expect(sql).toContain('"TeamSeekerProfile_rsvpId_fkey" FOREIGN KEY ("rsvpId") REFERENCES "RSVP"("id") ON DELETE CASCADE');
     expect(sql).toContain('"TeamJoinRequest_teamId_fkey" FOREIGN KEY ("teamId") REFERENCES "Team"("id") ON DELETE CASCADE');
   });
+
+  it("adds hackathon judging without rewriting existing rows", () => {
+    const sql = readFileSync(resolve(root, "prisma/migrations/20261024010000_hackathon_judging/migration.sql"), "utf8");
+    expect(sql).not.toMatch(/\bDROP\b/i);
+    expect(sql).not.toMatch(/^\s*UPDATE\s/im);
+    expect(sql).toContain(`ALTER TYPE "EventPermission" ADD VALUE 'JUDGE';`);
+    expect(sql).toContain('ADD COLUMN     "submissionsEnabled" BOOLEAN NOT NULL DEFAULT false');
+    expect(sql).toContain('ADD COLUMN     "judgingStatus" "JudgingStatus" NOT NULL DEFAULT \'NOT_STARTED\'');
+    expect(sql).toContain('"Submission_exactly_one_entrant" CHECK (num_nonnulls("teamId", "rsvpId") = 1)');
+    expect(sql).toContain('"Event_submission_window_order" CHECK ("submissionsOpenAt" IS NULL OR "submissionsCloseAt" IS NULL OR "submissionsCloseAt" > "submissionsOpenAt")');
+    expect(sql).toContain('"JudgingCriterion_weight_range" CHECK ("weight" BETWEEN 1 AND 10)');
+    expect(sql).toContain('"JudgingCriterion_max_score_range" CHECK ("maxScore" BETWEEN 1 AND 10)');
+    expect(sql).toContain('"JudgeScore_score_range" CHECK ("score" BETWEEN 0 AND 10)');
+    expect(sql).toContain('"EventAwardWinner_place_positive" CHECK ("place" >= 1)');
+    expect(sql).toContain('CREATE UNIQUE INDEX "Submission_teamId_key"');
+    expect(sql).toContain('CREATE UNIQUE INDEX "Submission_rsvpId_key"');
+    expect(sql).toContain('CREATE UNIQUE INDEX "SubmissionLink_tokenHash_key"');
+    expect(sql).toContain('CREATE UNIQUE INDEX "JudgeScore_submissionId_judgeUserId_criterionId_key"');
+    expect(sql).toContain('CREATE UNIQUE INDEX "JudgeReview_submissionId_judgeUserId_key"');
+    expect(sql).toContain('CREATE UNIQUE INDEX "EventAwardWinner_awardId_place_key"');
+    expect(sql).toContain('"Submission_teamId_fkey" FOREIGN KEY ("teamId") REFERENCES "Team"("id") ON DELETE CASCADE');
+    expect(sql).toContain('"Submission_rsvpId_fkey" FOREIGN KEY ("rsvpId") REFERENCES "RSVP"("id") ON DELETE CASCADE');
+    expect(sql).toContain('"Submission_eventId_fkey" FOREIGN KEY ("eventId") REFERENCES "Event"("id") ON DELETE CASCADE');
+  });
+
+  it("adds the results announcement marker as a nullable column", () => {
+    const sql = readFileSync(resolve(root, "prisma/migrations/20261024020000_judging_results_announced/migration.sql"), "utf8");
+    expect(sql).not.toMatch(/\bDROP\b/i);
+    expect(sql).not.toMatch(/^\s*UPDATE\s/im);
+    expect(sql).toContain('ALTER TABLE "Event" ADD COLUMN "resultsAnnouncedAt" TIMESTAMP(3);');
+  });
 });

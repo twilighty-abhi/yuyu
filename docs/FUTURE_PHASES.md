@@ -27,10 +27,10 @@ This page contains only work that is not currently implemented. Current behavior
 - Custom domains and organisation-level themes (organisation logos and per-event accent colours already exist).
 - More granular custom roles and per-action permissions.
 - Import/export tools for events and attendee rosters.
-- Hackathon submissions, judging, and results built on team registration: project submissions per team, judging criteria and scoring, judge assignments, and published results.
 - Team registration for recurring series and occurrences (today series stay individual and their validators refuse team settings).
 - Team support in the mobile API (create, join, and manage teams; team fields in DTOs) and the machine API (team rosters behind a separately scoped credential). Today the mobile API registers solo or returns `TEAM_REQUIRED`, and no API DTO has team fields.
 - Email notifications for team invitations and join requests (today they appear only on the team and ticket pages).
+- Hackathon judging in the mobile API (entrant submissions, a judge scoring workspace) and the machine API (published results behind a separately scoped credential). Today neither API exposes submissions, judging, or results, and judge-only co-organisers do not see the event in the mobile organiser API.
 - Extend the machine API only for concrete consumers: recurring series/instances, RSVP workflow data, separately scoped participant contact or registration answers, privacy-preserving feedback reads, and narrow idempotent writes.
 
 ## Scale and reliability

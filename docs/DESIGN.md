@@ -440,7 +440,7 @@ Built in `app/dashboard/page.tsx` from `lib/dashboardHome.ts`; every number come
 
 ### 5.4 Event dashboard tabs
 
-Eight tabs: Overview, Guests (People · Invites), Event page (Details · Page & programme · Registration form), Emails, Check-in, Feedback, Analytics, and Settings. Deep links use `?tab=` and `?sub=`.
+Eight tabs: Overview, Guests (People · Invites), Event page (Details · Page & programme · Registration form), Emails, Check-in, Feedback, Analytics, and Settings. Deep links use `?tab=` and `?sub=`. A ninth tab, **Judging** (between Check-in and Feedback), appears only on events that use hackathon judging ([Hackathon](HACKATHON.md)); until then its on switch sits in Settings, so ordinary events keep eight tabs.
 
 - **Overview:** a readiness checklist whose **Publish event** button sets the event Live and releases its public page in one step (`publishEvent`), so the page, sign-ups and short link work at once.
 - **Overview** also adds a **Short link** control for owners/admins (Create → copy `/aB3x9Kq`; Regenerate confirms that the old link stops working).

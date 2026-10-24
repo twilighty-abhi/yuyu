@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, type FormEvent } from "react";
+import { useState, useTransition, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Check, Copy, Crown, MoreHorizontal, RefreshCw, UserMinus, UserPlus, Users } from "lucide-react";
@@ -50,6 +50,8 @@ export type TeamManagerProps = {
   pendingRequests: TeamManagerRequest[];
   /** Null when the list is not available (no matching, team full or rejected). */
   seekers: TeamManagerSeeker[] | null;
+  /** The team's hackathon submission section (docs/HACKATHON.md), rendered server-side; null when the event takes none. */
+  submissionSlot?: ReactNode;
 };
 
 type Feedback = { tone: "success" | "danger"; message: string } | null;
@@ -85,7 +87,7 @@ function absolute(baseUrl: string, path: string) {
  * permissions. Member rows carry names only.
  */
 export function TeamManager(props: TeamManagerProps) {
-  const { teamRef, tokenPage, baseUrl, team, event, members, pendingRequests, seekers } = props;
+  const { teamRef, tokenPage, baseUrl, team, event, members, pendingRequests, seekers, submissionSlot } = props;
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [feedback, setFeedback] = useState<Feedback>(null);
@@ -420,6 +422,8 @@ export function TeamManager(props: TeamManagerProps) {
           )}
         </div>
       </Card>
+
+      {submissionSlot ?? null}
 
       {event.matching && !rejected ? (
         <Card as="section" aria-labelledby="team-matching">

@@ -2,7 +2,8 @@ import "server-only";
 
 import { OutboxStatus, Prisma, RsvpStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { sendApprovalNotification, sendCollaboratorInvitation, sendEventBroadcast, sendEventInvitation, sendRSVPConfirmation, sendTeamCreatedEmail, sendTeamMemberAddedEmail } from "@/lib/email";
+import { sendApprovalNotification, sendCollaboratorInvitation, sendEventBroadcast, sendEventInvitation, sendResultsPublishedEmail, sendRSVPConfirmation, sendSubmissionLinkEmail, sendSubmissionReceivedEmail, sendTeamCreatedEmail, sendTeamMemberAddedEmail } from "@/lib/email";
+import { hashSubmissionLinkToken, isSubmissionTokenShape, resultsPath, submissionLinkPath } from "@/lib/submissionToken";
 import { hashTeamManageToken, isTeamTokenShape, teamJoinPath, teamManagePath } from "@/lib/teamToken";
 import { broadcastHtmlToText, formatBroadcastEventDate, renderBroadcastHtml, renderBroadcastTemplate, sampleBroadcastVariables } from "@/lib/broadcastTemplate";
 import { broadcastBrandFor, broadcastBrandSelect, broadcastEventUrl, broadcastFeedbackUrl, broadcastScheduleUrl, broadcastTicketUrl, rsvpMatchesBroadcastAudience } from "@/lib/eventBroadcast";
@@ -53,6 +54,23 @@ export type TeamMemberAddedPayload = {
   checkInToken: string;
   addedByName?: string;
 };
+
+/**
+ * Hackathon submission confirmation to the person who submitted. Event and
+ * project titles are read at send time; the message is dropped when the
+ * submission is gone or no longer SUBMITTED.
+ */
+export type SubmissionReceivedPayload = { to: string; submissionId: string; recipientName?: string };
+
+/**
+ * A solo registrant's `/submit/{token}` link, sent only to the RSVP's own
+ * address. Carries the raw token (a capability), which exists nowhere else;
+ * dropped when the link was regenerated or the registration removed.
+ */
+export type SubmissionLinkPayload = { to: string; rsvpId: string; token: string };
+
+/** Results announcement per confirmed entrant member; dropped if results were unpublished before delivery. */
+export type ResultsPublishedPayload = { to: string; eventId: string; recipientName?: string };
 
 type PasswordResetPayload = {
   to: string;
@@ -126,6 +144,21 @@ export async function enqueueTeamMemberAdded(client: OutboxClient, payload: Team
   return client.outboxMessage.create({ data: { kind: "team-member-added", payload: payload as Prisma.InputJsonValue } });
 }
 
+export async function enqueueSubmissionReceived(client: OutboxClient, payload: SubmissionReceivedPayload) {
+  return client.outboxMessage.create({ data: { kind: "submission-received", payload: payload as Prisma.InputJsonValue } });
+}
+
+export async function enqueueSubmissionLink(client: OutboxClient, payload: SubmissionLinkPayload) {
+  return client.outboxMessage.create({ data: { kind: "submission-link", payload: payload as Prisma.InputJsonValue } });
+}
+
+export async function enqueueResultsPublished(client: OutboxClient, payloads: ResultsPublishedPayload[]) {
+  if (payloads.length === 0) return { count: 0 };
+  return client.outboxMessage.createMany({
+    data: payloads.map((payload) => ({ kind: "results-published", payload: payload as Prisma.InputJsonValue })),
+  });
+}
+
 export async function enqueuePasswordReset(
   client: OutboxClient,
   payload: PasswordResetPayload,
@@ -186,7 +219,7 @@ function isExpired(expiresAt: string | undefined, now = new Date()) {
 }
 
 function containsCapability(kind: string, payload: Prisma.JsonValue) {
-  if (["rsvp-confirmation", "password-reset", "email-verification", "collaborator-invite", "team-created", "team-member-added"].includes(kind)) return true;
+  if (["rsvp-confirmation", "password-reset", "email-verification", "collaborator-invite", "team-created", "team-member-added", "submission-link"].includes(kind)) return true;
   return kind === "rsvp-status" && Boolean(payload && typeof payload === "object" && !Array.isArray(payload) && typeof (payload as Record<string, unknown>).checkInToken === "string");
 }
 
@@ -245,6 +278,35 @@ export function asTeamMemberAddedPayload(value: Prisma.JsonValue): TeamMemberAdd
     (payload.addedByName !== undefined && !isBoundedString(payload.addedByName, 200))
   ) return null;
   return payload as TeamMemberAddedPayload;
+}
+
+export function asSubmissionReceivedPayload(value: Prisma.JsonValue): SubmissionReceivedPayload | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const payload = value as Record<string, unknown>;
+  if (
+    !isEmail(payload.to) ||
+    !isBoundedString(payload.submissionId, 64) ||
+    (payload.recipientName !== undefined && !isBoundedString(payload.recipientName, 200))
+  ) return null;
+  return payload as SubmissionReceivedPayload;
+}
+
+export function asSubmissionLinkPayload(value: Prisma.JsonValue): SubmissionLinkPayload | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const payload = value as Record<string, unknown>;
+  if (!isEmail(payload.to) || !isBoundedString(payload.rsvpId, 64) || !isSubmissionTokenShape(payload.token)) return null;
+  return payload as SubmissionLinkPayload;
+}
+
+export function asResultsPublishedPayload(value: Prisma.JsonValue): ResultsPublishedPayload | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const payload = value as Record<string, unknown>;
+  if (
+    !isEmail(payload.to) ||
+    !isBoundedString(payload.eventId, 64) ||
+    (payload.recipientName !== undefined && !isBoundedString(payload.recipientName, 200))
+  ) return null;
+  return payload as ResultsPublishedPayload;
 }
 
 function asRsvpStatusPayload(value: Prisma.JsonValue): RsvpStatusPayload | null {
@@ -499,6 +561,72 @@ export async function deliverOutboxBatch(limit = 20) {
           checkInToken: payload.checkInToken,
           addedByName: payload.addedByName,
           recipientName: rsvp.user?.name?.trim() || rsvp.guestName?.trim() || undefined,
+          messageId: stableMessageId,
+        });
+      } else if (message.kind === "submission-received") {
+        const payload = asSubmissionReceivedPayload(message.payload);
+        if (!payload) throw new PermanentOutboxError();
+        const submission = await prisma.submission.findUnique({
+          where: { id: payload.submissionId },
+          select: {
+            status: true,
+            title: true,
+            team: { select: { name: true } },
+            event: { select: { title: true, slug: true, organisation: { select: { slug: true } } } },
+          },
+        });
+        if (!submission || submission.status !== "SUBMITTED") {
+          await prisma.outboxMessage.deleteMany({ where: { id: message.id, status: OutboxStatus.PROCESSING, lockedAt: claimTime } });
+          continue;
+        }
+        await sendSubmissionReceivedEmail({
+          to: payload.to,
+          eventTitle: submission.event.title,
+          projectTitle: submission.title,
+          teamName: submission.team?.name,
+          eventPath: `/${encodeURIComponent(submission.event.organisation.slug)}/${encodeURIComponent(submission.event.slug)}`,
+          recipientName: payload.recipientName,
+          messageId: stableMessageId,
+        });
+      } else if (message.kind === "submission-link") {
+        const payload = asSubmissionLinkPayload(message.payload);
+        if (!payload) throw new PermanentOutboxError();
+        const link = await prisma.submissionLink.findUnique({
+          where: { rsvpId: payload.rsvpId },
+          select: {
+            tokenHash: true,
+            rsvp: { select: { teamId: true, guestName: true, user: { select: { name: true } }, event: { select: { title: true } } } },
+          },
+        });
+        // Regenerated, removed, or the registrant joined a team since: never
+        // send a link that no longer works.
+        if (!link || link.tokenHash !== hashSubmissionLinkToken(payload.token) || !link.rsvp.event || link.rsvp.teamId) {
+          await prisma.outboxMessage.deleteMany({ where: { id: message.id, status: OutboxStatus.PROCESSING, lockedAt: claimTime } });
+          continue;
+        }
+        await sendSubmissionLinkEmail({
+          to: payload.to,
+          eventTitle: link.rsvp.event.title,
+          submitPath: submissionLinkPath(payload.token),
+          recipientName: link.rsvp.user?.name?.trim() || link.rsvp.guestName?.trim() || undefined,
+          messageId: stableMessageId,
+        });
+      } else if (message.kind === "results-published") {
+        const payload = asResultsPublishedPayload(message.payload);
+        if (!payload) throw new PermanentOutboxError();
+        const event = await prisma.event.findUnique({
+          where: { id: payload.eventId },
+          select: { title: true, slug: true, resultsPublishedAt: true, organisation: { select: { slug: true } } },
+        });
+        if (!event?.resultsPublishedAt) {
+          await prisma.outboxMessage.deleteMany({ where: { id: message.id, status: OutboxStatus.PROCESSING, lockedAt: claimTime } });
+          continue;
+        }
+        await sendResultsPublishedEmail({
+          to: payload.to,
+          eventTitle: event.title,
+          resultsPath: resultsPath(event.organisation.slug, event.slug),
+          recipientName: payload.recipientName,
           messageId: stableMessageId,
         });
       } else if (message.kind === "password-reset") {

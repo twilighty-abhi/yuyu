@@ -19,6 +19,9 @@ enum EventPermission {
   MANAGE_INVITATIONS
   CHECK_IN
   PUBLISH_AND_SCHEDULE
+  /// Hackathon judging workspace only (docs/HACKATHON.md). A collaborator with
+  /// just this grant sees no guests, answers, emails, check-in, or editing.
+  JUDGE
 }
 
 enum EventStatus {
@@ -127,6 +130,23 @@ enum TeamJoinRequestStatus {
   CANCELLED
 }
 
+/// Lifecycle of a hackathon project (docs/HACKATHON.md). Only SUBMITTED
+/// projects can be scored or win an award.
+enum SubmissionStatus {
+  DRAFT
+  SUBMITTED
+  WITHDRAWN
+  DISQUALIFIED
+}
+
+/// Judges can score only while OPEN. CLOSED freezes scores. The rubric can be
+/// changed only while NOT_STARTED.
+enum JudgingStatus {
+  NOT_STARTED
+  OPEN
+  CLOSED
+}
+
 model User {
   id                 String    @id @default(cuid())
   name               String?
@@ -158,6 +178,9 @@ model User {
   eventCollaboratorInvitesUsed EventCollaboratorInvite[] @relation("EventCollaboratorInviteUsedBy")
   eventBroadcasts   EventBroadcast[]
   mobileSessions    MobileSession[]
+  judgeAssignments             JudgeAssignment[]
+  judgeScores                  JudgeScore[]
+  judgeReviews                 JudgeReview[]
 }
 
 model Account {
@@ -375,6 +398,22 @@ model Event {
   /// Enforced under the Event row lock; cannot drop below the largest team.
   teamMaxSize           Int?
   soloPolicy            SoloPolicy       @default(SOLO_ALLOWED)
+  /// Hackathon submissions and judging (docs/HACKATHON.md, one-off events).
+  submissionsEnabled                  Boolean          @default(false)
+  /// Submission window, checked against server time in the write transaction.
+  /// A CHECK constraint keeps submissionsCloseAt after submissionsOpenAt.
+  submissionsOpenAt                   DateTime?
+  submissionsCloseAt                  DateTime?
+  judgingStatus                       JudgingStatus    @default(NOT_STARTED)
+  /// true: every judge sees every submitted project; false: only assigned ones.
+  judgesSeeAll                        Boolean          @default(true)
+  /// After the window closes, list submitted projects at /{org}/{event}/projects.
+  projectGalleryPublic                Boolean          @default(false)
+  /// Set when results are published (/{org}/{event}/results); null hides them.
+  resultsPublishedAt                  DateTime?
+  /// First delivery of the results-published announcement; kept across
+  /// unpublish/republish so nobody is emailed twice.
+  resultsAnnouncedAt                  DateTime?
   createdAt             DateTime         @default(now())
 
   organisation     Organisation           @relation(fields: [organisationId], references: [id], onDelete: Cascade)
@@ -395,6 +434,10 @@ model Event {
   resources        EventResource[]
   broadcasts       EventBroadcast[]
   teams            Team[]
+  submissions         Submission[]
+  judgingCriteria     JudgingCriterion[]
+  judgeAssignments    JudgeAssignment[]
+  awards              EventAward[]
 
   @@unique([organisationId, slug])
   @@index([organisationId])
@@ -564,6 +607,7 @@ model EventHighlight {
   sortOrder  Int               @default(0)
 
   event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
   @@index([eventId, sortOrder])
 }
 
@@ -594,6 +638,7 @@ model EventVenueRoom {
   sortOrder Int @default(0)
 
   venue EventVenue @relation(fields: [venueId], references: [id], onDelete: Cascade)
+
   @@unique([venueId, name])
   @@index([venueId, sortOrder])
 }
@@ -635,6 +680,7 @@ model EventSession {
   track     EventScheduleTrack @relation(fields: [trackId], references: [id], onDelete: Restrict)
   speakers  EventSessionSpeaker[]
   resources EventResource[]
+
   @@unique([eventId, slug])
   @@index([eventId, startDateTime, sortOrder])
   @@index([trackId, startDateTime, sortOrder])
@@ -657,6 +703,7 @@ model EventSpeaker {
 
   event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
   sessions EventSessionSpeaker[]
+
   @@unique([eventId, slug])
   @@index([eventId, sortOrder])
 }
@@ -668,6 +715,7 @@ model EventSessionSpeaker {
 
   session EventSession @relation(fields: [eventSessionId], references: [id], onDelete: Cascade)
   speaker EventSpeaker @relation(fields: [speakerId], references: [id], onDelete: Cascade)
+
   @@id([eventSessionId, speakerId])
   @@index([speakerId, sortOrder])
 }
@@ -684,6 +732,7 @@ model EventSponsor {
   sortOrder   Int                @default(0)
 
   event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
   @@index([eventId, tier, sortOrder])
 }
 
@@ -696,6 +745,7 @@ model EventFaq {
   sortOrder  Int                @default(0)
 
   event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
   @@index([eventId, sortOrder])
 }
 
@@ -712,6 +762,7 @@ model EventResource {
 
   event   Event?        @relation(fields: [eventId], references: [id], onDelete: Cascade)
   session EventSession? @relation(fields: [eventSessionId], references: [id], onDelete: Cascade)
+
   @@index([eventId, sortOrder])
   @@index([eventSessionId, sortOrder])
 }
@@ -769,6 +820,8 @@ model RSVP {
   answers           RsvpAnswer[]
   feedbackResponses EventFeedbackResponse[]
   checkInEvents     CheckInEvent[]
+  submission        Submission?
+  submissionLink    SubmissionLink?
 
   @@index([eventId])
   @@index([teamId])
@@ -808,6 +861,7 @@ model Team {
   leaderRsvp   RSVP?             @relation("TeamLeader", fields: [leaderRsvpId], references: [id], onDelete: SetNull)
   members      RSVP[]            @relation("TeamMembers")
   joinRequests TeamJoinRequest[]
+  submission   Submission?
 
   @@unique([eventId, nameKey])
   @@index([eventId, status, createdAt])
@@ -846,6 +900,166 @@ model TeamJoinRequest {
 
   @@index([teamId, status])
   @@index([rsvpId, status])
+}
+
+/// A hackathon project (docs/HACKATHON.md). The entrant is exactly one of a
+/// team or a solo RSVP (CHECK constraint), each with at most one submission,
+/// and the submission is deleted with its team, RSVP, or event. Always read
+/// together with `eventId`; the entrant must belong to the same event.
+model Submission {
+  id                 String           @id @default(cuid())
+  eventId            String
+  teamId             String?          @unique
+  rsvpId             String?          @unique
+  /// Up to 120 characters.
+  title              String
+  /// Plain text, up to 4000 characters.
+  summary            String           @default("")
+  /// Optional https: links, up to 500 characters each.
+  repoUrl            String?
+  demoUrl            String?
+  videoUrl           String?
+  status             SubmissionStatus @default(DRAFT)
+  /// Set on (re)submission; kept when an organiser disqualifies.
+  submittedAt        DateTime?
+  /// Organiser-only note; never shown to entrants, judges, or the public.
+  disqualifiedReason String?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  event       Event              @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  team        Team?              @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  rsvp        RSVP?              @relation(fields: [rsvpId], references: [id], onDelete: Cascade)
+  assignments JudgeAssignment[]
+  scores      JudgeScore[]
+  reviews     JudgeReview[]
+  awardWins   EventAwardWinner[]
+
+  @@index([eventId, status])
+}
+
+/// Bearer link `/submit/{token}` for a solo registrant's submission, emailed
+/// to the RSVP's own address. Only the SHA-256 digest is stored; regenerating
+/// replaces the row and retires the old link.
+model SubmissionLink {
+  id        String   @id @default(cuid())
+  rsvpId    String   @unique
+  /// Hex SHA-256 of the raw token (64 characters).
+  tokenHash String   @unique
+  createdAt DateTime @default(now())
+
+  rsvp RSVP @relation(fields: [rsvpId], references: [id], onDelete: Cascade)
+}
+
+/// One rubric line. Frozen once judging leaves NOT_STARTED. CHECK
+/// constraints keep weight and maxScore within 1..10.
+model JudgingCriterion {
+  id          String   @id @default(cuid())
+  eventId     String
+  /// Up to 80 characters.
+  name        String
+  /// Up to 500 characters.
+  description String   @default("")
+  weight      Int      @default(1)
+  maxScore    Int      @default(10)
+  position    Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  event  Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  scores JudgeScore[]
+
+  @@index([eventId, position])
+}
+
+/// Used when `Event.judgesSeeAll` is false: the judge sees only assigned
+/// submissions. Conflict of interest is checked separately, at read and write.
+model JudgeAssignment {
+  id           String   @id @default(cuid())
+  eventId      String
+  judgeUserId  String
+  submissionId String
+  createdAt    DateTime @default(now())
+
+  event      Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  judge      User       @relation(fields: [judgeUserId], references: [id], onDelete: Cascade)
+  submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@unique([judgeUserId, submissionId])
+  @@index([eventId, judgeUserId])
+  @@index([submissionId])
+}
+
+/// One integer score per submission, judge, and criterion (0..maxScore,
+/// checked by the core; the CHECK constraint keeps it non-negative).
+model JudgeScore {
+  id           String   @id @default(cuid())
+  submissionId String
+  judgeUserId  String
+  criterionId  String
+  score        Int
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  submission Submission       @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  judge      User             @relation(fields: [judgeUserId], references: [id], onDelete: Cascade)
+  criterion  JudgingCriterion @relation(fields: [criterionId], references: [id], onDelete: Cascade)
+
+  @@unique([submissionId, judgeUserId, criterionId])
+  @@index([judgeUserId])
+  @@index([criterionId])
+}
+
+/// A judge's review of one submission. Only reviews with `submittedAt`
+/// count towards the result score. The comment is visible to organisers only.
+model JudgeReview {
+  id           String    @id @default(cuid())
+  submissionId String
+  judgeUserId  String
+  /// Up to 2000 characters, organisers only.
+  comment      String    @default("")
+  submittedAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  judge      User       @relation(fields: [judgeUserId], references: [id], onDelete: Cascade)
+
+  @@unique([submissionId, judgeUserId])
+  @@index([judgeUserId])
+}
+
+/// An award category (e.g. "Overall winner"). Winners are assigned manually.
+model EventAward {
+  id          String   @id @default(cuid())
+  eventId     String
+  /// Up to 80 characters.
+  name        String
+  /// Up to 500 characters.
+  description String   @default("")
+  position    Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  event   Event              @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  winners EventAwardWinner[]
+
+  @@index([eventId, position])
+}
+
+/// A winning submission for an award, by place (1 or more). One submission per
+/// place and at most one place per submission in each award.
+model EventAwardWinner {
+  id           String   @id @default(cuid())
+  awardId      String
+  submissionId String
+  place        Int      @default(1)
+  createdAt    DateTime @default(now())
+
+  award      EventAward @relation(fields: [awardId], references: [id], onDelete: Cascade)
+  submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@unique([awardId, place])
+  @@unique([awardId, submissionId])
+  @@index([submissionId])
 }
 
 /// Short-lived, server-created snapshots used to undo an organiser deletion.

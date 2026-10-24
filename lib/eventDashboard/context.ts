@@ -7,6 +7,7 @@ import { prisma } from "@/lib/db";
 import { getRequestOrigin } from "@/lib/publicUrl";
 import { isOrgAdmin, requireOrgDashboardAccess } from "@/lib/permissions";
 import { canViewEventDashboard } from "@/lib/eventAccess";
+import { judgingPermissionsFor } from "@/lib/judgingPermissions";
 
 /*
  * Shared context for the event dashboard (app/dashboard/[orgSlug]/event/[eventId]).
@@ -36,6 +37,16 @@ export type EventDashboardPermissions = {
   canEditDetails: boolean;
   canManageSchedule: boolean;
   canManageCollaborators: boolean;
+  /** Judging workspace: org owner/admin or a JUDGE collaborator (docs/HACKATHON.md). */
+  canJudge: boolean;
+  /** Judging settings, rubric, assignments, awards, and results: org owner/admin only. */
+  canManageJudging: boolean;
+  /**
+   * A collaborator whose only grant is JUDGE. The page must show nothing but
+   * the judging workspace: no overview data, guests, page editor, emails,
+   * check-in, feedback, analytics, or settings.
+   */
+  isJudgeOnly: boolean;
 };
 
 export type EventDashboardContext = {
@@ -64,6 +75,7 @@ export const loadEventDashboard = cache(async (orgSlug: string, eventId: string)
     ? null
     : await prisma.eventCollaborator.findFirst({ where: { eventId: event.id, userId: access.userId }, select: { permissions: true } });
   const has = (permission: EventPermission) => isAdmin || Boolean(grant?.permissions.includes(permission));
+  const judging = judgingPermissionsFor(isAdmin, Boolean(access.membership), grant?.permissions ?? []);
 
   return {
     organisation: { id: organisation.id, slug: organisation.slug, name: organisation.name },
@@ -79,6 +91,9 @@ export const loadEventDashboard = cache(async (orgSlug: string, eventId: string)
       canEditDetails: isAdmin,
       canManageSchedule: has(EventPermission.PUBLISH_AND_SCHEDULE),
       canManageCollaborators: isAdmin,
+      canJudge: judging.canJudge,
+      canManageJudging: judging.canManageJudging,
+      isJudgeOnly: judging.isJudgeOnly,
     },
   };
 });

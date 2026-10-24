@@ -351,10 +351,13 @@ describe.sequential("hackathon judging integration", () => {
         prisma.team.update({ where: { id: teamId }, data: { status } }),
         prisma.rSVP.updateMany({ where: { teamId }, data: { status } }),
       ]);
-      expect(await submitSubmission(auth, content)).toMatchObject(notConfirmed);
-      expect(await saveSubmissionDraft(auth, content)).toMatchObject(notConfirmed);
-      expect(await withdrawSubmission(auth)).toMatchObject(notConfirmed);
-      expect(await loadEntrantSubmission(auth)).toMatchObject({ confirmed: false, canEdit: false });
+      // A declined (REJECTED) team is final, like the team-side refusals in lib/core/teams.ts.
+      const declined = status === RsvpStatus.REJECTED;
+      const refusal = declined ? { ok: false, error: "The organisers declined this registration, so its project can't be submitted or changed." } : notConfirmed;
+      expect(await submitSubmission(auth, content)).toMatchObject(refusal);
+      expect(await saveSubmissionDraft(auth, content)).toMatchObject(refusal);
+      expect(await withdrawSubmission(auth)).toMatchObject(refusal);
+      expect(await loadEntrantSubmission(auth)).toMatchObject({ confirmed: false, declined, canEdit: false });
     }
     expect((await prisma.submission.findFirstOrThrow({ where: { teamId } })).status).toBe(SubmissionStatus.DRAFT);
 

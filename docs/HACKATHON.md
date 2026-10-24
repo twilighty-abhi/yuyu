@@ -10,7 +10,9 @@ Builds on [team registration](TEAMS.md). This page is the design contract;
 - One-off events in either registration mode. An **entrant** is a team (in
   `TEAM` mode) or a single RSVP (a solo registrant, or anyone in an
   `INDIVIDUAL` event).
-- Only `CONFIRMED` entrants can submit.
+- Only `CONFIRMED` entrants can submit. A declined (`REJECTED`) team or
+  registration is final: its project can't be saved, submitted or withdrawn,
+  matching the team-side refusals, and the entrant page says it was declined.
 - Mobile and machine APIs are out of scope; no DTO changes.
 
 ## Event settings (organiser, new **Judging** dashboard tab)

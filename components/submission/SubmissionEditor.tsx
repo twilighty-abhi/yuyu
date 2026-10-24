@@ -33,6 +33,7 @@ export type SubmissionEditorView = {
   opensLabel: string | null;
   closesLabel: string | null;
   confirmed: boolean;
+  declined: boolean;
   canEdit: boolean;
   submission: {
     title: string;
@@ -166,6 +167,8 @@ export function SubmissionEditor({ submissionRef, view, variant }: { submissionR
   let notice: ReactNode = null;
   if (disqualified) {
     notice = <Callout tone="info">This project isn&apos;t part of judging. If you have questions, contact the organisers.</Callout>;
+  } else if (view.declined) {
+    notice = <Callout tone="info">The organisers declined this registration, so its project can&apos;t be submitted or changed.</Callout>;
   } else if (!view.confirmed) {
     notice = <Callout tone="info">Only confirmed registrations can submit a project. This section opens once your place is confirmed.</Callout>;
   } else if (view.phase === "upcoming") {

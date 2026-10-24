@@ -37,6 +37,7 @@ export async function SubmissionSection({
     opensLabel: label(view.window.opensAt),
     closesLabel: label(view.window.closesAt),
     confirmed: view.confirmed,
+    declined: view.declined,
     canEdit: view.canEdit,
     submission: view.submission
       ? {

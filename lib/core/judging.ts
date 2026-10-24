@@ -87,6 +87,13 @@ const NOT_FOUND = "Submission not found.";
 const EVENT_NOT_FOUND = "Event not found.";
 const WINDOW_CLOSED = "Submissions are not open right now.";
 const NOT_CONFIRMED = "Only confirmed registrations can submit a project.";
+/** A REJECTED team or registration: final, like the team-side refusals in lib/core/teams.ts. */
+const DECLINED = "The organisers declined this registration, so its project can't be submitted or changed.";
+
+function entrantRefusal(status: RsvpStatus): string | null {
+  if (status === RsvpStatus.CONFIRMED) return null;
+  return status === RsvpStatus.REJECTED ? DECLINED : NOT_CONFIRMED;
+}
 const RUBRIC_FROZEN = "The rubric can only be changed before judging starts.";
 const JUDGING_NOT_OPEN = "Judging is not open.";
 const CHANGED = "This was changed by someone else. Refresh and try again.";
@@ -326,7 +333,8 @@ async function writeSubmission(
       await lockEntrantRow(tx, auth);
       const entrant = await lockedEntrant(tx, auth);
       if (!entrant) return fail(NOT_FOUND);
-      if (entrant.status !== RsvpStatus.CONFIRMED) return fail(NOT_CONFIRMED);
+      const refusal = entrantRefusal(entrant.status);
+      if (refusal) return fail(refusal);
       if (!isSubmissionWindowOpen(event, new Date())) return fail(WINDOW_CLOSED);
       const existing = await tx.submission.findFirst({ where: entrantWhere(entrant), select: submissionStateSelect });
       if (existing?.status === SubmissionStatus.DISQUALIFIED) return fail("This submission can no longer be changed. Contact the organisers.");
@@ -385,7 +393,8 @@ export async function withdrawSubmission(auth: EntrantAuth): Promise<JudgingResu
     await lockEntrantRow(tx, auth);
     const entrant = await lockedEntrant(tx, auth);
     if (!entrant) return fail(NOT_FOUND);
-    if (entrant.status !== RsvpStatus.CONFIRMED) return fail(NOT_CONFIRMED);
+    const refusal = entrantRefusal(entrant.status);
+    if (refusal) return fail(refusal);
     if (!isSubmissionWindowOpen(event, new Date())) return fail(WINDOW_CLOSED);
     const existing = await tx.submission.findFirst({ where: entrantWhere(entrant), select: submissionStateSelect });
     if (!existing) return fail(NOT_FOUND);
@@ -429,6 +438,7 @@ export async function loadEntrantSubmission(auth: EntrantAuth, now: Date = new D
     timezone: event.timezone,
     window: { opensAt: event.submissionsOpenAt, closesAt: event.submissionsCloseAt, isOpen },
     confirmed,
+    declined: entrant.status === RsvpStatus.REJECTED,
     canEdit: isOpen && confirmed && submission?.status !== SubmissionStatus.DISQUALIFIED,
     submission: entrantSubmissionView(submission),
   };

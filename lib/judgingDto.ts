@@ -127,6 +127,8 @@ export type EntrantSubmissionDto = {
   window: { opensAt: Date | null; closesAt: Date | null; isOpen: boolean };
   /** The entrant is CONFIRMED (only confirmed entrants can submit). */
   confirmed: boolean;
+  /** The organisers declined the team or registration (REJECTED): final, never editable. */
+  declined: boolean;
   canEdit: boolean;
   submission: (ProjectLinks & { title: string; summary: string; status: SubmissionStatus; submittedAt: Date | null }) | null;
 };

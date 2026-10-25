@@ -121,7 +121,7 @@ test("search, filter and sort the gallery with shareable URLs", async ({ browser
   await expect(page.getByRole("status").filter({ hasText: "matching" })).toHaveText("1 matching project");
   expect(await cardTitles(page)).toEqual([projectTitle(1)]);
   // Award badges on the card; no surnames or emails anywhere.
-  await expect(page.getByRole("article").getByRole("list", { name: "Awards" })).toContainText("Best design · 1st place");
+  await expect(page.getByRole("article").getByRole("list", { name: "Awards" })).toContainText("1st place · Best design");
   await expect(page.locator("body")).not.toContainText("Surname");
   await expect(page.locator("body")).not.toContainText("@example.test");
   // Search is not indexed; canonical is the plain gallery.

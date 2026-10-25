@@ -1,3 +1,5 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import {
   galleryHref,
@@ -8,7 +10,7 @@ import {
   parseGallerySortParam,
 } from "@/lib/judgingPaging";
 import { awardWinnerSql, galleryFromSql, galleryOrderSql, galleryWhereSql, projectSearchSql } from "@/lib/galleryQuery";
-import { placeLabel } from "@/components/event/AwardBadges";
+import { AwardBadges, placeLabel } from "@/components/event/AwardBadges";
 
 /* Public gallery URL params and SQL builders (docs/HACKATHON.md). */
 
@@ -48,6 +50,16 @@ describe("gallery params", () => {
     expect([1, 2, 3, 4, 11, 12, 13, 21, 22, 23, 101].map(placeLabel)).toEqual([
       "1st place", "2nd place", "3rd place", "4th place", "11th place", "12th place", "13th place", "21st place", "22nd place", "23rd place", "101st place",
     ]);
+  });
+
+  it("puts the place before a long award name and wraps instead of truncating", () => {
+    const name = "Best overall use of the sponsor's machine learning API in a hardware project";
+    const html = renderToStaticMarkup(createElement(AwardBadges, { awards: [{ name, place: 1 }] }));
+    const text = html.replace(/<[^>]+>/g, "").replace(/&#x27;/g, "'");
+    expect(text).toBe(`1st place · ${name}`);
+    expect(html).not.toContain("truncate");
+    expect(html).toContain("whitespace-normal");
+    expect(renderToStaticMarkup(createElement(AwardBadges, { awards: [] }))).toBe("");
   });
 });
 

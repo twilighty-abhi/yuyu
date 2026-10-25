@@ -1967,7 +1967,7 @@ export async function loadPublicResults(eventId: string, options: { query?: stri
   });
   if (!event?.submissionsEnabled || !event.resultsPublishedAt) return null;
   const query = parseSearchParam(options.query);
-  const awards = event.awards.map((award) => ({ name: award.name, description: award.description, winners: award.winners.map(publicWinnerDto) }));
+  const awards = event.awards.map((award, index) => ({ name: award.name, description: award.description, isTop: index === 0, winners: award.winners.map(publicWinnerDto) }));
   const totalWinners = awards.reduce((sum, award) => sum + award.winners.length, 0);
   if (!query) return { publishedAt: event.resultsPublishedAt, awards, query, totalWinners, matchedWinners: totalWinners };
   const matching = awards

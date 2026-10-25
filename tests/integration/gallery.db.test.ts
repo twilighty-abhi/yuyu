@@ -234,6 +234,13 @@ describe.sequential("public gallery search, filter, and sort", () => {
       ["Overall", [2]],
       ["Best design", [1]],
     ]);
+    // The headline award is fixed before the search narrows the list.
+    expect(all?.awards.map((award) => [award.name, award.isTop])).toEqual([
+      ["Overall", true],
+      ["Best design", false],
+    ]);
+    const lowerOnly = await loadPublicResults(event.id, { query: "zebra" });
+    expect(lowerOnly?.awards.map((award) => [award.name, award.isTop, award.winners.map((winner) => winner.place)])).toEqual([["Best design", false, [3]]]);
     expect(await loadPublicResults(event.id, { query: "Banana" })).toMatchObject({ matchedWinners: 2 });
     expect(await loadPublicResults(event.id, { query: "Hopper" })).toMatchObject({ matchedWinners: 0, awards: [] });
     expect(JSON.stringify(searched)).not.toMatch(/@example\.test|Secret reason|"score"/);

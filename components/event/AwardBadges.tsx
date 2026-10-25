@@ -9,15 +9,17 @@ export function placeLabel(place: number): string {
   return `${place}${suffix} place`;
 }
 
-/** The awards a project won, as chips ("Best design · 1st place"), in the results page's award order. */
+/** The awards a project won, as chips ("1st place · Best design"), in the results page's award order. */
 export function AwardBadges({ awards, className }: { awards: PublicAwardBadgeDto[]; className?: string }) {
   if (awards.length === 0) return null;
   return (
     <ul aria-label="Awards" className={className ?? "flex flex-wrap gap-1.5"}>
       {awards.map((award, index) => (
         <li key={`${award.name}-${award.place}-${index}`} className="max-w-full">
-          <Chip size="sm" tone={award.place === 1 ? "accent" : "neutral"} icon={<Trophy className="size-3.5" />}>
-            {award.name} · {placeLabel(award.place)}
+          {/* Place first, and wrapping rather than truncating: a long award
+              name must never hide which place the project won. */}
+          <Chip size="sm" wrap tone={award.place === 1 ? "accent" : "neutral"} icon={<Trophy className="size-3.5" />}>
+            {placeLabel(award.place)} · {award.name}
           </Chip>
         </li>
       ))}

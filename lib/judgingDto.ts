@@ -83,7 +83,12 @@ export function publicWinnerDto(row: { place: number; submission: Omit<ProjectRo
   };
 }
 
-export type PublicAwardDto = { name: string; description: string; winners: PublicWinnerDto[] };
+/**
+ * One published award. `isTop` marks the event's headline award (the first
+ * listed one), worked out before any search narrows the list so a filtered
+ * view never promotes a lower-ranked award to the headline style.
+ */
+export type PublicAwardDto = { name: string; description: string; isTop: boolean; winners: PublicWinnerDto[] };
 
 /**
  * Published results. `awards` keeps only awards with a winner matching

@@ -113,7 +113,7 @@ export default async function EventResultsPage({ params, searchParams }: Props) 
             return (
               <section key={headingId} aria-labelledby={headingId} className="flex flex-col gap-4">
                 <div className="flex items-start gap-3">
-                  <span aria-hidden className={cn("mt-1 flex size-10 shrink-0 items-center justify-center rounded-md", awardIndex === 0 ? "bg-accent-soft text-accent-text" : "bg-muted text-ink-secondary")}>
+                  <span aria-hidden className={cn("mt-1 flex size-10 shrink-0 items-center justify-center rounded-md", award.isTop ? "bg-accent-soft text-accent-text" : "bg-muted text-ink-secondary")}>
                     <Trophy className="size-5" />
                   </span>
                   <div className="min-w-0">

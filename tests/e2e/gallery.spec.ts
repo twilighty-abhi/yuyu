@@ -148,8 +148,12 @@ test("search, filter and sort the gallery with shareable URLs", async ({ browser
   expect((await cardTitles(page))[0]).toBe(projectTitle(1));
   await page.getByRole("searchbox", { name: "Search projects or teams" }).fill("Gizmo 13");
   await page.getByRole("button", { name: "Search", exact: true }).click();
+  // The URL already had the filter and sort, so wait for the search itself
+  // (q in the URL and the updated count) before reading the cards.
+  await expect(page).toHaveURL(/q=Gizmo\+13/);
   await expect(page).toHaveURL(/filter=winners/);
   await expect(page).toHaveURL(/sort=az/);
+  await expect(page.getByRole("status").filter({ hasText: "matching" })).toHaveText("1 matching project");
   expect(await cardTitles(page)).toEqual([projectTitle(13)]);
   expect(errors).toEqual([]);
   await context.close();
@@ -173,6 +177,7 @@ test("the GET form works without JavaScript", async ({ browser }) => {
   await page.getByRole("button", { name: "Search", exact: true }).click();
   await expect(page).toHaveURL(/sort=awards/);
   await expect(page).toHaveURL(/q=Gizmo\+0/);
+  await expect(page.getByRole("article")).toHaveCount(9);
   const titles = await cardTitles(page);
   // Projects 1–9 match; Grand prize winners (3–9, best place first) lead.
   expect(titles).toHaveLength(9);

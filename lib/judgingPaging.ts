@@ -5,9 +5,11 @@ import { z } from "zod";
  * (docs/HACKATHON.md). Pure helpers, shared by the judging core, the Server
  * Action, and the pages, and unit tested in tests/unit/judging-paging.test.ts.
  *
- * Both lists are ordered `submittedAt ASC, id ASC`. A SUBMITTED submission
- * always has a `submittedAt` (database CHECK `Submission_submitted_has_time`),
- * so the order is total and the judge list can page on that key.
+ * The judge list is ordered `submittedAt ASC, id ASC`. A SUBMITTED
+ * submission always has a `submittedAt` (database CHECK
+ * `Submission_submitted_has_time`), so the order is total and the judge list
+ * can page on that key. The gallery pages by number over one of
+ * `GALLERY_SORTS` (lib/galleryQuery.ts), each ending in `id`.
  */
 
 /** Submissions per "Load more" page in the judge workspace. */
@@ -74,11 +76,78 @@ export function clampPage(page: number, totalPages: number): number {
   return Math.min(Math.max(1, Math.floor(page) || 1), Math.max(1, totalPages));
 }
 
-/** Gallery link for a page and search, keeping URLs short (page 1 and no search add nothing). */
-export function galleryHref(basePath: string, page: number, query: string): string {
+/**
+ * Public gallery views (`?filter=`). `winners`: projects that won an award;
+ * offered only once results are published, so it never reveals winners early.
+ */
+export const GALLERY_FILTERS = ["all", "winners"] as const;
+export type GalleryFilter = (typeof GALLERY_FILTERS)[number];
+
+/**
+ * Public gallery orders (`?sort=`), each ending in an `id` tiebreak.
+ * `newest`: latest submission first. `az`: project title A–Z. `awards`:
+ * winners by award position then place, then the rest A–Z (results published
+ * only).
+ */
+export const GALLERY_SORTS = ["newest", "az", "awards"] as const;
+export type GallerySort = (typeof GALLERY_SORTS)[number];
+
+export const DEFAULT_GALLERY_FILTER: GalleryFilter = "all";
+export const DEFAULT_GALLERY_SORT: GallerySort = "newest";
+
+/** One gallery listing as named by its URL. */
+export type GalleryView = { page: number; query: string; filter: GalleryFilter; sort: GallerySort };
+
+function firstParam(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+/**
+ * `?filter=` for the gallery. Anything unknown, and `winners` before results
+ * are published, falls back to `all`.
+ */
+export function parseGalleryFilterParam(value: string | string[] | undefined, resultsPublished: boolean): GalleryFilter {
+  const raw = firstParam(value);
+  if (raw === "winners" && resultsPublished) return "winners";
+  return DEFAULT_GALLERY_FILTER;
+}
+
+/**
+ * `?sort=` for the gallery. Anything unknown, and `awards` before results
+ * are published, falls back to `newest`.
+ */
+export function parseGallerySortParam(value: string | string[] | undefined, resultsPublished: boolean): GallerySort {
+  const raw = firstParam(value);
+  if (raw === "az") return "az";
+  if (raw === "awards" && resultsPublished) return "awards";
+  return DEFAULT_GALLERY_SORT;
+}
+
+/** Every gallery search param, validated; invalid values fall back to the defaults. */
+export function parseGalleryParams(searchParams: { [key: string]: string | string[] | undefined }, resultsPublished: boolean): GalleryView {
+  return {
+    page: parsePageParam(searchParams.page),
+    query: parseSearchParam(searchParams.q),
+    filter: parseGalleryFilterParam(searchParams.filter, resultsPublished),
+    sort: parseGallerySortParam(searchParams.sort, resultsPublished),
+  };
+}
+
+/** True when the view narrows or reorders the list (its canonical URL is the plain gallery). */
+export function isFilteredGalleryView(view: Pick<GalleryView, "query" | "filter" | "sort">): boolean {
+  return view.query !== "" || view.filter !== DEFAULT_GALLERY_FILTER || view.sort !== DEFAULT_GALLERY_SORT;
+}
+
+/**
+ * Gallery link for a view, keeping URLs short: defaults (page 1, no search,
+ * all projects, newest first) add nothing.
+ */
+export function galleryHref(basePath: string, view: Partial<GalleryView> = {}): string {
   const params = new URLSearchParams();
-  if (query) params.set("q", query);
-  if (page > 1) params.set("page", String(page));
+  if (view.query) params.set("q", view.query);
+  if (view.filter && view.filter !== DEFAULT_GALLERY_FILTER) params.set("filter", view.filter);
+  if (view.sort && view.sort !== DEFAULT_GALLERY_SORT) params.set("sort", view.sort);
+  if (view.page && view.page > 1) params.set("page", String(Math.floor(view.page)));
   const search = params.toString();
   return search ? `${basePath}?${search}` : basePath;
 }

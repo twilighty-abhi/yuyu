@@ -291,12 +291,14 @@ describe.sequential("judging paging integration", () => {
       expect(gallery!.projects.length).toBe(page < totalPages ? PROJECT_GALLERY_PAGE_SIZE : expectedOrder.length - (totalPages - 1) * PROJECT_GALLERY_PAGE_SIZE);
       seen.push(...gallery!.projects.map((project) => project.id));
     }
-    expect(seen).toEqual(expectedOrder);
+    // Default order is newest first: `submittedAt DESC, id DESC`.
+    const newestFirst = [...expectedOrder].reverse();
+    expect(seen).toEqual(newestFirst);
 
     // Out-of-range pages clamp; default is page 1.
     expect((await loadProjectGallery(event.id, undefined, { page: 99 }))?.page).toBe(totalPages);
     expect((await loadProjectGallery(event.id, undefined, { page: 0 }))?.page).toBe(1);
-    expect((await loadProjectGallery(event.id))?.projects.map((project) => project.id)).toEqual(expectedOrder.slice(0, PROJECT_GALLERY_PAGE_SIZE));
+    expect((await loadProjectGallery(event.id))?.projects.map((project) => project.id)).toEqual(newestFirst.slice(0, PROJECT_GALLERY_PAGE_SIZE));
 
     // Search: server-side, with its own count and pages; totals still report everything.
     const searched = await loadProjectGallery(event.id, undefined, { query: "  rocket   crew " });

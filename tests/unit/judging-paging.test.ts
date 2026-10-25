@@ -70,9 +70,9 @@ describe("public gallery paging", () => {
   });
 
   it("builds short, shareable links", () => {
-    expect(galleryHref("/o/e/projects", 1, "")).toBe("/o/e/projects");
-    expect(galleryHref("/o/e/projects", 3, "")).toBe("/o/e/projects?page=3");
-    expect(galleryHref("/o/e/projects", 2, "solar car")).toBe("/o/e/projects?q=solar+car&page=2");
-    expect(galleryHref("/o/e/projects", 1, "a&b")).toBe("/o/e/projects?q=a%26b");
+    expect(galleryHref("/o/e/projects", { page: 1, query: "" })).toBe("/o/e/projects");
+    expect(galleryHref("/o/e/projects", { page: 3, query: "" })).toBe("/o/e/projects?page=3");
+    expect(galleryHref("/o/e/projects", { page: 2, query: "solar car" })).toBe("/o/e/projects?q=solar+car&page=2");
+    expect(galleryHref("/o/e/projects", { page: 1, query: "a&b" })).toBe("/o/e/projects?q=a%26b");
   });
 });

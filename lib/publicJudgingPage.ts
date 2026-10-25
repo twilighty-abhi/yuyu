@@ -66,8 +66,13 @@ export async function publicJudgingMetadata(
   orgSlug: string,
   eventSlug: string,
   kind: "projects" | "results",
-  /** Gallery only: the page number (each page is its own canonical URL) and whether `?q=` is set. */
-  listing: { page?: number; searched?: boolean } = {},
+  /**
+   * The gallery's page number (each page of the plain gallery is its own
+   * canonical URL), and whether a search, filter, or non-default order is
+   * applied (on either page). Filtered views point their canonical URL at the
+   * plain page, without filter params, and are not indexed.
+   */
+  listing: { page?: number; filtered?: boolean } = {},
 ): Promise<Metadata> {
   const label = kind === "projects" ? "Projects" : "Results";
   const loaded = await loadEvent(orgSlug, eventSlug);
@@ -93,13 +98,14 @@ export async function publicJudgingMetadata(
       ? `Projects submitted to ${event.title}.`
       : `Awards and winning projects from ${event.title}.`;
   const page = kind === "projects" && listing.page && listing.page > 1 ? Math.floor(listing.page) : 1;
+  const canonicalPage = listing.filtered ? 1 : page;
   const indexable = shouldIndexPublicEvent(event.status, event.privacyType, event.listedPublicly);
   return {
     title: page > 1 ? `${title} · Page ${page}` : title,
     description,
-    // Search results point at the unfiltered gallery and are not indexed.
-    alternates: { canonical: `/${loaded.org.slug}/${event.slug}/${kind}${page > 1 && !listing.searched ? `?page=${page}` : ""}` },
-    robots: !indexable ? { index: false, follow: false } : listing.searched ? { index: false, follow: true } : undefined,
+    // Searched, filtered, and re-sorted views point at the plain page and are not indexed.
+    alternates: { canonical: `/${loaded.org.slug}/${event.slug}/${kind}${canonicalPage > 1 ? `?page=${canonicalPage}` : ""}` },
+    robots: !indexable ? { index: false, follow: false } : listing.filtered ? { index: false, follow: true } : undefined,
     // No `openGraph` key here: setting one would replace the event's share
     // image inherited from the parent segment. Next fills the Open Graph
     // title and description from the values above.

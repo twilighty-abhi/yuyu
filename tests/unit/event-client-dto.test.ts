@@ -40,6 +40,8 @@ describe("event browser DTO", () => {
       projectGalleryPublic: false,
       resultsPublishedAt: null,
       resultsAnnouncedAt: new Date("2034-01-03T00:00:00Z"),
+      reviewsPerProject: 3,
+      scoreNormalization: "ZSCORE",
       shortCode: null,
       checkInStationPinHash: "bcrypt-secret",
       checkInStationPinEncrypted: "encrypted-secret",
@@ -58,5 +60,7 @@ describe("event browser DTO", () => {
     expect(serialized).not.toContain("judgingStatus");
     expect(serialized).not.toContain("judgesSeeAll");
     expect(serialized).not.toContain("resultsAnnouncedAt");
+    expect(serialized).not.toContain("reviewsPerProject");
+    expect(serialized).not.toContain("scoreNormalization");
   });
 });

@@ -14,12 +14,12 @@ import { ArrowUpRight } from "lucide-react";
 import { Card, PageHeader } from "@/components/ui/display";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { formatDayTime } from "@/lib/format/datetime";
+import { listAttendeesPage } from "@/lib/eventDashboard/attendees";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = { title: "Manage event series", robots: { index: false, follow: false } };
 
 type Props = { params: Promise<{ orgSlug: string; seriesId: string }> };
-const MAX_BROWSER_ATTENDEES = 250;
 
 function eventDateInput(date: Date, timeZone: string) {
   const parts = new Intl.DateTimeFormat("en", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
@@ -61,32 +61,16 @@ export default async function SeriesManagePage({ params }: Props) {
     : [];
 
   const firstInstanceId = series.instances[0]?.id;
-  const rsvps = firstInstanceId && canManageRegistrations
-    ? await prisma.rSVP.findMany({
-        where: { eventInstanceId: firstInstanceId },
-        include: { user: { select: { id: true, name: true, email: true } } },
-        orderBy: { createdAt: "desc" },
-        take: MAX_BROWSER_ATTENDEES + 1,
-      })
-    : [];
-
   const origin = await getRequestOrigin();
+  // The first page of the occurrence's guests; further pages, filters and
+  // search go through `loadAttendeesPage` with the same series grant check.
+  const attendeesPage = firstInstanceId && canManageRegistrations
+    ? await listAttendeesPage({ kind: "instance", eventInstanceId: firstInstanceId, organisationId: organisation.id }, {}, { origin, teamMode: false })
+    : null;
+
   const now = new Date();
   const canDownloadReports = can.canDownloadReports;
   const finishedInstances = series.instances.filter((instance) => instance.endDateTime < now);
-  const attendeesTruncated = rsvps.length > MAX_BROWSER_ATTENDEES;
-  const attendees = rsvps.slice(0, MAX_BROWSER_ATTENDEES).map((r) => ({
-    id: r.id,
-    status: r.status,
-    createdAt: r.createdAt.toISOString(),
-    guestEmail: r.guestEmail,
-    user: r.user
-      ? { id: r.user.id, name: r.user.name, email: r.user.email }
-      : null,
-    checkedInAt: r.checkedInAt?.toISOString() ?? null,
-    ticketUrl: `${origin}/ticket/${r.checkInToken}`,
-    rawAnswers: [],
-  }));
 
   return (
     <div className="flex flex-col gap-8">
@@ -171,7 +155,7 @@ export default async function SeriesManagePage({ params }: Props) {
         </section>
       ) : null}
 
-      {firstInstanceId && canManageRegistrations ? (
+      {firstInstanceId && attendeesPage ? (
         <section aria-label="Attendees (first upcoming occurrence)" className="min-w-0">
           <GuestsPeople
             organisationSlug={organisation.slug}
@@ -179,8 +163,7 @@ export default async function SeriesManagePage({ params }: Props) {
             title="Attendees (first upcoming occurrence)"
             timeZone={series.timezone}
             now={now.toISOString()}
-            attendees={attendees}
-            truncated={attendeesTruncated}
+            initialPage={attendeesPage}
             registrationFields={[]}
           />
         </section>

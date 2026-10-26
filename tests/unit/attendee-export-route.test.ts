@@ -124,4 +124,33 @@ describe("full attendee CSV export route", () => {
     expect(header).toBe("Name,Email,Status,Registration Date,Checked In At,Ticket URL,Company,Check-in: Swag,Check-in: Lunch,Check-in: =Old (archived)");
     expect(row).toBe("Ada Lovelace,ada@example.test,CONFIRMED,2030-01-02T03:04:05.000Z,,https://events.example.test/ticket/secret-token,,,2030-01-03T12:00:00.000Z,");
   });
+
+  it("narrows the export to the People list's filters with the same columns, auditing filter names only", async () => {
+    const unfiltered = await GET(new Request("https://events.example.test/api/exports/events/event_1/attendees"), routeContext);
+    const unfilteredHeader = (await unfiltered.text()).replace(/^\uFEFF/, "").split("\n")[0];
+    expect(mocks.rsvps.mock.calls[0]![0]).toMatchObject({ where: { eventId: "event_1" } });
+
+    mocks.rsvps.mockReset();
+    mocks.rsvps.mockResolvedValueOnce([]);
+    const response = await GET(new Request("https://events.example.test/api/exports/events/event_1/attendees?status=waitlist&kind=guests&q=Ada%20Lovelace"), routeContext);
+    expect(response.status).toBe(200);
+    expect((await response.text()).replace(/^\uFEFF/, "").split("\n")[0]).toBe(unfilteredHeader);
+    const where = JSON.stringify(mocks.rsvps.mock.calls[0]![0].where);
+    expect(where).toContain('"status":"WAITLISTED"');
+    expect(where).toContain('"userId":null');
+    expect(where).toContain('"organisationId":"org_1"');
+    expect(where).toContain("Ada Lovelace");
+    expect(mocks.audit).toHaveBeenLastCalledWith(expect.objectContaining({ metadata: { surface: "people", filters: "status,kind,search" } }));
+    expect(JSON.stringify(mocks.audit.mock.calls)).not.toContain("Ada");
+  });
+
+  it("answers a malformed filter with the same empty 404, before reading the event", async () => {
+    for (const query of ["status=everyone", "kind=robots", `q=${"x".repeat(101)}`]) {
+      const response = await GET(new Request(`https://events.example.test/api/exports/events/event_1/attendees?${query}`), routeContext);
+      expect(response.status).toBe(404);
+      expect(await response.text()).toBe("");
+    }
+    expect(mocks.event).not.toHaveBeenCalled();
+    expect(mocks.audit).not.toHaveBeenCalled();
+  });
 });

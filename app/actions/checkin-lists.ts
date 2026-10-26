@@ -5,6 +5,7 @@ import type { ActionResult } from "./org";
 import {
   checkInToListForUser,
   createCheckInListForUser,
+  listRosterPageForUser,
   lookupListAttendeesForUser,
   reorderCheckInListsForUser,
   undoListCheckInForUser,
@@ -13,6 +14,7 @@ import {
   type ListCheckInResultData,
   type ListLookupRow,
 } from "@/lib/core/checkinLists";
+import type { ListRosterPage } from "@/lib/eventDashboard/checkInLists";
 
 /*
  * Thin Server Action wrappers for custom check-in lists. The rules live in
@@ -48,4 +50,8 @@ export async function undoListCheckIn(input: unknown): Promise<ActionResult> {
 
 export async function lookupListAttendees(input: unknown): Promise<ActionResult<{ rows: ListLookupRow[] }>> {
   return lookupListAttendeesForUser(await currentUserId(), input);
+}
+
+export async function loadListRosterPage(input: unknown): Promise<ActionResult<ListRosterPage>> {
+  return listRosterPageForUser(await currentUserId(), input);
 }

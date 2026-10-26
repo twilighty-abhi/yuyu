@@ -62,7 +62,18 @@ export async function resolvePublicJudgingEvent(orgSlug: string, eventSlug: stri
  * nothing about an unreleased, unpublished, or invite-only event, and no
  * indexing unless the event itself may be indexed.
  */
-export async function publicJudgingMetadata(orgSlug: string, eventSlug: string, kind: "projects" | "results"): Promise<Metadata> {
+export async function publicJudgingMetadata(
+  orgSlug: string,
+  eventSlug: string,
+  kind: "projects" | "results",
+  /**
+   * The gallery's page number (each page of the plain gallery is its own
+   * canonical URL), and whether a search, filter, or non-default order is
+   * applied (on either page). Filtered views point their canonical URL at the
+   * plain page, without filter params, and are not indexed.
+   */
+  listing: { page?: number; filtered?: boolean } = {},
+): Promise<Metadata> {
   const label = kind === "projects" ? "Projects" : "Results";
   const loaded = await loadEvent(orgSlug, eventSlug);
   const event = loaded?.event;
@@ -86,13 +97,15 @@ export async function publicJudgingMetadata(orgSlug: string, eventSlug: string, 
     kind === "projects"
       ? `Projects submitted to ${event.title}.`
       : `Awards and winning projects from ${event.title}.`;
+  const page = kind === "projects" && listing.page && listing.page > 1 ? Math.floor(listing.page) : 1;
+  const canonicalPage = listing.filtered ? 1 : page;
+  const indexable = shouldIndexPublicEvent(event.status, event.privacyType, event.listedPublicly);
   return {
-    title,
+    title: page > 1 ? `${title} · Page ${page}` : title,
     description,
-    alternates: { canonical: `/${loaded.org.slug}/${event.slug}/${kind}` },
-    robots: shouldIndexPublicEvent(event.status, event.privacyType, event.listedPublicly)
-      ? undefined
-      : { index: false, follow: false },
+    // Searched, filtered, and re-sorted views point at the plain page and are not indexed.
+    alternates: { canonical: `/${loaded.org.slug}/${event.slug}/${kind}${canonicalPage > 1 ? `?page=${canonicalPage}` : ""}` },
+    robots: !indexable ? { index: false, follow: false } : listing.filtered ? { index: false, follow: true } : undefined,
     // No `openGraph` key here: setting one would replace the event's share
     // image inherited from the parent segment. Next fills the Open Graph
     // title and description from the values above.

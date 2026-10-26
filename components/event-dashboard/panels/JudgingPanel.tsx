@@ -1,5 +1,8 @@
 import type { EventDashboardContext } from "@/lib/eventDashboard/context";
-import { loadJudgingDashboard } from "@/lib/eventDashboard/judging";
+import { judgingOrganiserContext, loadJudgingDashboard } from "@/lib/eventDashboard/judging";
+import { listEligibleJudges } from "@/lib/core/judging";
+import { loadJudgingProgress } from "@/lib/core/judgingOps";
+import type { JudgingOrganiserContext } from "@/lib/judgingAccess";
 import {
   DISQUALIFY_REASON_MAX_LENGTH,
   EVENT_AWARD_NAME_MAX_LENGTH,
@@ -15,11 +18,13 @@ import { JudgeWorkspace } from "@/components/event-dashboard/judging/JudgeWorksp
 import { SubTabs, type SubTab } from "../SubTabs";
 import { JudgingPanelAwards } from "./JudgingPanelAwards";
 import { JudgingPanelResults, JudgingPanelJudges } from "./JudgingPanelResults";
+import { JudgingPanelProgress } from "./JudgingPanelProgress";
 import { JudgingPanelRubric } from "./JudgingPanelRubric";
 import { JudgingPanelSetup } from "./JudgingPanelSetup";
 import type { JudgingLimits } from "./JudgingPanelShared";
 import { JudgingPanelSubmissions } from "./JudgingPanelSubmissions";
 import { NoPermission } from "./shared";
+import { loadSavedViewsForDashboard } from "@/lib/eventDashboard/savedViews";
 
 const LIMITS: JudgingLimits = {
   criteria: JUDGING_CRITERIA_LIMIT,
@@ -33,10 +38,16 @@ const LIMITS: JudgingLimits = {
   disqualifyReason: DISQUALIFY_REASON_MAX_LENGTH,
 };
 
+/** Judging → Progress: the summary and first pages, plus who can be picked for automatic assignment. */
+async function loadProgressTab(organiser: JudgingOrganiserContext, now: Date) {
+  const [data, judges] = await Promise.all([loadJudgingProgress(organiser, now), listEligibleJudges(organiser)]);
+  return data ? { data, judges } : null;
+}
+
 /**
  * The event dashboard's Judging tab (docs/HACKATHON.md). Organisation owners
  * and admins (`canManageJudging`, the same check as the organiser RSVP
- * actions) get setup, rubric, submissions, judges, results, and awards. Anyone
+ * actions) get setup, rubric, submissions, judges, progress, results, and awards. Anyone
  * who can judge also gets the judge workspace. A JUDGE-only collaborator never
  * reaches this panel: the page shows them the workspace on its own.
  */
@@ -46,7 +57,12 @@ export async function JudgingPanel({ ctx }: { ctx: EventDashboardContext }) {
     return permissions.canJudge ? <JudgeWorkspace ctx={ctx} /> : <NoPermission>You do not have permission to manage judging for this event.</NoPermission>;
   }
 
-  const data = await loadJudgingDashboard(ctx);
+  const organiser = judgingOrganiserContext(ctx);
+  const [data, progress, savedViews] = await Promise.all([
+    loadJudgingDashboard(ctx),
+    organiser ? loadProgressTab(organiser, ctx.now) : null,
+    loadSavedViewsForDashboard(ctx),
+  ]);
   if (!data) return <NoPermission>You do not have permission to manage judging for this event.</NoPermission>;
   const { scope, settings } = data;
   const frozen = settings.judgingStatus !== "NOT_STARTED";
@@ -61,7 +77,7 @@ export async function JudgingPanel({ ctx }: { ctx: EventDashboardContext }) {
       </div>
     ),
   };
-  if (!settings.submissionsEnabled && data.submissions.length === 0 && settings.judgingStatus === "NOT_STARTED" && !settings.resultsPublishedAt) {
+  if (!settings.submissionsEnabled && data.submissionsTotal === 0 && settings.judgingStatus === "NOT_STARTED" && !settings.resultsPublishedAt) {
     // Nothing to judge yet: only the settings needed to turn submissions on.
     return <SubTabs label="Judging sections" items={[setup]} />;
   }
@@ -74,11 +90,13 @@ export async function JudgingPanel({ ctx }: { ctx: EventDashboardContext }) {
         {
           value: "judging-submissions",
           label: "Submissions",
-          count: data.submissions.length,
+          count: data.submissionsTotal,
           content: (
             <JudgingPanelSubmissions
               scope={scope}
-              submissions={data.submissions}
+              initialPage={data.submissions}
+              counts={data.counts}
+              total={data.submissionsTotal}
               judges={data.judges}
               criteria={data.criteria}
               judgesSeeAll={settings.judgesSeeAll}
@@ -86,6 +104,8 @@ export async function JudgingPanel({ ctx }: { ctx: EventDashboardContext }) {
               awards={data.awards}
               resultsPublished={Boolean(settings.resultsPublishedAt)}
               limits={LIMITS}
+              unsubmittedCount={data.unsubmittedCount}
+              savedViews={savedViews.JUDGING_SUBMISSIONS ?? []}
             />
           ),
         },
@@ -95,6 +115,22 @@ export async function JudgingPanel({ ctx }: { ctx: EventDashboardContext }) {
           // Invited judges only: organisers can always judge, so counting them would never show 0.
           count: data.judges.filter((judge) => judge.kind === "judge").length,
           content: <JudgingPanelJudges judges={data.judges} judgesSeeAll={settings.judgesSeeAll} />,
+        },
+        {
+          value: "judging-progress",
+          label: "Progress",
+          content: progress ? (
+            <JudgingPanelProgress
+              scope={scope}
+              initial={progress.data}
+              judges={progress.judges}
+              timezone={settings.timezone}
+              now={ctx.now.toISOString()}
+              savedViews={savedViews.JUDGING_PROGRESS ?? []}
+            />
+          ) : (
+            <NoPermission>You do not have permission to manage judging for this event.</NoPermission>
+          ),
         },
         {
           value: "judging-score",
@@ -107,13 +143,14 @@ export async function JudgingPanel({ ctx }: { ctx: EventDashboardContext }) {
           content: (
             <JudgingPanelResults
               scope={scope}
-              rows={data.results}
+              initialPage={data.results}
               criteria={data.criteria}
               judgingStatus={settings.judgingStatus}
               resultsPublishedAt={settings.resultsPublishedAt}
               resultsUrl={data.resultsUrl}
               exportHref={data.exportHref}
               timezone={settings.timezone}
+              savedViews={savedViews.JUDGING_RESULTS ?? []}
             />
           ),
         },
@@ -121,7 +158,7 @@ export async function JudgingPanel({ ctx }: { ctx: EventDashboardContext }) {
           value: "judging-awards",
           label: "Awards",
           count: data.awards.length,
-          content: <JudgingPanelAwards scope={scope} awards={data.awards} ranking={data.results} resultsPublished={Boolean(settings.resultsPublishedAt)} limits={LIMITS} />,
+          content: <JudgingPanelAwards scope={scope} awards={data.awards} submittedCount={data.counts.SUBMITTED} resultsPublished={Boolean(settings.resultsPublishedAt)} limits={LIMITS} />,
         },
       ]}
     />

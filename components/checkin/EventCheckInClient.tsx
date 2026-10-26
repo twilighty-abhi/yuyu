@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import type { RsvpStatus } from "@prisma/client";
 import { useRouter } from "next/navigation";
 import { Check, CloudCheck, CloudOff, Download, Info, Printer, RefreshCw, Search, Users, X } from "lucide-react";
@@ -11,6 +11,7 @@ import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader } from "@
 import { Input, Textarea } from "@/components/ui/field";
 import { Tooltip } from "@/components/ui/menu";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
+import { useLoadMoreFocus } from "@/components/ui/use-load-more-focus";
 import { cn } from "@/lib/cn";
 import { DotFace } from "@/components/brand/DotFace";
 import {
@@ -20,6 +21,7 @@ import {
   previewCheckInByRsvpId,
   previewCheckInByToken,
   syncOfflineCheckIns,
+  loadRecentCheckIns,
   undoCheckIn,
   type CheckInPreviewData,
   type CheckInResultData,
@@ -40,7 +42,7 @@ import { useToast } from "@/components/feedback/ToastProvider";
 import { CheckInQrScanner } from "@/components/checkin/CheckInQrScanner";
 import { IdCardPrintDialog } from "@/components/checkin/IdCardPrintDialog";
 import { shouldRefreshCheckIn } from "@/lib/checkInRefresh";
-import { buildCsv } from "@/lib/csv";
+import { appendRecentPage, mergeRecentFirstPage, type RecentList } from "@/lib/checkInRecentMerge";
 import { InstallCheckInAppButton } from "@/components/checkin/InstallCheckInAppButton";
 import { playSuccessFeedback } from "@/components/checkin/checkInFeedback";
 
@@ -108,9 +110,14 @@ export function EventCheckInClient(props: {
   /** TEAM event: team names on badges ({{team}} and the Team line). */
   teamEvent?: boolean;
   stats: { confirmed: number; checkedIn: number };
+  /** The newest page of check-ins (server-rendered on every refresh). */
   recent: CheckInRecentRow[];
+  /** Cursor for the next, older page ("Load more"), or null when that was all. */
+  recentNextCursor: string | null;
+  /** The full attendee CSV, for operators allowed to export it; null hides the download. */
+  attendeeExportHref: string | null;
 }) {
-  const { organisationSlug, organisationName, organisationLogoUrl, eventId, eventTitle, registrationFields, stats, recent, stationMode = false, eventSlug, teamEvent = false } = props;
+  const { organisationSlug, organisationName, organisationLogoUrl, eventId, eventTitle, registrationFields, stats, recent, recentNextCursor, attendeeExportHref, stationMode = false, eventSlug, teamEvent = false } = props;
   const router = useRouter();
   const { showToast } = useToast();
   const [pending, startTransition] = useTransition();
@@ -552,6 +559,50 @@ export function EventCheckInClient(props: {
     });
   };
 
+  // Recent check-ins: the server's newest page plus any older pages loaded
+  // with "Load more"; each refresh merges its new first page in at the top.
+  const [recentList, setRecentList] = useState<RecentList<CheckInRecentRow> & { source: CheckInRecentRow[] }>(() => ({ source: recent, rows: recent, cursor: recentNextCursor }));
+  if (recentList.source !== recent) {
+    setRecentList({ source: recent, ...mergeRecentFirstPage(recentList, { rows: recent, nextCursor: recentNextCursor }) });
+  }
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  // The phone list and the wider table show the same rows; only the visible one takes focus.
+  const recentListFocus = useLoadMoreFocus(recentList.rows.length);
+  const recentTableFocus = useLoadMoreFocus(recentList.rows.length);
+
+  const loadOlderCheckIns = async () => {
+    const cursor = recentList.cursor;
+    if (!cursor || loadingOlder) return;
+    recentListFocus.beforeLoadMore();
+    recentTableFocus.beforeLoadMore();
+    setLoadingOlder(true);
+    try {
+      let page: { rows: CheckInRecentRow[]; nextCursor: string | null } | null = null;
+      let error = "Could not load more check-ins.";
+      if (stationMode) {
+        const response = await fetch("/api/check-in/station", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify({ organisationSlug, eventSlug, action: "recent", cursor }) });
+        const result = (await response.json()) as { ok: true; data: { rows: CheckInRecentRow[]; nextCursor: string | null } } | { ok: false; error: string };
+        if (result.ok) page = result.data;
+        else error = result.error;
+      } else {
+        const result = await loadRecentCheckIns({ organisationSlug, eventId, cursor });
+        if (result.ok && result.data) page = result.data;
+        else if (!result.ok) error = result.error;
+      }
+      if (!page) {
+        showToast(error, "error");
+        return;
+      }
+      const loaded = page;
+      // Ignore a page that arrives after a refresh restarted the list.
+      setRecentList((current) => (current.cursor === cursor ? { ...current, ...appendRecentPage(current, loaded) } : current));
+    } catch {
+      showToast("Could not load more check-ins.", "error");
+    } finally {
+      setLoadingOlder(false);
+    }
+  };
+
   const onUndo = (rsvpId: string) => {
     startTransition(async () => {
       const res = stationMode ? await stationRequest("undo", { rsvpId }) : await undoCheckIn({ organisationSlug, eventId, rsvpId });
@@ -559,26 +610,10 @@ export function EventCheckInClient(props: {
         showToast(res.error, "error");
         return;
       }
+      setRecentList((current) => ({ ...current, rows: current.rows.filter((row) => row.rsvpId !== rsvpId) }));
       showToast("Check-in removed", "success");
       router.refresh();
     });
-  };
-
-  const csvBlob = useMemo(() => {
-    const body = buildCsv([
-      ["Name", "Email", "Checked in at"],
-      ...recent.map((r) => [r.displayName, r.email ?? "", new Date(r.checkedInAt).toISOString()]),
-    ]);
-    return new Blob([body], { type: "text/csv;charset=utf-8" });
-  }, [recent]);
-
-  const downloadCsv = () => {
-    const url = URL.createObjectURL(csvBlob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `checkins-${eventId.slice(0, 8)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
   };
 
   const rate =
@@ -874,18 +909,20 @@ export function EventCheckInClient(props: {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 id="recent-title" className="text-h4 text-ink">Recent check-ins</h2>
-            {!stationMode ? <p className="text-caption text-ink-muted">Export includes the list on this page (up to 200). This page refreshes automatically while it is open.</p> : null}
+            {!stationMode ? <p className="text-caption text-ink-muted">This page refreshes automatically while it is open.{attendeeExportHref ? " The attendee CSV includes every check-in time." : ""}</p> : null}
           </div>
-          <Button size="sm" variant="secondary" startIcon={<Download />} onClick={downloadCsv} disabled={recent.length === 0}>
-            Export CSV (shown below)
-          </Button>
+          {attendeeExportHref ? (
+            <Button asChild size="sm" variant="secondary" startIcon={<Download />}>
+              <a href={attendeeExportHref}>Download attendee CSV</a>
+            </Button>
+          ) : null}
         </div>
-        {recent.length === 0 ? (
+        {recentList.rows.length === 0 ? (
           <p className="text-body-ui text-ink-muted">No check-ins yet.</p>
         ) : (
           <>
-            <ul className="flex flex-col divide-y divide-line rounded-lg border border-line bg-canvas px-4 sm:hidden">
-              {recent.map((r) => (
+            <ul id={recentListFocus.listId} className="flex flex-col divide-y divide-line rounded-lg border border-line bg-canvas px-4 sm:hidden">
+              {recentList.rows.map((r) => (
                 <li key={r.rsvpId} className="flex items-center gap-3 py-3">
                   <Check aria-hidden className="size-4 shrink-0 text-success-fg" />
                   <div className="min-w-0 flex-1">
@@ -907,8 +944,8 @@ export function EventCheckInClient(props: {
                     <TH className="text-right">Undo</TH>
                   </tr>
                 </THead>
-                <TBody>
-                  {recent.map((r) => (
+                <TBody id={recentTableFocus.listId}>
+                  {recentList.rows.map((r) => (
                     <TR key={r.rsvpId}>
                       <TD className="font-semibold">{r.displayName}</TD>
                       <TD className="text-ink-secondary">{r.email ?? "—"}</TD>
@@ -920,6 +957,14 @@ export function EventCheckInClient(props: {
                   ))}
                 </TBody>
               </Table>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-ink-secondary">
+              <span aria-live="polite">Showing {recentList.rows.length} of {Math.max(stats.checkedIn, recentList.rows.length)} checked in</span>
+              {recentList.cursor ? (
+                <Button size="sm" variant="secondary" loading={loadingOlder} loadingLabel="Loading…" onClick={() => void loadOlderCheckIns()}>
+                  Load more
+                </Button>
+              ) : null}
             </div>
           </>
         )}

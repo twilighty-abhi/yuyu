@@ -23,6 +23,8 @@ describe("event publishing helpers", () => {
     expect(closingSummary({ ...base, mode: "at", closesAt: "2035-10-13T18:00" })).toMatchObject({ short: "closes Sat 13 Oct, 6:00 pm" });
     expect(closingSummary({ ...base, mode: "at", closesAt: "2035-10-14T10:00" }).problem).toMatch(/on or before the start/);
     expect(closingSummary({ ...base, mode: "at" }).problem).toMatch(/Choose/);
+    // Just after midnight reads "12:15 am" on every ICU build, never "0:15 am".
+    expect(closingSummary({ ...base, mode: "at", closesAt: "2035-10-13T00:15" }).short).toBe("closes Sat 13 Oct, 12:15 am");
   });
 
   it("sums up what guests experience", () => {

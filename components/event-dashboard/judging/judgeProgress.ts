@@ -1,5 +1,6 @@
 import type { JudgingStatus } from "@prisma/client";
 import type { ChipTone } from "@/components/ui/display";
+import type { JudgeSubmissionCounts, JudgeSubmissionFilter } from "@/lib/judgingPaging";
 
 /*
  * Pure helpers for the judge workspace: progress labels and the score map the
@@ -22,6 +23,31 @@ export function judgeProgressSummary(items: readonly JudgeProgressItem[]) {
   const submitted = items.filter((item) => item.reviewSubmitted).length;
   const started = items.filter((item) => !item.reviewSubmitted && item.scoredCriteria > 0).length;
   return { total: items.length, submitted, started, remaining: items.length - submitted };
+}
+
+/**
+ * Totals for the workspace header from the server's counts, which cover every
+ * submission the judge may see, not only the pages loaded so far.
+ */
+export function judgeProgressFromCounts(counts: JudgeSubmissionCounts) {
+  return { total: counts.all, submitted: counts.reviewed, started: counts.in_progress, remaining: counts.todo };
+}
+
+/** Filter chips for the judge's list, in display order. */
+export const JUDGE_FILTER_OPTIONS: ReadonlyArray<{ value: JudgeSubmissionFilter; label: string }> = [
+  { value: "all", label: "All" },
+  { value: "todo", label: "To score" },
+  { value: "in_progress", label: "In progress" },
+  { value: "reviewed", label: "Reviewed" },
+];
+
+/** Empty-state text for a filtered or searched view that has no rows. */
+export function judgeEmptyViewText(filter: JudgeSubmissionFilter, query: string): string {
+  if (query.trim()) return "No submissions match that search.";
+  if (filter === "todo") return "Nothing left to score. Every review is submitted.";
+  if (filter === "in_progress") return "No reviews in progress.";
+  if (filter === "reviewed") return "You haven't submitted any reviews yet.";
+  return "No submissions in this view.";
 }
 
 /** Who is looking at the workspace: an organiser (owner/admin, inside the Judging tab) or a judge. */
@@ -78,4 +104,14 @@ export function linkLabel(url: string): string {
   } catch {
     return url;
   }
+}
+
+/**
+ * Toast after a submitted review moves the judge on ("Score next project"):
+ * which project opened and how many are left, or that they are done.
+ */
+export function scoreNextToast(next: { title: string; remaining: number } | null): string {
+  if (!next) return "Review submitted. You've reviewed every project you can score.";
+  const left = next.remaining === 1 ? "this is the last one" : `${next.remaining} left to score`;
+  return `Review submitted. Next up: “${next.title}” (${left}).`;
 }

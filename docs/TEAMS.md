@@ -170,6 +170,17 @@ to 30 characters).
   (`INVITE`/`REQUEST`, `PENDING`/`ACCEPTED`/`DECLINED`/`CANCELLED`), at most one
   pending per team and RSVP. The other side accepts or declines on their page.
   No email is sent for requests in this version.
+- The seeker list, the teams looking for members, and each side's pending
+  invitations and requests are paged on the server, `TEAM_MATCHING_PAGE_SIZE`
+  (20) at a time with **Show more** and a total from a separate count. Seekers
+  are most recently updated first (keyset on `updatedAt DESC, id`); teams and
+  requests are oldest first (`createdAt, id`). Search matches a seeker's
+  headline, skills, or first name only (never the surname or email), and a
+  team's name; the free-space test for teams is in the query, so full teams
+  never take a place on a page. Further pages go through read-only actions
+  that re-resolve the leader link or the ticket token and re-run the list's
+  own rules on every page (`search` rate-limit bucket). Team members are not
+  paged (bounded by `teamMaxSize`).
 - Accepting moves the seeker's RSVP into the team under the event lock with the
   same move as joining by link (size rechecked, team status taken, profile
   hidden, other pending requests cancelled, freed solo unit promotes, checked-in
@@ -188,12 +199,42 @@ to 30 characters).
   filter counts are aggregates. After a change, the view reloads as many
   pages as were showing. Searches and further pages go through the
   read-only `loadTeamsPage` action (same organiser check, `search` rate-limit
-  bucket). The People view's move targets are a separate bounded list
-  (`MAX_TEAM_MOVE_TARGETS`, 200, non-rejected teams). Actions: approve,
+  bucket). The Move to team picker (People row and Teams view) searches
+  on the server through `searchMoveTargets` (same organiser check, `search`
+  bucket): non-rejected teams with room (full teams are excluded in SQL),
+  alphabetical on a `nameKey, id` keyset, `TEAM_MOVE_TARGETS_PAGE_SIZE` (20)
+  at a time with **Show more**. Actions: approve,
   reject, promote from waitlist (all as one unit), rename, remove a member, move
   a member to another team (size rechecked, member takes the target team's
   status), and delete a team with the existing undo pattern where practical.
 - People view shows each RSVP's team. Filters gain "In a team" and "Solo".
+  The People list is paged on the server (`ATTENDEES_PAGE_SIZE`, 50, newest
+  first on a `createdAt, id` keyset, **Load more**) through
+  `loadAttendeesPage` (`canManageRegistrationsFor`, `search` bucket); status,
+  kind, team and search filters run in the query and the chip counts are
+  separate counts under the same search. **Export emails** downloads every
+  match of the current filters from
+  `/api/exports/events/:eventId/attendee-emails`, and **Export CSV** the full
+  attendee CSV for the same matches (`/api/exports/events/:eventId/attendees`
+  with the filter parameters; without them it is every registration, as
+  before).
+- Teams **Export CSV** (`/api/exports/events/:eventId/teams?status=&q=`)
+  downloads every team matching the chip and search showing, read through
+  the Teams query (`listEventTeamsForOrganiser`) in keyset batches of 200:
+  team, status, size, incomplete, looking for members, leader and email,
+  members (`Name <email>`), submission status (`None` without a project) and
+  creation time. Same access as the Teams view; every denial is an empty 404;
+  the audit (`TEAM_LIST_EXPORTED`) records filter names only. Cells go
+  through `lib/csv.ts`.
+- Both views keep their filters and search in the address bar and have a
+  **Views** menu ([Features → Saved views](FEATURES.md#saved-views)). People
+  adds a *Not checked in* status filter (`notCheckedIn`: `CONFIRMED` with no
+  entry check-in) and presets *Waitlisted*, *Checked in*, *Not checked in*
+  and *Solo*. Teams adds a *Looking for members* filter (`looking`:
+  `lookingForMembers` set) and presets *Incomplete*, *Pending approval* and
+  *Looking for members*. Both filters run in the list query and have chip
+  counts; a saved view is checked with the same `canManageRegistrationsFor`
+  as the list.
 - Permission checks are unchanged: the same checks that guard the individual
   RSVP actions guard the team ones. Every query is scoped by event and
   organisation, and a team id from the browser is always re-read with its

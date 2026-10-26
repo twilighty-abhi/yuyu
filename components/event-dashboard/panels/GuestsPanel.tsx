@@ -1,6 +1,9 @@
 import type { EventDashboardContext } from "@/lib/eventDashboard/context";
-import { loadAttendees, loadEventInvites, loadRegistrationFields } from "@/lib/eventDashboard/data";
-import { loadEventTeams, loadTeamMoveTargets } from "@/lib/eventDashboard/teams";
+import { loadRegistrationFields } from "@/lib/eventDashboard/data";
+import { loadAttendeesFirstPage } from "@/lib/eventDashboard/attendees";
+import { loadEventInvitesFirstPage } from "@/lib/eventDashboard/invites";
+import { loadEventTeams } from "@/lib/eventDashboard/teams";
+import { loadSavedViewsForDashboard } from "@/lib/eventDashboard/savedViews";
 import { EventInvitePanel } from "@/components/invites/EventInvitePanel";
 import { SubTabs, type SubTab } from "../SubTabs";
 import { GuestsPeople } from "./GuestsPeople";
@@ -11,12 +14,13 @@ export async function GuestsPanel({ ctx }: { ctx: EventDashboardContext }) {
   const { event, permissions, organisation } = ctx;
   const teamMode = event.registrationMode === "TEAM";
   const teamsAllowed = teamMode && permissions.canManageRegistrations;
-  const [attendees, fields, invites, teamsPage, moveTargets] = await Promise.all([
-    permissions.canManageRegistrations ? loadAttendees(event.id, ctx.origin) : Promise.resolve({ attendees: [], truncated: false }),
+  // Every list here is paged on the server; only first pages load with the panel.
+  const [attendees, fields, invites, teamsPage, savedViews] = await Promise.all([
+    permissions.canManageRegistrations ? loadAttendeesFirstPage(ctx) : Promise.resolve(null),
     loadRegistrationFields(event.id),
-    permissions.canManageInvitations ? loadEventInvites(event.id) : Promise.resolve([]),
+    permissions.canManageInvitations ? loadEventInvitesFirstPage(event.id, organisation.id) : Promise.resolve(null),
     teamsAllowed ? loadEventTeams(ctx) : Promise.resolve(null),
-    teamsAllowed ? loadTeamMoveTargets(ctx) : Promise.resolve([]),
+    loadSavedViewsForDashboard(ctx),
   ]);
   const teamsTab: SubTab[] = teamMode
     ? [
@@ -25,7 +29,13 @@ export async function GuestsPanel({ ctx }: { ctx: EventDashboardContext }) {
           label: "Teams",
           count: teamsPage ? teamsPage.counts.all : undefined,
           content: teamsPage ? (
-            <GuestsTeams organisationSlug={organisation.slug} eventId={event.id} initialPage={teamsPage} moveTargets={moveTargets} approvalRequired={event.privacyType === "APPROVAL_REQUIRED"} />
+            <GuestsTeams
+              organisationSlug={organisation.slug}
+              eventId={event.id}
+              initialPage={teamsPage}
+              approvalRequired={event.privacyType === "APPROVAL_REQUIRED"}
+              savedViews={savedViews.GUESTS_TEAMS ?? []}
+            />
           ) : (
             <NoPermission>You do not have permission to view or manage attendee registrations.</NoPermission>
           ),
@@ -39,18 +49,17 @@ export async function GuestsPanel({ ctx }: { ctx: EventDashboardContext }) {
         {
           value: "people",
           label: "People",
-          content: permissions.canManageRegistrations ? (
+          content: attendees ? (
             <GuestsPeople
               organisationSlug={organisation.slug}
               target={{ kind: "event", eventId: event.id, eventTitle: event.title }}
               timeZone={event.timezone}
               now={ctx.now.toISOString()}
-              attendees={attendees.attendees}
-              truncated={attendees.truncated}
+              initialPage={attendees}
               registrationFields={fields}
               teamMode={teamMode}
-              teams={moveTargets}
               canUndoCheckIn={permissions.canCheckIn}
+              savedViews={savedViews.GUESTS_PEOPLE ?? []}
             />
           ) : (
             <NoPermission>You do not have permission to view or manage attendee registrations.</NoPermission>
@@ -60,9 +69,9 @@ export async function GuestsPanel({ ctx }: { ctx: EventDashboardContext }) {
         {
           value: "invites",
           label: "Invites",
-          count: permissions.canManageInvitations ? invites.length : undefined,
-          content: permissions.canManageInvitations ? (
-            <EventInvitePanel organisationSlug={organisation.slug} eventId={event.id} eventHasEnded={event.endDateTime <= ctx.now} invites={invites} timeZone={event.timezone} now={ctx.now.toISOString()} />
+          count: invites ? invites.total : undefined,
+          content: invites ? (
+            <EventInvitePanel organisationSlug={organisation.slug} eventId={event.id} eventHasEnded={event.endDateTime <= ctx.now} initialPage={invites} timeZone={event.timezone} now={ctx.now.toISOString()} />
           ) : (
             <NoPermission>You do not have permission to manage invitations for this event.</NoPermission>
           ),

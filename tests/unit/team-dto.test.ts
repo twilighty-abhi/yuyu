@@ -6,7 +6,7 @@ vi.mock("@/lib/rsvpCore", () => ({ submitRsvpCore: vi.fn() }));
 vi.mock("@/lib/core/rsvpCancel", () => ({ cancelRsvpForUser: vi.fn() }));
 vi.mock("@/lib/eventAccess", () => ({ canManageRegistrationsFor: vi.fn() }));
 
-import { joinPageTeamDto, seekerDisplayName, seekerListDto, teamPageDto } from "@/lib/core/teams";
+import { joinPageTeamDto, seekerDisplayName, seekerListDto, teamJoinRequestDto, teamPageDto } from "@/lib/core/teams";
 
 const FORBIDDEN = /email|token|answer|checkIn(Token)?$|userId|attendeeKey|manage/i;
 
@@ -83,17 +83,24 @@ describe("team page DTO", () => {
         { id: "rsvp_1", guestName: null, guestEmail: "lead@example.test", checkInToken: "ticket-1", checkedInAt: null, user: { name: "Lead Person", email: "lead@example.test" } },
         { id: "rsvp_2", guestName: "Member Two", guestEmail: "two@example.test", checkInToken: "ticket-2", checkedInAt: new Date(), user: null },
       ],
-      joinRequests: [
-        { id: "req_1", direction: TeamJoinRequestDirection.REQUEST, rsvp: { guestName: "Seek Er", guestEmail: "s@example.test", user: null, seekerProfile: { headline: "UI", skills: ["CSS"] } } },
-      ],
     };
-    const dto = teamPageDto(row as never);
+    const request = teamJoinRequestDto({
+      id: "req_1",
+      direction: TeamJoinRequestDirection.REQUEST,
+      createdAt: new Date(),
+      rsvp: { guestName: "Seek Er", guestEmail: "s@example.test", checkInToken: "ticket-3", user: null, seekerProfile: { headline: "UI", skills: ["CSS"] } },
+    } as never);
+    const dto = teamPageDto(row as never, {
+      incoming: { items: [request], nextCursor: null, total: 1 },
+      sent: { items: [], nextCursor: null, total: 0 },
+    });
     expect(dto.team).toMatchObject({ size: 2, minSize: 3, maxSize: 5, incomplete: true, joinPath: `/org/jam/team/${"j".repeat(43)}` });
     expect(dto.members).toEqual([
       { rsvpId: "rsvp_1", name: "Lead Person", isLeader: true, checkedIn: false },
       { rsvpId: "rsvp_2", name: "Member Two", isLeader: false, checkedIn: true },
     ]);
-    expect(dto.pendingRequests).toEqual([{ id: "req_1", direction: "REQUEST", displayName: "Seek E.", headline: "UI", skills: ["CSS"] }]);
+    expect(dto.incomingRequests.items).toEqual([{ id: "req_1", direction: "REQUEST", displayName: "Seek E.", headline: "UI", skills: ["CSS"] }]);
+    expect(Object.keys(request).sort()).toEqual(["direction", "displayName", "headline", "id", "skills"]);
     const serialised = JSON.stringify(dto);
     expect(serialised).not.toContain("example.test");
     expect(serialised).not.toContain("ticket-");

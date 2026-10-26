@@ -13,7 +13,9 @@ import { JudgeWorkspaceClient } from "./JudgeWorkspaceClient";
  *
  * Access is re-resolved from the session user (resolveJudgeContext), and the
  * list comes from the judging core, which applies assignments, conflict of
- * interest, and status filters. Only project content and this judge's own
+ * interest, and status filters in the query. Only the first page (and totals)
+ * load here; filters, search and "Load more" go through
+ * `loadJudgeSubmissionsPage`. Only project content and this judge's own
  * progress reach the browser: never entrant emails, answers, or tickets.
  */
 export async function JudgeWorkspace({ ctx }: { ctx: EventDashboardContext }) {
@@ -37,7 +39,7 @@ export async function JudgeWorkspace({ ctx }: { ctx: EventDashboardContext }) {
       audience={ctx.permissions.canManageJudging ? "organiser" : "judge"}
       judgingStatus={workspace.judgingStatus}
       criteria={workspace.criteria}
-      submissions={workspace.submissions}
+      initialPage={{ submissions: workspace.submissions, nextCursor: workspace.nextCursor, counts: workspace.counts }}
     />
   );
 }

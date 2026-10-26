@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Chip, DateBlock, EmptyState } from "@/components/ui/display";
 import { cn } from "@/lib/cn";
 import type { AccountCertificateRow, AccountRegistrationRow } from "@/lib/accountRegistrations";
+import { GalleryPagination } from "@/components/event/GalleryPagination";
 import { CancelRegistrationButton } from "./CancelRegistrationButton";
 
 export const accountSectionCard = "rounded-2xl border border-line bg-canvas p-5 sm:p-6";
@@ -99,7 +100,7 @@ function RegistrationItem({ row, past }: { row: AccountRegistrationRow; past: bo
   );
 }
 
-export function RegistrationList({ rows, past, emptyTitle, emptyBody, limit }: { rows: AccountRegistrationRow[]; past: boolean; emptyTitle: string; emptyBody: string; limit: number }) {
+export function RegistrationList({ rows, past, emptyTitle, emptyBody, footer }: { rows: AccountRegistrationRow[]; past: boolean; emptyTitle: string; emptyBody: string; footer?: ReactNode }) {
   if (!rows.length) {
     return (
       <EmptyState mood="sleepy" title={emptyTitle} action={<DiscoverAction />} className="rounded-xl border-dashed">
@@ -112,14 +113,12 @@ export function RegistrationList({ rows, past, emptyTitle, emptyBody, limit }: {
       <ul className="flex flex-col divide-y divide-line">
         {rows.map((row) => <RegistrationItem key={row.id} row={row} past={past} />)}
       </ul>
-      {rows.length >= limit ? (
-        <p className="mt-4 text-sm text-ink-muted">Showing the {limit} most relevant. Download your data below for the full history.</p>
-      ) : null}
+      {footer}
     </>
   );
 }
 
-export function CertificateList({ rows }: { rows: AccountCertificateRow[] }) {
+export function CertificateList({ rows, footer }: { rows: AccountCertificateRow[]; footer?: ReactNode }) {
   if (!rows.length) {
     return (
       <EmptyState mood="sleepy" title="No certificates yet" action={<DiscoverAction />} className="rounded-xl border-dashed">
@@ -128,6 +127,7 @@ export function CertificateList({ rows }: { rows: AccountCertificateRow[] }) {
     );
   }
   return (
+    <>
     <ul className="flex flex-col divide-y divide-line">
       {rows.map((row) => (
         <li key={row.id} className="flex flex-col gap-2 py-3.5 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between">
@@ -149,5 +149,34 @@ export function CertificateList({ rows }: { rows: AccountCertificateRow[] }) {
         </li>
       ))}
     </ul>
+    {footer}
+    </>
+  );
+}
+
+/**
+ * "Showing 51–100 of 140" and page-number links for one section. Plain links
+ * (`?past=2#past`), so a page can be shared or reloaded; renders nothing for
+ * a single page.
+ */
+export function SectionPager({
+  label,
+  pagination,
+  hrefFor,
+}: {
+  label: string;
+  pagination: { page: number; totalPages: number; total: number; pageSize: number };
+  hrefFor: (page: number) => string;
+}) {
+  if (pagination.totalPages <= 1) return null;
+  const first = (pagination.page - 1) * pagination.pageSize + 1;
+  const last = Math.min(pagination.total, pagination.page * pagination.pageSize);
+  return (
+    <div className="mt-4 flex flex-col gap-2 border-t border-line pt-4">
+      <p className="text-center text-sm text-ink-muted">
+        Showing {first}–{last} of {pagination.total}
+      </p>
+      <GalleryPagination page={pagination.page} totalPages={pagination.totalPages} hrefFor={hrefFor} label={label} />
+    </div>
   );
 }

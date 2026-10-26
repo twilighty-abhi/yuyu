@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   eventFind: vi.fn(),
   rsvpFindFirst: vi.fn(),
   rsvpFindUnique: vi.fn(),
+  rsvpFindMany: vi.fn(),
   updateMany: vi.fn(),
   checkInEventCreate: vi.fn(),
   transaction: vi.fn(),
@@ -12,7 +13,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/db", () => ({ prisma: {
   event: { findFirst: mocks.eventFind },
-  rSVP: { findFirst: mocks.rsvpFindFirst, findUnique: mocks.rsvpFindUnique },
+  rSVP: { findFirst: mocks.rsvpFindFirst, findUnique: mocks.rsvpFindUnique, findMany: mocks.rsvpFindMany },
   checkInEvent: { create: mocks.checkInEventCreate },
   $transaction: mocks.transaction,
 } }));
@@ -111,5 +112,26 @@ describe("venue check-in station route", () => {
       }),
     }));
     expect(mocks.checkInEventCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it("pages Recent check-ins for this station's event only, newest first", async () => {
+    const at = new Date("2035-01-01T11:00:00.000Z");
+    mocks.rsvpFindMany.mockResolvedValue([{ id: "rsvp_2", checkedInAt: at, guestName: "Grace", guestEmail: "grace@example.test", user: null }]);
+    const response = await POST(request("recent", { cursor: `${at.getTime() + 1000}.rsvp_9` }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, data: { rows: [{ rsvpId: "rsvp_2", displayName: "Grace", email: "grace@example.test", checkedInAt: at.toISOString() }], nextCursor: null } });
+    expect(mocks.rsvpFindMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ eventId: "event_1", checkedInAt: { not: null } }),
+      orderBy: [{ checkedInAt: "desc" }, { id: "desc" }],
+      take: 26,
+    }));
+    // Names, emails and times only: never the ticket token.
+    expect(mocks.rsvpFindMany.mock.calls[0]![0].select).not.toHaveProperty("checkInToken");
+  });
+
+  it("answers a malformed Recent check-ins cursor with an empty page", async () => {
+    const response = await POST(request("recent", { cursor: "not-a-cursor" }));
+    expect(await response.json()).toEqual({ ok: true, data: { rows: [], nextCursor: null } });
+    expect(mocks.rsvpFindMany).not.toHaveBeenCalled();
   });
 });

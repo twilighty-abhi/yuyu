@@ -17,6 +17,8 @@ import { recordAuditEvent } from "@/lib/audit";
 import { isActionRateLimited } from "@/lib/actionRateLimit";
 import { enqueueEventInvite } from "@/lib/outbox";
 import { startOutboxWorker } from "@/lib/outboxWorker";
+import { z } from "zod";
+import { listEventInvitesPage, type EventInvitesPage } from "@/lib/eventDashboard/invites";
 
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
@@ -237,4 +239,36 @@ export async function removeSeriesInvite(input: unknown): Promise<ActionResult> 
   await recordAuditEvent({ action: "SERIES_INVITE_REMOVED", actorUserId: session.user.id, organisationId: org.id, targetType: "SeriesInvite", targetId: invite.id });
   revalidatePath(`/dashboard/${org.slug}/series/${series.id}`);
   return { ok: true };
+}
+
+const invitesPageInputSchema = z
+  .object({
+    organisationSlug: z.string().trim().min(1).max(200),
+    eventId: z.string().trim().min(1).max(128),
+    query: z.string().max(200).optional(),
+    page: z.number().int().min(1).max(100_000).optional(),
+  })
+  .strict();
+
+/**
+ * One numbered page of an event's invites, optionally searched by email.
+ * Read-only: the same access as `addEventInvite` (organisation OWNER/ADMIN or
+ * the exact MANAGE_INVITATIONS grant on the event), on the search bucket.
+ */
+export async function loadInvitesPage(input: unknown): Promise<ActionResult<EventInvitesPage>> {
+  const session = await auth();
+  if (!session?.user?.id) return { ok: false, error: "You must be signed in." };
+  const parsed = invitesPageInputSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Invalid input." };
+  if (await isActionRateLimited("search", session.user.id)) return { ok: false, error: "Too many searches. Try again shortly." };
+
+  const { organisationSlug, eventId, query, page } = parsed.data;
+  const org = await prisma.organisation.findUnique({ where: { slug: organisationSlug }, select: { id: true } });
+  if (!org) return { ok: false, error: "Organisation not found." };
+  if (!(await canAccessEvent({ userId: session.user.id, organisationId: org.id, eventId, permission: EventPermission.MANAGE_INVITATIONS }))) {
+    return { ok: false, error: "You do not have permission to manage invites." };
+  }
+  const event = await prisma.event.findFirst({ where: { id: eventId, organisationId: org.id }, select: { id: true } });
+  if (!event) return { ok: false, error: "Event not found." };
+  return { ok: true, data: await listEventInvitesPage({ eventId: event.id, organisationId: org.id }, { query: query?.trim() ?? "", page: page ?? 1 }) };
 }

@@ -1,4 +1,5 @@
 import type { JudgingStatus, SubmissionStatus } from "@prisma/client";
+import type { GalleryFilter, GallerySort, JudgeSubmissionCounts } from "@/lib/judgingPaging";
 
 /*
  * Read-model DTOs for hackathon judging (docs/HACKATHON.md). Each mapper
@@ -40,10 +41,17 @@ export type ProjectLinks = { repoUrl: string | null; demoUrl: string | null; vid
 
 type ProjectRow = EntrantNameSource & ProjectLinks & { id: string; title: string; summary: string };
 
-/** A project on the public gallery (`/{org}/{event}/projects`). */
-export type PublicGalleryItemDto = ProjectLinks & { id: string; title: string; summary: string; entrantName: string; isTeam: boolean };
+/** An award a project won, as a public badge: the award's name and the place, nothing else. */
+export type PublicAwardBadgeDto = { name: string; place: number };
 
-export function publicGalleryItemDto(row: ProjectRow): PublicGalleryItemDto {
+/**
+ * A project on the public gallery (`/{org}/{event}/projects`). `awards` is
+ * empty until results are published.
+ */
+export type PublicGalleryItemDto = ProjectLinks & { id: string; title: string; summary: string; entrantName: string; isTeam: boolean; awards: PublicAwardBadgeDto[] };
+
+/** Project content and the shown entrant name, shared by the gallery, judge, and organiser DTOs. */
+function projectContentDto(row: ProjectRow): Omit<PublicGalleryItemDto, "awards"> {
   return {
     id: row.id,
     title: row.title,
@@ -54,6 +62,10 @@ export function publicGalleryItemDto(row: ProjectRow): PublicGalleryItemDto {
     demoUrl: row.demoUrl,
     videoUrl: row.videoUrl,
   };
+}
+
+export function publicGalleryItemDto(row: ProjectRow, awards: PublicAwardBadgeDto[] = []): PublicGalleryItemDto {
+  return { ...projectContentDto(row), awards: awards.map((award) => ({ name: award.name, place: award.place })) };
 }
 
 /** A winner on the public results page: never a score or a judge comment. */
@@ -71,11 +83,39 @@ export function publicWinnerDto(row: { place: number; submission: Omit<ProjectRo
   };
 }
 
-export type PublicAwardDto = { name: string; description: string; winners: PublicWinnerDto[] };
+/**
+ * One published award. `isTop` marks the event's headline award (the first
+ * listed one), worked out before any search narrows the list so a filtered
+ * view never promotes a lower-ranked award to the headline style.
+ */
+export type PublicAwardDto = { name: string; description: string; isTop: boolean; winners: PublicWinnerDto[] };
 
-export type PublicResultsDto = { publishedAt: Date; awards: PublicAwardDto[] };
+/**
+ * Published results. `awards` keeps only awards with a winner matching
+ * `query` (all of them without one); `totalWinners` counts every listed
+ * winner, `matchedWinners` those shown.
+ */
+export type PublicResultsDto = { publishedAt: Date; awards: PublicAwardDto[]; query: string; totalWinners: number; matchedWinners: number };
 
-export type PublicGalleryDto = { projects: PublicGalleryItemDto[] };
+/**
+ * One page of the public gallery. `total` counts every submitted project;
+ * `matched` those matching `query` and `filter`; `winners` the submitted
+ * award winners (0 until results are published). `filter` and `sort` are the
+ * ones applied, after falling back from anything not allowed.
+ */
+export type PublicGalleryDto = {
+  projects: PublicGalleryItemDto[];
+  total: number;
+  matched: number;
+  winners: number;
+  query: string;
+  filter: GalleryFilter;
+  sort: GallerySort;
+  resultsPublished: boolean;
+  page: number;
+  totalPages: number;
+  pageSize: number;
+};
 
 /** A submission as a judge sees it. */
 export type JudgeSubmissionDto = ProjectLinks & {
@@ -92,7 +132,7 @@ export type JudgeSubmissionDto = ProjectLinks & {
 
 export function judgeSubmissionDto(row: ProjectRow, mine: { scoredCriteria: number; reviewSubmitted: boolean }): JudgeSubmissionDto {
   return {
-    ...publicGalleryItemDto(row),
+    ...projectContentDto(row),
     scoredCriteria: mine.scoredCriteria,
     reviewSubmitted: mine.reviewSubmitted,
   };
@@ -104,10 +144,16 @@ export function judgingCriterionDto(row: JudgingCriterionDto): JudgingCriterionD
   return { id: row.id, name: row.name, description: row.description, weight: row.weight, maxScore: row.maxScore };
 }
 
-export type JudgeWorkspaceDto = {
+/** One page of the judge's list (`submissions`), plus totals over everything this judge may see. */
+export type JudgeSubmissionsPageDto = {
+  submissions: JudgeSubmissionDto[];
+  nextCursor: string | null;
+  counts: JudgeSubmissionCounts;
+};
+
+export type JudgeWorkspaceDto = JudgeSubmissionsPageDto & {
   judgingStatus: JudgingStatus;
   criteria: JudgingCriterionDto[];
-  submissions: JudgeSubmissionDto[];
 };
 
 export type JudgeSubmissionDetailDto = {
@@ -165,7 +211,7 @@ export function organiserSubmissionDto(
   assignedJudgeIds: string[],
 ): OrganiserSubmissionDto {
   return {
-    ...publicGalleryItemDto(row),
+    ...projectContentDto(row),
     status: row.status,
     submittedAt: row.submittedAt,
     updatedAt: row.updatedAt,

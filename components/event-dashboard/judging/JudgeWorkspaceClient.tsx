@@ -1,25 +1,30 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ChevronRight, ExternalLink, Users } from "lucide-react";
+import { ArrowLeft, ArrowRight, CheckCircle2, ChevronRight, ExternalLink, Users } from "lucide-react";
 import type { JudgingStatus } from "@prisma/client";
-import { loadJudgeSubmission, saveJudgeReviewAction } from "@/app/actions/judging";
+import { loadJudgeSubmission, loadJudgeSubmissionsPage, loadNextJudgeSubmission, saveJudgeReviewAction } from "@/app/actions/judging";
 import { useToast } from "@/components/feedback/ToastProvider";
 import { Button } from "@/components/ui/button";
+import { useLoadMoreFocus } from "@/components/ui/use-load-more-focus";
 import { Callout, Card, Chip, EmptyState, ProgressBar } from "@/components/ui/display";
-import { Field, Textarea } from "@/components/ui/field";
+import { Field, SearchInput, Textarea } from "@/components/ui/field";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/cn";
-import type { JudgeSubmissionDetailDto, JudgeSubmissionDto, JudgingCriterionDto } from "@/lib/judgingDto";
+import type { JudgeSubmissionDetailDto, JudgeSubmissionDto, JudgeSubmissionsPageDto, JudgingCriterionDto } from "@/lib/judgingDto";
+import { JUDGING_SEARCH_MAX_LENGTH, type JudgeSubmissionCounts, type JudgeSubmissionFilter } from "@/lib/judgingPaging";
 import {
   isFullyScored,
+  JUDGE_FILTER_OPTIONS,
+  judgeEmptyViewText,
   judgeProgressChip,
-  judgeProgressSummary,
+  judgeProgressFromCounts,
   judgingStatusNotice,
   linkLabel,
   noRubricNotice,
   scoreMapFrom,
+  scoreNextToast,
   scoresToSave,
   type ScoreMap,
   type WorkspaceAudience,
@@ -27,44 +32,175 @@ import {
 import { OpenTabButton } from "../EventDashboardTabs";
 
 const COMMENT_MAX_LENGTH = 2000;
+const SEARCH_DELAY_MS = 300;
 
 type Scope = { organisationSlug: string; eventId: string };
+type ListView = { query: string; filter: JudgeSubmissionFilter };
 
 /**
  * Client half of the judge workspace: the list of submissions with this
  * judge's progress, and a scoring view loaded on demand. All reads and
  * writes go through app/actions/judging.ts, which re-checks access.
+ *
+ * The list is paged on the server: the first page and the totals come with
+ * the panel; filters, search and "Load more" fetch bounded pages through
+ * `loadJudgeSubmissionsPage`. The list state stays here while a submission
+ * is open, so "All submissions" returns to the same filter, search and pages.
+ *
+ * "Score next project" asks the server which project to score next
+ * (`loadNextJudgeSubmission`: one already started, then the fewest reviews,
+ * then the oldest) and opens it. After a fresh review is submitted, the next
+ * one opens on its own with a toast that leads back to the list; when nothing
+ * is left, the list shows a done state. Focus moves to the project heading.
  */
 export function JudgeWorkspaceClient({
   organisationSlug,
   eventId,
   judgingStatus,
   criteria,
-  submissions,
+  initialPage,
   audience = "judge",
 }: Scope & {
   /** Organisers (owners/admins in the Judging tab) get organiser copy and a link to the rubric editor. */
   audience?: WorkspaceAudience;
   judgingStatus: JudgingStatus;
   criteria: JudgingCriterionDto[];
-  submissions: JudgeSubmissionDto[];
+  /** First page of the unfiltered list, plus totals over everything this judge may see. */
+  initialPage: JudgeSubmissionsPageDto;
 }) {
   const { showToast } = useToast();
   const [detail, setDetail] = useState<JudgeSubmissionDetailDto | null>(null);
   const [openingId, setOpeningId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
   const request = useRef(0);
+
+  const [filter, setFilter] = useState<JudgeSubmissionFilter>("all");
+  const [query, setQuery] = useState("");
+  const [submissions, setSubmissions] = useState<JudgeSubmissionDto[]>(initialPage.submissions);
+  const [nextCursor, setNextCursor] = useState<string | null>(initialPage.nextCursor);
+  const [counts, setCounts] = useState<JudgeSubmissionCounts>(initialPage.counts);
+  const [loadingList, setLoadingList] = useState<"replace" | "more" | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
+  const listSeq = useRef(0);
+  // How many pages the current view holds, so a refresh after a save reloads
+  // the same stretch instead of dropping pages added with "Load more".
+  const pagesLoaded = useRef(1);
+
+  const fetchPage = useCallback(
+    async (view: ListView, cursor: string | null) => {
+      const seq = ++listSeq.current;
+      setLoadingList(cursor ? "more" : "replace");
+      setListError(null);
+      const res = await loadJudgeSubmissionsPage({ organisationSlug, eventId, query: view.query.trim(), filter: view.filter, cursor });
+      if (seq !== listSeq.current) return;
+      setLoadingList(null);
+      if (!res.ok || !res.data) {
+        setListError(res.ok ? "Could not load submissions." : res.error);
+        return;
+      }
+      const page = res.data;
+      setSubmissions((current) => (cursor ? [...current, ...page.submissions.filter((row) => !current.some((other) => other.id === row.id))] : page.submissions));
+      setNextCursor(page.nextCursor);
+      setCounts(page.counts);
+      pagesLoaded.current = cursor ? pagesLoaded.current + 1 : 1;
+    },
+    [organisationSlug, eventId],
+  );
+
+  /** Re-read the first `pages` pages of a view in place (after a save). */
+  const reloadPages = useCallback(
+    async (view: ListView, pages: number) => {
+      const seq = ++listSeq.current;
+      setListError(null);
+      const collected: JudgeSubmissionDto[] = [];
+      let cursor: string | null = null;
+      let loaded = 0;
+      let latestCounts: JudgeSubmissionCounts | null = null;
+      do {
+        const res = await loadJudgeSubmissionsPage({ organisationSlug, eventId, query: view.query.trim(), filter: view.filter, cursor });
+        if (seq !== listSeq.current) return;
+        if (!res.ok || !res.data) {
+          setListError(res.ok ? "Could not load submissions." : res.error);
+          return;
+        }
+        for (const row of res.data.submissions) if (!collected.some((other) => other.id === row.id)) collected.push(row);
+        cursor = res.data.nextCursor;
+        latestCounts = res.data.counts;
+        loaded += 1;
+      } while (cursor && loaded < pages);
+      setSubmissions(collected);
+      setNextCursor(cursor);
+      if (latestCounts) setCounts(latestCounts);
+      pagesLoaded.current = loaded;
+    },
+    [organisationSlug, eventId],
+  );
+
+  // A filter or search fetches its first page (a search waits for typing to
+  // pause; the unfiltered view uses the first page that came with the panel).
+  // A refresh after a save (new `initialPage`) reloads as many pages as were
+  // showing, so a reviewed project leaves "To score" straight away.
+  const firstRun = useRef(true);
+  const lastView = useRef<ListView>({ query, filter });
+  useEffect(() => {
+    if (firstRun.current) {
+      firstRun.current = false;
+      return;
+    }
+    const unfiltered = filter === "all" && !query.trim();
+    const viewChanged = lastView.current.query !== query || lastView.current.filter !== filter;
+    lastView.current = { query, filter };
+    if (!viewChanged && (pagesLoaded.current > 1 || !unfiltered)) {
+      void reloadPages({ query, filter }, pagesLoaded.current);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      if (!unfiltered) {
+        void fetchPage({ query, filter }, null);
+        return;
+      }
+      listSeq.current += 1;
+      pagesLoaded.current = 1;
+      setLoadingList(null);
+      setListError(null);
+      setSubmissions(initialPage.submissions);
+      setNextCursor(initialPage.nextCursor);
+      setCounts(initialPage.counts);
+    }, viewChanged && !unfiltered && query.trim() ? SEARCH_DELAY_MS : 0);
+    return () => window.clearTimeout(timer);
+  }, [query, filter, fetchPage, reloadPages, initialPage]);
+
   // Keyboard and screen-reader focus: the list button that opened a submission
-  // unmounts with the list, so focus returns to it when the judge goes back.
+  // unmounts with the list, so focus returns to it when the judge goes back,
+  // or to the list heading when it has left this view (e.g. now reviewed).
   const [returnFocusId, setReturnFocusId] = useState<string | null>(null);
   const listRef = useRef<HTMLUListElement>(null);
+  const loadMoreFocus = useLoadMoreFocus(submissions.length);
+  const headingRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
     if (detail || !returnFocusId) return;
-    listRef.current?.querySelector<HTMLButtonElement>(`button[data-submission-id="${CSS.escape(returnFocusId)}"]`)?.focus();
+    const button = listRef.current?.querySelector<HTMLButtonElement>(`button[data-submission-id="${CSS.escape(returnFocusId)}"]`);
+    if (button) button.focus();
+    else headingRef.current?.focus({ preventScroll: true });
   }, [detail, returnFocusId]);
   const notice = judgingStatusNotice(judgingStatus, audience);
   const noRubric = noRubricNotice(audience);
-  const summary = judgeProgressSummary(submissions);
+  const summary = judgeProgressFromCounts(counts);
+
+  // Score next: the server said nothing is left, for the totals showing then
+  // (fresh totals after a refresh replace `counts`, which ends it).
+  const [exhaustedAt, setExhaustedAt] = useState<JudgeSubmissionCounts | null>(null);
+  const nextExhausted = exhaustedAt === counts;
+  const [findingNext, setFindingNext] = useState(false);
+  const focusDone = useRef(false);
+  const doneRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (detail || !focusDone.current) return;
+    focusDone.current = false;
+    (doneRef.current ?? headingRef.current)?.focus({ preventScroll: true });
+  }, [detail, exhaustedAt]);
+  const canScore = judgingStatus === "OPEN" && criteria.length > 0;
+  const allReviewed = canScore && counts.all > 0 && (counts.todo === 0 || nextExhausted);
 
   function open(submissionId: string) {
     const ticket = ++request.current;
@@ -85,8 +221,40 @@ export function JudgeWorkspaceClient({
   function close() {
     request.current++;
     setOpeningId(null);
+    setFindingNext(false);
     setReturnFocusId(detail?.submission.id ?? null);
     setDetail(null);
+  }
+
+  /**
+   * Open the project the server picks next. `advancing` is set after a
+   * submitted review: the toast says what opened (with a way back to the
+   * list), and when nothing is left the list's done state takes focus.
+   */
+  function scoreNext(advancing: boolean) {
+    const ticket = ++request.current;
+    setFindingNext(true);
+    startTransition(async () => {
+      const res = await loadNextJudgeSubmission({ organisationSlug, eventId });
+      if (ticket !== request.current) return;
+      setFindingNext(false);
+      if (!res.ok || !res.data) {
+        showToast(res.ok ? "Could not find the next project." : res.error, "error");
+        return;
+      }
+      const { next, remaining } = res.data;
+      if (!next) {
+        focusDone.current = true;
+        setExhaustedAt(counts);
+        setReturnFocusId(null);
+        setDetail(null);
+        showToast(advancing ? scoreNextToast(null) : "Nothing left to score. Every review is submitted.", advancing ? "success" : "info");
+        return;
+      }
+      setDetail(next);
+      window.scrollTo({ top: 0, behavior: "auto" });
+      if (advancing) showToast(scoreNextToast({ title: next.submission.title, remaining }), "success", { label: "Back to list", onClick: close });
+    });
   }
 
   if (detail) {
@@ -97,7 +265,13 @@ export function JudgeWorkspaceClient({
         detail={detail}
         onBack={close}
         audience={audience}
-        onSaved={(next) => setDetail(next)}
+        advancing={findingNext}
+        onSubmitted={() => scoreNext(true)}
+        onSaved={(next) => {
+          setDetail(next);
+          // Keep the loaded list in step until the refreshed page arrives.
+          setSubmissions((current) => current.map((row) => (row.id === next.submission.id ? next.submission : row)));
+        }}
       />
     );
   }
@@ -105,7 +279,7 @@ export function JudgeWorkspaceClient({
   return (
     <section aria-labelledby="judge-workspace-title" className="flex flex-col gap-5">
       <div className="flex flex-col gap-1">
-        <h2 id="judge-workspace-title" className="text-title text-ink">Score submissions</h2>
+        <h2 id="judge-workspace-title" ref={headingRef} tabIndex={-1} className="text-title text-ink focus:outline-none">Score submissions</h2>
         <p className="text-body-ui text-ink-muted">
           Read each project, score it against the rubric, and submit your review. Your comments are private to the organisers.
         </p>
@@ -128,7 +302,7 @@ export function JudgeWorkspaceClient({
         </Callout>
       ) : null}
 
-      {submissions.length === 0 ? (
+      {counts.all === 0 ? (
         <EmptyState title="No submissions to score">
           Submitted projects you are asked to judge will appear here. Projects from a team or registration you belong to are never shown to you.
         </EmptyState>
@@ -142,39 +316,112 @@ export function JudgeWorkspaceClient({
               {summary.started > 0 ? <p className="text-caption text-ink-muted">{summary.started} in progress</p> : null}
             </div>
             <ProgressBar value={summary.submitted} max={summary.total} tone="success" label="Reviews submitted" />
+            {canScore && !allReviewed ? (
+              <div className="flex flex-wrap items-center justify-between gap-2.5 pt-1">
+                <p className="text-caption text-ink-muted">Picks a project you started, or the one with the fewest reviews so far.</p>
+                <Button variant="primary" onClick={() => scoreNext(false)} loading={findingNext} loadingLabel="Finding the next project…" disabled={openingId !== null} endIcon={<ArrowRight aria-hidden className="size-4" />}>
+                  Score next project
+                </Button>
+              </div>
+            ) : null}
           </Card>
 
-          <ul ref={listRef} className="flex flex-col gap-2.5">
-            {submissions.map((submission) => {
-              const chip = judgeProgressChip(submission, criteria.length);
-              const busy = openingId === submission.id;
-              return (
-                <li key={submission.id}>
+          {allReviewed ? (
+            <div className="flex flex-col items-center gap-2 rounded-lg border border-line bg-canvas px-5 py-6 text-center">
+              <CheckCircle2 aria-hidden className="size-7 text-success-fg" />
+              <h3 ref={doneRef} tabIndex={-1} className="text-title text-ink focus:outline-none">You&apos;re all caught up</h3>
+              <p className="max-w-[46ch] text-body-ui text-ink-muted">
+                You&apos;ve submitted a review for every project you can score. You can still open any project below to update your review while judging is open.
+              </p>
+            </div>
+          ) : null}
+
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div role="group" aria-label="Filter submissions by your progress" className="flex flex-wrap gap-1.5">
+              {JUDGE_FILTER_OPTIONS.map(({ value, label }) => {
+                const on = filter === value;
+                return (
                   <button
+                    key={value}
                     type="button"
-                    data-submission-id={submission.id}
-                    onClick={() => open(submission.id)}
-                    disabled={openingId !== null}
-                    aria-busy={busy || undefined}
-                    className="flex w-full items-center gap-3 rounded-lg border border-line bg-canvas p-4 text-left transition-colors hover:bg-subtle disabled:cursor-progress focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--yy-focus)]"
+                    aria-pressed={on}
+                    onClick={() => setFilter(value)}
+                    className={cn(
+                      "inline-flex min-h-[38px] items-center gap-2 rounded-full border px-3.5 text-sm font-semibold transition-colors",
+                      on ? "border-primary bg-primary text-on-primary" : "border-line-strong bg-canvas text-ink hover:bg-subtle",
+                    )}
                   >
-                    <span className="flex min-w-0 flex-1 flex-col gap-1">
-                      <span className="truncate text-[17px] font-bold text-ink">{submission.title}</span>
-                      <span className="flex min-w-0 items-center gap-1.5 text-caption text-ink-muted">
-                        {submission.isTeam ? <Users aria-hidden className="size-3.5 shrink-0" /> : null}
-                        <span className="truncate">{submission.entrantName}</span>
-                      </span>
-                      {submission.summary ? <span className="line-clamp-2 text-body-ui text-ink-secondary">{submission.summary}</span> : null}
-                    </span>
-                    <span className="flex shrink-0 items-center gap-2">
-                      <Chip tone={chip.tone} size="sm">{chip.label}</Chip>
-                      {busy ? <Spinner className="size-4" /> : <ChevronRight aria-hidden className="size-4 text-ink-muted" />}
-                    </span>
+                    {label}
+                    <span className="opacity-75">{counts[value]}</span>
                   </button>
-                </li>
-              );
-            })}
-          </ul>
+                );
+              })}
+            </div>
+            <div className="w-full min-w-0 sm:ml-auto sm:w-[260px]">
+              <label htmlFor="judge-submission-search" className="sr-only">Search submissions by project or entrant</label>
+              <SearchInput
+                id="judge-submission-search"
+                placeholder="Search project or team"
+                value={query}
+                maxLength={JUDGING_SEARCH_MAX_LENGTH}
+                onChange={(event) => setQuery(event.target.value)}
+                onClear={() => setQuery("")}
+                autoComplete="off"
+                className="py-2 sm:text-sm"
+              />
+            </div>
+          </div>
+
+          {listError ? <Callout tone="danger" role="alert">{listError}</Callout> : null}
+
+          {loadingList === "replace" ? (
+            <p role="status" className="text-body-ui text-ink-muted">Loading submissions…</p>
+          ) : submissions.length === 0 ? (
+            <EmptyState>{judgeEmptyViewText(filter, query)}</EmptyState>
+          ) : (
+            <ul ref={listRef} id={loadMoreFocus.listId} aria-label="Submissions" aria-busy={loadingList != null} className="flex flex-col gap-2.5">
+              {submissions.map((submission) => {
+                const chip = judgeProgressChip(submission, criteria.length);
+                const busy = openingId === submission.id;
+                return (
+                  <li key={submission.id}>
+                    <button
+                      type="button"
+                      data-submission-id={submission.id}
+                      onClick={() => open(submission.id)}
+                      disabled={openingId !== null}
+                      aria-busy={busy || undefined}
+                      className="flex w-full items-center gap-3 rounded-lg border border-line bg-canvas p-4 text-left transition-colors hover:bg-subtle disabled:cursor-progress focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--yy-focus)]"
+                    >
+                      <span className="flex min-w-0 flex-1 flex-col gap-1">
+                        <span className="truncate text-[17px] font-bold text-ink">{submission.title}</span>
+                        <span className="flex min-w-0 items-center gap-1.5 text-caption text-ink-muted">
+                          {submission.isTeam ? <Users aria-hidden className="size-3.5 shrink-0" /> : null}
+                          <span className="truncate">{submission.entrantName}</span>
+                        </span>
+                        {submission.summary ? <span className="line-clamp-2 text-body-ui text-ink-secondary">{submission.summary}</span> : null}
+                      </span>
+                      <span className="flex shrink-0 items-center gap-2">
+                        <Chip tone={chip.tone} size="sm">{chip.label}</Chip>
+                        {busy ? <Spinner className="size-4" /> : <ChevronRight aria-hidden className="size-4 text-ink-muted" />}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+
+          {nextCursor && loadingList !== "replace" ? (
+            <div className="flex justify-center">
+              <Button variant="secondary" loading={loadingList === "more"} loadingLabel="Loading…" onClick={() => {
+                loadMoreFocus.beforeLoadMore();
+                void fetchPage({ query, filter }, nextCursor);
+              }}>
+                Load more submissions
+              </Button>
+            </div>
+          ) : null}
         </>
       )}
     </section>
@@ -186,6 +433,8 @@ function ScoringView({
   detail,
   onBack,
   onSaved,
+  onSubmitted,
+  advancing,
   audience,
 }: {
   scope: Scope;
@@ -193,6 +442,10 @@ function ScoringView({
   onBack: () => void;
   audience: WorkspaceAudience;
   onSaved: (next: JudgeSubmissionDetailDto) => void;
+  /** A fresh review was submitted: the workspace opens the next project. */
+  onSubmitted: () => void;
+  /** The next project is loading. */
+  advancing: boolean;
 }) {
   const router = useRouter();
   const { showToast } = useToast();
@@ -238,8 +491,12 @@ function ScoringView({
         myScores: entered,
         myReview: { comment, submittedAt: nowSubmitted ? (detail.myReview?.submittedAt ?? new Date()) : null },
       });
-      showToast(submit ? (submitted ? "Review updated." : "Review submitted.") : "Scores saved.", "success");
       router.refresh();
+      if (submit && nowSubmitted && !submitted) {
+        onSubmitted();
+        return;
+      }
+      showToast(submit ? (submitted ? "Review updated." : "Review submitted.") : "Scores saved.", "success");
     });
   }
 
@@ -328,7 +585,7 @@ function ScoringView({
             <Button type="button" variant="secondary" onClick={() => save(false)} loading={saving === "draft"} disabled={pending}>
               Save scores
             </Button>
-            <Button type="submit" variant="primary" loading={saving === "submit"} disabled={pending || !complete}>
+            <Button type="submit" variant="primary" loading={saving === "submit" || advancing} loadingLabel={advancing ? "Opening the next project…" : undefined} disabled={pending || advancing || !complete}>
               {submitted ? "Update review" : "Submit review"}
             </Button>
           </div>

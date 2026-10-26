@@ -51,9 +51,12 @@ export function formatDate(value: DateInput, timeZone: string) {
   return `${pick(list, "day")} ${pick(list, "month")} ${pick(list, "year")}`;
 }
 
-/** "9:30 AM" */
+/** "9:30 AM", "12:05 AM" */
 export function formatTime(value: DateInput, timeZone: string) {
-  const list = parts(value, timeZone, { hour: "numeric", minute: "2-digit", hour12: true });
+  // `hourCycle: "h12"`, not `hour12: true`: with en-GB, some ICU builds (Node
+  // 20's) resolve `hour12` to the h11 cycle and print "0:05 AM" just after
+  // midnight while the browser prints "12:05 AM", a hydration mismatch.
+  const list = parts(value, timeZone, { hour: "numeric", minute: "2-digit", hourCycle: "h12" });
   return `${pick(list, "hour")}:${pick(list, "minute")} ${pick(list, "dayPeriod").toUpperCase()}`;
 }
 

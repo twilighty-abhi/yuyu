@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useSession } from "next-auth/react";
+import { useAuthSession } from "@/components/auth/useAuthSession";
 import { DotLockup } from "@/components/brand/DotLockup";
 import { DotMark } from "@/components/brand/DotMark";
 import { GITHUB_URL } from "@/lib/openSource";
@@ -22,7 +22,7 @@ const linkClasses = "text-body-ui text-ink-secondary underline-offset-4 transiti
 /** Yuyu site footer (Figma 121:1333). "Hosted on Idlistack" lives here, never in the top nav. */
 export function SiteFooter() {
   const pathname = usePathname();
-  const { status } = useSession();
+  const { status } = useAuthSession();
   const links = status === "authenticated" ? [{ label: "Dashboard", href: "/dashboard" }, { label: "Account", href: "/account" }, ...publicLinks] : publicLinks;
 
   return (

@@ -22,6 +22,8 @@ import {
 import { commitListCheckIn, commitUndoListCheckIn } from "@/lib/checkInListMutations";
 import type { ActionResult } from "@/app/actions/org";
 import { flattenZodErrors } from "@/app/actions/utils";
+import { z } from "zod";
+import { LIST_ROSTER_FILTERS, loadCheckInListRosterPage, type ListRosterPage } from "@/lib/eventDashboard/checkInLists";
 
 /*
  * Custom check-in lists: the mutation core shared by the Server Actions in
@@ -356,4 +358,32 @@ export async function lookupListAttendeesForUser(actorUserId: string | null, inp
       })),
     },
   };
+}
+
+const listRosterPageSchema = z
+  .object({
+    organisationSlug: z.string().trim().min(1).max(120),
+    eventId: z.string().trim().min(1).max(128),
+    listId: z.string().trim().min(1).max(128),
+    filter: z.enum(LIST_ROSTER_FILTERS).optional(),
+    query: z.string().max(100).optional(),
+    cursor: z.string().max(160).nullable().optional(),
+  })
+  .strict();
+
+/**
+ * One page of "Guests for <list>" on the list desk (filter chips, search,
+ * "Show more"). Read-only, with the same CHECK_IN access as checking guests
+ * into the list, on the search rate-limit bucket; the list is re-read inside
+ * the event.
+ */
+export async function listRosterPageForUser(actorUserId: string | null, input: unknown): Promise<ActionResult<ListRosterPage>> {
+  const parsed = listRosterPageSchema.safeParse(input);
+  if (!parsed.success) return fail("Invalid input.");
+  const { organisationSlug, eventId, listId, filter, query, cursor } = parsed.data;
+  const ctx = await resolveEvent(actorUserId, organisationSlug, eventId, "checkIn", "search");
+  if (!ctx.ok) return ctx;
+  const list = await prisma.checkInList.findFirst({ where: { id: listId, eventId: ctx.event.id }, select: { id: true, requiresEntryCheckIn: true } });
+  if (!list) return fail("List not found.");
+  return { ok: true, data: await loadCheckInListRosterPage(ctx.event.id, list, { filter, query: query?.trim() ?? "", cursor: cursor ?? null }) };
 }

@@ -7,6 +7,16 @@ import { isActionRateLimited } from "@/lib/actionRateLimit";
 import * as judging from "@/lib/core/judging";
 import { resolveJudgingOrganiser, type JudgingOrganiserContext } from "@/lib/judgingAccess";
 import { projectGalleryPath, resultsPath } from "@/lib/submissionToken";
+import { countUnsubmittedEntrants, listUnsubmittedEntrants } from "@/lib/core/judgingEntrants";
+import {
+  toDashboardResultsPage,
+  toDashboardSubmissionsPage,
+  toDashboardUnsubmittedPage,
+  type JudgingDashboardUnsubmittedPage,
+  type JudgingDashboardAwardCandidate,
+  type JudgingDashboardResultsPage,
+  type JudgingDashboardSubmissionsPage,
+} from "@/lib/eventDashboard/judging";
 import type { ActionResult } from "./org";
 
 /*
@@ -32,14 +42,14 @@ function record(input: unknown): Record<string, unknown> {
   return typeof input === "object" && input !== null && !Array.isArray(input) ? (input as Record<string, unknown>) : {};
 }
 
-async function organiserGate(input: unknown, bucket: "action" | "broadcast" = "action"): Promise<Gate> {
+async function organiserGate(input: unknown, bucket: "action" | "broadcast" | "search" = "action"): Promise<Gate> {
   const fields = record(input);
   const scope = scopeSchema.safeParse({ organisationSlug: fields.organisationSlug, eventId: fields.eventId });
   if (!scope.success) return { ok: false, error: "Invalid input." };
   const session = await auth();
   const userId = session?.user?.id;
   if (!userId) return { ok: false, error: "You must be signed in." };
-  if (await isActionRateLimited(bucket, userId)) return { ok: false, error: "Too many judging updates. Try again shortly." };
+  if (await isActionRateLimited(bucket, userId)) return { ok: false, error: bucket === "search" ? "Too many searches. Try again shortly." : "Too many judging updates. Try again shortly." };
   const ctx = await resolveJudgingOrganiser(userId, scope.data.organisationSlug, scope.data.eventId);
   if (!ctx) return { ok: false, error: NO_PERMISSION };
   return { ok: true, ctx, input: fields };
@@ -86,6 +96,11 @@ export async function saveJudgingSettings(input: unknown): Promise<ActionResult<
 
 export async function changeJudgingStatus(input: unknown): Promise<ActionResult<{ judgingStatus: string }>> {
   return run(input, (ctx, fields) => judging.setJudgingStatus(ctx, fields.status));
+}
+
+/** "Adjust for harsh/generous judges": RAW or ZSCORE ranks the Results table (audited in the core). */
+export async function changeScoreNormalization(input: unknown): Promise<ActionResult<{ scoreNormalization: string }>> {
+  return run(input, (ctx, fields) => judging.setScoreNormalization(ctx, fields.scoreNormalization));
 }
 
 // ---------------------------------------------------------------------------
@@ -188,6 +203,59 @@ export async function loadProjectReviews(input: unknown): Promise<ActionResult<S
       scores: review.scores,
     })),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Paged reads (read-only, no revalidation, on the search rate-limit bucket)
+// ---------------------------------------------------------------------------
+
+/**
+ * One page of Judging → Submissions for a status filter, a search, or "Load
+ * more" (bounded by ORGANISER_SUBMISSIONS_PAGE_SIZE). The core re-validates
+ * the query and re-reads the event inside the organisation.
+ */
+export async function loadSubmissionsPage(input: unknown): Promise<ActionResult<JudgingDashboardSubmissionsPage>> {
+  const gate = await organiserGate(input, "search");
+  if (!gate.ok) return gate;
+  const { query, status, cursor } = gate.input;
+  const page = await judging.listSubmissionsForOrganiser(gate.ctx, { query: query ?? "", status: status ?? "all", cursor: cursor ?? null });
+  return { ok: true, data: toDashboardSubmissionsPage(page) };
+}
+
+/**
+ * Judging → Submissions → Not submitted: confirmed teams and solo registrants
+ * whose project isn't SUBMITTED, a "Load more" page at a time, with the
+ * number matching the search on the first page. The same organiser gate.
+ */
+export async function loadUnsubmittedEntrantsPage(input: unknown): Promise<ActionResult<JudgingDashboardUnsubmittedPage & { total: number | null }>> {
+  const gate = await organiserGate(input, "search");
+  if (!gate.ok) return gate;
+  const { query, cursor } = gate.input;
+  const [page, total] = await Promise.all([
+    listUnsubmittedEntrants(gate.ctx, { query: query ?? "", cursor: cursor ?? null }),
+    cursor ? Promise.resolve(null) : countUnsubmittedEntrants(gate.ctx, typeof query === "string" ? query : ""),
+  ]);
+  return { ok: true, data: { ...toDashboardUnsubmittedPage(page), total } };
+}
+
+/** One numbered page of the ranked table, optionally searched; ranks always come from the whole ranking. */
+export async function loadResultsPage(input: unknown): Promise<ActionResult<JudgingDashboardResultsPage>> {
+  const gate = await organiserGate(input, "search");
+  if (!gate.ok) return gate;
+  const page = await judging.loadJudgingResultsPage(gate.ctx, { query: gate.input.query ?? "", page: gate.input.page ?? 1, scored: gate.input.scored ?? "all" });
+  if (!page) return { ok: false, error: "Invalid input." };
+  return { ok: true, data: toDashboardResultsPage(page) };
+}
+
+/** Projects the Awards winner picker offers: SUBMITTED, by rank, searchable, in steps of AWARD_CANDIDATES_PAGE_SIZE. */
+export async function searchAwardCandidates(
+  input: unknown,
+): Promise<ActionResult<{ candidates: JudgingDashboardAwardCandidate[]; total: number; nextOffset: number | null }>> {
+  const gate = await organiserGate(input, "search");
+  if (!gate.ok) return gate;
+  const page = await judging.searchAwardCandidates(gate.ctx, { query: gate.input.query ?? "", offset: gate.input.offset ?? 0 });
+  if (!page) return { ok: false, error: "Invalid input." };
+  return { ok: true, data: { candidates: page.rows.map((row) => ({ ...row })), total: page.total, nextOffset: page.nextOffset } };
 }
 
 // ---------------------------------------------------------------------------

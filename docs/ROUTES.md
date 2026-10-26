@@ -27,8 +27,9 @@ Dynamic segments are shown as `:name` for readability.
 | `/:orgSlug/i/:instanceId` | Recurring-series instance and RSVP |
 | `/:orgSlug/i/:instanceId/schedule` | Programme for one recurring occurrence |
 | `/:shortCode` | Event short link: a 7-character code (letters and digits, always at least one uppercase letter, so it never matches a lowercase organisation slug) that temporarily redirects to the event's current public page. Unknown, unpublished, and unreleased codes, and lookups over the `shortLink` limit (30/min per IP), return the same not-found page as an unknown organisation. Publishing releases the event page in the same step, so a Live event's code works immediately |
-| `/ticket/:token` | Attendee ticket status and QR page; tears off the QR stub live when the attendee is checked in. On a team event it also shows the team (name, leader, member names), leaving the team, **Join a team** with a pasted join link for a solo registration, and the *Looking for a team* profile and list |
+| `/ticket/:token` | Attendee ticket status and QR page; tears off the QR stub live when the attendee is checked in. On a team event it also shows the team (name, leader, member names), leaving the team, **Join a team** with a pasted join link for a solo registration, and the *Looking for a team* profile and list. A crew ticket ([Event crew](CREW.md)) shows a **Crew** chip and no cancel or team controls |
 | `/submit/:token` | A solo registrant's project page, opened by the emailed submission link (requested from the ticket page; stored only as a SHA-256 hash; requesting a new one retires the old link). Draft, submit, edit while the window is open, and withdraw. Unknown and retired tokens are a 404; `noindex`, `no-referrer`, never cached |
+| `/crew/:token` | Crew sign-up link ([Event crew](CREW.md)): the crew profile form for one event, showing only the event and organisation names and time. Malformed, rotated and disabled tokens are a 404; closed for cancelled and ended events. New members start hidden from the event page, and an email already on the crew or registered gets the same answer as a new sign-up. Generic metadata, `noindex`, `no-referrer`, never cached |
 | `/team/:token` | Team page for the leader ([Team registration](TEAMS.md)), opened by the opaque management token (stored only as a SHA-256 hash; regenerating it retires the old link). A signed-in leader reaches the same page at `/account/teams/:teamId` without the token. `noindex`, private cache, `no-referrer`; the ticket's check-in token never opens it |
 | `/join/org/:token` | Accept an organisation invitation |
 | `/join/event-collaborator/:token` | Accept an event co-organiser invitation |
@@ -52,7 +53,7 @@ Dynamic segments are shown as `:name` for readability.
 | `/dashboard/:orgSlug` | Organisation events and series |
 | `/dashboard/:orgSlug/settings` | Organisation settings |
 | `/dashboard/:orgSlug/members` | Members, roles, and invitations |
-| `/dashboard/:orgSlug/event/:eventId` | Event dashboard with eight tabs: Overview, Guests, Event page, Emails, Check-in, Feedback, Analytics, and Settings (`?tab=` and `?sub=` deep links; old `?tab=details\|registration\|invites` links still work), plus **Judging** (`?tab=judging`) for hackathon submissions, rubric, judges, progress and automatic assignment (`&sub=judging-progress`), awards, and results, shown only once the event uses judging (until then owners and admins turn submissions on under Settings, and a link to `?tab=judging` opens Overview). A co-organiser whose only grant is `JUDGE` sees just the judging workspace. The paged lists keep their filters in the query string too (saved views, allow-listed per list: People `status`/`kind`/`team`/`q`, Teams `status`/`q`, Submissions `status`/`q`, Results `scored`/`q`, Progress `show`; e.g. `?tab=guests&sub=people&status=waitlist`); the filters never grant access |
+| `/dashboard/:orgSlug/event/:eventId` | Event dashboard with eight tabs: Overview, Guests, Event page, Emails, Check-in, Feedback, Analytics, and Settings (`?tab=` and `?sub=` deep links; old `?tab=details\|registration\|invites` links still work), plus **Judging** (`?tab=judging`) for hackathon submissions, rubric, judges, progress and automatic assignment (`&sub=judging-progress`), awards, and results, shown only once the event uses judging (until then owners and admins turn submissions on under Settings, and a link to `?tab=judging` opens Overview). A co-organiser whose only grant is `JUDGE` sees just the judging workspace. Guests → Crew (`?tab=guests&sub=crew`) manages the [event crew](CREW.md) and its sign-up link. The paged lists keep their filters in the query string too (saved views, allow-listed per list: People `status`/`kind`/`team`/`q`, Teams `status`/`q`, Submissions `status`/`q`, Results `scored`/`q`, Progress `show`; e.g. `?tab=guests&sub=people&status=waitlist`); the filters never grant access |
 | `/dashboard/:orgSlug/event/:eventId/schedule` | Standalone-event programme planning and live delay management |
 | `/dashboard/:orgSlug/event/:eventId/check-in` | Online/offline check-in station; organisation admin or exact event `CHECK_IN` grant. `?list=<id>` opens the desk for one open custom check-in list instead of entry |
 | `/dashboard/:orgSlug/series/:seriesId` | Recurring-series management |
@@ -98,14 +99,14 @@ Every super-admin page additionally requires a current TOTP verification, and ea
 | `GET /.well-known/assetlinks.json` | Public | Android App Links statement from `ANDROID_APP_SHA256_CERT_FINGERPRINTS` (`[]` when unset) |
 | `GET /.well-known/apple-app-site-association` | Public | iOS Universal Links association (JSON, no extension) from `APPLE_APP_IDS` (empty details when unset) |
 
-Opaque ticket, certificate, team join, team management, and submission URLs are bearer capabilities. Do not log them or place them in analytics payloads.
+Opaque ticket, certificate, team join, team management, submission, and crew sign-up URLs are bearer capabilities. Do not log them or place them in analytics payloads.
 
 ## Metadata routes
 
 | Route | Purpose |
 | --- | --- |
 | `/manifest.webmanifest` | PWA manifest (`app/manifest.ts`): name "Yuyu", `id` `/`, start URL `/dashboard` |
-| `/robots.txt` | Crawler rules (`app/robots.ts`); disallows `/dashboard/`, `/super-admin/`, `/ticket/`, `/team/`, `/{org}/{event}/team/`, `/submit/`, and `/join/` |
+| `/robots.txt` | Crawler rules (`app/robots.ts`); disallows `/dashboard/`, `/super-admin/`, `/ticket/`, `/team/`, `/{org}/{event}/team/`, `/submit/`, `/join/`, and `/crew/` |
 | `/sitemap.xml` | Public sitemap (`app/sitemap.ts`) |
 | `/:orgSlug/:eventSlug/opengraph-image`, `/:orgSlug/i/:instanceId/opengraph-image` | Generated social share cards for events and occurrences |
 

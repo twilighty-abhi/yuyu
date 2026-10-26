@@ -89,6 +89,16 @@ One-off events can register people in teams (hackathons, game jams, competitions
 - Every team and guest list is paged on the server, so events with hundreds of teams and thousands of registrations stay fast: the organiser Teams and People views and the check-in desk load in steps with **Load more**, the Move to team picker and the team and ticket pages' matching lists in steps of 20 with search, Invites in numbered pages, and **Export emails** downloads every guest matching the current filters. Guests · People, Guests · Teams, Judging → Submissions and Judging → Results each have **Export CSV** for exactly the filters and search showing, streamed from the server in bounded batches. Feedback responses page on the server, 25 at a time.
 - The mobile and machine APIs do not expose teams yet. `POST /api/mobile/v1/rsvp` registers solo where allowed and returns `TEAM_REQUIRED` on a teams-only event.
 
+## Event crew
+
+One-off events can list their organising team. The design contract is [Event crew](CREW.md).
+
+- Organisers add, edit, reorder, show or hide, and remove crew members (name, email, food preference, role, bio, photo, LinkedIn) in **Guests → Crew**, which also groups food preferences for catering.
+- Every crew member gets a confirmed ticket by email ("You're on the crew"), with a **Crew** chip on the ticket page and at the check-in desk. Crew count as going but never against the event's capacity. Adding someone who already registered solo turns their registration into the crew ticket and frees their place.
+- A crew sign-up link (`/crew/:token`) lets crew add themselves; they start hidden from the event page until an organiser reviews them. Organisers can create, rotate, and disable the link.
+- An optional **Crew** section on the event page (off by default, in **Event page → Sections**) shows visible members' cards, never emails or food preferences.
+- Crew tickets cannot be cancelled by their holder or edited and removed from Guests · People, and crew never join teams.
+
 ## Hackathon submissions, judging, and results
 
 One-off events in either registration mode can take project submissions, have them judged against a rubric, and publish results. The design contract is [Hackathon submissions, judging, and results](HACKATHON.md); it builds on [team registration](TEAMS.md).

@@ -8,12 +8,14 @@ import { isActionRateLimited } from "@/lib/actionRateLimit";
 import {
   ORGANISER_TEAM_FILTERS,
   listEventTeamsForOrganiser,
+  listTeamMoveTargetsForOrganiser,
   organiserDeleteTeam,
   organiserMoveMember,
   organiserRenameTeam,
   resolveOrganiserEvent,
   transitionTeamStatus,
   type OrganiserEventContext,
+  type TeamMoveTargetsPage,
   type TeamTransition,
 } from "@/lib/core/teams";
 import { z } from "zod";
@@ -187,4 +189,32 @@ export async function loadTeamsPage(input: unknown): Promise<ActionResult<{ team
   const { query, filter, cursor } = parsed.data;
   const page = await listEventTeamsForOrganiser(ctx, { query, filter, cursor: cursor ?? null });
   return { ok: true, data: { teams: page.teams.map(toDashboardTeam), nextCursor: page.nextCursor } };
+}
+
+const moveTargetsInputSchema = z
+  .object({
+    organisationSlug: z.string().trim().min(1).max(200),
+    eventId: z.string().trim().min(1).max(128),
+    query: z.string().max(100).optional(),
+    cursor: z.string().max(600).nullable().optional(),
+    excludeTeamId: z.string().trim().min(1).max(128).nullable().optional(),
+  })
+  .strict();
+
+/**
+ * One page of teams with room for the Move to team picker (search by name,
+ * "Show more"). Read-only: the same organiser check as `moveTeamMember`, on
+ * the search rate-limit bucket. The move re-checks size and status itself.
+ */
+export async function searchMoveTargets(input: unknown): Promise<ActionResult<TeamMoveTargetsPage>> {
+  const parsed = moveTargetsInputSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Invalid input." };
+  const session = await auth();
+  const userId = session?.user?.id;
+  if (!userId) return { ok: false, error: "You must be signed in." };
+  if (await isActionRateLimited("search", userId)) return { ok: false, error: "Too many searches. Try again shortly." };
+  const ctx = await resolveOrganiserEvent(userId, parsed.data.organisationSlug, parsed.data.eventId);
+  if (!ctx) return { ok: false, error: NO_PERMISSION };
+  const { query, cursor, excludeTeamId } = parsed.data;
+  return { ok: true, data: await listTeamMoveTargetsForOrganiser(ctx, { query, cursor: cursor ?? null, excludeTeamId: excludeTeamId ?? null }) };
 }

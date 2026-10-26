@@ -1,9 +1,11 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import * as TabsPrimitive from "@radix-ui/react-tabs";
+import { useActiveTabIntoView } from "@/components/ui/tabs";
 import { cn } from "@/lib/cn";
+import { clearViewParamsFromUrl } from "@/lib/savedViews";
 import { resolveTab, useEventTabs } from "./EventDashboardTabs";
 
 export type SubTab = { value: string; label: string; count?: number; content: ReactNode };
@@ -23,6 +25,9 @@ export function SubTabs({ items, label, className }: { items: SubTab[]; label: s
   const [value, setValue] = useState(initial);
   const { requestedSub } = useEventTabs();
   const [handledRequest, setHandledRequest] = useState<number | null>(null);
+  // On phones the pill row scrolls sideways: keep the active sub-tab in view.
+  const listRef = useRef<HTMLDivElement>(null);
+  useActiveTabIntoView(listRef, 16);
   // Another panel asked for one of our sub-tabs (e.g. Overview → Guests · Invites):
   // adjust during render, once per request (React's recommended pattern).
   if (requestedSub && requestedSub.nonce !== handledRequest && items.some((item) => item.value === requestedSub.value)) {
@@ -36,11 +41,13 @@ export function SubTabs({ items, label, className }: { items: SubTab[]; label: s
         setValue(next);
         const url = new URL(window.location.href);
         url.searchParams.set("sub", next);
+        // List filters (saved views) belong to the sub-tab that was showing.
+        clearViewParamsFromUrl(url);
         window.history.replaceState(window.history.state, "", url);
       }}
       className={cn("flex flex-col gap-5", className)}
     >
-      <TabsPrimitive.List aria-label={label} className="inline-flex max-w-full gap-1 self-start overflow-x-auto rounded-full bg-muted p-1 [scrollbar-width:none]">
+      <TabsPrimitive.List ref={listRef} aria-label={label} className="inline-flex max-w-full gap-1 self-start overflow-x-auto rounded-full bg-muted p-1 [scrollbar-width:none]">
         {items.map((item) => (
           <TabsPrimitive.Trigger
             key={item.value}

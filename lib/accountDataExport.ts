@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { EventPermission, MembershipRole, RsvpStatus } from "@prisma/client";
+import type { EventPermission, MembershipRole, RsvpStatus, SubmissionStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
 
 /**
@@ -14,6 +14,19 @@ export const ACCOUNT_EXPORT_FORMAT_VERSION = 1;
 type AnswerValue = { valueText: string | null; valueBool: boolean | null; valueNumber: number | null; valueDate: Date | null };
 
 /* ---------- Raw input shapes (exactly what the loader selects) ---------- */
+
+/** A hackathon project (docs/HACKATHON.md). The organisers' disqualification reason is never read. */
+type ExportSubmission = {
+  title: string;
+  summary: string;
+  repoUrl: string | null;
+  demoUrl: string | null;
+  videoUrl: string | null;
+  status: SubmissionStatus;
+  submittedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
 
 export type AccountExportSource = {
   user: {
@@ -34,8 +47,10 @@ export type AccountExportSource = {
     event: { title: string; startDateTime: Date; endDateTime: Date; timezone: string; organisation: { name: string } } | null;
     eventInstance: { startDateTime: Date; endDateTime: Date; series: { title: string; timezone: string; organisation: { name: string } } } | null;
     answers: Array<AnswerValue & { field: { label: string } }>;
-    /** TEAM events: the user's team (name and who leads it). */
-    team?: { name: string; leaderRsvpId: string | null } | null;
+    /** TEAM events: the user's team (name and who leads it), and the team's project. */
+    team?: { name: string; leaderRsvpId: string | null; submission?: ExportSubmission | null } | null;
+    /** A solo registration's own project. */
+    submission?: ExportSubmission | null;
   }>;
   feedback: Array<{
     submittedAt: Date;
@@ -110,6 +125,25 @@ export function buildAccountDataExport(source: AccountExportSource, generatedAt:
         answers: rsvp.answers.map((answer) => ({ question: answer.field.label, answer: answerValue(answer) })),
       }];
     }),
+    submissions: cap(source.registrations).flatMap((rsvp) => {
+      const submission = rsvp.team ? rsvp.team.submission : rsvp.submission;
+      const event = rsvp.event;
+      if (!submission || !event) return [];
+      return [{
+        event: event.title,
+        organisation: event.organisation.name,
+        team: rsvp.team?.name ?? null,
+        title: submission.title,
+        summary: submission.summary,
+        repoUrl: submission.repoUrl,
+        demoUrl: submission.demoUrl,
+        videoUrl: submission.videoUrl,
+        status: submission.status,
+        submittedAt: iso(submission.submittedAt),
+        createdAt: submission.createdAt.toISOString(),
+        updatedAt: submission.updatedAt.toISOString(),
+      }];
+    }),
     feedback: cap(source.feedback).map((response) => ({
       event: response.form.event.title,
       organisation: response.form.event.organisation.name,
@@ -141,6 +175,19 @@ export type AccountDataExport = ReturnType<typeof buildAccountDataExport>;
 
 const answerSelect = { valueText: true, valueBool: true, valueNumber: true, valueDate: true } as const;
 
+// Explicit project fields only; `disqualifiedReason` is organiser-only and never read.
+const submissionSelect = {
+  title: true,
+  summary: true,
+  repoUrl: true,
+  demoUrl: true,
+  videoUrl: true,
+  status: true,
+  submittedAt: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
+
 /**
  * Load only the signed-in user's own rows. Every query is keyed on `userId`
  * (directly or through the user's own RSVP) and fetches one row beyond the cap
@@ -169,8 +216,9 @@ export async function loadAccountExportSource(userId: string): Promise<AccountEx
         status: true,
         createdAt: true,
         checkedInAt: true,
-        // Team name and leader only; join and management tokens are never read.
-        team: { select: { name: true, leaderRsvpId: true } },
+        // Team name, leader, and the team's project only; join and management tokens are never read.
+        team: { select: { name: true, leaderRsvpId: true, submission: { select: submissionSelect } } },
+        submission: { select: submissionSelect },
         event: { select: { title: true, startDateTime: true, endDateTime: true, timezone: true, organisation: { select: { name: true } } } },
         eventInstance: { select: { startDateTime: true, endDateTime: true, series: { select: { title: true, timezone: true, organisation: { select: { name: true } } } } } },
         answers: { select: { ...answerSelect, field: { select: { label: true } } }, orderBy: { field: { sortOrder: "asc" } }, take: 200 },

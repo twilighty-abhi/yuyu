@@ -9,6 +9,7 @@ export const PERMISSION_OPTIONS: ReadonlyArray<{ value: EventPermission; label: 
   { value: "MANAGE_INVITATIONS", label: "Attendee invites", description: "Manage attendee invites" },
   { value: "CHECK_IN", label: "Check-in", description: "Operate check-in" },
   { value: "PUBLISH_AND_SCHEDULE", label: "Publish and schedule", description: "Publish and manage schedule" },
+  { value: "JUDGE", label: "Judge", description: "Score hackathon submissions (judging workspace only)" },
 ];
 
 /** Chip labels in canonical order; duplicates and unknown values are dropped. */

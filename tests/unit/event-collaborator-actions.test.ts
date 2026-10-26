@@ -60,6 +60,31 @@ describe("event collaborator tenant binding", () => {
     });
   });
 
+  it("grants JUDGE on a one-off event but never on a series, and refuses duplicates", async () => {
+    await expect(updateEventCollaboratorPermissions({
+      organisationSlug: "org-a",
+      eventId: "event_a",
+      collaboratorId: "grant_a",
+      permissions: [EventPermission.JUDGE],
+    })).resolves.toEqual({ ok: true });
+    expect(mocks.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: { permissions: [EventPermission.JUDGE] } }));
+
+    mocks.updateMany.mockClear();
+    await expect(updateEventCollaboratorPermissions({
+      organisationSlug: "org-a",
+      eventSeriesId: "series_a",
+      collaboratorId: "grant_a",
+      permissions: [EventPermission.JUDGE],
+    })).resolves.toEqual({ ok: false, error: "Invalid collaborator permissions." });
+    await expect(updateEventCollaboratorPermissions({
+      organisationSlug: "org-a",
+      eventId: "event_a",
+      collaboratorId: "grant_a",
+      permissions: [EventPermission.CHECK_IN, EventPermission.CHECK_IN],
+    })).resolves.toEqual({ ok: false, error: "Invalid collaborator permissions." });
+    expect(mocks.updateMany).not.toHaveBeenCalled();
+  });
+
   it("cancels only unused invites of an event in the authorised organisation", async () => {
     await expect(cancelEventCollaboratorInvite({ organisationSlug: "org-a", eventId: "event_b", inviteId: "invite_b" }))
       .resolves.toEqual({ ok: true });

@@ -4,12 +4,12 @@ import { prisma } from "@/lib/db";
 import { CHECK_IN_STATION_COOKIE, hasValidCheckInStationProof } from "@/lib/checkInStation";
 import { EventCheckInClient } from "@/components/checkin/EventCheckInClient";
 import { CheckInStationUnlock } from "@/components/checkin/CheckInStationUnlock";
+import { listRecentCheckIns } from "@/lib/checkInRecent";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = { title: "Venue check-in", robots: { index: false, follow: false }, referrer: "no-referrer" };
 
 type Props = { params: Promise<{ orgSlug: string; eventSlug: string }> };
-function label(r: { user: { name: string | null; email: string | null } | null; guestEmail: string | null }) { return r.user?.name?.trim() || r.user?.email || r.guestEmail || "Guest"; }
 
 export default async function VenueCheckInStationPage({ params }: Props) {
   const { orgSlug, eventSlug } = await params;
@@ -18,11 +18,11 @@ export default async function VenueCheckInStationPage({ params }: Props) {
   if (!event?.checkInStationPinHash) notFound();
   const proof = (await cookies()).get(CHECK_IN_STATION_COOKIE)?.value;
   if (!hasValidCheckInStationProof(proof, event.id, event.checkInStationSecretVersion, event.startDateTime, event.endDateTime)) return <CheckInStationUnlock organisationSlug={orgSlug} eventSlug={eventSlug} />;
-  const [confirmed, checkedIn, recentRsvps, form] = await Promise.all([
+  const [confirmed, checkedIn, recent, form] = await Promise.all([
     prisma.rSVP.count({ where: { eventId: event.id, status: "CONFIRMED" } }),
     prisma.rSVP.count({ where: { eventId: event.id, checkedInAt: { not: null } } }),
-    prisma.rSVP.findMany({ where: { eventId: event.id, checkedInAt: { not: null } }, orderBy: { checkedInAt: "desc" }, take: 200, include: { user: { select: { name: true, email: true } } } }),
+    listRecentCheckIns(event.id),
     prisma.eventRegistrationForm.findUnique({ where: { eventId: event.id }, select: { fields: { select: { key: true, label: true }, orderBy: { sortOrder: "asc" } } } }),
   ]);
-  return <EventCheckInClient stationMode eventSlug={event.slug} organisationSlug={event.organisation.slug} organisationName={event.organisation.name} organisationLogoUrl={event.organisation.logoUrl} eventId={event.id} eventTitle={event.title} registrationFields={form?.fields ?? []} teamEvent={event.registrationMode === "TEAM"} stats={{ confirmed, checkedIn }} recent={recentRsvps.map((r) => ({ rsvpId: r.id, displayName: label(r), email: r.user?.email ?? r.guestEmail, checkedInAt: r.checkedInAt!.toISOString() }))} />;
+  return <EventCheckInClient stationMode eventSlug={event.slug} organisationSlug={event.organisation.slug} organisationName={event.organisation.name} organisationLogoUrl={event.organisation.logoUrl} eventId={event.id} eventTitle={event.title} registrationFields={form?.fields ?? []} teamEvent={event.registrationMode === "TEAM"} stats={{ confirmed, checkedIn }} recent={recent.rows} recentNextCursor={recent.nextCursor} attendeeExportHref={null} />;
 }

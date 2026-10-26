@@ -6,9 +6,12 @@ const mocks = vi.hoisted(() => ({
   formUpsert: vi.fn(), formFind: vi.fn(), fieldFind: vi.fn(), fieldUpdate: vi.fn(),
   fieldDelete: vi.fn(), fieldCount: vi.fn(), fieldAggregate: vi.fn(), fieldCreate: vi.fn(),
   fieldDeleteMany: vi.fn(), responseCount: vi.fn(), query: vi.fn(), audit: vi.fn(), assetCount: vi.fn(),
+  auth: vi.fn(), membership: vi.fn(), orgFind: vi.fn(), listResponses: vi.fn(),
 }));
 
-vi.mock("@/lib/permissions", () => ({ requireOrgRole: mocks.requireRole }));
+vi.mock("@/lib/permissions", () => ({ requireOrgRole: mocks.requireRole, getMembership: mocks.membership, isOrgAdmin: (role: string) => role === "OWNER" || role === "ADMIN" }));
+vi.mock("@/lib/auth", () => ({ auth: mocks.auth }));
+vi.mock("@/lib/eventDashboard/feedbackResponses", () => ({ listFeedbackResponsesPage: mocks.listResponses }));
 vi.mock("@/lib/actionRateLimit", () => ({ isActionRateLimited: mocks.limited }));
 vi.mock("@/lib/audit", () => ({ recordAuditEvent: mocks.audit }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -21,11 +24,12 @@ const tx = {
 };
 vi.mock("@/lib/db", () => ({ prisma: {
   event: { findFirst: mocks.eventFind },
+  organisation: { findUnique: mocks.orgFind },
   asset: { count: mocks.assetCount },
   $transaction: mocks.transaction,
 } }));
 
-import { applyFeedbackTemplate, deleteFeedbackField, saveFeedbackField, saveFeedbackSettings } from "@/app/actions/feedback-form";
+import { applyFeedbackTemplate, deleteFeedbackField, loadFeedbackResponsesPage, saveFeedbackField, saveFeedbackSettings } from "@/app/actions/feedback-form";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -112,5 +116,35 @@ describe("feedback form maintenance", () => {
     expect(result).toEqual({ ok: false, error: "A template cannot replace a feedback form that already has responses." });
     expect(mocks.formUpsert).not.toHaveBeenCalled();
     expect(mocks.fieldDeleteMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("loadFeedbackResponsesPage", () => {
+  const input = { organisationSlug: "org", eventId: "event_1", page: 2 };
+  beforeEach(() => {
+    mocks.auth.mockResolvedValue({ user: { id: "admin_1" } });
+    mocks.orgFind.mockResolvedValue({ id: "org_1" });
+    mocks.membership.mockResolvedValue({ role: "ADMIN" });
+    mocks.listResponses.mockResolvedValue({ responses: [], page: 2, pageCount: 2, total: 30, pageSize: 25 });
+  });
+
+  it("reads one page for an organisation admin, scoped to the event in that organisation", async () => {
+    expect(await loadFeedbackResponsesPage(input)).toMatchObject({ ok: true, data: { page: 2 } });
+    expect(mocks.eventFind).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "event_1", organisationId: "org_1" } }));
+    expect(mocks.listResponses).toHaveBeenCalledWith({ eventId: "event_1", organisationId: "org_1" }, { page: 2 });
+    expect(mocks.limited).toHaveBeenCalledWith("search", "admin_1");
+  });
+
+  it("refuses members, signed-out callers, other organisations' events and bad input", async () => {
+    mocks.membership.mockResolvedValue({ role: "MEMBER" });
+    expect((await loadFeedbackResponsesPage(input)).ok).toBe(false);
+    mocks.membership.mockResolvedValue({ role: "ADMIN" });
+    mocks.eventFind.mockResolvedValue(null);
+    expect(await loadFeedbackResponsesPage(input)).toEqual({ ok: false, error: "Event not found." });
+    mocks.auth.mockResolvedValue(null);
+    expect((await loadFeedbackResponsesPage(input)).ok).toBe(false);
+    expect((await loadFeedbackResponsesPage({ ...input, page: 0 })).ok).toBe(false);
+    expect((await loadFeedbackResponsesPage({ ...input, extra: true })).ok).toBe(false);
+    expect(mocks.listResponses).not.toHaveBeenCalled();
   });
 });

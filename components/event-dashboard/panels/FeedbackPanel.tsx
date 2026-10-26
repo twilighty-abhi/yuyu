@@ -1,12 +1,11 @@
 import { prisma } from "@/lib/db";
 import type { EventDashboardContext } from "@/lib/eventDashboard/context";
 import { loadFeedbackInsights } from "@/lib/eventDashboard/feedback";
+import { FEEDBACK_RESPONSES_PAGE_SIZE, listFeedbackResponsesPage } from "@/lib/eventDashboard/feedbackResponses";
 import { formatDate } from "@/lib/format/datetime";
 import { FeedbackFormEditor } from "@/components/feedback/FeedbackFormEditor";
 import { ResponsesCard } from "@/components/event-dashboard/feedback/ResponsesCard";
 import { NoPermission } from "./shared";
-
-const MAX_BROWSER_FEEDBACK_RESPONSES = 250;
 
 export async function FeedbackPanel({ ctx }: { ctx: EventDashboardContext }) {
   const { event, permissions, organisation } = ctx;
@@ -20,29 +19,15 @@ export async function FeedbackPanel({ ctx }: { ctx: EventDashboardContext }) {
   }));
 
   // Responses are organisation-admin only. Only answer values are read: never
-  // the RSVP, attendee identity or certificate token.
+  // the RSVP, attendee identity or certificate token. The individual list is
+  // paged on the server (first page here, the rest via loadFeedbackResponsesPage).
   const canViewResponses = permissions.canViewFeedbackResponses;
-  const [responseRecords, insights] = canViewResponses && record
+  const [responsesPage, insights] = canViewResponses && record
     ? await Promise.all([
-        prisma.eventFeedbackResponse.findMany({
-          where: { formId: record.id },
-          select: { id: true, submittedAt: true, answers: { select: { fieldKey: true, fieldLabel: true, valueText: true, valueBool: true, valueNumber: true, valueDate: true }, orderBy: { createdAt: "asc" } } },
-          orderBy: { submittedAt: "desc" },
-          take: MAX_BROWSER_FEEDBACK_RESPONSES + 1,
-        }),
+        listFeedbackResponsesPage({ eventId: event.id, organisationId: organisation.id }),
         loadFeedbackInsights(record.id, fields),
       ])
-    : [[], { responseCount: 0, ratings: [], texts: [] }];
-  const responses = responseRecords.slice(0, MAX_BROWSER_FEEDBACK_RESPONSES).map((response) => {
-    const grouped: Record<string, { label: string; values: string[] }> = {};
-    for (const answer of response.answers) {
-      const value = answer.valueText ?? (answer.valueBool != null ? (answer.valueBool ? "Yes" : "No") : null) ?? (answer.valueNumber != null ? String(answer.valueNumber) : null) ?? answer.valueDate?.toLocaleDateString() ?? null;
-      if (value === null) continue;
-      if (!grouped[answer.fieldKey]) grouped[answer.fieldKey] = { label: answer.fieldLabel, values: [] };
-      grouped[answer.fieldKey]!.values.push(value);
-    }
-    return { id: response.id, submittedAt: response.submittedAt.toISOString(), answers: Object.values(grouped).map((answer) => ({ label: answer.label, value: answer.values.join(", ") })) };
-  });
+    : [{ responses: [], page: 1, pageCount: 1, total: 0, pageSize: FEEDBACK_RESPONSES_PAGE_SIZE }, { responseCount: 0, ratings: [], texts: [] }];
 
   return (
     <FeedbackFormEditor
@@ -56,9 +41,10 @@ export async function FeedbackPanel({ ctx }: { ctx: EventDashboardContext }) {
       organisationName={organisation.name}
       responses={canViewResponses ? (
         <ResponsesCard
+          organisationSlug={organisation.slug}
+          eventId={event.id}
           insights={insights}
-          responses={responses}
-          truncated={responseRecords.length > MAX_BROWSER_FEEDBACK_RESPONSES}
+          initialPage={responsesPage}
           exportHref={form ? `/api/exports/events/${event.id}/feedback` : undefined}
           timeZone={event.timezone}
         />

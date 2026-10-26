@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useTransition, type FormEvent } from "react";
+import { useState, useTransition, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Check, Copy, Crown, MoreHorizontal, RefreshCw, UserMinus, UserPlus, Users } from "lucide-react";
 import { Button, IconButton } from "@/components/ui/button";
 import { Avatar, Callout, Card, CardHeader, Chip, DangerZone, EmptyState, type ChipTone } from "@/components/ui/display";
 import { ConfirmDialog, Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader } from "@/components/ui/dialog";
-import { Field, Input, ReadOnlyValue } from "@/components/ui/field";
+import { Field, Input, ReadOnlyValue, SearchInput } from "@/components/ui/field";
 import { SwitchRow } from "@/components/ui/choice";
 import { Menu, MenuContent, MenuItem, MenuTrigger } from "@/components/ui/menu";
 import {
@@ -15,6 +15,8 @@ import {
   cancelTeamInviteAction,
   disbandTeamAction,
   inviteSeekerAction,
+  loadTeamJoinRequestsPageAction,
+  loadTeamSeekersPageAction,
   regenerateTeamJoinLinkAction,
   regenerateTeamManageLinkAction,
   removeTeamMemberAction,
@@ -24,6 +26,7 @@ import {
   transferTeamLeadershipAction,
   type TeamRef,
 } from "@/app/actions/teams";
+import { EMPTY_CURSOR_PAGE, ShowMoreFooter, useCursorList, type CursorListPage } from "./useCursorList";
 
 export type TeamManagerMember = { rsvpId: string; name: string; isLeader: boolean; checkedIn: boolean };
 export type TeamManagerRequest = { id: string; direction: "INVITE" | "REQUEST"; displayName: string; headline: string | null; skills: string[] };
@@ -47,9 +50,13 @@ export type TeamManagerProps = {
   };
   event: { title: string; href: string; whenLabel: string; registrationOpen: boolean; matching: boolean; inviteOnly: boolean };
   members: TeamManagerMember[];
-  pendingRequests: TeamManagerRequest[];
-  /** Null when the list is not available (no matching, team full or rejected). */
-  seekers: TeamManagerSeeker[] | null;
+  /** First pages of pending requests received and invitations sent; "Show more" fetches the rest. */
+  incomingRequests: CursorListPage<TeamManagerRequest>;
+  sentInvites: CursorListPage<TeamManagerRequest>;
+  /** First page of the Looking for a team list; null when it is not available (no matching, team full or rejected). */
+  seekers: CursorListPage<TeamManagerSeeker> | null;
+  /** The team's hackathon submission section (docs/HACKATHON.md), rendered server-side; null when the event takes none. */
+  submissionSlot?: ReactNode;
 };
 
 type Feedback = { tone: "success" | "danger"; message: string } | null;
@@ -85,7 +92,7 @@ function absolute(baseUrl: string, path: string) {
  * permissions. Member rows carry names only.
  */
 export function TeamManager(props: TeamManagerProps) {
-  const { teamRef, tokenPage, baseUrl, team, event, members, pendingRequests, seekers } = props;
+  const { teamRef, tokenPage, baseUrl, team, event, members, seekers, submissionSlot } = props;
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [feedback, setFeedback] = useState<Feedback>(null);
@@ -106,8 +113,12 @@ export function TeamManager(props: TeamManagerProps) {
   const full = team.maxSize != null && team.size >= team.maxSize;
   const rejected = team.status === "REJECTED";
   const canAdd = event.registrationOpen && !full && !rejected && !event.inviteOnly;
-  const incomingRequests = pendingRequests.filter((request) => request.direction === "REQUEST");
-  const sentInvites = pendingRequests.filter((request) => request.direction === "INVITE");
+  // Server-paged lists; each page re-checks the leader link on the server.
+  const incoming = useCursorList(props.incomingRequests, (_query, cursor) => loadTeamJoinRequestsPageAction(teamRef, "REQUEST", { cursor }));
+  const sent = useCursorList(props.sentInvites, (_query, cursor) => loadTeamJoinRequestsPageAction(teamRef, "INVITE", { cursor }));
+  const seekerList = useCursorList(seekers ?? EMPTY_CURSOR_PAGE, (query, cursor) => loadTeamSeekersPageAction(teamRef, { query, cursor }));
+  const hasIncoming = incoming.items.length > 0 || incoming.total > 0;
+  const hasSent = sent.items.length > 0 || sent.total > 0;
 
   function run(id: string | null, task: () => Promise<void>) {
     setFeedback(null);
@@ -433,6 +444,8 @@ export function TeamManager(props: TeamManagerProps) {
         </div>
       </Card>
 
+      {submissionSlot ?? null}
+
       {event.matching && !rejected ? (
         <Card as="section" aria-labelledby="team-matching">
           <CardHeader title={<span id="team-matching">Find teammates</span>} description="People registered on their own can ask to join teams that are looking for members." />
@@ -444,11 +457,14 @@ export function TeamManager(props: TeamManagerProps) {
             onCheckedChange={toggleLooking}
           />
 
-          {incomingRequests.length ? (
+          {hasIncoming ? (
             <div className="mt-5 border-t border-line pt-5">
-              <h3 className="text-label text-ink">Requests to join</h3>
-              <ul className="mt-2 flex flex-col divide-y divide-line">
-                {incomingRequests.map((request) => (
+              <h3 className="text-label text-ink">
+                Requests to join <span className="font-normal text-ink-muted">· {incoming.total}</span>
+              </h3>
+              {incoming.error ? <Callout tone="danger" role="alert" className="mt-2">{incoming.error}</Callout> : null}
+              <ul className="mt-2 flex flex-col divide-y divide-line" id={incoming.listId}>
+                {incoming.items.map((request) => (
                   <li key={request.id} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center">
                     <PersonSummary name={request.displayName} headline={request.headline} skills={request.skills} />
                     <div className="flex shrink-0 gap-2">
@@ -458,39 +474,81 @@ export function TeamManager(props: TeamManagerProps) {
                   </li>
                 ))}
               </ul>
+              <ShowMoreFooter
+                shown={incoming.items.length}
+                total={incoming.total}
+                hasMore={incoming.nextCursor != null}
+                loading={incoming.loading === "more"}
+                onMore={incoming.loadMore}
+              />
             </div>
           ) : null}
 
-          {sentInvites.length ? (
+          {hasSent ? (
             <div className="mt-5 border-t border-line pt-5">
-              <h3 className="text-label text-ink">Invitations you sent</h3>
-              <ul className="mt-2 flex flex-col divide-y divide-line">
-                {sentInvites.map((request) => (
+              <h3 className="text-label text-ink">
+                Invitations you sent <span className="font-normal text-ink-muted">· {sent.total}</span>
+              </h3>
+              {sent.error ? <Callout tone="danger" role="alert" className="mt-2">{sent.error}</Callout> : null}
+              <ul className="mt-2 flex flex-col divide-y divide-line" id={sent.listId}>
+                {sent.items.map((request) => (
                   <li key={request.id} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center">
                     <PersonSummary name={request.displayName} headline={request.headline} skills={request.skills} />
                     <Button variant="quiet" size="sm" loading={busyId === request.id} onClick={() => withdrawInvite(request.id)}>Withdraw</Button>
                   </li>
                 ))}
               </ul>
+              <ShowMoreFooter
+                shown={sent.items.length}
+                total={sent.total}
+                hasMore={sent.nextCursor != null}
+                loading={sent.loading === "more"}
+                onMore={sent.loadMore}
+              />
             </div>
           ) : null}
 
           <div className="mt-5 border-t border-line pt-5">
-            <h3 className="text-label text-ink">Looking for a team</h3>
+            <h3 className="text-label text-ink">
+              Looking for a team
+              {seekers !== null && !seekerList.query.trim() && seekerList.total > 0 ? (
+                <span className="font-normal text-ink-muted"> · {seekerList.total}</span>
+              ) : null}
+            </h3>
+            {seekers !== null && (seekerList.total > 0 || seekerList.items.length > 0 || seekerList.query) ? (
+              <div className="mt-2">
+                <label htmlFor="team-seeker-search" className="sr-only">Search by skill, headline or first name</label>
+                <SearchInput
+                  id="team-seeker-search"
+                  placeholder="Search skills, headline or first name"
+                  value={seekerList.query}
+                  onChange={(e) => seekerList.setQuery(e.target.value)}
+                  onClear={() => seekerList.setQuery("")}
+                  autoComplete="off"
+                  maxLength={100}
+                  className="py-2 sm:text-sm"
+                />
+              </div>
+            ) : null}
+            {seekerList.error ? <Callout tone="danger" role="alert" className="mt-2">{seekerList.error}</Callout> : null}
             {seekers === null ? (
               <p className="mt-1 text-body-ui text-ink-muted">{full ? "Your team is full." : "This list isn't available right now."}</p>
-            ) : seekers.length === 0 ? (
-              <p className="mt-1 text-body-ui text-ink-muted">
+            ) : seekerList.loading === "replace" ? (
+              <p role="status" className="mt-2 text-body-ui text-ink-muted">Searching…</p>
+            ) : seekerList.items.length === 0 ? (
+              <p className="mt-2 text-body-ui text-ink-muted">
                 {/* Seekers with a pending invitation or request for this team are listed above, not here. */}
-                {incomingRequests.length
-                  ? "Everyone looking for a team already has an invitation or request with your team, listed above. Check back later."
-                  : sentInvites.length
-                    ? "Everyone looking for a team has already been invited. Check back later."
-                    : "No one is looking for a team yet. Check back later."}
+                {seekerList.query.trim()
+                  ? "No one matches that search."
+                  : hasIncoming
+                    ? "Everyone looking for a team already has an invitation or request with your team, listed above. Check back later."
+                    : hasSent
+                      ? "Everyone looking for a team has already been invited. Check back later."
+                      : "No one is looking for a team yet. Check back later."}
               </p>
             ) : (
-              <ul className="mt-2 flex flex-col divide-y divide-line">
-                {seekers.map((seeker) => (
+              <ul className="mt-2 flex flex-col divide-y divide-line" id={seekerList.listId} aria-busy={seekerList.loading != null}>
+                {seekerList.items.map((seeker) => (
                   <li key={seeker.id} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center">
                     <PersonSummary name={seeker.displayName} headline={seeker.headline} skills={seeker.skills} />
                     <Button
@@ -506,6 +564,15 @@ export function TeamManager(props: TeamManagerProps) {
                 ))}
               </ul>
             )}
+            {seekers !== null && seekerList.loading !== "replace" ? (
+              <ShowMoreFooter
+                shown={seekerList.items.length}
+                total={seekerList.total}
+                hasMore={seekerList.nextCursor != null}
+                loading={seekerList.loading === "more"}
+                onMore={seekerList.loadMore}
+              />
+            ) : null}
           </div>
         </Card>
       ) : null}

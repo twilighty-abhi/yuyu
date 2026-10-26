@@ -76,6 +76,11 @@ const nextConfig: NextConfig = {
         source: "/:orgSlug/:eventSlug/team/:joinToken",
         headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
       },
+      // Solo submission links (docs/HACKATHON.md) are bearer capabilities.
+      {
+        source: "/submit/:token",
+        headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
+      },
     ];
   },
 };

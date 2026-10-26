@@ -6,7 +6,6 @@ import { prisma } from "@/lib/db";
 import {
   countEventTeamsForOrganiser,
   listEventTeamsForOrganiser,
-  listTeamMoveTargetsForOrganiser,
   type OrganiserEventContext,
   type OrganiserTeamDto,
   type OrganiserTeamFilter,
@@ -76,9 +75,6 @@ export const loadEventTeams = cache(async (ctx: EventDashboardContext): Promise<
   const [page, counts] = await Promise.all([listEventTeamsForOrganiser(organiser), countEventTeamsForOrganiser(organiser)]);
   return { teams: page.teams.map(toDashboardTeam), nextCursor: page.nextCursor, counts };
 });
-
-/** Teams a registration can be moved into from the People view (bounded; registration managers only). */
-export const loadTeamMoveTargets = cache(async (ctx: EventDashboardContext) => listTeamMoveTargetsForOrganiser(organiserContext(ctx)));
 
 /**
  * What the Publishing settings need to know: whether anyone has registered

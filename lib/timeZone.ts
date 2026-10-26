@@ -49,3 +49,30 @@ export function zonedInputToIso(value: string, timeZone: string) {
   const iso = new Date(guess - offset).toISOString();
   return zonedDatetimeLocalValue(new Date(iso), timeZone) === value ? iso : null;
 }
+
+/**
+ * An instant as ISO 8601 local time in an IANA timezone with its UTC offset,
+ * e.g. `2026-10-25T14:30:00+05:30` (`+00:00` for UTC). Machine-readable like
+ * `toISOString()`, but it reads as the event's own clock (CSV exports).
+ */
+export function zonedIsoWithOffset(date: Date, timeZone: string) {
+  if (Number.isNaN(date.getTime())) return "";
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const get = (type: string) => parts.find((part) => part.type === type)?.value ?? "00";
+  const wholeSeconds = Math.floor(date.getTime() / 1000) * 1000;
+  const local = Date.UTC(Number(get("year")), Number(get("month")) - 1, Number(get("day")), Number(get("hour")), Number(get("minute")), Number(get("second")));
+  const offsetMinutes = Math.round((local - wholeSeconds) / 60_000);
+  const sign = offsetMinutes < 0 ? "-" : "+";
+  const abs = Math.abs(offsetMinutes);
+  const offset = `${sign}${String(Math.floor(abs / 60)).padStart(2, "0")}:${String(abs % 60).padStart(2, "0")}`;
+  return `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}:${get("second")}${offset}`;
+}

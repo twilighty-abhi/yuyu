@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useSession } from "next-auth/react";
+import { useAuthSession } from "@/components/auth/useAuthSession";
 import { Button } from "@/components/ui/button";
 import { OrgLogo } from "@/components/ui/display";
 import { ColorModeToggle } from "./ColorModeToggle";
@@ -11,7 +11,7 @@ import { ColorModeToggle } from "./ColorModeToggle";
  * feedback, organisation page). The organiser's identity leads, not Yuyu's.
  */
 export function EventContextHeader({ organisation }: { organisation: { name: string; slug: string; logoUrl: string | null } }) {
-  const { status } = useSession();
+  const { status } = useAuthSession();
   return (
     <header className="border-b border-line bg-canvas">
       <nav aria-label="Organiser navigation" className="mx-auto flex h-16 max-w-[1160px] items-center gap-3 px-4 sm:px-6">

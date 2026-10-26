@@ -34,7 +34,7 @@ function wallClock(value: string): Date | null {
 }
 
 function formatWallClock(date: Date): string {
-  return new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true, timeZone: "UTC" }).format(date);
+  return new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hourCycle: "h12", timeZone: "UTC" }).format(date);
 }
 
 function zoneLabel(timeZone: string): string {

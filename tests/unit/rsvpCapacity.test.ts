@@ -32,7 +32,7 @@ describe("RSVP restore capacity", () => {
     tx.rSVP.count.mockResolvedValue(1);
     await expect(hasCapacityToRestoreConfirmedRsvp(tx as never, { eventId: "event_1" })).resolves.toBe(false);
     expect(tx.$queryRaw).toHaveBeenCalledOnce();
-    expect(tx.rSVP.count).toHaveBeenCalledWith({ where: { eventId: "event_1", status: RsvpStatus.CONFIRMED } });
+    expect(tx.rSVP.count).toHaveBeenCalledWith({ where: { eventId: "event_1", status: RsvpStatus.CONFIRMED, isCrew: false } });
   });
 
   it("keeps event-instance capacity isolated from sibling occurrences", async () => {
@@ -40,7 +40,7 @@ describe("RSVP restore capacity", () => {
     tx.eventInstance.findUnique.mockResolvedValue({ series: { capacity: 2 } });
     tx.rSVP.count.mockResolvedValue(1);
     await expect(hasCapacityToRestoreConfirmedRsvp(tx as never, { eventInstanceId: "instance_1" })).resolves.toBe(true);
-    expect(tx.rSVP.count).toHaveBeenCalledWith({ where: { eventInstanceId: "instance_1", status: RsvpStatus.CONFIRMED } });
+    expect(tx.rSVP.count).toHaveBeenCalledWith({ where: { eventInstanceId: "instance_1", status: RsvpStatus.CONFIRMED, isCrew: false } });
   });
 });
 

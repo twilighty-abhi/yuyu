@@ -42,6 +42,8 @@ describe("event browser DTO", () => {
       resultsAnnouncedAt: new Date("2034-01-03T00:00:00Z"),
       reviewsPerProject: 3,
       scoreNormalization: "ZSCORE",
+      emailEntrantsOnResults: true,
+      emailSubmissionReceipts: true,
       shortCode: null,
       checkInStationPinHash: "bcrypt-secret",
       checkInStationPinEncrypted: "encrypted-secret",
@@ -60,6 +62,8 @@ describe("event browser DTO", () => {
     expect(serialized).not.toContain("judgingStatus");
     expect(serialized).not.toContain("judgesSeeAll");
     expect(serialized).not.toContain("resultsAnnouncedAt");
+    expect(serialized).not.toContain("emailEntrantsOnResults");
+    expect(serialized).not.toContain("emailSubmissionReceipts");
     expect(serialized).not.toContain("reviewsPerProject");
     expect(serialized).not.toContain("scoreNormalization");
   });

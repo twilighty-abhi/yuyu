@@ -911,6 +911,17 @@ export const submissionTokenSchema = z
   .regex(/^[A-Za-z0-9_-]{32,128}$/, "Invalid link");
 
 /** Organiser judging settings. Saving with submissions enabled needs a full window. */
+/**
+ * A switch that may be left out: absent keeps the saved value (so a caller
+ * that doesn't show it never turns it off), otherwise like `formBoolean`.
+ */
+const optionalFormBoolean = z.preprocess((value) => {
+  if (value === undefined) return undefined;
+  if (value === "on" || value === "true") return true;
+  if (value === "false" || value === "" || value === null) return false;
+  return value;
+}, z.boolean().optional());
+
 export const judgingSettingsSchema = z
   .object({
     submissionsEnabled: formBoolean,
@@ -918,6 +929,9 @@ export const judgingSettingsSchema = z
     submissionsCloseAt: optionalDate,
     judgesSeeAll: formBoolean,
     projectGalleryPublic: formBoolean,
+    /** Hackathon emails (lib/hackathonEmails.ts); off by default, omitted keeps the saved value. */
+    emailEntrantsOnResults: optionalFormBoolean,
+    emailSubmissionReceipts: optionalFormBoolean,
   })
   .strict()
   .superRefine((data, ctx) => {

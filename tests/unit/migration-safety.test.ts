@@ -158,6 +158,15 @@ describe("production migration safety contracts", () => {
     expect(sql).toContain('CHECK ("reviewsPerProject" IS NULL OR "reviewsPerProject" BETWEEN 1 AND 20)');
   });
 
+  it("adds the hackathon email switches as NOT NULL DEFAULT false columns without rewriting rows", () => {
+    const sql = readFileSync(resolve(root, "prisma/migrations/20261028010000_hackathon_email_toggles/migration.sql"), "utf8");
+    expect(sql).not.toMatch(/\bDROP\b/i);
+    expect(sql).not.toMatch(/^\s*UPDATE\s/im);
+    expect(sql).toContain('ALTER TABLE "Event" ADD COLUMN "emailEntrantsOnResults" BOOLEAN NOT NULL DEFAULT false;');
+    expect(sql).toContain('ALTER TABLE "Event" ADD COLUMN "emailSubmissionReceipts" BOOLEAN NOT NULL DEFAULT false;');
+    expect(sql.match(/ADD COLUMN/g)).toHaveLength(2);
+  });
+
   it("adds saved views as a new table that cascades from its event, organisation and creator", () => {
     const sql = readFileSync(resolve(root, "prisma/migrations/20261025010000_saved_views/migration.sql"), "utf8");
     expect(sql).not.toMatch(/\bDROP\b/i);

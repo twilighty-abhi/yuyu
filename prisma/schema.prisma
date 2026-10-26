@@ -451,6 +451,12 @@ model Event {
   reviewsPerProject                   Int?
   /// How result scores are combined across judges.
   scoreNormalization                  ScoreNormalization @default(RAW)
+  /// Hackathon emails the organiser opts into (off by default). When false,
+  /// publishing results queues no `results-published` email (an organiser can
+  /// send it later with sendResultsAnnouncement) and submitting queues no
+  /// `submission-received` receipt. Registration emails are never gated.
+  emailEntrantsOnResults              Boolean          @default(false)
+  emailSubmissionReceipts             Boolean          @default(false)
   createdAt             DateTime         @default(now())
 
   organisation     Organisation           @relation(fields: [organisationId], references: [id], onDelete: Cascade)

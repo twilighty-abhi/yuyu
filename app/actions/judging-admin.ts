@@ -79,7 +79,10 @@ function asString(value: unknown): string {
 // Settings and judging status
 // ---------------------------------------------------------------------------
 
-/** Submissions on/off, the window (ISO instants), judge visibility, and the public gallery. */
+/**
+ * Submissions on/off, the window (ISO instants), judge visibility, the public
+ * gallery, and the hackathon email switches (left out, they keep their value).
+ */
 export async function saveJudgingSettings(input: unknown): Promise<ActionResult<{ judgingStatus: string }>> {
   return run(input, async (ctx, fields) => {
     const settings = record(fields.settings);
@@ -89,6 +92,8 @@ export async function saveJudgingSettings(input: unknown): Promise<ActionResult<
       submissionsCloseAt: settings.submissionsCloseAt,
       judgesSeeAll: settings.judgesSeeAll,
       projectGalleryPublic: settings.projectGalleryPublic,
+      emailEntrantsOnResults: settings.emailEntrantsOnResults,
+      emailSubmissionReceipts: settings.emailSubmissionReceipts,
     });
     return result.ok ? { ok: true, data: { judgingStatus: result.data.judgingStatus } } : result;
   });
@@ -262,13 +267,34 @@ export async function searchAwardCandidates(
 // Results publication
 // ---------------------------------------------------------------------------
 
-/** Publish results and queue the announcement emails (the broadcast rate-limit bucket applies). */
-export async function publishJudgingResults(input: unknown): Promise<ActionResult<{ queued: number; alreadyPublished: boolean }>> {
+/**
+ * Publish results, queuing the announcement emails only when the event's
+ * "Email entrants when results are published" switch is on (the broadcast
+ * rate-limit bucket applies).
+ */
+export async function publishJudgingResults(input: unknown): Promise<ActionResult<{ queued: number; alreadyPublished: boolean; emailed: boolean }>> {
   return run(
     input,
     async (ctx) => {
       const result = await judging.publishResults(ctx);
-      return result.ok ? { ok: true, data: { queued: result.data.queued, alreadyPublished: result.data.alreadyPublished } } : result;
+      return result.ok ? { ok: true, data: { queued: result.data.queued, alreadyPublished: result.data.alreadyPublished, emailed: result.data.emailed } } : result;
+    },
+    "broadcast",
+  );
+}
+
+/**
+ * "Send results email now": queue the results announcement once, after results
+ * were published with the email switch off and it has since been turned on.
+ * Same permission as publishing (canManageJudging); the core is idempotent and
+ * audited. The broadcast rate-limit bucket applies.
+ */
+export async function sendResultsAnnouncement(input: unknown): Promise<ActionResult<{ queued: number; alreadyAnnounced: boolean }>> {
+  return run(
+    input,
+    async (ctx) => {
+      const result = await judging.sendResultsAnnouncement(ctx);
+      return result.ok ? { ok: true, data: { queued: result.data.queued, alreadyAnnounced: result.data.alreadyAnnounced } } : result;
     },
     "broadcast",
   );

@@ -1,5 +1,5 @@
 import { DashboardLayout } from "@/components/dashboard/DashboardLayout";
-import { requireOrgDashboardAccess } from "@/lib/permissions";
+import { guardOrgDashboard } from "@/lib/dashboardGuards";
 
 export default async function OrgSlugLayout({
   children,
@@ -9,7 +9,8 @@ export default async function OrgSlugLayout({
   params: Promise<{ orgSlug: string }>;
 }) {
   const { orgSlug } = await params;
-  const { organisation } = await requireOrgDashboardAccess(orgSlug);
+  // Outside every loading.tsx below, so no access is a real 307 to /dashboard.
+  const { organisation } = await guardOrgDashboard(orgSlug);
 
   return (
     <DashboardLayout

@@ -27,11 +27,12 @@ public side, and the mock mailer (blank `SMTP_*`).
 | C-06 | Photo > 5 MB, non-image, or a pasted URL that is not an `event-crew` upload | Refused ("Choose an uploaded crew photo." / size message) | U (URL), M |
 | C-07 | Same email twice on one event (any letter case) | "This email is already on the crew." | I, S |
 | C-08 | Same email as crew on two different events | Allowed; each event has its own ticket | M |
-| C-09 | Edit name/email/role | Row updates; a guest ticket's name and email follow | I, S |
-| C-10 | Edit email to one already registered for the event | "This email is already registered for this event." | M |
+| C-09 | Edit name/email/role | Row updates; a guest ticket's name and email follow; a changed email gets the ticket email (an unchanged one does not) | I, S |
+| C-10 | Edit email to another crew member's, or to one already registered for the event | "This email is already on the crew." / "This email is already registered for this event." | I, M |
 | C-11 | Move up/down | Order changes on the dashboard and the public section | I, S |
 | C-12 | Show on event page off/on | Member leaves/joins the public section | I, S |
-| C-13 | Remove (confirm) | Row, ticket and check-in removed; ticket link stops working; `registration.status_changed` CANCELLED webhook | I, S |
+| C-13 | Remove (confirm) | Row, ticket and check-in removed; ticket link stops working; `registration.status_changed` CANCELLED webhook; removing it again says "Crew member not found." | I, S |
+| C-16 | Many quick changes (show/hide a dozen times, reorder a whole crew) | No "Too many crew updates" (organiser actions use the dashboard budget, 180 a minute) | S |
 | C-14 | 500 members on one event, then one more | The 501st is refused with the limit message | M |
 | C-15 | Food summary | Groups case-insensitively ("Vegetarian" + "vegetarian" = 2), blanks as "Not given", most common first | U, S |
 
@@ -39,7 +40,7 @@ public side, and the mock mailer (blank `SMTP_*`).
 
 | ID | Condition | Expected | Covered |
 | --- | --- | --- | --- |
-| R-01 | Organiser adds an email that has a CONFIRMED solo registration | Same ticket (QR unchanged) becomes the crew ticket; its place is freed | I, S |
+| R-01 | Organiser adds an email that has a CONFIRMED solo registration | Same ticket (QR unchanged) becomes the crew ticket and takes the crew name; its place is freed | I, S |
 | R-02 | …that has a WAITLISTED or PENDING registration | Becomes a CONFIRMED crew ticket | I |
 | R-03 | …that belongs to a team | Refused: remove them from the team first | I |
 | R-04 | …that has a *Looking for a team* profile | Profile removed with the conversion | M |
@@ -98,7 +99,7 @@ public side, and the mock mailer (blank `SMTP_*`).
 | T-03 | Account → Registrations (signed-in crew) | Listed; no cancel | M |
 | T-04 | Check-in by QR/search at the desk | Checks in; Crew badge and "Crew food preference" shown | S |
 | T-05 | Undo check-in | Works as for attendees | M |
-| T-06 | Offline roster / venue station | Crew check in like attendees (no badge offline) | M |
+| T-06 | Offline roster / venue station | Crew check in like attendees; known gap: no Crew chip offline (food line still shows) | M |
 | T-07 | Badge printing and attendee CSV | Crew included as confirmed people | M |
 
 ## 7. Guest flows that must refuse crew

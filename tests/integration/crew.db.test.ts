@@ -431,6 +431,39 @@ describe.sequential("event crew", () => {
     }
   });
 
+  it("names a converted guest ticket after the crew member", async () => {
+    const event = await createEvent();
+    const attendee = await register(event, "rename");
+    await addCrew(event, { email: attendee.email, name: "Renamed Crew" });
+    const rsvp = await prisma.rSVP.findUniqueOrThrow({ where: { id: attendee.rsvp.id } });
+    expect(rsvp.guestName).toBe("Renamed Crew");
+    expect(rsvp.checkInToken).toBe(attendee.rsvp.checkInToken);
+  });
+
+  it("emails the ticket to a changed address and words a crew email clash as a crew clash", async () => {
+    const event = await createEvent();
+    const first = await addCrew(event);
+    const second = await addCrew(event);
+    const ctx = ctxFor(event);
+    const moved = email("moved");
+    const before = await prisma.outboxMessage.count({ where: { kind: "rsvp-confirmation", payload: { path: ["to"], equals: moved } } });
+    expect(await updateCrewMemberAsOrganiser(ctx, first.id, { name: first.name, email: moved })).toEqual({ ok: true, data: undefined });
+    const after = await prisma.outboxMessage.count({ where: { kind: "rsvp-confirmation", payload: { path: ["to"], equals: moved } } });
+    expect(after).toBe(before + 1);
+    // Unchanged email: no second ticket email.
+    expect((await updateCrewMemberAsOrganiser(ctx, first.id, { name: "Same address", email: moved })).ok).toBe(true);
+    expect(await prisma.outboxMessage.count({ where: { kind: "rsvp-confirmation", payload: { path: ["to"], equals: moved } } })).toBe(after);
+    const clash = await updateCrewMemberAsOrganiser(ctx, second.id, { name: second.name, email: moved });
+    expect(clash).toEqual({ ok: false, error: "This email is already on the crew." });
+  });
+
+  it("reports a second removal of the same member as not found", async () => {
+    const event = await createEvent();
+    const member = await addCrew(event);
+    expect((await removeCrewMember(ctxFor(event), member.id)).ok).toBe(true);
+    expect(await removeCrewMember(ctxFor(event), member.id)).toEqual({ ok: false, error: "Crew member not found." });
+  });
+
   it("reserves the crew organisation slug for the sign-up route", async () => {
     expect(await checkSlugAvailability("crew")).toBe(false);
     expect(await checkSlugAvailability("CREW")).toBe(false);

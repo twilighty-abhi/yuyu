@@ -162,6 +162,12 @@ enum ScoreNormalization {
   ZSCORE
 }
 
+/// A guest's reply to the organiser's "Are you still coming?" email.
+enum AttendanceResponse {
+  ATTENDING
+  NOT_ATTENDING
+}
+
 /// Which paged event-dashboard list a saved view filters (Saved views in
 /// docs/FEATURES.md). Each surface has its own allow-list in lib/savedViews.ts.
 enum SavedViewSurface {
@@ -451,6 +457,10 @@ model Event {
   reviewsPerProject                   Int?
   /// How result scores are combined across judges.
   scoreNormalization                  ScoreNormalization @default(RAW)
+  /// Attendance confirmation (docs/FEATURES.md): when a confirmed guest
+  /// answers "No", cancel their registration so the place is released.
+  /// Sending the question is always a manual organiser action.
+  attendanceCheckReleaseOnDecline     Boolean            @default(false)
   createdAt             DateTime         @default(now())
 
   organisation     Organisation           @relation(fields: [organisationId], references: [id], onDelete: Cascade)
@@ -478,6 +488,7 @@ model Event {
   broadcastDrafts  EventBroadcastDraft[]
   checkInLists     CheckInList[]
   savedViews       SavedView[]
+  attendanceChecks AttendanceCheck[]
 
   @@unique([organisationId, slug])
   @@index([organisationId])
@@ -894,6 +905,7 @@ model RSVP {
   submissionLink    SubmissionLink?
   checkInListRecords CheckInListRecord[]
   checkInListEvents  CheckInListEvent[]
+  attendanceCheck    AttendanceCheck?
 
   @@index([eventId])
   @@index([teamId])
@@ -1030,6 +1042,31 @@ model SubmissionLink {
   createdAt DateTime @default(now())
 
   rsvp RSVP @relation(fields: [rsvpId], references: [id], onDelete: Cascade)
+}
+
+/// "Are you still coming?" for one CONFIRMED registration of a one-off event.
+/// Created only when an organiser sends the question from the Emails tab;
+/// nothing is ever sent automatically. The raw link token is emailed once and
+/// only its SHA-256 digest is stored; a reminder rotates it.
+model AttendanceCheck {
+  id          String              @id @default(cuid())
+  rsvpId      String              @unique
+  eventId     String
+  /// Hex SHA-256 of the raw `/attend/{token}` token (64 characters).
+  tokenHash   String              @unique
+  /// When the question (or the latest reminder) was queued.
+  sentAt      DateTime
+  response    AttendanceResponse?
+  respondedAt DateTime?
+  /// Optional note from the guest; a CHECK keeps it at most 500 characters.
+  note        String?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  rsvp  RSVP  @relation(fields: [rsvpId], references: [id], onDelete: Cascade)
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId, response])
 }
 
 /// One rubric line. Frozen once judging leaves NOT_STARTED. CHECK

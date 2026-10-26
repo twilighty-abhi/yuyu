@@ -26,14 +26,14 @@ describe("embedding response headers", () => {
 });
 
 describe("capability page caching", () => {
-  it("marks ticket, team, and submission pages no-store and leaves other pages alone", async () => {
-    for (const path of ["/ticket/abc123", "/team/" + "t".repeat(43), "/acme/launch/team/" + "j".repeat(43), "/submit/" + "s".repeat(43), "/account/submissions/evt_123"]) {
+  it("marks ticket, team, submission, and attendance confirmation pages no-store and leaves other pages alone", async () => {
+    for (const path of ["/ticket/abc123", "/team/" + "t".repeat(43), "/acme/launch/team/" + "j".repeat(43), "/submit/" + "s".repeat(43), "/attend/" + "a".repeat(43), "/account/submissions/evt_123"]) {
       const response = await proxy(new NextRequest(`https://events.example.test${path}`));
       expect(response.headers.get("cache-control"), path).toContain("no-store");
       expect(response.headers.get("cache-control"), path).toContain("private");
       expect(response.headers.get("cache-control"), path).toContain("no-transform");
     }
-    for (const path of ["/acme/launch", "/acme/launch/team", "/acme/launch/schedule", "/acme/launch/results", "/acme/launch/projects", "/accounting", "/joined"]) {
+    for (const path of ["/acme/launch", "/acme/launch/team", "/acme/launch/schedule", "/acme/launch/results", "/acme/launch/projects", "/accounting", "/joined", "/acme/launch/attend", "/attendance"]) {
       const response = await proxy(new NextRequest(`https://events.example.test${path}`));
       expect(response.headers.get("cache-control"), path).toBe("no-transform");
     }

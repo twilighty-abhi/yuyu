@@ -13,6 +13,7 @@ import { Tooltip } from "@/components/ui/menu";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { useLoadMoreFocus } from "@/components/ui/use-load-more-focus";
 import { cn } from "@/lib/cn";
+import { ATTENDANCE_STATE_LABELS, type AttendanceState } from "@/lib/attendanceCheck";
 import { DotFace } from "@/components/brand/DotFace";
 import {
   checkInByRsvpId,
@@ -89,6 +90,24 @@ const statusChips: Record<string, { label: string; tone: ChipTone }> = {
 function StatusChip({ status }: { status: string }) {
   const chip = statusChips[status] ?? { label: status, tone: "neutral" as ChipTone };
   return <Chip size="sm" tone={chip.tone}>{chip.label}</Chip>;
+}
+
+const attendanceTones: Record<AttendanceState, ChipTone> = {
+  coming: "success",
+  notComing: "danger",
+  noReply: "warning",
+  notAsked: "outline",
+};
+
+/** The guest's attendance confirmation reply, when they were asked. */
+function AttendanceChip({ state }: { state: AttendanceState | null | undefined }) {
+  if (!state) return null;
+  return (
+    <Chip size="sm" tone={attendanceTones[state]}>
+      <span className="sr-only">Attendance confirmation: </span>
+      {ATTENDANCE_STATE_LABELS[state]}
+    </Chip>
+  );
 }
 
 /** Render a stable server/client value first, then adapt to the device locale. */
@@ -312,6 +331,7 @@ export function EventCheckInClient(props: {
       checkInDetails: attendee.checkInDetails ?? [],
       registrationDetails: attendee.registrationDetails ?? [],
       teamName: attendee.teamName ?? null,
+      attendance: attendee.attendance ?? null,
       kind: "success",
     });
     if (idCardPrintingEnabled) showIdCard({
@@ -325,6 +345,7 @@ export function EventCheckInClient(props: {
       checkInDetails: attendee.checkInDetails ?? [],
       registrationDetails: attendee.registrationDetails ?? [],
       teamName: attendee.teamName ?? null,
+      attendance: attendee.attendance ?? null,
     });
     playSuccessFeedback();
     await refreshOfflineState();
@@ -358,6 +379,7 @@ export function EventCheckInClient(props: {
             checkInDetails: attendee.checkInDetails ?? [],
             registrationDetails: attendee.registrationDetails ?? [],
             teamName: attendee.teamName ?? null,
+            attendance: attendee.attendance ?? null,
             gate,
           });
           setScanIsOffline(true);
@@ -478,7 +500,7 @@ export function EventCheckInClient(props: {
             : roster.rows
                 .filter((row) => row.displayName.toLowerCase().includes(q) || row.email?.toLowerCase().includes(q) || row.teamName?.toLowerCase().includes(q))
                 .slice(0, 12)
-                .map(({ rsvpId, displayName, email, status, checkedInAt, teamName }) => ({ rsvpId, displayName, email, status, checkedInAt, teamName })),
+                .map(({ rsvpId, displayName, email, status, checkedInAt, teamName, attendance }) => ({ rsvpId, displayName, email, status, checkedInAt, teamName, attendance })),
         );
       })();
       return;
@@ -524,6 +546,7 @@ export function EventCheckInClient(props: {
           checkInDetails: attendee.checkInDetails ?? [],
           registrationDetails: attendee.registrationDetails ?? [],
           teamName: attendee.teamName ?? null,
+          attendance: attendee.attendance ?? null,
           gate,
         });
         setScanIsOffline(true);
@@ -799,6 +822,7 @@ export function EventCheckInClient(props: {
                       {row.teamName ? <p className="truncate text-sm text-ink-secondary"><span className="sr-only">Team: </span>{row.teamName}</p> : null}
                       <div className="mt-1 flex flex-wrap gap-1">
                         <StatusChip status={row.status} />
+                        <AttendanceChip state={row.attendance} />
                         {row.checkedInAt ? <Chip size="sm" tone="success" icon={<Check />}>Checked in</Chip> : null}
                       </div>
                     </div>
@@ -835,6 +859,7 @@ export function EventCheckInClient(props: {
                 {scanPreview.teamName ? <p className="flex items-center gap-1.5 text-sm font-semibold text-ink"><Users aria-hidden className="size-4 shrink-0" />Team: {scanPreview.teamName}</p> : null}
                 <div className="flex flex-wrap gap-1.5 pt-1">
                   <StatusChip status={scanPreview.status} />
+                  <AttendanceChip state={scanPreview.attendance} />
                   {scanPreview.alreadyCheckedIn ? <Chip size="sm" tone="neutral">Already checked in</Chip> : null}
                 </div>
                 {!scanPreview.gate.ok ? <Callout tone={scanPreview.gate.blocked ? "danger" : "warning"}>{scanPreview.gate.reason}</Callout> : null}
@@ -891,6 +916,7 @@ export function EventCheckInClient(props: {
                 {detailsAttendee.teamName ? <p className="text-sm">Team: <span className="font-semibold">{detailsAttendee.teamName}</span></p> : null}
                 <div className="flex flex-wrap gap-1.5">
                   <StatusChip status={detailsAttendee.status} />
+                  <AttendanceChip state={detailsAttendee.attendance} />
                   {detailsAttendee.alreadyCheckedIn ? <Chip size="sm" tone="success">Already checked in</Chip> : null}
                 </div>
                 {detailsAttendee.checkedInAt ? <p className="text-sm">Checked in: <CheckInTimestamp value={detailsAttendee.checkedInAt} /></p> : null}

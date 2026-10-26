@@ -6,7 +6,7 @@ import { prisma } from "@/lib/db";
 import { isActionRateLimited } from "@/lib/actionRateLimit";
 import { canManageRegistrationsFor } from "@/lib/eventAccess";
 import { getRequestOrigin } from "@/lib/publicUrl";
-import { ATTENDEE_KIND_FILTERS, ATTENDEE_STATUS_FILTERS, ATTENDEE_TEAM_FILTERS, type AttendeeScope } from "@/lib/attendeeListQuery";
+import { ATTENDEE_ATTENDANCE_FILTERS, ATTENDEE_KIND_FILTERS, ATTENDEE_STATUS_FILTERS, ATTENDEE_TEAM_FILTERS, type AttendeeScope } from "@/lib/attendeeListQuery";
 import { listAttendeesPage, type AttendeesPage } from "@/lib/eventDashboard/attendees";
 import type { ActionResult } from "./org";
 
@@ -31,6 +31,7 @@ const attendeesPageInputSchema = z
     status: z.enum(ATTENDEE_STATUS_FILTERS).optional(),
     kind: z.enum(ATTENDEE_KIND_FILTERS).optional(),
     team: z.enum(ATTENDEE_TEAM_FILTERS).optional(),
+    attendance: z.enum(ATTENDEE_ATTENDANCE_FILTERS).optional(),
     cursor: z.string().max(160).nullable().optional(),
   })
   .strict()
@@ -44,7 +45,7 @@ export async function loadAttendeesPage(input: unknown): Promise<ActionResult<At
   if (!userId) return { ok: false, error: "You must be signed in." };
   if (await isActionRateLimited("search", userId)) return { ok: false, error: "Too many searches. Try again shortly." };
 
-  const { organisationSlug, eventId, eventInstanceId, query, status, kind, team, cursor } = parsed.data;
+  const { organisationSlug, eventId, eventInstanceId, query, status, kind, team, attendance, cursor } = parsed.data;
   const org = await prisma.organisation.findUnique({ where: { slug: organisationSlug }, select: { id: true } });
   if (!org) return { ok: false, error: NO_PERMISSION };
   if (!(await canManageRegistrationsFor({ userId, organisationId: org.id, eventId, eventInstanceId }))) return { ok: false, error: NO_PERMISSION };
@@ -59,6 +60,6 @@ export async function loadAttendeesPage(input: unknown): Promise<ActionResult<At
   } else {
     scope = { kind: "instance", eventInstanceId: eventInstanceId!, organisationId: org.id };
   }
-  const page = await listAttendeesPage(scope, { query, status, kind, team, cursor: cursor ?? null }, { origin: await getRequestOrigin(), teamMode });
+  const page = await listAttendeesPage(scope, { query, status, kind, team, attendance, cursor: cursor ?? null }, { origin: await getRequestOrigin(), teamMode });
   return { ok: true, data: page };
 }

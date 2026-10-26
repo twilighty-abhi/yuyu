@@ -92,3 +92,6 @@ scripts/seed-t4gcc-summit-2026.cjs
 
 # page screenshots (local only)
 /screenshots/
+
+# Local test and release reports (never committed)
+test-reports/

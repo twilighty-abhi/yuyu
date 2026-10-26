@@ -1,8 +1,17 @@
+import { cachedDateTimeFormat } from "@/lib/format/intlCache";
+
+/** Zones already found invalid, so a bad legacy value is not retried on every render. Bounded. */
+const invalidZones = new Set<string>();
+
 export function isValidTimeZone(value: string) {
+  if (invalidZones.has(value)) return false;
   try {
-    new Intl.DateTimeFormat("en-US", { timeZone: value }).format();
+    // A valid zone reuses the cached formatter instead of building one per call.
+    cachedDateTimeFormat("en-US", { timeZone: value });
     return true;
   } catch {
+    if (invalidZones.size >= 256) invalidZones.clear();
+    invalidZones.add(value);
     return false;
   }
 }
@@ -14,7 +23,7 @@ export function safeTimeZone(value: string) {
 
 export function zonedDatetimeLocalValue(date: Date, timeZone: string) {
   if (Number.isNaN(date.getTime())) return "";
-  const parts = new Intl.DateTimeFormat("en-CA", {
+  const parts = cachedDateTimeFormat("en-CA", {
     timeZone,
     year: "numeric",
     month: "2-digit",
@@ -34,7 +43,7 @@ export function zonedInputToIso(value: string, timeZone: string) {
   if (!match) return null;
   const [, year, month, day, hour, minute] = match;
   const guess = Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute));
-  const parts = new Intl.DateTimeFormat("en-CA", {
+  const parts = cachedDateTimeFormat("en-CA", {
     timeZone,
     year: "numeric",
     month: "2-digit",
@@ -57,7 +66,7 @@ export function zonedInputToIso(value: string, timeZone: string) {
  */
 export function zonedIsoWithOffset(date: Date, timeZone: string) {
   if (Number.isNaN(date.getTime())) return "";
-  const parts = new Intl.DateTimeFormat("en-CA", {
+  const parts = cachedDateTimeFormat("en-CA", {
     timeZone,
     year: "numeric",
     month: "2-digit",

@@ -165,9 +165,12 @@ export function RegistrationCard(props: {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent size="md" style={accentStyle(accentColor)} className="yy-accent-scope">
           <DialogHeader
-            title={`Register for ${eventTitle}`}
+            title={state.full ? `Join the waitlist for ${eventTitle}` : `Register for ${eventTitle}`}
             description={
-              team
+              // A full event takes waitlist sign-ups: no ticket until a place opens.
+              state.full
+                ? "This event is full. Join the waitlist and we'll email you if a place opens up."
+                : team
                 ? team.soloPolicy === "TEAMS_ONLY"
                   ? "Create a team or join one with its link. Each team takes one place. We'll email your ticket."
                   : "Create a team, join one with its link, or take part on your own. We'll email your ticket."

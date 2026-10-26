@@ -46,9 +46,9 @@ Cover images are signature/pixel validated, decoded, metadata-stripped, resized,
 
 ## Upgrading from production `bf7a04d`
 
-The 2026-10-27 release deploys `main` at `a952faf` (or a later `main` that
-includes it) over production `bf7a04d`, the 1.0.0 release of 2026-10-21. It
-brings 117 commits and 13 migrations: team registration, hackathon
+The 2026-10-27 release deploys the latest `main` (including the release-gate
+fixes from pull requests #27 and #29) over production `bf7a04d`, the 1.0.0 release of 2026-10-21. It
+brings about 125 commits and 13 migrations: team registration, hackathon
 submissions and judging, event crew, attendance confirmation, custom check-in
 lists, organisation webhooks, saved views and filtered exports, large-event
 paging and indexes, mobile teams, judging and programme routes, and the
@@ -102,7 +102,7 @@ build, the old build on the new schema, and a restore drill).
 
 ### Before the deploy window
 
-1. **Choose the commit.** Deploy `origin/main` at `a952faf` or later, and
+1. **Choose the commit.** Deploy the latest `origin/main`, and
    confirm its Quality gate run is green (it builds the Docker image and
    smoke-tests the container). Fetch first: a local `main` checkout may be
    behind `origin/main`.
@@ -121,17 +121,12 @@ build, the old build on the new schema, and a restore drill).
    (for example `cf-connecting-ip` behind Cloudflare); a wrong value puts
    every user in one per-IP budget of 10 sign-ins a minute. Allow outbound
    HTTPS on 443 and 8443 for organisation webhooks.
-4. **Database time zone.** Run `SHOW timezone;` on the production database. It
-   must be `UTC` (or `Etc/UTC`) for this commit: the attendance reminder and
-   the webhook delivery claim compare timestamps in raw SQL, and on a non-UTC
-   server they are stored hours off. If it is not UTC, set it for the
-   application's role or database first
-   (`ALTER ROLE <app_role> SET timezone TO 'UTC';`) and restart connections.
-5. **Container memory.** On this commit, opening the event dashboard of an
-   event with 10,000 or more registrations costs about 1.2 GB of native
-   memory per concurrent open or dashboard action, which Node returns to the
-   OS slowly. Keep the Helm default limit of 4 GiB or more, and avoid 1–2 GiB
-   limits while large events are managed.
+4. **Database time zone.** Any server `TimeZone` works: raw SQL converts
+   timestamps to UTC explicitly. `SHOW timezone;` is still worth knowing when
+   reading rows by hand.
+5. **Container memory.** Date formatters are cached, so opening a
+   15,000-registration event dashboard takes about 0.3 s, and 20 concurrent
+   opens peak at about 1.4 GB. Keep the Helm default limit of 4 GiB.
 6. **Record the rollback point.** Note the running image tag. Then, on a
    trusted host with PostgreSQL client tools and the production
    `DATABASE_URL` (which must use `sslmode=require`), run `npm run db:backup`.
@@ -152,8 +147,9 @@ build, the old build on the new schema, and a restore drill).
    ([lock checklist](production-operations.md#lock-checklist-for-the-team-judging-and-large-event-migrations)).
 9. **Tell organisers** about the behaviour changes above, and that an
    attendance confirmation or broadcast to about 10,000 guests drains at the
-   outbox rate (on this commit about 20–40 emails a minute, so several hours),
-   with password-reset and registration emails waiting behind it.
+   outbox rate. Each pass sends batches of 50 for up to 40 seconds, and
+   password-reset, ticket and verification email is always sent before bulk
+   sends, so it does not wait behind them.
 
 ### Deploy steps
 
@@ -190,10 +186,10 @@ build, the old build on the new schema, and a restore drill).
    not run side by side. With Docker, stop and rename the old container, then
    start the new one, as in the
    [Docker upgrade order](DEPLOYMENT_DOCKER.md#upgrade-an-existing-installation).
-   With Helm, this commit's chart always uses a rolling update, so scale the
-   old Deployment to 0 (`kubectl scale deployment/<release-fullname> --replicas=0`,
-   with the HPA disabled for the window) before `helm upgrade`; expect a short
-   outage.
+   With Helm, deploy with
+   `--set updateStrategy.type=Recreate --set updateStrategy.rollingUpdate=null`
+   (a short outage). As a safety net, the new release returns to the queue,
+   once, any new-kind email the old worker failed in the last 7 days.
 6. **Watch the start.** With an alerts webhook configured, each new process
    posts an *Instance started* note. Then use **Send test email** and **Send
    test message** in Super admin → Settings.
@@ -213,27 +209,17 @@ build, the old build on the new schema, and a restore drill).
   Operations.
 - Smoke-test `/help`, one published event page, one old ticket, one short
   link, a check-in, and a machine API v1 call.
-- Expect error-level "Sign-in failed (CredentialsSignin)" alerts after every
-  successful two-step (MFA) web sign-in, about one per process every five
-  minutes while MFA users sign in. They are noise, and were already present in
-  `bf7a04d`.
 
-### Known issues in `a952faf`
+### Fixed by the release gate
 
-The release gate found no blocker. These were found and fixed in
-[pull request #27](https://github.com/twilighty-abhi/yuyu/pull/27), which is
-not part of `a952faf`; if it is merged before the deploy, they no longer
-apply:
-
-- Large-event dashboard memory and latency (above).
-- Outbox throughput of about 20 messages per scheduler pass, with bulk sends
-  delaying transactional email.
-- Raw SQL timestamps that depend on the database time zone (above).
-- The false MFA "Sign-in failed" alert (above).
-- Newly created events' public pages show no About, Venue, Programme or
-  Speakers sections until an organiser saves **Event page → Sections**.
-- The project submission message always says a confirmation was emailed,
-  although receipts are off by default.
+The release gate on `a952faf` found no blocker. Pull requests
+[#27](https://github.com/twilighty-abhi/yuyu/pull/27) and
+[#29](https://github.com/twilighty-abhi/yuyu/pull/29) fixed what it found and
+are part of this release. The fixes cover large-event dashboard memory, outbox
+throughput and transactional-first ordering, raw SQL time zones, the false MFA
+"Sign-in failed" alert, and missing sections on new events' public pages. They
+also cover the submission receipt message, edits to live events, and the iOS
+app-link exclusions.
 
 ### Rollback
 

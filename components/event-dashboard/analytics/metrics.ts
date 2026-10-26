@@ -3,6 +3,7 @@
  * can be unit-tested. Every number comes from real counts.
  */
 import { formatDate } from "@/lib/format/datetime";
+import { cachedDateTimeFormat } from "@/lib/format/intlCache";
 
 const DAY_MS = 86_400_000;
 
@@ -95,14 +96,14 @@ export type SignupTimeline = {
 
 /** Days since the epoch for the calendar date of `date` in `timeZone`. */
 function localDay(date: Date, timeZone: string): number {
-  const parts = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
+  const parts = cachedDateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
   const pick = (type: string) => Number(parts.find((part) => part.type === type)?.value);
   return Date.UTC(pick("year"), pick("month") - 1, pick("day")) / DAY_MS;
 }
 
 /** "14 Oct" for a local day index. */
 function dayLabel(day: number): string {
-  return new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", day: "numeric", month: "short" }).format(new Date(day * DAY_MS));
+  return cachedDateTimeFormat("en-GB", { timeZone: "UTC", day: "numeric", month: "short" }).format(new Date(day * DAY_MS));
 }
 
 /**

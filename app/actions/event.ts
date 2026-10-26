@@ -688,28 +688,34 @@ export async function publishEvent(input: unknown): Promise<ActionResult> {
 
   // Website visibility follows the event's published status, as in the event
   // form; without the release a published event's public page stays 404.
-  await prisma.$transaction([
-    prisma.event.update({
-      where: { id: event.id },
-      data: { status: EventStatus.PUBLISHED },
-    }),
-    prisma.eventPage.upsert({
+  // The status change is conditional, so when two organisers publish the same
+  // draft at once only the call that changed it emits `event.published` and
+  // writes the audit row; the other still (re)releases the page.
+  const previousStatus = await prisma.$transaction(async (tx) => {
+    const [locked] = await tx.$queryRaw<Array<{ status: EventStatus }>>`SELECT "status" FROM "Event" WHERE "id" = ${event.id} FOR UPDATE`;
+    if (!locked) return null;
+    if (locked.status !== EventStatus.PUBLISHED) {
+      await tx.event.update({ where: { id: event.id }, data: { status: EventStatus.PUBLISHED } });
+    }
+    await tx.eventPage.upsert({
       where: { eventId: event.id },
       create: { eventId: event.id, isPublished: true },
       update: { isPublished: true },
-    }),
-  ]);
-
-  if (event.status !== EventStatus.PUBLISHED) {
-    emitWebhookEvent({ type: "event.published", eventId: event.id, previousStatus: event.status });
-  }
-  await recordAuditEvent({
-    action: "EVENT_PUBLISHED",
-    actorUserId: session.user.id,
-    organisationId: org.id,
-    targetType: "Event",
-    targetId: event.id,
+    });
+    return locked.status;
   });
+  if (previousStatus === null) return { ok: false, error: "Event not found." };
+
+  if (previousStatus !== EventStatus.PUBLISHED) {
+    emitWebhookEvent({ type: "event.published", eventId: event.id, previousStatus });
+    await recordAuditEvent({
+      action: "EVENT_PUBLISHED",
+      actorUserId: session.user.id,
+      organisationId: org.id,
+      targetType: "Event",
+      targetId: event.id,
+    });
+  }
 
   revalidateEventPaths(org.slug, event.slug, event.id);
   return { ok: true };

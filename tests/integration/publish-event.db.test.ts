@@ -8,6 +8,8 @@ const identity = vi.hoisted(() => ({ id: "" }));
 vi.mock("@/lib/auth", () => ({ auth: async () => (identity.id ? { user: { id: identity.id } } : null) }));
 vi.mock("@/lib/actionRateLimit", () => ({ isActionRateLimited: async () => false }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+const webhooks = vi.hoisted(() => ({ emit: vi.fn() }));
+vi.mock("@/lib/webhooks/emit", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/webhooks/emit")>()), emitWebhookEvent: webhooks.emit }));
 
 import { prisma } from "@/lib/db";
 import { publishEvent } from "@/app/actions/event";
@@ -67,6 +69,22 @@ describe("publishEvent", () => {
     identity.id = ownerId;
     expect(await publishEvent({ organisationSlug: orgSlug, eventSlug: event.slug })).toEqual({ ok: true });
     expect(await stored(event.id)).toEqual({ status: EventStatus.PUBLISHED, page: { isPublished: true, tagline: "Kept" } });
+  });
+
+  it("emits event.published and audits once when two organisers publish the same draft at once", async () => {
+    const event = await makeDraft(false);
+    identity.id = ownerId;
+    webhooks.emit.mockClear();
+    const results = await Promise.all([1, 2, 3].map(() => publishEvent({ organisationSlug: orgSlug, eventSlug: event.slug })));
+    expect(results).toEqual([{ ok: true }, { ok: true }, { ok: true }]);
+    expect(await stored(event.id)).toMatchObject({ status: EventStatus.PUBLISHED, page: { isPublished: true } });
+    const published = webhooks.emit.mock.calls.filter(([emitted]) => emitted.eventId === event.id);
+    expect(published).toEqual([[{ type: "event.published", eventId: event.id, previousStatus: EventStatus.DRAFT }]]);
+    expect(await prisma.auditEvent.count({ where: { action: "EVENT_PUBLISHED", targetId: event.id } })).toBe(1);
+    // Publishing an already published event is a no-op for both.
+    expect(await publishEvent({ organisationSlug: orgSlug, eventSlug: event.slug })).toEqual({ ok: true });
+    expect(webhooks.emit.mock.calls.filter(([emitted]) => emitted.eventId === event.id)).toHaveLength(1);
+    expect(await prisma.auditEvent.count({ where: { action: "EVENT_PUBLISHED", targetId: event.id } })).toBe(1);
   });
 
   it("creates a released website when the draft has none", async () => {

@@ -26,7 +26,7 @@ production topology. Kubernetes operators should use the
 1. Build and test the immutable image in CI. The [Docker Hub Actions guide](DOCKERHUB_ACTIONS.md) covers automated publication of the application and migration images.
 2. Run `npm run db:status`, then `npm run db:deploy` once as a release job using the migration database role. Run `npm run storage:migrate` when legacy database assets remain.
 3. Deploy application instances using a least-privileged runtime database role and production secrets from a secrets manager.
-4. Verify the in-process outbox worker has recorded a fresh heartbeat after deployment. Configure an independent scheduler to call `POST /api/internal/outbox` every minute with `Authorization: Bearer $CRON_SECRET` as a recovery path; also configure an authenticated readiness probe to call `GET /api/health/db` with `Authorization: Bearer $HEALTHCHECK_SECRET`.
+4. Verify the in-process outbox worker has recorded a fresh heartbeat after deployment. Configure an independent scheduler to call `POST /api/internal/outbox` every minute with `Authorization: Bearer $CRON_SECRET` as a recovery path; also configure an authenticated readiness probe to call `GET /api/health/db` with `Authorization: Bearer $HEALTHCHECK_SECRET`. Each scheduler pass drains the queue in batches of 50 for up to 40 seconds (stopping early when nothing is due, or when a whole batch fails because the mail server is down), so give the scheduler's HTTP call a timeout of at least 60 seconds. Transactional email (sign-in, verification, password reset, tickets, team and submission emails) is always claimed before bulk sends (custom emails, attendance confirmations, results announcements, event invitations), so a 10,000-recipient send never delays a password reset.
 5. Verify readiness, error rate, email queue depth, database connections, and Redis health before shifting traffic.
 
 ### Recent schema migrations
@@ -54,19 +54,23 @@ Apply these with `npm run db:deploy` before rolling out the matching application
 | `20261025010000_saved_views` | New `SavedView` table and `SavedViewSurface` enum, cascading on `Event`, `User` and `Organisation`. Purely additive |
 | `20261026000000_large_event_indexes` | Six composite indexes on `RSVP`, `Team`, `Submission` and `EventInvite` (docs/PERFORMANCE.md). Plain `CREATE INDEX IF NOT EXISTS` inside the migration transaction: each build blocks writes to its table (RSVPs, check-ins, submissions, invites) until it finishes. Pre-build them concurrently on a large instance (below) |
 | `20261027000000_drop_orphan_event_session_type` | Drops the unused `EventSessionType` enum (no column has used it since `20260915010000_simplify_event_session_fields`). No table changes; brings the database in line with `schema.prisma` so `prisma migrate diff` is empty |
-| `20261028000000_attendance_confirmation` | New `AttendanceResponse` enum and `AttendanceCheck` table (CHECKs on the token digest, note length and response/time pair; foreign keys to `RSVP` and `Event`, which briefly lock those tables while they are added), and `Event.attendanceCheckReleaseOnDecline` (`NOT NULL DEFAULT false`, no rewrite). Additive; `ALTER TABLE "Event"` as above. Nothing is sent automatically after the upgrade |
+| `20261028000000_attendance_confirmation` | New `AttendanceResponse` enum and `AttendanceCheck` table (token-digest, note-length and response/time CHECKs; foreign keys to `RSVP` and `Event`, which briefly block writes to those tables while they are added), and `Event.attendanceCheckReleaseOnDecline` (`NOT NULL DEFAULT false`, a constant default, no rewrite). Additive; `ALTER TABLE "Event"` as above |
 | `20261028010000_hackathon_email_toggles` | `Event.emailEntrantsOnResults` and `Event.emailSubmissionReceipts`, both `NOT NULL DEFAULT false` (a constant default, so no table rewrite). Additive; `ALTER TABLE "Event"` as above. **Behaviour change for existing events:** both switches start off, so publishing results and submitting a project send no email until an organiser turns the switch on in Judging → Setup (docs/HACKATHON.md → Hackathon emails). Tell organisers who rely on those emails before upgrading |
-| `20261029000000_event_crew` | Adds `CREW` to the `EventPageSectionType` enum, `RSVP.isCrew` (`NOT NULL DEFAULT false`, no rewrite), the `EventCrewMember` and `EventCrewJoinLink` tables, and the `RSVP_crew_shape` CHECK, added `NOT VALID` and validated in the same transaction while `ALTER TABLE "RSVP"` holds its ACCESS EXCLUSIVE lock (about 70 ms per million registrations). Once a `CREW` section exists, the previous release can no longer read event pages ([rollback](PRODUCTION_RELEASE.md#rollback)) |
+| `20261029000000_event_crew` | Adds `CREW` to the `EventPageSectionType` enum, `RSVP.isCrew` (`NOT NULL DEFAULT false`, no rewrite), the `EventCrewMember` and `EventCrewJoinLink` tables, and the `RSVP_crew_shape` CHECK. `ALTER TABLE "RSVP"` takes an ACCESS EXCLUSIVE lock on `RSVP`; the CHECK is added `NOT VALID` and validated in the same transaction, so the lock is held during the validation scan (about 70 ms per million registrations). After this migration has run and crew data exists, the previous release can no longer read those rows (see [Upgrading past 1.0](#upgrading-past-10-teams-judging-attendance-confirmation-crew)) |
 
 #### Lock checklist for the team, judging and large-event migrations
 
 Prisma applies each migration in one transaction, without a lock timeout. The
-five migrations that alter `Event` wait for an ACCESS EXCLUSIVE lock, and while
-they wait every new read and write of `Event` from the running pods queues
-behind them; `20261026000000_large_event_indexes` blocks writes to `RSVP`,
-`Team`, `Submission` and `EventInvite` while its indexes build. On a quiet
-database the whole upgrade takes well under a second. Before running the
-migration job:
+six migrations that alter `Event` (`team_registration`, `hackathon_judging`,
+`judging_results_announced`, `judging_ops`, `attendance_confirmation`,
+`hackathon_email_toggles`) and the two that alter `RSVP` (`team_registration`
+and `event_crew`) wait for an ACCESS EXCLUSIVE lock on that table, and while
+they wait every new read and write of the table from the running pods queues
+behind them. `event_crew` also validates its new `RSVP` CHECK inside the same
+transaction, under that lock. `20261026000000_large_event_indexes` blocks
+writes to `RSVP`, `Team`, `Submission` and `EventInvite` while its indexes
+build (about 2 seconds per million registrations). On a quiet database the
+whole upgrade takes well under a second. Before running the migration job:
 
 1. Deploy at low traffic, and make sure nothing holds a long transaction:
 
@@ -92,49 +96,77 @@ migration job:
    so they do not exist yet and are empty when their indexes are built. A
    failed `CONCURRENTLY` build leaves an `INVALID` index: drop it and run the
    statement again before migrating.
-3. If the job does wait on a lock, find the blocker with
+3. Give the migration job a lock timeout, so it fails fast instead of
+   queueing the whole site behind a long transaction. Add it to the
+   migrator's `DATABASE_URL` only (not the application's):
+   `…?sslmode=require&options=-c%20lock_timeout%3D5s`. A migration that
+   times out rolls back atomically (nothing from it is left behind); mark it
+   with `npx prisma migrate resolve --rolled-back <migration_name>`, end the
+   blocker, and run `npm run db:deploy` again.
+4. If the job does wait on a lock, find the blocker with
    `SELECT pid, pg_blocking_pids(pid), left(query, 80) FROM pg_stat_activity WHERE cardinality(pg_blocking_pids(pid)) > 0;`
    and end it (`SELECT pg_terminate_backend(<pid>);`) rather than killing the
    migration job, which would leave a failed migration to resolve.
 
-### Upgrading from production `bf7a04d`
+### Upgrading past 1.0 (teams, judging, attendance confirmation, crew)
 
-The 2026-10-27 release applies the last 13 rows of the table above in one
-`db:deploy`. Six of them alter `Event` and two alter `RSVP` (each a brief
-ACCESS EXCLUSIVE lock), and `large_event_indexes` blocks writes to `RSVP`,
-`Team`, `Submission` and `EventInvite` while it builds. Rehearsed on a copy
-of production-shaped data, the whole set took 0.61 s at 20,000
-registrations and 3.3 s at one million. The full runbook (pre-checks, lock
-timeout, schema checks, swapping the app without overlap, post-deploy
-checks and rollback) is in
+The step-by-step runbook for the 2026-10-27 production release (from
+`bf7a04d`), with rehearsal timings and post-deploy checks, is in
 [Production release → Upgrading from production `bf7a04d`](PRODUCTION_RELEASE.md#upgrading-from-production-bf7a04d).
-Points specific to operations:
 
-- **Migrator lock timeout.** Give only the migrator's `DATABASE_URL` a lock
-  timeout (`…&options=-c%20lock_timeout%3D5s`). A migration that times out
-  rolls back atomically; mark it with
-  `npx prisma migrate resolve --rolled-back <migration_name>`, end the
-  blocker, and run `npm run db:deploy` again.
-- **No old/new overlap.** The previous release's outbox worker permanently
-  fails the new email kinds (`team-created`, `team-member-added`,
-  `submission-received`, `submission-link`, `results-published`,
-  `attendance-check`). Stop the old app before the new one serves traffic;
-  the Helm chart on `a952faf` always rolls, so scale the old Deployment to 0
-  first.
-- **Database time zone.** `SHOW timezone;` must return `UTC` for `a952faf`:
-  the attendance reminder and webhook delivery claim compare timestamps in
-  raw SQL.
-- **Outbox capacity.** No new cron job: webhooks are delivered by the same
-  in-process pass as email. On `a952faf` each pass sends at most 20 email
-  messages in creation order, so a 10,000-guest attendance confirmation or
-  broadcast takes hours and delays password resets behind it; keep the
-  once-a-minute call to `POST /api/internal/outbox`.
-- **Memory.** On `a952faf` each concurrent open of a 10,000+ registration
-  event dashboard, and each action on it, costs about 1.2 GB of native
-  memory. Keep the Helm limit at 4 GiB or more while large events are run.
-- **Rollback** is image-only until a `JUDGE` grant or `CREW` section exists,
-  and a restore of the pre-upgrade backup into an empty database afterwards
-  ([Rollback](PRODUCTION_RELEASE.md#rollback)).
+These notes apply when the running release predates the migrations above
+(for example 1.0.0) and the new one includes them.
+
+**Before you deploy**
+
+1. Take a backup (`npm run db:backup`) and keep it until the new release has
+   run for a while: it is the rollback path (below).
+2. Check the production schema for hand-made drift, read-only, from a
+   checkout of the *running* release:
+   `npx prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --exit-code`.
+   A database built by 1.0.0's own migrations already shows three known
+   differences, which `20261026000000_large_event_indexes` and
+   `20261027000000_drop_orphan_event_session_type` resolve: the definition of
+   `RSVP_eventId_status_checkedInAt_createdAt_id_idx`, the missing
+   `EventFeedbackForm_eventId_idx`, and the orphaned `EventSessionType` enum.
+   Anything else was changed by hand; resolve it before upgrading. After the
+   upgrade the same command, run from the new release, must report no
+   difference (CI checks this for a freshly migrated database).
+3. `SHOW timezone;` on the database. Yuyu stores UTC wall-clock times and,
+   from this release, its raw SQL converts explicitly, so any server
+   TimeZone works; a non-UTC value is still worth knowing when reading rows
+   by hand.
+4. If you deploy images from Docker Hub rather than building from source,
+   check that the **Publish Docker Hub images** workflow has run green for
+   the commit you deploy; it needs the repository settings listed in
+   [Docker Hub Actions](DOCKERHUB_ACTIONS.md) (`DOCKERHUB_USERNAME` and the
+   related settings).
+
+**Do not run the old and new release side by side.** The old release's
+outbox worker does not know the new email kinds (`team-created`,
+`team-member-added`, `submission-received`, `submission-link`,
+`results-published`, `attendance-check`): if it claims one, it marks it
+`FAILED` with `PermanentOutboxError`. Cut over in one step: the
+[Docker guide](DEPLOYMENT_DOCKER.md) already stops the old container before
+the new one serves traffic; with Helm, deploy this release with
+`--set updateStrategy.type=Recreate --set updateStrategy.rollingUpdate=null`
+(a short outage), or scale the old ReplicaSet to 0 before the new pods take
+traffic. As a safety net, the new release returns such rows to the queue
+once (`lastError` "Requeued: an older release could not send this kind"),
+for rows created in the last 7 days. After the rollout, Super admin → Email
+health should show no `FAILED` rows of those kinds with `PermanentOutboxError`;
+use **Retry failed email** for any that remain.
+
+**Rollback.** Rolling the image back without the database is safe only
+until new-feature data exists. Once a `CREW` page section or a `JUDGE`
+co-organiser permission has been saved, the old release's Prisma client
+fails to read those rows (public event pages and dashboards answer 500).
+The old code also counts crew against capacity and treats team events as
+individual events. Roll back by restoring the pre-upgrade backup. If you
+must keep the new data instead, first delete the `CREW` rows from
+`EventPageSection` and remove `JUDGE` from every
+`EventCollaborator.permissions` array, accept that the old release ignores
+crew and team mode, and expect any queued email of the new kinds to fail.
 
 ## Instance-managed services
 
@@ -150,7 +182,7 @@ The same page holds an optional **Alerts webhook**: a Mattermost (or Slack-compa
 
 - uncaught server errors from page renders, route handlers, Server Actions, and the proxy (Next.js `onRequestError`), with the route pattern rather than the request path;
 - every server `console.error` line, and `console.warn` lines when **Include warnings** is on, which covers Next.js' own uncaught-exception and unhandled-rejection logging;
-- Auth.js sign-in failures with their error type (for example `OAuthCallbackError`), outbox email delivery failures with the SMTP error code (a retried failure is a warning, a permanent one an error), and failed scheduler runs;
+- Auth.js sign-in failures with their error type (for example `OAuthCallbackError`); expected outcomes of using the sign-in form are not alerts (a wrong password, an unverified email, the password step of an MFA sign-in, a request without its CSRF token, a declined sign-in); outbox email delivery failures with the SMTP error code (a retried failure is a warning, a permanent one an error), and failed scheduler runs;
 - browser crashes caught by the app error boundaries, through `POST /api/client-errors`;
 - an *Instance started* note each time a process boots, which marks deploys and restarts.
 
@@ -177,7 +209,7 @@ The backup fields do not run, retain, or restore backups. Keep those controls wi
   ```
 
   Add `--s3-force-path-style` only for providers that require it. The bucket must be private, use provider-side encryption at rest, and grant this credential only the object operations needed for the selected prefix. Prefer short-lived bucket-scoped credentials; command-line secrets can be exposed through shell history or process inspection.
-- Restore is deliberately destructive. It refuses development/test/localhost targets and requires both the parsed database name and an explicit production acknowledgement. It creates a local safety backup before replacing data, then runs the migration status and production schema verification checks:
+- Restore is deliberately destructive. It refuses development/test/localhost targets and requires both the parsed database name and an explicit production acknowledgement. To restore through a local proxy or tunnel to the production server (cloud-sql-proxy, an SSH port-forward), add `--via-local-tunnel`; development and test database names are still refused. It creates a local safety backup before replacing data, then runs the migration status and production schema verification checks:
 
   ```bash
   npm run db:restore -- \

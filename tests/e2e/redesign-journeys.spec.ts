@@ -102,8 +102,11 @@ async function register(context: BrowserContext, guest: { name: string; email: s
   const errors = collectPageErrors(page);
   await page.goto(`/${orgSlug}/${eventSlug}`);
   await page.getByRole("button", { name: buttonName }).first().click();
-  const dialog = page.getByRole("dialog", { name: `Register for ${eventTitle}` });
+  // A full event's dialog says it is the waitlist, not a ticket.
+  const waitlist = buttonName === "Join the waitlist";
+  const dialog = page.getByRole("dialog", { name: waitlist ? `Join the waitlist for ${eventTitle}` : `Register for ${eventTitle}` });
   await expect(dialog).toBeVisible();
+  if (waitlist) await expect(dialog).toContainText("This event is full.");
   await dialog.getByRole("textbox", { name: /^Name/ }).fill(guest.name);
   await dialog.getByRole("textbox", { name: /^Email/ }).fill(guest.email);
   await dialog.getByRole("button", { name: "Register", exact: true }).click();
@@ -149,7 +152,14 @@ test("the three-step dialog creates a draft event and opens its dashboard", asyn
   const { context, page } = await ownerContext(browser);
   const errors = collectPageErrors(page);
   await page.goto(`/dashboard/${orgSlug}`);
-  await page.getByRole("button", { name: "New event" }).first().click();
+  // Escape hands focus back to the button that opened the dialog.
+  const newEvent = page.getByRole("button", { name: "New event" }).first();
+  await newEvent.click();
+  await expect(page.getByRole("dialog").getByRole("heading", { name: "Create Event: Basics" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(newEvent).toBeFocused();
+  await newEvent.click();
 
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByRole("heading", { name: "Create Event: Basics" })).toBeVisible();
@@ -161,6 +171,8 @@ test("the three-step dialog creates a draft event and opens its dashboard", asyn
   await dialog.getByRole("button", { name: "Next" }).click();
 
   await expect(dialog.getByRole("heading", { name: "Create Event: Schedule" })).toBeVisible();
+  // Focus moves into the new step instead of staying on Next.
+  await expect(dialog.getByLabel(/^Start/)).toBeFocused();
   const start = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
   start.setHours(18, 0, 0, 0);
   const local = (date: Date) => new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
@@ -237,6 +249,10 @@ test("publishing releases the public event page", async ({ browser }) => {
   try {
     expect(response?.status()).toBe(200);
     await expect(publicPage.getByRole("heading", { level: 1, name: eventTitle })).toBeVisible();
+    // An event created in the dialog has no saved section rows; its page
+    // still shows the default sections, as the dashboard's Sections list says.
+    await expect(publicPage.getByRole("region", { name: "About" })).toContainText("An evening meetup created by the redesign journey test.");
+    await expect(publicPage.locator("#venue")).toContainText("Community Hall, 1 Test Street");
   } finally {
     await anonymous.close();
   }

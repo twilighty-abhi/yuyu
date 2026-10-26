@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { EventPrivacyType, EventStatus } from "@prisma/client";
 import { Plus, X } from "lucide-react";
@@ -42,9 +42,13 @@ function addWallClockHours(value: string, hours: number) {
   return Number.isNaN(parsed) ? "" : new Date(parsed + hours * HOUR_MS).toISOString().slice(0, 16);
 }
 
-/** The next whole hour on the event's own clock, as a `datetime-local` value. */
+/**
+ * A whole hour on the event's own clock at least 30 minutes away, as a
+ * `datetime-local` value. The plain next whole hour can be seconds away, and
+ * then has passed by the time the organiser clicks Create.
+ */
 function nextWholeHour(timeZone: string) {
-  return `${zonedDatetimeLocalValue(new Date(Date.now() + HOUR_MS), timeZone).slice(0, 13)}:00`;
+  return `${zonedDatetimeLocalValue(new Date(Date.now() + 1.5 * HOUR_MS), timeZone).slice(0, 13)}:00`;
 }
 
 /**
@@ -86,11 +90,22 @@ export function CreateEventDialog(props: {
   const [tagInput, setTagInput] = useState("");
   const [formKey, setFormKey] = useState(0);
   const formRef = useRef<HTMLFormElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  /** Set when Next/Back (or a schedule error) changes the step, so focus follows into it. */
+  const stepMoved = useRef(false);
 
   // Wizard States
   const [activeStep, setActiveStep] = useState(0);
   const [isOnline, setIsOnline] = useState(false);
   const [teamSettings, setTeamSettings] = useState<TeamSettingsDraft>(DEFAULT_TEAM_SETTINGS);
+
+  // Keyboard and screen-reader users land in the step they moved to, not on
+  // the Next button that is still under focus.
+  useEffect(() => {
+    if (!stepMoved.current) return;
+    stepMoved.current = false;
+    formRef.current?.querySelector<HTMLElement>(`[data-step="${activeStep}"] :is(input:not([type=hidden]), select, textarea, [contenteditable=true], button)`)?.focus();
+  }, [activeStep]);
 
   const resetDraft = () => {
     setActiveStep(0);
@@ -120,6 +135,7 @@ export function CreateEventDialog(props: {
     const schedule = checkSchedule(start, end, timezone);
     if ("error" in schedule) {
       setError(schedule.error);
+      stepMoved.current = true;
       setActiveStep(1);
       return;
     }
@@ -180,6 +196,7 @@ export function CreateEventDialog(props: {
     <>
       {variant === "fab" ? (
         <button
+          ref={triggerRef}
           type="button"
           aria-label="Create event"
           onClick={handleOpen}
@@ -188,12 +205,20 @@ export function CreateEventDialog(props: {
           <Plus aria-hidden className="size-6" />
         </button>
       ) : (
-        <Button variant="primary" startIcon={<Plus />} onClick={handleOpen}>
+        <Button ref={triggerRef} variant="primary" startIcon={<Plus />} onClick={handleOpen}>
           New event
         </Button>
       )}
       <Dialog open={open} onOpenChange={(next) => { if (!next) closeDialog(); }}>
-        <DialogContent size="md">
+        <DialogContent
+          size="md"
+          // The dialog is opened from our own button, not a Radix trigger, so
+          // hand focus back to it on close (Escape, Cancel, the close icon).
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            triggerRef.current?.focus();
+          }}
+        >
           <form
             key={formKey}
             ref={formRef}
@@ -222,7 +247,7 @@ export function CreateEventDialog(props: {
               {error ? <Callout tone="danger" role="alert">{error}</Callout> : null}
 
               {/* Step 1: Basics */}
-              <div className={cn("flex-col gap-4", activeStep === 0 ? "flex" : "hidden")}>
+              <div data-step="0" className={cn("flex-col gap-4", activeStep === 0 ? "flex" : "hidden")}>
                 <Field label="Title" required>
                   <Input name="title" autoFocus />
                 </Field>
@@ -270,7 +295,7 @@ export function CreateEventDialog(props: {
               </div>
 
               {/* Step 2: Schedule */}
-              <div className={cn("flex-col gap-4", activeStep === 1 ? "flex" : "hidden")}>
+              <div data-step="1" className={cn("flex-col gap-4", activeStep === 1 ? "flex" : "hidden")}>
                 <Field label="Start" required helperText="Pick date and time">
                   <Input
                     type="datetime-local"
@@ -303,7 +328,7 @@ export function CreateEventDialog(props: {
               </div>
 
               {/* Step 3: Location */}
-              <div className={cn("flex-col gap-4", activeStep === 2 ? "flex" : "hidden")}>
+              <div data-step="2" className={cn("flex-col gap-4", activeStep === 2 ? "flex" : "hidden")}>
                 <SwitchRow
                   name="isOnline"
                   label="Online event"
@@ -338,6 +363,7 @@ export function CreateEventDialog(props: {
                     variant="quiet"
                     onClick={() => {
                       setError(null);
+                      stepMoved.current = true;
                       setActiveStep((prev) => prev - 1);
                     }}
                     disabled={pending}
@@ -379,6 +405,7 @@ export function CreateEventDialog(props: {
                           return;
                         }
                       }
+                      stepMoved.current = true;
                       setActiveStep((prev) => prev + 1);
                     }}
                   >

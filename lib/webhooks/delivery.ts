@@ -5,6 +5,7 @@ import https from "node:https";
 import net from "node:net";
 import { Prisma, WebhookDeliveryStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { sqlUtcTimestamp } from "@/lib/sqlTimestamp";
 import { recordAuditEvent } from "@/lib/audit";
 import { decryptWebhookSecret } from "@/lib/webhooks/secrets";
 import { webhookSignatureHeader } from "@/lib/webhooks/signature";
@@ -174,13 +175,17 @@ type ClaimedRow = {
 
 async function claimDeliveries(options: { limit: number; deliveryId?: string }) {
   const now = new Date();
+  // `nextAttemptAt` is timestamp(3): a value written with sub-millisecond
+  // precision is rounded, possibly up into the next millisecond, so a row
+  // queued in this same millisecond counts as due.
+  const dueBy = new Date(now.getTime() + 1);
   const byId = options.deliveryId ? Prisma.sql`AND "id" = ${options.deliveryId}` : Prisma.empty;
   return prisma.$queryRaw<ClaimedRow[]>`
     UPDATE "WebhookDelivery" AS d
-    SET "status" = 'PROCESSING', "lockedAt" = ${now}, "attempts" = d."attempts" + 1, "lastAttemptAt" = ${now}
+    SET "status" = 'PROCESSING', "lockedAt" = ${sqlUtcTimestamp(now)}, "attempts" = d."attempts" + 1, "lastAttemptAt" = ${sqlUtcTimestamp(now)}
     WHERE d."id" IN (
       SELECT "id" FROM "WebhookDelivery"
-      WHERE "status" = 'PENDING' AND "nextAttemptAt" <= ${now} ${byId}
+      WHERE "status" = 'PENDING' AND "nextAttemptAt" <= ${sqlUtcTimestamp(dueBy)} ${byId}
       ORDER BY "nextAttemptAt" ASC
       LIMIT ${options.limit}
       FOR UPDATE SKIP LOCKED
@@ -200,10 +205,15 @@ async function autoDisableEndpoint(endpoint: { id: string; organisationId: strin
     data: { enabled: false, disabledReason: WEBHOOK_AUTO_DISABLED_REASON, disabledAt: now },
   });
   if (disabled.count !== 1) return;
-  await prisma.webhookDelivery.updateMany({
-    where: { endpointId: endpoint.id, status: WebhookDeliveryStatus.PENDING },
-    data: { status: WebhookDeliveryStatus.FAILED, lastError: "Endpoint disabled" },
-  });
+  // Keep each queued delivery's own last failure ("Blocked: …", the HTTP
+  // status) visible after the endpoint is switched off: it is usually the
+  // reason the endpoint was disabled. Rows never attempted say why they stop.
+  await prisma.$executeRaw`
+    UPDATE "WebhookDelivery"
+    SET "status" = 'FAILED',
+        "lastError" = CASE WHEN "lastError" IS NULL THEN 'Endpoint disabled'
+                           ELSE left('Endpoint disabled after: ' || "lastError", 300) END
+    WHERE "endpointId" = ${endpoint.id} AND "status" = 'PENDING'`;
   await recordAuditEvent({
     action: "WEBHOOK_ENDPOINT_AUTO_DISABLED",
     organisationId: endpoint.organisationId,

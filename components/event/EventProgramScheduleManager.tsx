@@ -7,6 +7,7 @@ import { FilterChip } from "@/components/ui/choice";
 import { Callout, Chip, EmptyState } from "@/components/ui/display";
 import { Field, Input, Dropdown } from "@/components/ui/field";
 import { cn } from "@/lib/cn";
+import { cachedDateTimeFormat } from "@/lib/format/intlCache";
 import { useRouter } from "next/navigation";
 import { deleteScheduleTrack, deleteWebsiteContent, reorderScheduleTracks, saveScheduleTrack, saveSession, setEventSessionDelay } from "@/app/actions/event-website";
 import { ConfirmationDialog } from "@/components/feedback/ConfirmationDialog";
@@ -24,7 +25,7 @@ const types = ["Keynote", "Talk", "Panel", "Workshop", "Fireside chat", "Network
 const displayType = (type: string) => type.toLowerCase().split("_").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
 
 function localValue(iso: string, timeZone: string) {
-  const parts = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(iso));
+  const parts = cachedDateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(iso));
   const get = (type: string) => parts.find((part) => part.type === type)?.value ?? "00";
   return `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}`;
 }
@@ -33,7 +34,7 @@ function zonedInputToIso(value: string, timeZone: string) {
   if (!match) return null;
   const [, year, month, day, hour, minute] = match;
   const guess = Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute));
-  const parts = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(guess));
+  const parts = cachedDateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(guess));
   const get = (type: string) => Number(parts.find((part) => part.type === type)?.value ?? 0);
   const offset = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute")) - guess;
   const iso = new Date(guess - offset).toISOString();

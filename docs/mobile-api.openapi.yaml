@@ -863,7 +863,7 @@ paths:
   /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/schedule:
     get:
       tags: [Day-of]
-      summary: Organiser programme with stored live delays (PUBLISH_AND_SCHEDULE)
+      summary: Organiser programme with speakers and live delays (any organiser of the event)
       parameters: [{ $ref: "#/components/parameters/orgSlug" }, { $ref: "#/components/parameters/eventId" }]
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ScheduleResponse" } } } }
@@ -1709,11 +1709,23 @@ components:
         statuses: { type: array, items: { $ref: "#/components/schemas/RsvpStatus" } }
         attendance: { $ref: "#/components/schemas/Attendance" }
 
+    ScheduleSpeaker:
+      type: object
+      additionalProperties: false
+      required: [id, name, headline, organisation, photoUrl]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        headline: { type: [string, "null"] }
+        organisation: { type: [string, "null"] }
+        photoUrl: { type: [string, "null"], description: Absolute URL }
+
     Schedule:
       type: object
       additionalProperties: false
-      required: [tracks]
+      required: [generatedAt, tracks]
       properties:
+        generatedAt: { $ref: "#/components/schemas/DateTime" }
         tracks:
           type: array
           items:
@@ -1728,13 +1740,18 @@ components:
                 items:
                   type: object
                   additionalProperties: false
-                  required: [id, title, startDateTime, endDateTime, delayMinutes]
+                  required: [id, title, type, visibility, startDateTime, endDateTime, delayMinutes, effectiveStartDateTime, effectiveEndDateTime, speakers]
                   properties:
                     id: { type: string }
                     title: { type: string }
+                    type: { type: string, description: "Session type label, for example Talk or Workshop" }
+                    visibility: { type: string, enum: [DRAFT, PUBLISHED, HIDDEN] }
                     startDateTime: { $ref: "#/components/schemas/DateTime" }
                     endDateTime: { $ref: "#/components/schemas/DateTime" }
                     delayMinutes: { type: integer, description: The session's stored live delay (what the delay control sets); planned times are unchanged. }
+                    effectiveStartDateTime: { $ref: "#/components/schemas/DateTime", description: "Planned start shifted by the delays of earlier sessions in the same track (as on the public page)" }
+                    effectiveEndDateTime: { $ref: "#/components/schemas/DateTime" }
+                    speakers: { type: array, items: { $ref: "#/components/schemas/ScheduleSpeaker" } }
 
     # Success envelopes
     OrganiserTeam:

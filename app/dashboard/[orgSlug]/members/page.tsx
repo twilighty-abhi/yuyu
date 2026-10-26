@@ -14,6 +14,7 @@ import { EmptyState } from "@/components/ui/display";
 import { cn } from "@/lib/cn";
 
 import type { Metadata } from "next";
+import { HelpLink } from "@/components/help/HelpLink";
 
 type Props = { params: Promise<{ orgSlug: string }>; searchParams: Promise<{ page?: string }> };
 const MEMBERS_PAGE_SIZE = 100;
@@ -115,6 +116,7 @@ export default async function OrgMembersPage({ params, searchParams }: Props) {
         organisation={{ name: organisation.name, slug: organisation.slug, logoUrl: profile.logoUrl }}
         title="Members"
         description={`The people who run ${organisation.name}, and what each of them can do.`}
+        actions={<HelpLink article="organisations/roles">Roles explained</HelpLink>}
       />
 
       <section aria-label="Team at a glance" className={cn("grid grid-cols-1 gap-4", adminView ? "sm:grid-cols-3" : "sm:grid-cols-2")}>

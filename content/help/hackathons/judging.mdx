@@ -1,0 +1,97 @@
+Judging in Yuyu works with a rubric: a short list of criteria, each with a weight and a maximum score. Judges score every criterion for a project, add an optional private comment, and submit their review. Yuyu turns the reviews into a ranked list you use to choose winners.
+
+<Callout kind="permission">
+
+Inviting judges, building the rubric, and opening or closing judging: owners and admins of the organisation.
+
+Scoring projects: owners and admins, and co-organisers with the **Judge** permission.
+
+</Callout>
+
+## Inviting judges
+
+Judges are co-organisers with the **Judge** permission. Invite them from the event's **Settings** tab like any other co-organiser, and tick **Judge**. See [Event co-organisers](/help/organisations/co-organisers).
+
+A co-organiser who only has **Judge** sees the scoring workspace and nothing else when they open the event: no guest list, answers, emails, check-in or settings.
+
+**Judging** → **Judges** lists your **Invited judges** with how many reviews each has submitted, then **Organisers who can also judge**: the organisation's owners and admins, who can score from the **Score** section.
+
+<Callout kind="note">
+
+A judge never sees a project they're registered on, for example their own team's entry, and you can't assign it to them. Judges see each project's title, summary, links and team or entrant name, but never entrants' email addresses, registration answers or ticket links.
+
+</Callout>
+
+## Building the rubric
+
+<Steps>
+
+1. Open the **Judging** tab and choose **Setup**.
+2. In the **Rubric** card, choose **Add criterion**.
+3. Fill in the **Name** (for example "Impact" or "Technical execution") and **What judges look for**.
+4. Set the **Weight**, from 1 to 10. A criterion with weight 4 counts twice as much as one with weight 2.
+5. Set the **Maximum score**, from 1 to 10.
+6. Choose **Save criterion**. Repeat for each criterion.
+
+</Steps>
+
+A rubric can have up to 20 criteria. Each one shows its share of the total weight as a percentage. Use the arrows to reorder them.
+
+The rubric is locked once judging opens, so every judge scores against the same criteria. If you spot a mistake straight after opening, choose **Back to not started** on the **Judging** card, fix the rubric, and open again. That only works while judging is open and before any judge has saved a score.
+
+<Screenshot name="judging-rubric" alt="The Rubric card with three criteria showing their weights, maximum scores and share of the total weight" />
+
+## Choosing which projects judges see
+
+In **Setup**, under **Which projects judges see**:
+
+- **All judges see all submissions**: every judge can score every submitted project. Good for small events.
+- **Only assigned submissions**: each judge sees only the projects assigned to them. Good when there are too many projects for everyone to review. See [Assigning judges and tracking progress](/help/hackathons/progress).
+
+Choose **Save settings** after changing it.
+
+## Opening judging
+
+<Steps>
+
+1. Make sure submissions are on and the rubric has at least one criterion.
+2. In **Setup**, find the **Judging** card and choose **Open judging**.
+3. Confirm. Yuyu tells you how many submitted projects judges can start scoring.
+
+</Steps>
+
+Judges can read submitted projects before you open judging, but they can't score them.
+
+## Scoring a project
+
+Judges open the event from their dashboard. Owners and admins use **Judging** → **Score**.
+
+<Screenshot name="judge-score-workspace" alt="The judge's scoring workspace with a project's summary and links, a score for each rubric criterion and a private comment box" />
+
+<Steps>
+
+1. Choose **Score next project**. Yuyu opens a project you've started, or else the one with the fewest reviews so far. Or pick one from the list.
+2. Read the summary and open the links to the code, demo or video.
+3. Give a score for each criterion, from 0 to its maximum.
+4. Add a **Private comment** if you like. Only organisers see it, never the entrants.
+5. Choose **Save scores** to come back later, or **Submit review** once every criterion is scored.
+
+</Steps>
+
+After you submit, the next project opens by itself. Choose **Back to list** or **All submissions** to return to the list. When there's nothing left, you'll see "You're all caught up".
+
+The list has filters for **All**, **To score**, **In progress** and **Reviewed**, and a search by project or team name. While judging is open, you can change a submitted review and choose **Update review**.
+
+Only submitted reviews count. Saved scores that haven't been submitted are left out of the results.
+
+## Closing judging
+
+When the judges are done, go to **Setup** and choose **Close judging…**, then confirm. Scores are frozen, and you can pick winners and publish the results. See [Awards and results](/help/hackathons/results).
+
+Need to let a late judge finish? Choose **Reopen judging**. You can do this until results are published.
+
+## How the score is worked out
+
+For each judge, Yuyu works out a weighted percentage: every criterion's score as a share of its maximum, weighted by the criterion's weight. A project's result is the average of those percentages across the judges who submitted a review, rounded to one decimal place. Projects with the same score share a rank.
+
+If some judges mark much harder than others, you can rank by an adjusted score instead. See [Awards and results](/help/hackathons/results#ranking-the-projects).

@@ -1,0 +1,98 @@
+The machine API lets your own systems read your organisation's events and confirmed participant lists, for example to fill a membership database, print a roster, or show attendance on a club website. It is read-only, and a credential only ever sees the organisation it was created in.
+
+<Callout kind="permission">
+
+Organisation owners only. Admins, members and co-organisers can't see **API access** or create credentials.
+
+</Callout>
+
+## What you can read
+
+| Scope | What it allows |
+| --- | --- |
+| `events:read` | List your organisation's standalone events and read one event: title, slug, description, tags, cover image, dates, time zone, location, map link, online flag, capacity, status and privacy. Drafts, hidden and cancelled events are included. |
+| `participants:read` | List the **confirmed** registrations for one of your events: an id, the display name and when they registered. |
+| `participants:attendance:read` | Used with `participants:read`: filter the list by who has or hasn't checked in, and include the check-in time. It gives no access to the list on its own. |
+
+The API never returns email addresses, user ids, registration answers, invitations, feedback, or ticket, check-in or certificate links. Waitlisted, pending and declined registrations aren't included. Recurring series aren't part of the API yet, and the API can't change anything.
+
+## Create an API client
+
+An API client stands for one connected application. It has a name, a set of scopes, and one or more credentials (keys).
+
+<Steps>
+
+1. Open your organisation's dashboard, choose **Settings**, then choose **Manage API access** in the **API access** section.
+2. Under **Create API client**, enter an **Application name** (for example "Members database") and a **Credential label** (for example "Production, October").
+3. If you want the credential to stop working on a date, set **Optional expiry**.
+4. Tick the **Scopes** the application needs, and no more.
+5. Choose **Create client**.
+6. In **Copy this credential now**, choose **Copy**, store the credential in the other system's secret manager, then choose **I have stored it**.
+
+</Steps>
+
+<Callout kind="warning">
+
+Yuyu shows a credential only once and keeps just a fingerprint of it. If you lose it, create a new credential and revoke the old one.
+
+</Callout>
+
+If you last signed in more than 10 minutes ago, Yuyu asks you to sign in again before it changes API access.
+
+<Screenshot name="settings-api-access" alt="The API access page with the Create API client form and one client listed with its scopes and credentials" />
+
+## Make a request
+
+Send the credential as a bearer token. The **API access** page shows your base address, which ends in `/api/v1`.
+
+```bash
+curl -H "Authorization: Bearer YOUR_CLIENT_SECRET" \
+  "https://events.example.org/api/v1/events?limit=20"
+```
+
+| Endpoint | Scope needed |
+| --- | --- |
+| `GET /api/v1/events` lists events, newest first | `events:read` |
+| `GET /api/v1/events/{eventId}` reads one event | `events:read` |
+| `GET /api/v1/events/{eventId}/participants` lists confirmed participants | `participants:read` |
+
+On the participants list, add `attendance=checked_in` or `attendance=not_checked_in` to filter, or `include=attendance` to add a `checkedInAt` time to each person. Both also need `participants:attendance:read`. A participant looks like this:
+
+```json
+{
+  "id": "example-registration-id",
+  "displayName": "Ada Lovelace",
+  "registeredAt": "2030-01-01T10:00:00.000Z",
+  "checkedInAt": "2030-01-01T10:15:00.000Z"
+}
+```
+
+### Paging through results
+
+Lists return 50 items by default; set `limit` from 1 to 100. Each response ends with `pagination.nextCursor`. Send it back unchanged as `cursor` to get the next page. When it is `null`, you have everything.
+
+### Errors and limits
+
+Errors look like `{ "error": { "code": "...", "message": "..." } }`.
+
+| Status | Code | Meaning |
+| --- | --- | --- |
+| 400 | `INVALID_REQUEST` | A parameter is wrong or not recognised. |
+| 401 | `INVALID_CREDENTIAL` | The credential is wrong, expired or revoked, or its client is disabled. |
+| 403 | `INSUFFICIENT_SCOPE` | The client doesn't have the scope this request needs. |
+| 404 | `RESOURCE_NOT_FOUND` | No such event in your organisation. Another organisation's event looks exactly like a missing one. |
+| 429 | `RATE_LIMITED` | Each client may make up to 600 requests a minute. Wait for the `Retry-After` seconds. |
+
+## Rotate, revoke and disable
+
+Each client shows its scopes and credentials, with when each credential was created, last used and expires.
+
+- **Rotate without downtime:** under **Create rotation credential**, enter a **Credential label** and choose **Create credential**. Deploy the new credential, check it works, then choose **Revoke** on the old one. Revoking can't be undone.
+- **Change scopes:** tick or untick scopes and choose **Save scopes**. A client needs at least one.
+- **Stop everything at once:** choose **Disable client**. All its credentials stop working until you choose **Enable client**.
+
+## Good to know
+
+- Keep credentials out of URLs, code repositories, chat and logs. Anyone holding one can read whatever its scopes allow.
+- Creating clients, changing scopes, creating or revoking credentials and disabling clients are recorded in the audit log. Ordinary reads aren't, but **Last used** updates.
+- To be told about changes as they happen, rather than asking for them, use [webhooks](/help/developers/webhooks).

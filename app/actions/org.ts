@@ -194,6 +194,7 @@ export async function updateOrganisation(
 const RESERVED_SLUGS = new Set([
   "dashboard",
   "discover",
+  "help",
   "login",
   "search",
   "super-admin",

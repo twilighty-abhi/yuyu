@@ -1,0 +1,74 @@
+Two super-admin pages help you check that the instance is being used safely. **Security** sums up how well accounts are protected and which systems can read data through the machine API. **Audit log** is the searchable record of important actions, from role changes and data exports to settings changes in the super-admin area itself.
+
+<Callout kind="permission">
+
+The instance super-admin only, with a current super-admin check. See [The super-admin area](/help/instance/super-admin-access).
+
+</Callout>
+
+## The Security page
+
+<Screenshot name="super-admin-security" alt="The super-admin Security page with MFA counts, sign-in methods, sensitive actions and machine API clients" />
+
+At the top are four counts:
+
+| Count | What it tells you |
+| --- | --- |
+| **Users with MFA** | How many accounts have two-step verification, and what share of all users that is. |
+| **Owners and admins without MFA** | People who can manage an organisation but have no second factor. These are the accounts worth nudging first. |
+| **Unverified email** | Accounts that haven't confirmed their address yet. |
+| **Active API clients** | Machine API clients that are switched on, across all organisations. |
+
+Below them:
+
+- **Sign-in methods:** how many users have a password, how many Google accounts are linked, and how many browser sessions are still valid.
+- **Sensitive actions (last 7 days):** counts of access changes, exports and credential activity, such as role changes, removed members, guest list and feedback exports, report downloads, personal data downloads, API credential changes, two-step verification turned on or off, "sign out everywhere", and super-admin checks.
+- **Recent sensitive activity:** the latest 25 of those actions, with their details redacted.
+- **Machine API clients:** every client with its organisation, status, scopes, how many credentials are active, and when it was last used. Secrets are never shown.
+
+### Following up
+
+The Security page reports; it doesn't change anyone's account. To act on what you see:
+
+- Use **Users** with the **Without MFA** filter to find people, then ask them to turn on two-step verification from **Account** → **Security**. Yuyu can't force it.
+- If an API client looks wrong, for example it has broad scopes and hasn't been used in months, ask that organisation's owner to disable it. Only an organisation owner can disable clients or revoke credentials; the super-admin can't do it from here.
+- Two-step verification protects password sign-in. People who sign in with Google rely on their Google account's own security.
+
+## The audit log
+
+**Audit log** lists every recorded action, newest first, 50 to a page. Each row shows:
+
+- **When** it happened.
+- **Action**, a short code such as `MEMBERSHIP_ROLE_CHANGED` or `INSTANCE_SERVICE_SETTINGS_UPDATED`.
+- **Actor**, the person who did it, when there was one.
+- **Organisation** it belongs to, if any.
+- **Target**, the kind of thing affected and its id.
+- **Metadata**, extra detail with anything sensitive removed before it is shown.
+
+<Steps>
+
+1. Open **Audit log**.
+2. Type part of an action code, the actor's email, an organisation's name, or a target type into the search box, then search. For example, `EXPORT` finds all exports and `API_` finds machine API changes.
+3. Use the page controls at the bottom to go further back.
+
+</Steps>
+
+You'll also see an actor's latest 20 actions on their page under **Users**, and recent activity on each organisation's page.
+
+### What gets recorded
+
+Among other things, the log records:
+
+- Organisation changes: invitations created and accepted, role changes, members removed, organisations deleted, co-organisers invited and their permissions changed.
+- Data leaving Yuyu: guest list, team, feedback and judging exports, event reports and personal data downloads.
+- Machine API and webhook changes, without secrets or full URLs.
+- Account security: two-step verification turned on or off, and signing out everywhere.
+- Super-admin activity: each super-admin check, changes to instance settings and account creation, test emails, alert webhook changes, and every maintenance button on **Operations**, including recorded restore drills.
+
+Everyday reads, such as viewing a page or an API request, aren't recorded.
+
+## Good to know
+
+- The log is append-only: there's no way to edit or delete entries from the app.
+- Passwords, tokens, ticket links, credential secrets and registration answers are never written to the log, and the display redacts email addresses and links that turn up in metadata.
+- The audit log is part of the database, so it is covered by your database backups and kept until someone with database access removes it.

@@ -9,6 +9,7 @@ import { effectiveEventProgram } from "@/lib/eventProgram";
 import { conflictingTrackSessionIds } from "@/lib/eventProgram";
 import { requireOrgDashboardAccess } from "@/lib/permissions";
 import type { Metadata } from "next";
+import { HelpLink } from "@/components/help/HelpLink";
 
 export const metadata: Metadata = { title: "Manage event schedule", robots: { index: false, follow: false } };
 
@@ -27,7 +28,7 @@ export default async function EventScheduleManagePage({ params }: { params: Prom
         back={{ href: `/dashboard/${access.organisation.slug}/event/${event.id}`, label: "Back to event" }}
         event={{ title: event.title, status: event.status, privacyType: event.privacyType, startDateTime: event.startDateTime, timezone: event.timezone, accentColor: event.page?.accentColor }}
       />
-      <SectionHeading as="h2" title="Programme schedule" description="Plan parallel tracks and manage live timing changes independently." />
+      <SectionHeading as="h2" title="Programme schedule" description="Plan parallel tracks and manage live timing changes independently." action={<HelpLink article="event-page/programme" />} />
       <EventProgramScheduleManager organisationSlug={access.organisation.slug} eventId={event.id} eventStart={event.startDateTime.toISOString()} timeZone={event.timezone} tracks={event.scheduleTracks} sessions={sessions} speakers={event.speakers} />
     </div>
   );

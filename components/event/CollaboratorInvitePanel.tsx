@@ -22,6 +22,7 @@ import {
   permissionChipLabels,
   togglePermission,
 } from "@/components/event-dashboard/settings/helpers";
+import { HelpLink } from "@/components/help/HelpLink";
 
 type Collaborator = {
   id: string;
@@ -156,7 +157,10 @@ export function CollaboratorInvitePanel({
   return (
     <section aria-labelledby="co-organisers-title" className="flex flex-col gap-4 rounded-2xl border border-line bg-canvas p-5 sm:p-6">
       <div>
-        <h2 id="co-organisers-title" className="text-h4 text-ink">Co-organisers</h2>
+        <div className="flex items-center gap-1">
+          <h2 id="co-organisers-title" className="text-h4 text-ink">Co-organisers</h2>
+          <HelpLink article="organisations/co-organisers" />
+        </div>
         <p className="mt-0.5 text-body-ui text-ink-muted">
           People who help with just this event. They don&apos;t join {organisationName ?? "your organisation"}.
         </p>

@@ -37,6 +37,7 @@ import { BroadcastEmailEditor } from "./BroadcastEmailEditor";
 import { BroadcastPreviewFrame } from "./BroadcastPreviewFrame";
 import { DesignPicker } from "./DesignPicker";
 import { DEFAULT_BROADCAST_DESIGN, type BroadcastDesignId } from "@/lib/email/broadcastDesigns";
+import { HelpLink } from "@/components/help/HelpLink";
 
 export type BroadcastHistoryRow = {
   id: string;
@@ -399,7 +400,7 @@ export function EventBroadcastPanel(props: {
 
   return (
     <div className="flex flex-col gap-6">
-      <Callout tone="info">
+      <Callout tone="info" action={<HelpLink article="guests/emailing-guests" />}>
         Emails go only to people who already registered for this event. Messages are queued and delivered in the background, a few at a time, so large audiences take a few minutes. Send yourself a test first.
       </Callout>
 

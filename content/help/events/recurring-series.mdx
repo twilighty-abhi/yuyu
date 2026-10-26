@@ -1,0 +1,88 @@
+A recurring series is for an event that repeats on a schedule, such as a weekly meetup, a monthly book club or fortnightly office hours. You set it up once, and Yuyu creates each date for you. Every date has its own page and its own guest list, so people sign up for the dates they can make.
+
+For a one-off event, or one that repeats only now and then, use a normal event and [clone it](/help/events/clone-cancel-delete) instead. Series are for individual sign-ups only; team registration, hackathon submissions and judging need a normal event.
+
+<Callout kind="permission">
+
+Owners and admins create, edit and delete series. You also need a verified email address.
+
+</Callout>
+
+## Create a series
+
+<Steps>
+
+1. Open your organisation's dashboard and choose **New series**.
+2. Enter a **Title** and, if you like, a **Description**.
+3. Set the **First occurrence start** and **First occurrence end**. Every date lasts as long as this first one.
+4. Enter the **Recurrence (RRULE)**: the repeat pattern (see below).
+5. Choose the **Timezone**, and a **Capacity per occurrence** if you want to limit places on each date.
+6. Choose a **Status** (**Draft** or **Published**) and an **Audience**.
+7. Choose **Create**.
+
+</Steps>
+
+Yuyu opens the series page, with the dates it created listed under **Upcoming instances**.
+
+<Screenshot name="create-series-dialog" alt="The Create event series dialog with first occurrence times, the recurrence rule and timezone" />
+
+## Writing the repeat pattern
+
+The **Recurrence (RRULE)** field uses a standard calendar format. Type the rule without `RRULE:` at the start. Some common patterns:
+
+| Pattern | Rule |
+| --- | --- |
+| Every week, 12 times | `FREQ=WEEKLY;COUNT=12` |
+| Every two weeks | `FREQ=WEEKLY;INTERVAL=2` |
+| Every month on the same date | `FREQ=MONTHLY` |
+| Every day, 5 times | `FREQ=DAILY;COUNT=5` |
+
+Without a day in the rule, the series repeats on the same day and time as the first occurrence, which is usually what you want. Use `COUNT=` to stop after a number of dates, or `UNTIL=` with a date to stop on a day.
+
+Yuyu creates dates from now onwards, up to 48 of them within the next year. Dates before today are skipped.
+
+## Status and audience
+
+- **Status**: **Draft** keeps the series to your team. **Published** opens every date for sign-ups.
+- **Audience**: **Public** lists the series on your organisation page and Discover; **Hidden link** only works for people with the link; **Approval required** means you approve each sign-up; **Invite only** limits it to people on the series' invite list.
+
+These apply to every date in the series.
+
+## Manage a series
+
+Open a series from **Series** on your organisation's dashboard. The series page has:
+
+- **Series details**: change the title, description, time zone, capacity per occurrence, status and audience, then choose **Save**.
+- **Invites**: the email list for invite-only series. Everyone on it can sign up for any date.
+- **Schedule**: a simple programme shared by the dates.
+- **Upcoming instances**: each date, with **View event** to open its public page. Share these links for people to sign up.
+- **Reports**: a PDF report for each date once it has finished.
+- **Attendees (first upcoming occurrence)**: the guest list for the first date in the list, where you can approve, decline and manage guests.
+
+<Callout kind="note">
+
+The repeat pattern can't be changed after the series is created; the series page shows it for reference. To change it, create a new series. Changing the time zone later doesn't move the dates that already exist.
+
+</Callout>
+
+## Delete a series
+
+<Callout kind="warning">
+
+Deleting a series removes it and every date it created, with all their registrations. It can't be undone.
+
+</Callout>
+
+<Steps>
+
+1. Open the series page.
+2. Under **Series details**, choose **Delete series**.
+3. Choose **Delete series** again to confirm.
+
+</Steps>
+
+## Good to know
+
+- Capacity applies to each date separately, and it can't be set lower than the number of people already confirmed on any date.
+- Guests register for one date at a time and get a ticket for that date.
+- Each date is worked out from the first occurrence's exact moment. In time zones that change their clocks for summer time, dates after the change can show an hour earlier or later. Check the list of dates after creating the series.

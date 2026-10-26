@@ -7,6 +7,7 @@ import { WebhookEndpointList } from "@/components/webhooks/WebhookEndpointList";
 import { listWebhookEndpoints } from "@/lib/webhooks/management";
 import { MAX_WEBHOOK_ENDPOINTS_PER_ORGANISATION } from "@/lib/webhooks/eventTypes";
 import { formatRelativeTime } from "@/lib/format/datetime";
+import { HelpLink } from "@/components/help/HelpLink";
 
 export const metadata: Metadata = { title: "Webhooks", description: "Send organisation events to your own systems." };
 
@@ -45,7 +46,8 @@ export default async function WebhooksPage({ params }: { params: Promise<{ orgSl
         }))}
       />
       <p className="text-caption text-ink-muted">
-        How to verify signatures, the event payloads and the retry policy are described in the Yuyu webhooks guide (docs/WEBHOOKS.md).
+        How to verify signatures, the event payloads and the retry policy are described in the guide.{" "}
+        <HelpLink article="developers/webhooks" section="check-the-signature" className="px-0">Webhooks guide</HelpLink>
       </p>
     </div>
   );

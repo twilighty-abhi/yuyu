@@ -32,6 +32,7 @@ import {
   type RegistrationField,
   useIdCardSettings,
 } from "./shared";
+import { HelpLink } from "@/components/help/HelpLink";
 
 const TEMPLATES = [
   { key: "classic", label: "Classic", hint: "Thin frame, hairline under the heading" },
@@ -127,6 +128,7 @@ export function IdCardDesigner({
           <h2 id="id-card-designer-title" className="text-h4 text-ink">Badge designer</h2>
           <p className="truncate text-caption text-ink-muted">{eventTitle} · saved on this device as you go</p>
         </div>
+        <HelpLink article="check-in/badges" />
         <Tooltip content="Undo (⌘Z)">
           <span><IconButton label="Undo" size="sm" disabled={!canUndo} onClick={undo}><Undo2 /></IconButton></span>
         </Tooltip>

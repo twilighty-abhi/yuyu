@@ -11,6 +11,7 @@ Dynamic segments are shown as `:name` for readability.
 | `/` | Landing page |
 | `/about`, `/features` | Product story and feature overview |
 | `/privacy`, `/terms` | Privacy policy and terms of use |
+| `/help`, `/help/:section/:article` | In-app guide built from `content/help` (see `content/help/README.md`). Public sections for everyone; "Connecting other tools" only for owners and admins of any organisation, "Instance administration" only for the super-admin, otherwise a real 404 |
 | `/discover` | Paginated public event discovery |
 | `/search` | Public event search UI |
 | `/:orgSlug` | Public organisation page |
@@ -78,6 +79,7 @@ Every super-admin page additionally requires a current TOTP verification, and ea
 | `POST /api/feedback` | Public, rate-limited | Submit feedback; email is used only for certificate-enabled forms |
 | `POST /api/check-in/station` | PIN-scoped station session, rate-limited | Open and operate a venue check-in station |
 | `GET /api/search?q=...` | Public, rate-limited | Return matching public events |
+| `GET /api/help/search-index` | Optional session, global API rate limit | Plain text of the guide articles the viewer may read, for the guide search box; `private, no-store` |
 | `POST /api/client-errors` | Public, same-origin, rate-limited per IP (`clientError`, 10/min), 4 KB body cap | Browser crash report from the app error boundaries; forwarded (redacted) to the alert webhook when configured. Always an empty `204` |
 | `GET /api/ticket/:token/download` | Opaque token | Download the attendee ticket |
 | `GET /api/ticket/:token/status` | Opaque token, rate-limited per IP (`ticketStatus`, 120/min) | Return only `{ checkedIn, checkedInAt }` for the ticket (`no-store`, `no-referrer`; empty 404 for unknown tokens) |

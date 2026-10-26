@@ -1,0 +1,74 @@
+Every email Yuyu sends, from ticket confirmations and password resets to organisers' broadcasts, goes through a queue called the outbox. This article explains how the queue works, where to watch it, and what to do when email stops arriving.
+
+<Callout kind="permission">
+
+The instance super-admin only, with a current super-admin check. See [The super-admin area](/help/instance/super-admin-access).
+
+</Callout>
+
+## How sending works
+
+1. When something needs an email, Yuyu adds a message to the outbox and carries on. The person's action never waits for the mail server.
+2. Every app server runs a background sender once a minute. Each run picks up to 20 messages that are due, oldest first, and hands them to your SMTP server. A secret-protected scheduler can trigger the same run; it uses `CRON_SECRET`.
+3. If sending fails, the message waits and tries again: after 2, 4, 8, 16 and 32 minutes, then every hour. Password-reset and email-verification messages wait at most 8 minutes between tries, because their links expire after an hour.
+4. After 8 failed tries, the message is marked **Failed**.
+
+Messages that contain a private link, such as tickets, password resets, email verification, co-organiser invitations, team links and submission links, are deleted as soon as they are sent, and also deleted if they fail for good. They never sit in the outbox with a working link inside. Other sent and failed messages are kept for 30 days by default (`OUTBOX_RETENTION_DAYS`) so you can see the history.
+
+<Callout kind="warning">
+
+Because failed ticket and reset emails are deleted, **Retry failed email** can't bring them back. A guest whose confirmation never arrived can find their ticket in their account if they registered while signed in, or an organiser can use **Copy ticket link** on the guest list and send it to them.
+
+</Callout>
+
+## Watching the queue
+
+### Email
+
+The **Email** page shows:
+
+- **Queued now**, **Waiting over 15 min**, **Failed** and **Delivered (retained)**.
+- Daily charts of queued, delivered and failed messages for the last 14 days.
+- **By message type:** every message still in the outbox grouped by kind, with a failure rate. Delivered counts are a lower bound, since messages with private links are deleted on delivery.
+- **Top broadcasters** over the last 30 days and the **Recent broadcasts**, by subject and audience only.
+
+Recipients and message contents are never shown. **Waiting over 15 min** also appears under **Needs attention** on **Overview**.
+
+### Operations
+
+The **Operations** page is where you act. **Delivery and retention** shows how many messages are queued, failed and sent, the oldest queued message, and whether the **Outbox scheduler** is healthy (it ran successfully in the last 3 minutes). **Failed email deliveries** lists the latest 25 failures with their kind, attempts, when they were created and a cleaned-up last error.
+
+<Screenshot name="super-admin-operations" alt="The Operations page showing backup posture, service prerequisites, queue counts and the maintenance buttons" />
+
+## When email isn't arriving
+
+<Steps>
+
+1. Open **Operations** and check **Service prerequisites**. If it says **Transactional email not configured**, set up SMTP in [Instance settings](/help/instance/settings#email-smtp). Without it, a production server can't send anything, and messages fail after their retries.
+2. Open **Settings** and choose **Send test email**. If it fails, the message says whether the server couldn't connect, rejected the login, or refused the sender. Fix the settings and test again.
+3. Back on **Operations**, check **Outbox scheduler healthy**. If it says stale or unknown, the app servers' background sender isn't running; check the server logs and restart the app.
+4. Choose **Deliver queued email** to send up to 50 due messages now. It doesn't skip a message's waiting time before its next retry.
+5. Once sending works, choose **Retry failed email (last 7 days)**. Failed messages from the last week go back in the queue with a fresh set of retries. Older failures are left alone, so guests don't get week-old broadcasts.
+
+</Steps>
+
+If the test email works but people still don't receive messages, the problem is usually after Yuyu: spam filters, or the sender address not being allowed by your mail provider. Yuyu only knows that the mail server accepted the message, not that it reached the inbox. Check bounces and sender settings (SPF, DKIM, DMARC) with your provider.
+
+<Callout kind="tip">
+
+Turn on the [alerts webhook](/help/instance/settings#alerts-webhook) to hear about failed email in your team chat. With **Include warnings** on, you also hear about each failed try, not just messages that failed for good.
+
+</Callout>
+
+## Other maintenance
+
+- **Purge expired tokens** removes expired email-verification, password-reset and similar one-time tokens. The background job also cleans these up.
+- **Record restore drill** notes in the audit log that you restored a recent backup to a separate database and checked it. It doesn't create or test a backup itself.
+
+All four buttons are recorded in the audit log.
+
+## Good to know
+
+- Images and links in emails, such as event covers and organisation logos, need `NEXT_PUBLIC_BASE_URL` set to the server's public address. Without it they are left out of delivered broadcasts.
+- Changing SMTP settings takes effect on the next message, on every server.
+- If `MFA_ENCRYPTION_KEY` differs between servers, the ones with the wrong key can't read the saved SMTP password, so sending fails only some of the time. Make sure every server uses the same key.

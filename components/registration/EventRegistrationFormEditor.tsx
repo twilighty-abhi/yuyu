@@ -33,6 +33,7 @@ import {
   type QuestionDraft,
   type SaveableQuestion,
 } from "./builderModel";
+import { HelpLink } from "@/components/help/HelpLink";
 
 export type RegistrationFieldRow = {
   id: string;
@@ -430,9 +431,12 @@ export function EventRegistrationFormEditor(props: { organisationSlug: string; e
           <section aria-labelledby={`${baseId}-questions`} className="flex flex-col gap-3 rounded-2xl border border-line bg-canvas p-4 sm:p-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
-                <h2 id={`${baseId}-questions`} className="text-h4 text-ink">
-                  Your questions
-                </h2>
+                <div className="flex items-center gap-1">
+                  <h2 id={`${baseId}-questions`} className="text-h4 text-ink">
+                    Your questions
+                  </h2>
+                  <HelpLink article="registration/form" />
+                </div>
                 <p className="mt-0.5 text-body-ui text-ink-muted" aria-live="polite">
                   {fields.length === 0
                     ? "Ask guests anything else you need to know."

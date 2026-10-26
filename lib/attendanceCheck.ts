@@ -41,9 +41,9 @@ export function attendanceCheckOpen(eventStart: Date, now: Date = new Date()): b
   return now.getTime() < eventStart.getTime();
 }
 
-/** Who may receive the question: a CONFIRMED registration of a one-off event. */
-export function isAttendanceCheckRecipient(rsvp: { status: string; eventId: string | null }): boolean {
-  return rsvp.status === "CONFIRMED" && rsvp.eventId != null;
+/** Who may receive the question: a CONFIRMED attendee (never crew, docs/CREW.md) of a one-off event. */
+export function isAttendanceCheckRecipient(rsvp: { status: string; eventId: string | null; isCrew?: boolean }): boolean {
+  return rsvp.status === "CONFIRMED" && rsvp.eventId != null && rsvp.isCrew !== true;
 }
 
 /** A guest who has not replied can be reminded once the last email is at least 12 hours old. */

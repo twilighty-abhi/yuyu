@@ -222,8 +222,10 @@ async function addCrewMemberTx(
           data: { isCrew: true, status: RsvpStatus.CONFIRMED, ...(existing.userId ? {} : { guestName: data.name }) },
           select: { id: true, checkInToken: true },
         });
-        // A former seeker listing would let teams invite a crew member.
+        // A former seeker listing would let teams invite a crew member, and a
+        // pending attendance question could release a crew ticket on "No".
         await tx.teamSeekerProfile.deleteMany({ where: { rsvpId: existing.id } });
+        await tx.attendanceCheck.deleteMany({ where: { rsvpId: existing.id } });
       } else {
         rsvp = await tx.rSVP.create({
           data: {

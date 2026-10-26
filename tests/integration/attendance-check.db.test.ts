@@ -58,6 +58,7 @@ import { runOutboxScheduler } from "@/lib/outboxWorker";
 import { deliverOutboxBatch } from "@/lib/outbox";
 import { generateAttendanceToken, hashAttendanceToken } from "@/lib/attendanceToken";
 import { ATTENDANCE_REMINDER_INTERVAL_MS } from "@/lib/attendanceCheck";
+import { addCrewMemberAsOrganiser } from "@/lib/core/crew";
 import { submitRsvpCore } from "@/lib/rsvpCore";
 import { flushWebhookEmits } from "@/lib/webhooks/emit";
 import { revalidatePath } from "next/cache";
@@ -657,5 +658,36 @@ describe("retention", () => {
     await expect(prisma.attendanceCheck.create({ data: { rsvpId: rsvp.id, eventId: event.id, tokenHash: generateAttendanceToken().hash, sentAt: new Date(), response: AttendanceResponse.ATTENDING } })).rejects.toThrow();
     await expect(prisma.attendanceCheck.create({ data: { rsvpId: rsvp.id, eventId: event.id, tokenHash: generateAttendanceToken().hash, sentAt: new Date(), note: "x".repeat(501) } })).rejects.toThrow();
     expect(await prisma.attendanceCheck.count({ where: { rsvpId: rsvp.id } })).toBe(0);
+  });
+});
+
+describe("event crew", () => {
+  it("never asks crew, counts them nowhere, and drops a question when an asked guest becomes crew", async () => {
+    const event = await makeEvent();
+    const ctx = { organisationId: orgId, eventId: event.id, actorUserId: ownerId };
+    const attendee = await guest(event.id);
+    const later = await guest(event.id);
+    const crew = await addCrewMemberAsOrganiser(ctx, { name: "Crew Lead", email: `crew-lead-${suffix}@example.test` });
+    expect(crew.ok).toBe(true);
+    const crewRsvp = await prisma.rSVP.findFirstOrThrow({ where: { eventId: event.id, isCrew: true } });
+
+    // Preview and send count attendees only.
+    expect(await previewAttendanceCheckSendForUser(ownerId, ref(event))).toMatchObject({ ok: true, data: { count: 2 } });
+    expect(await sendAttendanceChecksForUser(ownerId, ref(event))).toEqual({ ok: true, data: { queued: 2 } });
+    expect(await prisma.attendanceCheck.findUnique({ where: { rsvpId: crewRsvp.id } })).toBeNull();
+    expect((await queuedFor(event.id)).map((message) => (message.payload as { rsvpId: string }).rsvpId)).not.toContain(crewRsvp.id);
+
+    // An asked guest who then joins the crew loses the question (and its link),
+    // so a later "No" can never release a crew ticket.
+    const token = await tokenFor(later.id);
+    expect((await addCrewMemberAsOrganiser(ctx, { name: "Promoted", email: later.guestEmail! })).ok).toBe(true);
+    expect(await prisma.attendanceCheck.findUnique({ where: { rsvpId: later.id } })).toBeNull();
+    expect(await resolveAttendanceCheckByToken(token)).toBeNull();
+
+    const status = await loadAttendanceCheckStatus(await prisma.event.findUniqueOrThrow({ where: { id: event.id } }));
+    expect(status).toMatchObject({ asked: 1, noReply: 1, notAsked: 0 });
+    // Reminders reach the attendee only.
+    await ageCheck(attendee.id);
+    expect(await remindAttendanceChecksForUser(ownerId, ref(event))).toEqual({ ok: true, data: { queued: 1 } });
   });
 });

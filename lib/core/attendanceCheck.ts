@@ -70,9 +70,9 @@ async function requireAttendanceContext(userId: string, organisationSlug: string
   return { ok: true, org, event };
 }
 
-/** CONFIRMED registrations of the event that have not been asked yet. */
+/** CONFIRMED attendee registrations of the event that have not been asked yet. Crew (docs/CREW.md) run the event and are never asked. */
 function unaskedWhere(eventId: string): Prisma.RSVPWhereInput {
-  return { eventId, status: RsvpStatus.CONFIRMED, attendanceCheck: { is: null } };
+  return { eventId, status: RsvpStatus.CONFIRMED, isCrew: false, attendanceCheck: { is: null } };
 }
 
 /** Not-replied checks of still-confirmed guests whose last email is at least 12 hours old. */
@@ -81,7 +81,7 @@ function remindableWhere(eventId: string, now: Date): Prisma.AttendanceCheckWher
     eventId,
     response: null,
     sentAt: { lte: new Date(now.getTime() - ATTENDANCE_REMINDER_INTERVAL_MS) },
-    rsvp: { status: RsvpStatus.CONFIRMED },
+    rsvp: { status: RsvpStatus.CONFIRMED, isCrew: false },
   };
 }
 
@@ -98,7 +98,7 @@ export async function loadAttendanceCheckStatus(event: { id: string; organisatio
   const [coming, notComing, noReply, notAsked, remindable, released, last] = await Promise.all([
     prisma.attendanceCheck.count({ where: { eventId: event.id, response: AttendanceResponse.ATTENDING } }),
     prisma.attendanceCheck.count({ where: { eventId: event.id, response: AttendanceResponse.NOT_ATTENDING } }),
-    prisma.attendanceCheck.count({ where: { eventId: event.id, response: null, rsvp: { status: RsvpStatus.CONFIRMED } } }),
+    prisma.attendanceCheck.count({ where: { eventId: event.id, response: null, rsvp: { status: RsvpStatus.CONFIRMED, isCrew: false } } }),
     prisma.rSVP.count({ where: unaskedWhere(event.id) }),
     prisma.attendanceCheck.count({ where: remindableWhere(event.id, now) }),
     prisma.auditEvent.count({ where: { organisationId: event.organisationId, action: ATTENDANCE_AUDIT.released, targetType: "Event", targetId: event.id } }),

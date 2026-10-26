@@ -207,8 +207,10 @@ run integration tests against any non-disposable database. Report checks that
 were not run and why.
 
 Other sessions may edit this tree in parallel. Commit with explicit paths, and
-do not sweep in or revert other sessions' uncommitted files. The user manual
-(`docs/manual/`, `docs/Yuyu-User-Manual.pdf`) is committed only when asked.
+do not sweep in or revert other sessions' uncommitted files. The user guide is
+the in-app help centre at `/help`, written as MDX in `content/help/` (see
+`content/help/README.md`); the old PDF user manual has been removed. Keep help
+articles accurate when a feature they describe changes.
 
 ### Branching: one branch per feature, merged by pull request
 

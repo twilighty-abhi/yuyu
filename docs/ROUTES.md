@@ -11,7 +11,7 @@ Dynamic segments are shown as `:name` for readability.
 | `/` | Landing page |
 | `/about`, `/features` | Product story and feature overview |
 | `/privacy`, `/terms` | Privacy policy and terms of use |
-| `/help`, `/help/:section/:article` | In-app guide built from `content/help` (see `content/help/README.md`). Public sections for everyone; "Connecting other tools" only for owners and admins of any organisation, "Instance administration" only for the super-admin, otherwise a real 404 |
+| `/help`, `/help/:section/:article` | In-app help centre built from `content/help` (see `content/help/README.md`); it replaces the PDF user manual. Public sections for everyone; "Connecting other tools" only for owners and admins of any organisation, "Instance administration" only for the super-admin, otherwise a real 404 (as is any unknown path). Shared-cacheable for signed-out visitors, `private, no-store` with a session cookie |
 | `/discover` | Paginated public event discovery |
 | `/search` | Public event search UI |
 | `/:orgSlug` | Public organisation page |
@@ -98,7 +98,7 @@ Every super-admin page additionally requires a current TOTP verification, and ea
 | `GET /api/v1/events` | Machine bearer credential + `events:read` | Paginated tenant event metadata |
 | `GET /api/v1/events/:eventId` | Machine bearer credential + `events:read` | Tenant-scoped event metadata |
 | `GET /api/v1/events/:eventId/participants` | Machine bearer credential + `participants:read` | Paginated minimal confirmed-participant roster, with attendance filtering; `include=attendance` also requires `participants:attendance:read` |
-| `/api/mobile/v1/*` | Mobile session bearer (user identity); `auth/login`, `auth/google`, `auth/refresh`, `auth/config` and `public/*`/`rsvp` work without one | Yuyu mobile apps (Android and iOS): sign-in and token refresh, own registrations, public events, and organiser guests, check-in, emails and day-of controls. Same permission checks and core functions as the website; see [Mobile API](MOBILE_API.md) |
+| `/api/mobile/v1/*` | Mobile session bearer (user identity); `auth/login`, `auth/google`, `auth/refresh`, `auth/config` and `public/*`/`rsvp` work without one | Yuyu mobile apps (Android and iOS): sign-in and token refresh, own registrations and team, public events, organiser guests, teams, check-in, emails, the programme with speakers and day-of controls, and the judge's scoring workspace. Same permission checks and core functions as the website; unknown paths answer the JSON `NOT_FOUND` envelope; see [Mobile API](MOBILE_API.md) |
 | `GET /.well-known/assetlinks.json` | Public | Android App Links statement from `ANDROID_APP_SHA256_CERT_FINGERPRINTS` (`[]` when unset) |
 | `GET /.well-known/apple-app-site-association` | Public | iOS Universal Links association (JSON, no extension) from `APPLE_APP_IDS` (empty details when unset) |
 

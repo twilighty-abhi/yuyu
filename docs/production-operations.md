@@ -54,7 +54,9 @@ Apply these with `npm run db:deploy` before rolling out the matching application
 | `20261025010000_saved_views` | New `SavedView` table and `SavedViewSurface` enum, cascading on `Event`, `User` and `Organisation`. Purely additive |
 | `20261026000000_large_event_indexes` | Six composite indexes on `RSVP`, `Team`, `Submission` and `EventInvite` (docs/PERFORMANCE.md). Plain `CREATE INDEX IF NOT EXISTS` inside the migration transaction: each build blocks writes to its table (RSVPs, check-ins, submissions, invites) until it finishes. Pre-build them concurrently on a large instance (below) |
 | `20261027000000_drop_orphan_event_session_type` | Drops the unused `EventSessionType` enum (no column has used it since `20260915010000_simplify_event_session_fields`). No table changes; brings the database in line with `schema.prisma` so `prisma migrate diff` is empty |
+| `20261028000000_attendance_confirmation` | New `AttendanceResponse` enum and `AttendanceCheck` table (CHECKs on the token digest, note length and response/time pair; foreign keys to `RSVP` and `Event`, which briefly lock those tables while they are added), and `Event.attendanceCheckReleaseOnDecline` (`NOT NULL DEFAULT false`, no rewrite). Additive; `ALTER TABLE "Event"` as above. Nothing is sent automatically after the upgrade |
 | `20261028010000_hackathon_email_toggles` | `Event.emailEntrantsOnResults` and `Event.emailSubmissionReceipts`, both `NOT NULL DEFAULT false` (a constant default, so no table rewrite). Additive; `ALTER TABLE "Event"` as above. **Behaviour change for existing events:** both switches start off, so publishing results and submitting a project send no email until an organiser turns the switch on in Judging → Setup (docs/HACKATHON.md → Hackathon emails). Tell organisers who rely on those emails before upgrading |
+| `20261029000000_event_crew` | Adds `CREW` to the `EventPageSectionType` enum, `RSVP.isCrew` (`NOT NULL DEFAULT false`, no rewrite), the `EventCrewMember` and `EventCrewJoinLink` tables, and the `RSVP_crew_shape` CHECK, added `NOT VALID` and validated in the same transaction while `ALTER TABLE "RSVP"` holds its ACCESS EXCLUSIVE lock (about 70 ms per million registrations). Once a `CREW` section exists, the previous release can no longer read event pages ([rollback](PRODUCTION_RELEASE.md#rollback)) |
 
 #### Lock checklist for the team, judging and large-event migrations
 
@@ -94,6 +96,45 @@ migration job:
    `SELECT pid, pg_blocking_pids(pid), left(query, 80) FROM pg_stat_activity WHERE cardinality(pg_blocking_pids(pid)) > 0;`
    and end it (`SELECT pg_terminate_backend(<pid>);`) rather than killing the
    migration job, which would leave a failed migration to resolve.
+
+### Upgrading from production `bf7a04d`
+
+The 2026-10-27 release applies the last 13 rows of the table above in one
+`db:deploy`. Six of them alter `Event` and two alter `RSVP` (each a brief
+ACCESS EXCLUSIVE lock), and `large_event_indexes` blocks writes to `RSVP`,
+`Team`, `Submission` and `EventInvite` while it builds. Rehearsed on a copy
+of production-shaped data, the whole set took 0.61 s at 20,000
+registrations and 3.3 s at one million. The full runbook (pre-checks, lock
+timeout, schema checks, swapping the app without overlap, post-deploy
+checks and rollback) is in
+[Production release → Upgrading from production `bf7a04d`](PRODUCTION_RELEASE.md#upgrading-from-production-bf7a04d).
+Points specific to operations:
+
+- **Migrator lock timeout.** Give only the migrator's `DATABASE_URL` a lock
+  timeout (`…&options=-c%20lock_timeout%3D5s`). A migration that times out
+  rolls back atomically; mark it with
+  `npx prisma migrate resolve --rolled-back <migration_name>`, end the
+  blocker, and run `npm run db:deploy` again.
+- **No old/new overlap.** The previous release's outbox worker permanently
+  fails the new email kinds (`team-created`, `team-member-added`,
+  `submission-received`, `submission-link`, `results-published`,
+  `attendance-check`). Stop the old app before the new one serves traffic;
+  the Helm chart on `a952faf` always rolls, so scale the old Deployment to 0
+  first.
+- **Database time zone.** `SHOW timezone;` must return `UTC` for `a952faf`:
+  the attendance reminder and webhook delivery claim compare timestamps in
+  raw SQL.
+- **Outbox capacity.** No new cron job: webhooks are delivered by the same
+  in-process pass as email. On `a952faf` each pass sends at most 20 email
+  messages in creation order, so a 10,000-guest attendance confirmation or
+  broadcast takes hours and delays password resets behind it; keep the
+  once-a-minute call to `POST /api/internal/outbox`.
+- **Memory.** On `a952faf` each concurrent open of a 10,000+ registration
+  event dashboard, and each action on it, costs about 1.2 GB of native
+  memory. Keep the Helm limit at 4 GiB or more while large events are run.
+- **Rollback** is image-only until a `JUDGE` grant or `CREW` section exists,
+  and a restore of the pre-upgrade backup into an empty database afterwards
+  ([Rollback](PRODUCTION_RELEASE.md#rollback)).
 
 ## Instance-managed services
 

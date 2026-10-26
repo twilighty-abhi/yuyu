@@ -321,9 +321,10 @@ mutation is re-checked server-side.
 
 `EventCounts = { "confirmed", "waitlisted", "pending", "checkedIn", "capacity|null", "capacityUsed" }`,
 returned only when the caller has `manageRegistrations` or `checkIn`, else `null`.
-`capacityUsed` is what `capacity` is compared with: it equals `confirmed` on
+`capacityUsed` is what `capacity` is compared with: it equals `confirmed`
+minus crew tickets ([Event crew](CREW.md), which never take a place) on
 individual events, and on team events counts confirmed teams plus confirmed
-solo registrants (`confirmed` stays a count of people). Show
+solo registrants (`confirmed` stays a count of people, crew included). Show
 `capacityUsed / capacity` for fill, not `confirmed / capacity`.
 
 ### `GET /orgs/:orgSlug/events?filter=upcoming|past|all`

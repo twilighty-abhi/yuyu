@@ -27,6 +27,7 @@
 | `prisma/` | Data model and ordered production migrations |
 | `scripts/` | Environment, schema, asset migration, and standalone-build helpers |
 | `tests/` | Unit, PostgreSQL integration, and browser suites |
+| `content/help/` | The in-app help centre: MDX articles, the section manifest with each section's audience, and screenshot sizes (see `content/help/README.md`) |
 | `docs/` | Product and operational documentation |
 
 ## Request flow
@@ -107,6 +108,10 @@ Refer to `prisma/schema.prisma` for the authoritative fields, constraints, index
 ## Background and scheduled work
 
 Request handlers enqueue transactional messages in `OutboxMessage`; they do not wait for SMTP delivery. Every self-hosted Node.js instance starts a singleton one-minute worker that claims and sends a batch, retries failures, purges expired operational records, and updates a one-row `OperationalHeartbeat`. Queue row claims keep concurrent replicas safe. The same pass delivers organisation webhooks (`lib/webhooks/delivery.ts`): rows are claimed with `FOR UPDATE SKIP LOCKED`, posted with a pinned, SSRF-checked connection, retried with jittered backoff (8 attempts over about a day), and a failing endpoint is switched off after 20 consecutive failures; a webhook failure never fails the email pass. Webhook events are emitted at the commit points (`reserveRsvp` in `lib/rsvpCore.ts`, `confirmRsvpWithinCapacity`, the RSVP lifecycle/cancel/admin cores, `commitCheckInProjection` and `commitUndoCheckInProjection`, the event publish paths in `app/actions/event.ts`, and `submitFeedback`) after their transactions commit, through `emitWebhookEvent` (`lib/webhooks/emit.ts`), which only inserts queue rows in the background and never throws. The protected `POST /api/internal/outbox` endpoint remains available as an external scheduler or recovery trigger for both.
+
+## Help centre
+
+`/help` renders the MDX articles in `content/help/` with `@next/mdx`. `content/help/manifest.ts` lists sections, article order and each section's audience (`public`, `org-admin`, `super-admin`); `lib/help/access.ts` resolves the viewer's audiences once per request (owners and admins of any organisation add `org-admin`, the super-admin reads everything), and `lib/help/content.ts` finds articles only through the manifest, so a restricted or unknown path is a real 404. `next.config.ts` traces `content/help/**/*.mdx` into the standalone build for `/help` and `/api/help`, because the search index reads the article text at runtime. Search runs in the browser (`components/help/HelpSearch.tsx`) over `GET /api/help/search-index`, which returns only the viewer's readable articles and is never cached. Screenshots in `public/help/` are captured from fictional seed data by `tests/help-screenshots/` against a disposable local database.
 
 ## Realtime ticket check-in
 

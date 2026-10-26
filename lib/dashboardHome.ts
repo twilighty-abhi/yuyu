@@ -141,28 +141,30 @@ const EMPTY_COUNTS: CountTriple = { confirmed: 0, waitlisted: 0, pending: 0 };
 
 /**
  * Confirmed / waitlisted / pending counts for the listed events and series
- * dates, plus confirmed units per event for TEAM events (docs/TEAMS.md):
- * confirmed people minus those in teams, plus confirmed teams.
+ * dates, plus the places used against capacity per event: confirmed people
+ * minus crew (docs/CREW.md) and those in teams, plus confirmed teams
+ * (docs/TEAMS.md).
  */
 export async function loadRsvpCounts(eventIds: string[], instanceIds: string[]): Promise<RsvpCounts> {
   const uniqueEvents = [...new Set(eventIds)];
-  const [eventGroups, instanceGroups, teamedGroups, teamGroups] = await Promise.all([
+  const [eventGroups, instanceGroups, teamedGroups, teamGroups, crewGroups] = await Promise.all([
     uniqueEvents.length ? prisma.rSVP.groupBy({ by: ["eventId", "status"], where: { eventId: { in: uniqueEvents } }, _count: { _all: true } }) : Promise.resolve([]),
     instanceIds.length ? prisma.rSVP.groupBy({ by: ["eventInstanceId", "status"], where: { eventInstanceId: { in: instanceIds } }, _count: { _all: true } }) : Promise.resolve([]),
     uniqueEvents.length ? prisma.rSVP.groupBy({ by: ["eventId"], where: { eventId: { in: uniqueEvents }, status: "CONFIRMED", teamId: { not: null } }, _count: { _all: true } }) : Promise.resolve([]),
     uniqueEvents.length ? prisma.team.groupBy({ by: ["eventId"], where: { eventId: { in: uniqueEvents }, status: "CONFIRMED" }, _count: { _all: true } }) : Promise.resolve([]),
+    uniqueEvents.length ? prisma.rSVP.groupBy({ by: ["eventId"], where: { eventId: { in: uniqueEvents }, isCrew: true }, _count: { _all: true } }) : Promise.resolve([]),
   ]);
   const event = tally(eventGroups, "eventId");
   const teamed = new Map(teamedGroups.map((group) => [group.eventId as string, group._count._all]));
   const teams = new Map(teamGroups.map((group) => [group.eventId, group._count._all]));
-  const units = new Map(uniqueEvents.map((id) => [id, (event.get(id)?.confirmed ?? 0) - (teamed.get(id) ?? 0) + (teams.get(id) ?? 0)]));
+  const crew = new Map(crewGroups.map((group) => [group.eventId as string, group._count._all]));
+  const units = new Map(uniqueEvents.map((id) => [id, (event.get(id)?.confirmed ?? 0) - (crew.get(id) ?? 0) - (teamed.get(id) ?? 0) + (teams.get(id) ?? 0)]));
   return { event, instance: tally(instanceGroups, "eventInstanceId"), units };
 }
 
-/** What fills `capacity` on a TEAM event (units); undefined for INDIVIDUAL events, where people fill it. */
-function teamUnits(event: EventForRow, counts: RsvpCounts): { used: number; noun: string } | undefined {
-  if (event.registrationMode !== "TEAM") return undefined;
-  return { used: counts.units.get(event.id) ?? 0, noun: teamUnitShortNoun(event.soloPolicy) };
+/** What fills `capacity`: units on a TEAM event, attendees (never crew) otherwise. */
+function teamUnits(event: EventForRow, counts: RsvpCounts): { used: number; noun: string } {
+  return { used: counts.units.get(event.id) ?? 0, noun: event.registrationMode === "TEAM" ? teamUnitShortNoun(event.soloPolicy) : "going" };
 }
 
 export function countsFor(counts: RsvpCounts, eventId: string): CountTriple {
@@ -190,7 +192,7 @@ export function toEventRow(event: EventForRow, counts: RsvpCounts, canManage: bo
     isSeries: false,
     isDraft: draft,
     status: draft ? { label: "Finish & publish", tone: "warning" } : eventFillStatus(tallies, event.capacity, units),
-    fill: !draft && event.capacity ? { filled: units?.used ?? tallies.confirmed, total: event.capacity } : null,
+    fill: !draft && event.capacity ? { filled: units.used, total: event.capacity } : null,
   };
 }
 

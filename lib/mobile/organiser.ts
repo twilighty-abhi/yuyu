@@ -72,12 +72,14 @@ export async function resolveEventContext(userId: string, orgSlug: string, event
 async function loadCounts(eventIds: string[]): Promise<Map<string, Omit<EventCountsDto, "capacity">>> {
   const result = new Map<string, Omit<EventCountsDto, "capacity">>();
   if (eventIds.length === 0) return result;
-  const [byStatus, checkedIn, teamed, teams] = await Promise.all([
+  const [byStatus, checkedIn, teamed, teams, crew] = await Promise.all([
     prisma.rSVP.groupBy({ by: ["eventId", "status"], where: { eventId: { in: eventIds } }, _count: { _all: true } }),
     prisma.rSVP.groupBy({ by: ["eventId"], where: { eventId: { in: eventIds }, checkedInAt: { not: null } }, _count: { _all: true } }),
     // TEAM events fill capacity in units: confirmed people outside teams plus confirmed teams.
     prisma.rSVP.groupBy({ by: ["eventId"], where: { eventId: { in: eventIds }, status: RsvpStatus.CONFIRMED, teamId: { not: null } }, _count: { _all: true } }),
     prisma.team.groupBy({ by: ["eventId"], where: { eventId: { in: eventIds }, status: RsvpStatus.CONFIRMED }, _count: { _all: true } }),
+    // Crew tickets (docs/CREW.md) are confirmed but never take a place.
+    prisma.rSVP.groupBy({ by: ["eventId"], where: { eventId: { in: eventIds }, isCrew: true }, _count: { _all: true } }),
   ]);
   for (const id of eventIds) result.set(id, { confirmed: 0, waitlisted: 0, pending: 0, checkedIn: 0, capacityUsed: 0 });
   for (const row of byStatus) {
@@ -93,7 +95,8 @@ async function loadCounts(eventIds: string[]): Promise<Map<string, Omit<EventCou
   }
   const teamedBy = new Map(teamed.map((row) => [row.eventId, row._count._all]));
   const teamsBy = new Map(teams.map((row) => [row.eventId, row._count._all]));
-  for (const [id, entry] of result) entry.capacityUsed = entry.confirmed - (teamedBy.get(id) ?? 0) + (teamsBy.get(id) ?? 0);
+  const crewBy = new Map(crew.map((row) => [row.eventId, row._count._all]));
+  for (const [id, entry] of result) entry.capacityUsed = entry.confirmed - (crewBy.get(id) ?? 0) - (teamedBy.get(id) ?? 0) + (teamsBy.get(id) ?? 0);
   return result;
 }
 

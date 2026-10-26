@@ -36,7 +36,8 @@ const httpUrl = z
   .trim()
   .max(500)
   .url()
-  .refine((value) => /^https?:$/.test(new URL(value).protocol), "Use an HTTP(S) URL");
+  // Zod 4 still runs this refinement after `.url()` fails, so it must not throw on a malformed value.
+  .refine((value) => URL.canParse(value) && /^https?:$/.test(new URL(value).protocol), "Use an HTTP(S) URL");
 
 /** Fields a crew member or organiser can set. Names follow the attendee rules: plain text, no markup. */
 export const crewProfileSchema = z
@@ -169,12 +170,16 @@ function isUniqueViolation(error: unknown) {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
 }
 
+/** Returned instead of a reason when a link sign-up must not change anything; the caller answers as for a duplicate. */
+const LINK_SIGNUP_IGNORED = "link-signup-ignored";
+const ALREADY_ON_CREW = "This email is already on the crew.";
+
 /**
  * Add one crew member and issue their ticket. When the email already has a
  * solo registration for this event, that registration becomes their crew
  * ticket (it keeps its QR code and check-in, and frees its place); a team
  * member must leave their team first. Organisers can promote the waitlist
- * into a freed place as usual.
+ * into a freed place as usual. Link sign-ups never convert a registration.
  */
 async function addCrewMemberTx(
   event: EventForCrew,
@@ -189,12 +194,18 @@ async function addCrewMemberTx(
       if (!locked) return fail("Event not found.");
       if ((await tx.eventCrewMember.count({ where: { eventId: event.id } })) >= MAX_CREW_MEMBERS) return fail(`An event can have up to ${MAX_CREW_MEMBERS} crew members.`);
       if (await tx.eventCrewMember.findUnique({ where: { eventId_email: { eventId: event.id, email: data.email } }, select: { id: true } })) {
-        return fail("This email is already on the crew.");
+        return fail(ALREADY_ON_CREW);
       }
       const existing = await tx.rSVP.findFirst({
         where: { eventId: event.id, OR: [{ attendeeKey: `guest:${data.email}` }, { user: { email: { equals: data.email, mode: "insensitive" } } }] },
         select: { id: true, teamId: true, checkInToken: true, isCrew: true },
       });
+      // The crew link proves nothing about who owns an email, so a link
+      // sign-up never turns someone's registration into a crew ticket (that
+      // would bypass approval or the waitlist and take away their self-cancel);
+      // organisers convert registrations from Guests → Crew. Answered like a
+      // duplicate so the link reveals nothing about who is registered.
+      if (existing && options.joinedViaLink) return fail(LINK_SIGNUP_IGNORED);
       if (existing?.teamId) return fail("This person is registered in a team. Remove them from their team before adding them to the crew.");
       let rsvp: { id: string; checkInToken: string };
       let created = false;
@@ -229,7 +240,7 @@ async function addCrewMemberTx(
       return { ok: true as const, data: { id: member.id, rsvpId: rsvp.id, created } };
     });
   } catch (error) {
-    if (isUniqueViolation(error)) return fail("This email is already on the crew.");
+    if (isUniqueViolation(error)) return fail(ALREADY_ON_CREW);
     throw error;
   }
 }
@@ -440,6 +451,6 @@ export async function joinCrewWithLink(token: unknown, input: unknown): Promise<
   const result = await addCrewMemberTx(event, parsed.data, { showOnPage: false, joinedViaLink: true });
   emitCrewTicketCreated(result);
   // Generic wording: the link must not reveal whether an email is already on the crew.
-  if (!result.ok) return result.error === "This email is already on the crew." ? { ok: true, data: { eventTitle: event.title } } : result;
+  if (!result.ok) return result.error === ALREADY_ON_CREW || result.error === LINK_SIGNUP_IGNORED ? { ok: true, data: { eventTitle: event.title } } : result;
   return { ok: true, data: { eventTitle: event.title } };
 }

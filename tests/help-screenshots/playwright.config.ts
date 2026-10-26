@@ -1,5 +1,6 @@
 import path from "node:path";
 import { defineConfig, devices } from "@playwright/test";
+import { assertDisposableDatabase } from "./guard";
 
 /*
  * Captures the in-app guide's screenshots (public/help/*.png) from a seeded
@@ -14,6 +15,8 @@ if (!databaseUrl) {
 }
 // The capture spec seeds through Prisma, which reads DATABASE_URL.
 process.env.DATABASE_URL = databaseUrl;
+// Fail before starting a server; the seed checks again before writing.
+assertDisposableDatabase();
 
 const port = Number(process.env.HELP_SCREENS_PORT || 3124);
 const baseURL = `http://127.0.0.1:${port}`;

@@ -80,9 +80,14 @@ run it only against a **disposable**, migrated database: the seed deletes and
 recreates its own organisations and users on every run.
 
 ```sh
+HELP_SCREENS_SEED=1 \
 HELP_SCREENS_DATABASE_URL=postgresql://localhost:5432/yuyu_help_screens \
   npm run help:screenshots
 ```
+
+The seed refuses to run without `HELP_SCREENS_SEED=1`, when `NODE_ENV` is
+`production`, or when the database is not on `localhost`, `127.0.0.1` or `::1`
+(`tests/help-screenshots/guard.ts`). Nothing in CI, Docker or Helm runs it.
 
 It starts `next dev` on port 3124 (`HELP_SCREENS_PORT` to change it), or
 reuses a server already running there with the same settings, writes

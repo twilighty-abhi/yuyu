@@ -20,6 +20,7 @@ import {
   WebhookDeliveryStatus,
   type PrismaClient,
 } from "@prisma/client";
+import { assertDisposableDatabase } from "./guard";
 
 /*
  * Demo data for the in-app guide's screenshots (tests/help-screenshots).
@@ -163,6 +164,7 @@ function attendeeEmails() {
 }
 
 export async function seedHelpScreens(prisma: PrismaClient) {
+  assertDisposableDatabase();
   await removeExisting(prisma);
   const now = Date.now();
   const passwordHash = await bcrypt.hash(PASSWORD, 10);

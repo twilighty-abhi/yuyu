@@ -129,7 +129,9 @@ export function EditEventForm(props: {
       setError("Choose a valid start time in the event timezone.");
       return;
     }
-    if (new Date(startDateTime) < new Date()) {
+    // Live and past events stay editable; only a moved start must be in the future.
+    const startMoved = start !== zonedInputValue(event.startDateTime, event.timezone) || timezone !== event.timezone;
+    if (startMoved && new Date(startDateTime) < new Date()) {
       setError("Start time must be now or in the future.");
       return;
     }

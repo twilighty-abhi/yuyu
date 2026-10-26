@@ -49,6 +49,12 @@ export const APP_LINK_EXCLUDED_PATHS = [
   "/verify-email/*",
   "/join/*",
   "/embed/*",
+  "/help",
+  "/help/*",
+  "/team/*",
+  "/submit/*",
+  "/attend/*",
+  "/crew/*",
   "/*/*/check-in",
   "/*/*/check-in/*",
   "/*/i/*",
@@ -56,6 +62,11 @@ export const APP_LINK_EXCLUDED_PATHS = [
   "/*/*/schedule/*",
   "/*/*/sessions/*",
   "/*/*/speakers/*",
+  "/*/*/team/*",
+  "/*/*/projects",
+  "/*/*/projects/*",
+  "/*/*/results",
+  "/*/*/results/*",
 ] as const;
 
 /** Claimed after the exclusions: attendee tickets, feedback forms and event pages. */

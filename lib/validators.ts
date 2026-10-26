@@ -274,8 +274,9 @@ function validateEventScheduleAndLocation(
     location: string;
   },
   ctx: z.RefinementCtx,
+  { requireFutureStart = true }: { requireFutureStart?: boolean } = {},
 ) {
-  if (data.startDateTime < new Date()) {
+  if (requireFutureStart && data.startDateTime < new Date()) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["startDateTime"],
@@ -517,7 +518,8 @@ export const updateEventSchema = withZonedDateTimes(
       ...teamSettingsFields,
     })
     .superRefine((data, ctx) => {
-      validateEventScheduleAndLocation(data, ctx);
+      // Live and past events stay editable; updateEvent refuses a start moved into the past.
+      validateEventScheduleAndLocation(data, ctx, { requireFutureStart: false });
       validateTeamSettings(data, ctx);
       if (data.registrationClosesAt && data.registrationLeadMinutes != null)
         ctx.addIssue({

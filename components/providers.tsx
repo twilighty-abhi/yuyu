@@ -1,7 +1,5 @@
 "use client";
 
-import { SessionProvider } from "next-auth/react";
-import type { Session } from "next-auth";
 import { createContext, useContext, useEffect, useMemo, useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
 import { ToastProvider } from "@/components/feedback/ToastProvider";
@@ -139,11 +137,9 @@ export function useAppColorMode() {
  */
 export function Providers({
   children,
-  session,
   initialColorMode = null,
 }: {
   children: React.ReactNode;
-  session?: Session | null;
   initialColorMode?: ColorMode | null;
 }) {
   const preference = useSyncExternalStore<ColorModePreference>(subscribe, readPreference, () => initialColorMode ?? "system");
@@ -189,13 +185,15 @@ export function Providers({
       toggleColorMode: (origin?: ColorModeOrigin) => setColorModePreference(mode === "dark" ? "light" : "dark", origin),
     };
   }, [mode, preference]);
+  // No next-auth <SessionProvider>: its post-hydration context change made
+  // React re-render streamed dashboard panels on the client and leave the
+  // server copy behind in a hidden container. Client components read the
+  // session from the store in components/auth/useAuthSession.ts instead.
   return (
-    <SessionProvider session={session}>
-      <ColorModeContext.Provider value={colorMode}>
-        <TooltipProvider delayDuration={300}>
-          <ToastProvider>{children}</ToastProvider>
-        </TooltipProvider>
-      </ColorModeContext.Provider>
-    </SessionProvider>
+    <ColorModeContext.Provider value={colorMode}>
+      <TooltipProvider delayDuration={300}>
+        <ToastProvider>{children}</ToastProvider>
+      </TooltipProvider>
+    </ColorModeContext.Provider>
   );
 }

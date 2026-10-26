@@ -27,6 +27,12 @@ describe("date formatter", () => {
     expect(formatDate(start, tz)).toBe("14 Oct 2026");
   });
 
+  it("shows the hour after midnight as 12, not 0, on every ICU build", () => {
+    const pastMidnight = new Date("2026-10-25T00:05:00.000Z");
+    expect(formatTime(pastMidnight, "UTC")).toBe("12:05 AM");
+    expect(formatTime(new Date("2026-10-25T12:05:00.000Z"), "UTC")).toBe("12:05 PM");
+  });
+
   it("adds the year only when it differs", () => {
     expect(formatDayShort(new Date("2027-01-05T04:00:00Z"), tz, now)).toBe("Tue 5 Jan 2027");
   });

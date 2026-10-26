@@ -6,13 +6,17 @@ import type { JudgingStatus } from "@prisma/client";
 import { changeScoreNormalization, loadResultsPage, publishJudgingResults, unpublishJudgingResults } from "@/app/actions/judging-admin";
 import { ConfirmationDialog } from "@/components/feedback/ConfirmationDialog";
 import { Button } from "@/components/ui/button";
-import { SwitchRow } from "@/components/ui/choice";
+import { FilterChip, SwitchRow } from "@/components/ui/choice";
 import { Callout, Card, CardHeader, Chip, EmptyState, ProgressBar } from "@/components/ui/display";
 import { SearchInput } from "@/components/ui/field";
 import { Spinner } from "@/components/ui/spinner";
 import { TBody, TD, TH, THead, TR, Table } from "@/components/ui/table";
 import { formatDayTime } from "@/lib/format/datetime";
-import { numberedPageLabel } from "@/lib/judgingOrganiserPaging";
+import { numberedPageLabel, RESULTS_SCORE_FILTERS, type ResultsScoreFilter } from "@/lib/judgingOrganiserPaging";
+import { NO_SAVED_VIEWS, viewParam, type SavedViewDto, type ViewParams } from "@/lib/savedViews";
+import { SavedViewsMenu } from "@/components/event-dashboard/views/SavedViewsMenu";
+import { useInitialViewParams, useSyncViewToUrl } from "@/components/event-dashboard/views/useViewUrl";
+import { judgingResultsExportHref } from "@/lib/judgingExport";
 import { OpenTabButton } from "../EventDashboardTabs";
 import type { JudgingDashboardCriterion, JudgingDashboardJudge, JudgingDashboardResultsPage } from "@/lib/eventDashboard/judging";
 import { resultsPublishHint, scoreMethodCopy } from "./judgingCopy";
@@ -20,6 +24,14 @@ import { PageNumberPager } from "@/components/ui/page-number-pager";
 import { formatScore, useJudgingAction, type JudgingScope } from "./JudgingPanelShared";
 
 const SEARCH_DELAY_MS = 300;
+
+const SCORE_FILTER_LABELS: Record<ResultsScoreFilter, string> = {
+  all: "All",
+  unscored: "Unscored",
+  underTwo: "Fewer than 2 judges",
+};
+
+type ResultsView = { query: string; scored: ResultsScoreFilter; page: number };
 
 /**
  * Judging → Results: the ranked score table (raw and adjusted scores, judges
@@ -30,7 +42,8 @@ const SEARCH_DELAY_MS = 300;
  * The ranking is computed on the server over every project, so ranks and
  * ties are the same on every page; the table shows one numbered page at a
  * time (`loadResultsPage`), and a search filters the ranked rows without
- * renumbering them. The CSV export always has every row.
+ * renumbering them. The CSV export holds every ranked row matching the
+ * search showing, under the score method the table ranks by.
  */
 export function JudgingPanelResults({
   scope,
@@ -41,6 +54,7 @@ export function JudgingPanelResults({
   resultsUrl,
   exportHref,
   timezone,
+  savedViews = NO_SAVED_VIEWS,
 }: {
   scope: JudgingScope;
   initialPage: JudgingDashboardResultsPage;
@@ -50,22 +64,40 @@ export function JudgingPanelResults({
   resultsUrl: string;
   exportHref: string;
   timezone: string;
+  /** Saved views for this list (the viewer's own and shared ones). */
+  savedViews?: readonly SavedViewDto[];
 }) {
   const { organisationSlug, eventId } = scope;
+  // Filters live in the address bar (saved views): a link reopens the same view.
+  const fromUrl = useInitialViewParams("JUDGING_RESULTS");
   const [data, setData] = useState<JudgingDashboardResultsPage>(initialPage);
-  const [query, setQuery] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [query, setQuery] = useState(viewParam(fromUrl, "q"));
+  const [scored, setScored] = useState<ResultsScoreFilter>(viewParam(fromUrl, "scored") as ResultsScoreFilter);
+  const [loading, setLoading] = useState(() => scored !== "all" || Boolean(query.trim()));
   const [error, setError] = useState<string | null>(null);
   const requestSeq = useRef(0);
-  const view = useRef({ query: "", page: 1 });
+  const view = useRef<ResultsView>({ query, scored, page: 1 });
+  const [searchedQuery, setSearchedQuery] = useState(query.trim());
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSearchedQuery(query.trim()), SEARCH_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [query]);
+  const viewParams: ViewParams = {};
+  if (scored !== "all") viewParams.scored = scored;
+  if (searchedQuery) viewParams.q = searchedQuery;
+  useSyncViewToUrl("JUDGING_RESULTS", viewParams);
+  const applyView = useCallback((params: ViewParams) => {
+    setScored(viewParam(params, "scored") as ResultsScoreFilter);
+    setQuery(viewParam(params, "q"));
+  }, []);
 
   const fetchPage = useCallback(
-    async (next: { query: string; page: number }) => {
+    async (next: ResultsView) => {
       const seq = ++requestSeq.current;
       view.current = next;
       setLoading(true);
       setError(null);
-      const res = await loadResultsPage({ organisationSlug, eventId, query: next.query.trim(), page: next.page });
+      const res = await loadResultsPage({ organisationSlug, eventId, query: next.query.trim(), page: next.page, scored: next.scored });
       if (seq !== requestSeq.current) return;
       setLoading(false);
       if (!res.ok || !res.data) {
@@ -73,27 +105,33 @@ export function JudgingPanelResults({
         return;
       }
       setData(res.data);
-      view.current = { query: next.query, page: res.data.page };
+      view.current = { query: next.query, scored: next.scored, page: res.data.page };
     },
     [organisationSlug, eventId],
   );
 
   // A search fetches its first page once typing pauses. A refresh after a
   // change (new `initialPage`) re-reads the page and search showing.
+  // A filter set from the address bar loads on mount; a score filter applies at once.
   const firstRun = useRef(true);
   const lastQuery = useRef(query);
+  const lastScored = useRef(scored);
   useEffect(() => {
     if (firstRun.current) {
       firstRun.current = false;
-      return;
+      if (scored === "all" && !query.trim()) return;
+      const timer = window.setTimeout(() => void fetchPage({ query, scored, page: 1 }), 0);
+      return () => window.clearTimeout(timer);
     }
     const queryChanged = lastQuery.current !== query;
+    const scoredChanged = lastScored.current !== scored;
     lastQuery.current = query;
-    const target = queryChanged ? { query, page: 1 } : view.current;
+    lastScored.current = scored;
+    const target: ResultsView = queryChanged || scoredChanged ? { query, scored, page: 1 } : view.current;
     const timer = window.setTimeout(() => {
-      if (!target.query.trim() && target.page === 1) {
+      if (!target.query.trim() && target.scored === "all" && target.page === 1) {
         requestSeq.current += 1;
-        view.current = { query: target.query, page: 1 };
+        view.current = { query: target.query, scored: "all", page: 1 };
         setLoading(false);
         setError(null);
         setData(initialPage);
@@ -102,7 +140,7 @@ export function JudgingPanelResults({
       void fetchPage(target);
     }, queryChanged && query.trim() ? SEARCH_DELAY_MS : 0);
     return () => window.clearTimeout(timer);
-  }, [query, fetchPage, initialPage]);
+  }, [query, scored, fetchPage, initialPage]);
 
   const scoreMethod = useJudgingAction();
   const [pendingMethod, setPendingMethod] = useState<"RAW" | "ZSCORE" | null>(null);
@@ -114,7 +152,8 @@ export function JudgingPanelResults({
     scoreMethod.run("method", () => changeScoreNormalization({ organisationSlug, eventId, scoreNormalization: next }), scoreMethodCopy(next).savedToast, () => setPendingMethod(null));
   }
 
-  const searching = Boolean(query.trim());
+  const searching = Boolean(query.trim()) || scored !== "all";
+  const scoreCounts = data.scoreCounts ?? initialPage.scoreCounts;
   return (
     <div className="flex flex-col gap-5">
       <PublishCard scope={scope} judgingStatus={judgingStatus} resultsPublishedAt={resultsPublishedAt} resultsUrl={resultsUrl} timezone={timezone} />
@@ -124,9 +163,9 @@ export function JudgingPanelResults({
           description={copy.description}
           action={
             <Button asChild variant="secondary" size="sm">
-              <a href={exportHref} download>
+              <a href={judgingResultsExportHref(exportHref, { query, method, scored })} download title="Export the ranked projects matching this search and score filter, with every review">
                 <Download aria-hidden className="size-4" />
-                Export scores (CSV)
+                Export CSV
               </a>
             </Button>
           }
@@ -143,14 +182,24 @@ export function JudgingPanelResults({
           <EmptyState title="No submitted projects">The ranking fills in as judges submit their reviews.</EmptyState>
         ) : (
           <div className="flex flex-col gap-4">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-caption text-ink-muted" aria-live="polite">
-                {numberedPageLabel({ start: data.start, total: data.total, shown: data.rows.length }, searching ? "matching projects" : "ranked projects")}
-              </p>
-              <div className="sm:w-[260px]">
-                <SearchInput placeholder="Search projects" aria-label="Search ranked projects" value={query} onChange={(event) => setQuery(event.target.value)} onClear={() => setQuery("")} />
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-wrap gap-2" role="group" aria-label="Filter by judges counted">
+                {RESULTS_SCORE_FILTERS.map((value) => (
+                  <FilterChip key={value} selected={scored === value} onClick={() => setScored(value)}>
+                    {SCORE_FILTER_LABELS[value]} <span className="font-medium opacity-80">{scoreCounts[value]}</span>
+                  </FilterChip>
+                ))}
+              </div>
+              <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
+                <div className="w-full sm:w-[260px]">
+                  <SearchInput placeholder="Search projects" aria-label="Search ranked projects" value={query} onChange={(event) => setQuery(event.target.value)} onClear={() => setQuery("")} />
+                </div>
+                <SavedViewsMenu surface="JUDGING_RESULTS" scope={scope} params={viewParams} onApply={applyView} initialViews={savedViews} />
               </div>
             </div>
+            <p className="text-caption text-ink-muted" aria-live="polite">
+              {numberedPageLabel({ start: data.start, total: data.total, shown: data.rows.length }, searching ? "matching projects" : "ranked projects")}
+            </p>
             {error ? (
               <Callout tone="danger" role="alert">
                 {error}
@@ -162,7 +211,7 @@ export function JudgingPanelResults({
                 <span className="sr-only">Loading the ranking</span>
               </div>
             ) : data.rows.length === 0 ? (
-              <EmptyState title="No matching projects">Try another search.</EmptyState>
+              <EmptyState title="No matching projects">Try another filter or search.</EmptyState>
             ) : (
               <div aria-busy={loading} className={loading ? "opacity-60 transition-opacity" : undefined}>
                 <Table label="Ranked projects">
@@ -217,7 +266,7 @@ export function JudgingPanelResults({
                 </Table>
               </div>
             )}
-            <PageNumberPager label="Ranking pages" page={data.page} totalPages={data.totalPages} disabled={loading} onPage={(page) => void fetchPage({ query, page })} />
+            <PageNumberPager label="Ranking pages" page={data.page} totalPages={data.totalPages} disabled={loading} onPage={(page) => void fetchPage({ query, scored, page })} />
           </div>
         )}
       </Card>

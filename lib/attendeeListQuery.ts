@@ -12,7 +12,8 @@ import { decodeTimeCursor } from "@/lib/keysetCursor";
 /** Registrations per page in Guests · People; "Load more" fetches the next one. */
 export const ATTENDEES_PAGE_SIZE = 50;
 
-export const ATTENDEE_STATUS_FILTERS = ["all", "going", "waitlist", "approve", "declined", "checkedIn"] as const;
+/** `notCheckedIn`: going (CONFIRMED) and not yet checked in at the door. */
+export const ATTENDEE_STATUS_FILTERS = ["all", "going", "waitlist", "approve", "declined", "checkedIn", "notCheckedIn"] as const;
 export const ATTENDEE_KIND_FILTERS = ["all", "guests", "users"] as const;
 export const ATTENDEE_TEAM_FILTERS = ["all", "team", "solo"] as const;
 
@@ -67,6 +68,8 @@ export function attendeeStatusWhere(status: AttendeeStatusFilter): Prisma.RSVPWh
       return { status: "REJECTED" };
     case "checkedIn":
       return { checkedInAt: { not: null } };
+    case "notCheckedIn":
+      return { status: "CONFIRMED", checkedInAt: null };
   }
 }
 

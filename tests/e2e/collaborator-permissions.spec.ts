@@ -114,7 +114,8 @@ test("a co-organiser with every grant reaches each grant's controls but no owner
   // MANAGE_REGISTRATIONS: the guest list and its tools.
   const people = await openTab(page, "guests", "Guests", "people");
   await expect(people.getByRole("button", { name: "Add guest" })).toBeVisible();
-  await expect(people.getByRole("link", { name: "Download CSV" })).toBeVisible();
+  // "Export CSV" exports the list's current filters (disabled while no guest matches).
+  await expect(people.getByRole("link", { name: "Export CSV" }).or(people.getByRole("button", { name: "Export CSV" }))).toBeVisible();
   // MANAGE_INVITATIONS: the invite list.
   const invites = await openTab(page, "guests", "Guests", "invites");
   await expect(invites.getByRole("heading", { name: "Invites" })).toBeVisible();

@@ -69,7 +69,7 @@ describe("query schemas", () => {
   });
 
   it("accepts whole positive pages and offsets only", () => {
-    expect(judgingResultsQuerySchema.parse({})).toEqual({ query: "", page: 1 });
+    expect(judgingResultsQuerySchema.parse({})).toEqual({ query: "", page: 1, scored: "all" });
     expect(judgingResultsQuerySchema.safeParse({ page: 0 }).success).toBe(false);
     expect(judgingResultsQuerySchema.safeParse({ page: 1.5 }).success).toBe(false);
     expect(judgingResultsQuerySchema.safeParse({ page: "2" }).success).toBe(false);

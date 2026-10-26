@@ -15,10 +15,12 @@ export type TeamLike = {
   minSize: number | null;
   maxSize: number | null;
   incomplete: boolean;
+  /** Listed as looking for members (team matching). */
+  lookingForMembers?: boolean;
   members: Array<{ name: string; email: string | null; checkedIn: boolean }>;
 };
 
-export type TeamStatusFilter = Exclude<GuestStatusFilter, "checkedIn"> | "incomplete";
+export type TeamStatusFilter = Exclude<GuestStatusFilter, "checkedIn" | "notCheckedIn"> | "incomplete" | "looking";
 
 export const TEAM_FILTERS: Array<{ value: TeamStatusFilter; label: string }> = [
   { value: "all", label: "All" },
@@ -27,6 +29,7 @@ export const TEAM_FILTERS: Array<{ value: TeamStatusFilter; label: string }> = [
   { value: "approve", label: "To approve" },
   { value: "declined", label: "Declined" },
   { value: "incomplete", label: "Incomplete" },
+  { value: "looking", label: "Looking for members" },
 ];
 
 export function matchesTeamStatus(team: TeamLike, filter: TeamStatusFilter) {
@@ -43,6 +46,8 @@ export function matchesTeamStatus(team: TeamLike, filter: TeamStatusFilter) {
       return team.status === "REJECTED";
     case "incomplete":
       return team.incomplete;
+    case "looking":
+      return team.lookingForMembers === true;
   }
 }
 

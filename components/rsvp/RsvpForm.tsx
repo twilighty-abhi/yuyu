@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { useSession } from "next-auth/react";
+import { useAuthSession } from "@/components/auth/useAuthSession";
 import Link from "next/link";
 import type { RsvpStatus } from "@prisma/client";
 import { CheckCircle2, Download } from "lucide-react";
@@ -86,7 +86,7 @@ export function RsvpForm(props: {
   onRsvpSaved?: (rsvp: { ticketToken: string; status: RsvpStatus | null; teamMode: "create" | "join" | "solo" | null }) => void;
 }) {
   const { orgSlug, eventSlug, eventInstanceId, registrationFields, team, onRsvpSaved } = props;
-  const { data: session, status } = useSession();
+  const { data: session, status } = useAuthSession();
   const lsKey = storageKey({ orgSlug, eventSlug, eventInstanceId });
   const [guestEmail, setGuestEmail] = useState("");
   const [name, setName] = useState("");

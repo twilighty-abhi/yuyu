@@ -135,9 +135,28 @@ that lost awards are not given back (reassign them on the Awards tab).
   heading (or the done heading).
 - The public gallery shows 24 projects per page with page numbers in the URL
   (`?page=N`, clamped to the last page by redirect) and an optional `?q=`
-  search on the same fields. Each page is its own canonical URL; searches are
+  search on the same fields (trimmed, whitespace collapsed, at most 100
+  characters, ILIKE with `%`, `_` and `\` matched literally). Orders
+  (`?sort=`): **Newest** (default, `submittedAt DESC, id DESC`), **A–Z**
+  (`lower(title), title, id`) and, once results are published, **Awards
+  first** (each project's best award by award position, creation and id as
+  on the results page, then place; then everyone else A–Z, then `id`). Once
+  results are published, `?filter=winners` (**Award winners**, with its own
+  count) narrows to SUBMITTED projects holding an `EventAwardWinner` of the
+  same event, and each card shows award badges (award name and place only).
+  Before publication `winners` and `awards` fall back to the defaults and no
+  badges are loaded, so the gallery never reveals winners early; any other
+  invalid value falls back too. Search, filter and order run in SQL
+  (`lib/galleryQuery.ts`, params in `lib/judgingPaging.ts`), counts come from
+  separate queries under the same conditions, and the controls are a GET
+  form (`next/form`) plus plain links, so every view is a shareable URL and
+  works without JavaScript; the count is announced in a polite live region.
+  Each plain page is its own canonical URL; searched, filtered and re-sorted
+  views point their canonical at the plain gallery (no filter params) and are
   not indexed. The public results page is bounded by the award limits
-  (`EVENT_AWARDS_LIMIT` awards, places up to `EVENT_AWARD_PLACE_MAX`).
+  (`EVENT_AWARDS_LIMIT` awards, places up to `EVENT_AWARD_PLACE_MAX`); once it
+  lists more than 10 winners it offers the same `?q=` search, matched on the
+  shown project title and entrant name, dropping awards without a match.
 
 ## Automatic assignment
 
@@ -279,7 +298,34 @@ interest. Rules are pure functions in `lib/judgingProgress.ts`.
   of 50, so a rank and a tie are the same on every page. A search filters the
   ranked rows without renumbering them. The Awards winner picker searches the
   ranked `SUBMITTED` projects on the server, 20 at a time. The Judges view
-  takes its counts from aggregates. The CSV export always holds every row.
+  takes its counts from aggregates.
+- **Filtered exports**: Results **Export CSV** holds the ranked rows matching
+  the search and score chip showing, ranked under the score method the table
+  shows (`q`, `scored`, `method`), with ranks from the whole ranking.
+  Submissions **Export CSV** (`view=submissions&status=&q=`) holds every
+  project matching the chip and search: project, entrant, team or solo,
+  status, submitted and updated times in the event timezone, summary, links,
+  assigned judges' names and the disqualification reason; *Not submitted*
+  exports the entrants instead. Both read their view's own query in batches of
+  200 projects (`planJudgingResultsExport`, `planJudgingSubmissionsExport`),
+  stay owner/admin only with an empty 404 for anyone else, and audit filter
+  names only (`JUDGING_SCORES_EXPORTED`, `JUDGING_SUBMISSIONS_EXPORTED`).
+- **Saved views** ([Features → Saved views](FEATURES.md#saved-views)):
+  Submissions, Results and Progress keep their filters in the address bar
+  and have a **Views** menu (owners and admins, like the rest of judging
+  management). Submissions gains **Not submitted** (`status=notSubmitted`):
+  instead of projects it lists *entrants* without a `SUBMITTED` project,
+  meaning `CONFIRMED` teams and `CONFIRMED` registrations without a team,
+  whose project is missing, a draft, withdrawn or disqualified
+  (`lib/core/judgingEntrants.ts`, one `UNION ALL` query with keyset paging on
+  registration time and id, display names and sizes only, through
+  `loadUnsubmittedEntrantsPage`, `search` bucket), with its chip count.
+  Results gains a score filter (`scored=unscored`: `SUBMITTED` with no counted
+  review; `scored=underTwo`: fewer than two) that filters the ranked rows
+  without renumbering them, with counts over the whole ranking. Progress
+  can show one list (`show=below-target`, `judges`, `outliers`, `stale`).
+  Presets: *Not submitted*, *Drafts*, *Disqualified*; *Unscored*, *Scored by
+  fewer than 2 judges*; *Below target*.
 - **Publishing results** sets `resultsPublishedAt`, shows
   `/{orgSlug}/{eventSlug}/results` (awards, winners' project titles, team or
   entrant display names, and links), and queues one `results-published` email
@@ -322,6 +368,14 @@ interest. Rules are pure functions in `lib/judgingProgress.ts`.
   progress filters and totals, search (wildcards literal, surnames never
   matched), assignments, conflict of interest, event scoping, forged cursors,
   page clamping, and every winner kept on the results page.
+  `tests/integration/gallery.db.test.ts`: gallery orders with id tiebreaks,
+  search (title, team, first name only, literal wildcards, bounded), the
+  winners filter and awards order hidden until results are published and
+  correct after (best award, place, then A–Z; disqualified winners and other
+  events never shown), combined search, filter and order, invalid params
+  falling back, public-safe DTOs, the results page search, and the event
+  page's visibility rules (organisation, gallery switch, window, page
+  release, status, invite-only) as a real 404.
   `tests/integration/judging-ops.db.test.ts`: the `reviewsPerProject` CHECK,
   preview writing nothing, apply in one transaction (assignments, judges see
   only assigned, target stored, audit), stale fingerprints refused,
@@ -332,6 +386,9 @@ interest. Rules are pure functions in `lib/judgingProgress.ts`.
   lists (below target, per judge, outliers, stale, page clamping).
 - Unit tests: `tests/unit/judging-paging.test.ts` (cursor, query bounds,
   `?page=`/`?q=` parsing, page clamping, gallery links),
+  `tests/unit/gallery-query.test.ts` (`?filter=`/`?sort=` parsing and
+  fallbacks, publication gating, short links, the bound and escaped search,
+  event scoping, and every order's id tiebreak),
   `tests/unit/judging-assignment.test.ts` (balance, conflicts, shortfalls,
   determinism, keep and replace), `tests/unit/judging-progress.test.ts`
   (outlier and stale rules, target, schemas),
@@ -351,3 +408,5 @@ interest. Rules are pure functions in `lib/judgingProgress.ts`.
   assignment previewed and applied from Progress (even loads, a judge's own
   project skipped, judges then see only assigned), the outlier and stale
   lists, and no Progress view for a `JUDGE`-only collaborator.
+  `tests/integration/saved-views.db.test.ts` and `tests/e2e/saved-views.spec.ts`
+  cover the Not submitted, Unscored and Below target views.

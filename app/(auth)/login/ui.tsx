@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { signIn } from "next-auth/react";
+import { refreshAuthSession } from "@/components/auth/useAuthSession";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -139,6 +140,8 @@ export function LoginForm({ accountCreationEnabled, googleSsoConfigured }: { acc
       setError(mfaRequired ? "Invalid authenticator or recovery code." : "Invalid email or password.");
       return;
     }
+    // Client chrome reads the session from a store; refresh it for the next page.
+    void refreshAuthSession();
     router.push(callbackUrl);
     router.refresh();
   }

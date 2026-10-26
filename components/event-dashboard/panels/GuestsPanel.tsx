@@ -3,6 +3,7 @@ import { loadRegistrationFields } from "@/lib/eventDashboard/data";
 import { loadAttendeesFirstPage } from "@/lib/eventDashboard/attendees";
 import { loadEventInvitesFirstPage } from "@/lib/eventDashboard/invites";
 import { loadEventTeams } from "@/lib/eventDashboard/teams";
+import { loadSavedViewsForDashboard } from "@/lib/eventDashboard/savedViews";
 import { EventInvitePanel } from "@/components/invites/EventInvitePanel";
 import { SubTabs, type SubTab } from "../SubTabs";
 import { GuestsPeople } from "./GuestsPeople";
@@ -14,11 +15,12 @@ export async function GuestsPanel({ ctx }: { ctx: EventDashboardContext }) {
   const teamMode = event.registrationMode === "TEAM";
   const teamsAllowed = teamMode && permissions.canManageRegistrations;
   // Every list here is paged on the server; only first pages load with the panel.
-  const [attendees, fields, invites, teamsPage] = await Promise.all([
+  const [attendees, fields, invites, teamsPage, savedViews] = await Promise.all([
     permissions.canManageRegistrations ? loadAttendeesFirstPage(ctx) : Promise.resolve(null),
     loadRegistrationFields(event.id),
     permissions.canManageInvitations ? loadEventInvitesFirstPage(event.id, organisation.id) : Promise.resolve(null),
     teamsAllowed ? loadEventTeams(ctx) : Promise.resolve(null),
+    loadSavedViewsForDashboard(ctx),
   ]);
   const teamsTab: SubTab[] = teamMode
     ? [
@@ -27,7 +29,13 @@ export async function GuestsPanel({ ctx }: { ctx: EventDashboardContext }) {
           label: "Teams",
           count: teamsPage ? teamsPage.counts.all : undefined,
           content: teamsPage ? (
-            <GuestsTeams organisationSlug={organisation.slug} eventId={event.id} initialPage={teamsPage} approvalRequired={event.privacyType === "APPROVAL_REQUIRED"} />
+            <GuestsTeams
+              organisationSlug={organisation.slug}
+              eventId={event.id}
+              initialPage={teamsPage}
+              approvalRequired={event.privacyType === "APPROVAL_REQUIRED"}
+              savedViews={savedViews.GUESTS_TEAMS ?? []}
+            />
           ) : (
             <NoPermission>You do not have permission to view or manage attendee registrations.</NoPermission>
           ),
@@ -51,6 +59,7 @@ export async function GuestsPanel({ ctx }: { ctx: EventDashboardContext }) {
               registrationFields={fields}
               teamMode={teamMode}
               canUndoCheckIn={permissions.canCheckIn}
+              savedViews={savedViews.GUESTS_PEOPLE ?? []}
             />
           ) : (
             <NoPermission>You do not have permission to view or manage attendee registrations.</NoPermission>

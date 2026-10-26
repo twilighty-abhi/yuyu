@@ -7,9 +7,12 @@ import { isActionRateLimited } from "@/lib/actionRateLimit";
 import * as judging from "@/lib/core/judging";
 import { resolveJudgingOrganiser, type JudgingOrganiserContext } from "@/lib/judgingAccess";
 import { projectGalleryPath, resultsPath } from "@/lib/submissionToken";
+import { countUnsubmittedEntrants, listUnsubmittedEntrants } from "@/lib/core/judgingEntrants";
 import {
   toDashboardResultsPage,
   toDashboardSubmissionsPage,
+  toDashboardUnsubmittedPage,
+  type JudgingDashboardUnsubmittedPage,
   type JudgingDashboardAwardCandidate,
   type JudgingDashboardResultsPage,
   type JudgingDashboardSubmissionsPage,
@@ -219,11 +222,27 @@ export async function loadSubmissionsPage(input: unknown): Promise<ActionResult<
   return { ok: true, data: toDashboardSubmissionsPage(page) };
 }
 
+/**
+ * Judging → Submissions → Not submitted: confirmed teams and solo registrants
+ * whose project isn't SUBMITTED, a "Load more" page at a time, with the
+ * number matching the search on the first page. The same organiser gate.
+ */
+export async function loadUnsubmittedEntrantsPage(input: unknown): Promise<ActionResult<JudgingDashboardUnsubmittedPage & { total: number | null }>> {
+  const gate = await organiserGate(input, "search");
+  if (!gate.ok) return gate;
+  const { query, cursor } = gate.input;
+  const [page, total] = await Promise.all([
+    listUnsubmittedEntrants(gate.ctx, { query: query ?? "", cursor: cursor ?? null }),
+    cursor ? Promise.resolve(null) : countUnsubmittedEntrants(gate.ctx, typeof query === "string" ? query : ""),
+  ]);
+  return { ok: true, data: { ...toDashboardUnsubmittedPage(page), total } };
+}
+
 /** One numbered page of the ranked table, optionally searched; ranks always come from the whole ranking. */
 export async function loadResultsPage(input: unknown): Promise<ActionResult<JudgingDashboardResultsPage>> {
   const gate = await organiserGate(input, "search");
   if (!gate.ok) return gate;
-  const page = await judging.loadJudgingResultsPage(gate.ctx, { query: gate.input.query ?? "", page: gate.input.page ?? 1 });
+  const page = await judging.loadJudgingResultsPage(gate.ctx, { query: gate.input.query ?? "", page: gate.input.page ?? 1, scored: gate.input.scored ?? "all" });
   if (!page) return { ok: false, error: "Invalid input." };
   return { ok: true, data: toDashboardResultsPage(page) };
 }

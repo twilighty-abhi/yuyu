@@ -50,9 +50,12 @@ export async function sendRSVPConfirmation(params: {
   recipientName?: string;
   /** Names the team for a registration on a TEAM event. */
   teamName?: string;
+  /** A confirmed crew ticket (docs/CREW.md) is worded for the organising team. */
+  crew?: boolean;
 }): Promise<void> {
   const { transporter, from } = await getEmailTransport();
   const baseUrl = getBaseUrl();
+  const crew = params.crew === true && params.status === "CONFIRMED";
 
   const ticketUrl = params.checkInToken ? `${baseUrl}/ticket/${params.checkInToken}` : null;
   const safeTitle = escapeHtml(params.eventTitle);
@@ -80,22 +83,30 @@ export async function sendRSVPConfirmation(params: {
     statusText = "Pending Approval";
     statusMessage = "Your RSVP is pending organizer approval. We will let you know once it's reviewed.";
   }
+  const heading = crew ? "You're on the crew" : `RSVP Status: ${statusText}`;
+  const subject = crew ? `You're on the crew for ${subjectTitle}` : `RSVP ${statusText}: ${subjectTitle}`;
+  const introHtml = crew
+    ? `You're on the crew for <strong>${safeTitle}</strong>. This is your crew ticket — show it at check-in.`
+    : `Thank you for registering for <strong>${safeTitle}</strong>${params.teamName ? ` with team <strong>${escapeHtml(params.teamName)}</strong>` : ""}. ${statusMessage}`;
+  const introText = crew
+    ? `You're on the crew for "${params.eventTitle}". This is your crew ticket — show it at check-in.`
+    : `Thank you for registering for "${params.eventTitle}"${params.teamName ? ` with team "${params.teamName}"` : ""}. ${statusMessage}`;
 
   const html = `
     <!DOCTYPE html>
     <html>
       <head>
         <meta charset="utf-8">
-        <title>RSVP ${statusText}: ${safeTitle}</title>
+        <title>${crew ? `Crew ticket: ${safeTitle}` : `RSVP ${statusText}: ${safeTitle}`}</title>
       </head>
       <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8f9fa; margin: 0; padding: 20px; color: #1c1b1f;">
         <div style="max-width: 600px; margin: 40px auto; background-color: #ffffff; border-radius: 16px; border: 1px solid #e0e0e0; box-shadow: 0 4px 12px rgba(0,0,0,0.05); overflow: hidden;">
           ${emailBrandHeader()}
           <div style="padding: 32px;">
-            <h2 style="margin-top: 0; color: #18181B; font-size: 20px; font-weight: 600;">RSVP Status: ${statusText}</h2>
+            <h2 style="margin-top: 0; color: #18181B; font-size: 20px; font-weight: 600;">${heading}</h2>
             <p style="font-size: 16px; line-height: 1.5; color: #49454f; margin-bottom: 24px;">
               ${salutation.html}<br><br>
-              Thank you for registering for <strong>${safeTitle}</strong>${params.teamName ? ` with team <strong>${escapeHtml(params.teamName)}</strong>` : ""}. ${statusMessage}
+              ${introHtml}
             </p>
             ${eventDetails ? `
               <div style="margin: 24px 0; padding: 20px; border: 1px solid #e0e0e0; border-radius: 12px; background-color: #f8f9fa;">
@@ -138,7 +149,7 @@ export async function sendRSVPConfirmation(params: {
     </html>
   `;
 
-  const text = `RSVP ${statusText}: ${params.eventTitle}\n\n${salutation.text}\n\nThank you for registering for "${params.eventTitle}"${params.teamName ? ` with team "${params.teamName}"` : ""}. ${statusMessage}${eventDetails ? `\n\nEvent details\nStarts: ${eventDetails.startsAt}\nEnds: ${eventDetails.endsAt}${eventDetails.location ? `\nLocation: ${eventDetails.location}` : ""}` : ""}${calendarUrl ? `\n\nAdd to Google Calendar: ${calendarUrl}\nAn .ics calendar invite is also attached for other calendar apps.` : ""}${ticketUrl && params.status === "CONFIRMED" ? `\n\nView your ticket here: ${ticketUrl}` : ""}\n\nBest regards,\nYuyu Events`;
+  const text = `${crew ? `Crew ticket: ${params.eventTitle}` : `RSVP ${statusText}: ${params.eventTitle}`}\n\n${salutation.text}\n\n${introText}${eventDetails ? `\n\nEvent details\nStarts: ${eventDetails.startsAt}\nEnds: ${eventDetails.endsAt}${eventDetails.location ? `\nLocation: ${eventDetails.location}` : ""}` : ""}${calendarUrl ? `\n\nAdd to Google Calendar: ${calendarUrl}\nAn .ics calendar invite is also attached for other calendar apps.` : ""}${ticketUrl && params.status === "CONFIRMED" ? `\n\nView your ticket here: ${ticketUrl}` : ""}\n\nBest regards,\nYuyu Events`;
 
   if (!transporter) {
     // Email bodies can contain attendee PII and bearer ticket links. Mock
@@ -151,7 +162,7 @@ export async function sendRSVPConfirmation(params: {
     messageId: params.messageId,
     from,
     to: params.to,
-    subject: `RSVP ${statusText}: ${subjectTitle}`,
+    subject,
     text,
     html,
     // `icalEvent` emits both a text/calendar MIME alternative (which mail

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { deliverOutboxBatch } from "@/lib/outbox";
+import { deliverOutboxBatchWithCount } from "@/lib/outbox";
 import {
   recordOutboxSchedulerFailure,
   recordOutboxSchedulerStarted,
@@ -34,11 +34,11 @@ export async function drainOutbox(options: { batch?: number; budgetMs?: number; 
   let sent = 0;
   let failed = 0;
   for (;;) {
-    const result = await deliverOutboxBatch(batch);
+    const result = await deliverOutboxBatchWithCount(batch);
     sent += result.sent;
     failed += result.failed;
-    if (result.sent + result.failed < batch) break;
-    if (result.sent === 0) break;
+    if (result.due < batch) break;
+    if (result.sent === 0 && result.failed > 0) break;
     if (now() >= deadline) break;
   }
   return { sent, failed };

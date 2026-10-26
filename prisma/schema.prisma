@@ -41,6 +41,8 @@ enum EventPageSectionType {
   VENUE
   FAQ
   RESOURCES
+  /// The event's organising crew (docs/CREW.md). Off until an organiser turns it on.
+  CREW
 }
 
 enum ContentVisibility {
@@ -478,6 +480,8 @@ model Event {
   broadcastDrafts  EventBroadcastDraft[]
   checkInLists     CheckInList[]
   savedViews       SavedView[]
+  crewMembers      EventCrewMember[]
+  crewJoinLink     EventCrewJoinLink?
 
   @@unique([organisationId, slug])
   @@index([organisationId])
@@ -790,6 +794,50 @@ model EventSessionSpeaker {
   @@index([speakerId, sortOrder])
 }
 
+/// A member of the event's organising crew (docs/CREW.md). Each member owns
+/// one CONFIRMED `RSVP` with `isCrew` for their ticket and check-in; crew are
+/// counted in headcounts but never against `Event.capacity`.
+model EventCrewMember {
+  id             String   @id @default(cuid())
+  eventId        String
+  rsvpId         String   @unique
+  name           String
+  /// Normalised (trimmed, lowercase); one crew place per email per event.
+  email          String
+  foodPreference String   @default("")
+  /// Public role, such as "Logistics lead".
+  role           String   @default("")
+  /// Short plain-text bio for the public crew card.
+  bio            String   @default("")
+  photoUrl       String?
+  linkedinUrl    String?
+  /// Listed in the public Crew section. People who join through the crew link
+  /// start hidden until an organiser reviews them.
+  showOnPage     Boolean  @default(true)
+  /// True when the member signed up through the crew join link.
+  joinedViaLink  Boolean  @default(false)
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  rsvp  RSVP  @relation(fields: [rsvpId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, email])
+  @@index([eventId, sortOrder])
+}
+
+/// The shareable crew sign-up link for one event. Like a team join link the
+/// token is stored as-is so organisers can copy it again; it reveals only the
+/// event title, and replacing or deleting the row revokes the old link.
+model EventCrewJoinLink {
+  eventId   String   @id
+  token     String   @unique
+  createdAt DateTime @default(now())
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+}
+
 model EventSponsor {
   id          String            @id @default(cuid())
   eventId     String
@@ -878,6 +926,9 @@ model RSVP {
   /// Team this registration belongs to (TEAM events only). Invariant: the
   /// RSVP status always equals the team status. Null means a solo unit.
   teamId          String?
+  /// The ticket of an event crew member (EventCrewMember). Always CONFIRMED,
+  /// never in a team, and never counted against Event.capacity (docs/CREW.md).
+  isCrew          Boolean    @default(false)
   createdAt       DateTime   @default(now())
 
   event             Event?                  @relation(fields: [eventId], references: [id], onDelete: Cascade)
@@ -894,6 +945,7 @@ model RSVP {
   submissionLink    SubmissionLink?
   checkInListRecords CheckInListRecord[]
   checkInListEvents  CheckInListEvent[]
+  crewMember         EventCrewMember?
 
   @@index([eventId])
   @@index([teamId])

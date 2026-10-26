@@ -19,18 +19,23 @@ function escapeLike(value: string): string {
  * solo entrant's first name (the display name is "Ada L.", so the surname is
  * never matched and a search cannot reveal it). Wildcards match literally.
  * `s` is the `Submission` alias. Null for an empty query.
+ *
+ * The team and entrant names are scalar sub-selects by primary key, one
+ * lookup per project of the event. (Correlated EXISTS here let PostgreSQL
+ * build a hashed sub-plan over every team and every registration of the
+ * instance, so a public search grew with the whole instance.)
  */
 export function projectSearchSql(query: string): Prisma.Sql | null {
   if (!query) return null;
   const pattern = `%${escapeLike(query)}%`;
   return Prisma.sql`(
     s."title" ILIKE ${pattern}
-    OR EXISTS (SELECT 1 FROM "Team" t WHERE t."id" = s."teamId" AND t."name" ILIKE ${pattern})
-    OR (s."teamId" IS NULL AND EXISTS (
-      SELECT 1 FROM "RSVP" r LEFT JOIN "User" u ON u."id" = r."userId"
+    OR (SELECT t."name" FROM "Team" t WHERE t."id" = s."teamId") ILIKE ${pattern}
+    OR (s."teamId" IS NULL AND (
+      SELECT (regexp_split_to_array(btrim(COALESCE(NULLIF(btrim(u."name"), ''), r."guestName", '')), '[[:space:]]+'))[1]
+      FROM "RSVP" r LEFT JOIN "User" u ON u."id" = r."userId"
       WHERE r."id" = s."rsvpId"
-        AND (regexp_split_to_array(btrim(COALESCE(NULLIF(btrim(u."name"), ''), r."guestName", '')), '[[:space:]]+'))[1] ILIKE ${pattern}
-    ))
+    ) ILIKE ${pattern})
   )`;
 }
 

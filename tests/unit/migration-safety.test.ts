@@ -172,5 +172,22 @@ describe("production migration safety contracts", () => {
     expect(sql).toContain('"SavedView_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE');
     expect(sql).toContain('"SavedView_organisationId_fkey" FOREIGN KEY ("organisationId") REFERENCES "Organisation"("id") ON DELETE CASCADE');
   });
-});
 
+  it("adds the large-event indexes with CREATE INDEX only", () => {
+    const sql = readFileSync(resolve(root, "prisma/migrations/20261026000000_large_event_indexes/migration.sql"), "utf8");
+    const statements = sql
+      .split("\n")
+      .filter((line) => line.trim() && !line.trim().startsWith("--"))
+      .join("\n")
+      .split(";")
+      .map((statement) => statement.trim())
+      .filter(Boolean);
+    expect(statements).toHaveLength(6);
+    // Prisma applies a migration in a transaction, so no CONCURRENTLY; IF NOT EXISTS lets operators pre-build them.
+    for (const statement of statements) expect(statement).toMatch(/^CREATE INDEX IF NOT EXISTS "[A-Za-z_]+" ON "(RSVP|Team|Submission|EventInvite)"\("[A-Za-z]+"(, "[A-Za-z]+")*\)$/);
+    const code = statements.join("\n");
+    expect(code).not.toMatch(/\b(DROP|ALTER|UPDATE|DELETE|INSERT|UNIQUE|CONCURRENTLY)\b/i);
+    expect(sql).toContain('CREATE INDEX IF NOT EXISTS "RSVP_eventId_createdAt_id_idx" ON "RSVP"("eventId", "createdAt", "id");');
+    expect(sql).toContain('CREATE INDEX IF NOT EXISTS "Submission_eventId_status_submittedAt_id_idx" ON "Submission"("eventId", "status", "submittedAt", "id");');
+  });
+});

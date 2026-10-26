@@ -103,6 +103,16 @@ function mean(values: readonly number[]): number | null {
   return values.length > 0 ? roundToOneDecimal(values.reduce((sum, value) => sum + value, 0) / values.length) : null;
 }
 
+/**
+ * One counted review with that judge's scores on the submission, by
+ * criterion id. The loaders read these already aggregated per review
+ * (one row per review, not one per score); `computeJudgingResults` builds
+ * them from flat score rows.
+ */
+export type CountedReview = { submissionId: string; judgeUserId: string; scores: ReadonlyMap<string, number> };
+
+const NO_SCORES: ReadonlyMap<string, number> = new Map();
+
 /** Results for the given submissions, sorted by rank under `method` (unscored last, then input order). */
 export function computeJudgingResults(input: {
   submissionIds: readonly string[];
@@ -112,16 +122,44 @@ export function computeJudgingResults(input: {
   /** Which score ranks; RAW when omitted. */
   method?: ScoreNormalizationMethod;
 }): SubmissionResult[] {
-  const method = input.method ?? "RAW";
-  const scoreIndex = new Map<string, number>();
-  for (const entry of input.scores) scoreIndex.set(`${entry.submissionId}\u0000${entry.judgeUserId}\u0000${entry.criterionId}`, entry.score);
+  const byReview = new Map<string, Map<string, number>>();
+  for (const entry of input.scores) {
+    const key = `${entry.submissionId}\u0000${entry.judgeUserId}`;
+    const scores = byReview.get(key) ?? new Map<string, number>();
+    scores.set(entry.criterionId, entry.score);
+    byReview.set(key, scores);
+  }
+  return computeJudgingResultsFromReviews({
+    submissionIds: input.submissionIds,
+    criteria: input.criteria,
+    reviews: input.submittedReviews.map((review) => ({
+      submissionId: review.submissionId,
+      judgeUserId: review.judgeUserId,
+      scores: byReview.get(`${review.submissionId}\u0000${review.judgeUserId}`) ?? NO_SCORES,
+    })),
+    method: input.method,
+  });
+}
 
+/**
+ * `computeJudgingResults` over reviews that already carry their scores, in
+ * O(reviews × criteria + submissions log submissions). The same arithmetic in
+ * the same order, so both give identical numbers.
+ */
+export function computeJudgingResultsFromReviews(input: {
+  submissionIds: readonly string[];
+  criteria: readonly ScoreCriterion[];
+  /** Counted reviews only; a repeated (submission, judge) pair counts once. */
+  reviews: readonly CountedReview[];
+  method?: ScoreNormalizationMethod;
+}): SubmissionResult[] {
+  const method = input.method ?? "RAW";
   const included = new Set(input.submissionIds);
-  const judgesBySubmission = new Map<string, Set<string>>();
-  for (const review of input.submittedReviews) {
+  const judgesBySubmission = new Map<string, Map<string, ReadonlyMap<string, number>>>();
+  for (const review of input.reviews) {
     if (!included.has(review.submissionId)) continue;
-    const judges = judgesBySubmission.get(review.submissionId) ?? new Set<string>();
-    judges.add(review.judgeUserId);
+    const judges = judgesBySubmission.get(review.submissionId) ?? new Map<string, ReadonlyMap<string, number>>();
+    if (!judges.has(review.judgeUserId)) judges.set(review.judgeUserId, review.scores);
     judgesBySubmission.set(review.submissionId, judges);
   }
 
@@ -130,8 +168,8 @@ export function computeJudgingResults(input: {
   const percentsByJudge = new Map<string, number[]>();
   for (const [submissionId, judges] of judgesBySubmission) {
     const percents: Array<{ judgeUserId: string; percent: number }> = [];
-    for (const judgeUserId of judges) {
-      const percent = judgeWeightedPercent(input.criteria, (criterionId) => scoreIndex.get(`${submissionId}\u0000${judgeUserId}\u0000${criterionId}`));
+    for (const [judgeUserId, scores] of judges) {
+      const percent = judgeWeightedPercent(input.criteria, (criterionId) => scores.get(criterionId));
       if (percent == null) continue;
       percents.push({ judgeUserId, percent });
       const own = percentsByJudge.get(judgeUserId) ?? [];
@@ -143,14 +181,14 @@ export function computeJudgingResults(input: {
   const scales = judgeScales(percentsByJudge);
 
   const results = input.submissionIds.map((submissionId, order) => {
-    const judges = [...(judgesBySubmission.get(submissionId) ?? [])];
+    const judges = [...(judgesBySubmission.get(submissionId)?.values() ?? [])];
     const percents = percentsBySubmission.get(submissionId) ?? [];
     const rawScore = mean(percents.map((entry) => entry.percent));
     const adjustedScore = mean(percents.map((entry) => adjustedJudgeScore(entry.percent, scales.get(entry.judgeUserId))));
     const score = method === "ZSCORE" ? adjustedScore : rawScore;
     const criterionAverages = input.criteria.map((criterion) => {
       const values = judges
-        .map((judgeUserId) => scoreIndex.get(`${submissionId}\u0000${judgeUserId}\u0000${criterion.id}`))
+        .map((scores) => scores.get(criterion.id))
         .filter((value): value is number => value !== undefined);
       return {
         criterionId: criterion.id,

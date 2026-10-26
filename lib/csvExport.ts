@@ -43,30 +43,61 @@ export function exportFilterNames(active: Record<string, boolean>): string {
 }
 
 /**
- * A streamed `text/csv` attachment: a UTF-8 BOM and the header row, then
- * each batch of rows as it is read. A failure part-way through errors the
- * stream (the download fails) instead of sending a silently short file.
+ * The CSV body as a pull-based byte stream: a UTF-8 BOM and the header row,
+ * then one batch of rows each time the reader asks for more. The next batch
+ * is read from the database only when the previous one has been consumed, so
+ * a slow download holds about one batch in memory, never the whole file. A
+ * failure part-way through errors the stream (the download fails) instead of
+ * sending a silently short file; a cancelled download stops the reads.
  */
+export function csvByteStream(params: {
+  header: ReadonlyArray<string>;
+  batches: () => AsyncIterable<ReadonlyArray<ReadonlyArray<string>>>;
+  errorMessage: string;
+}): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  let iterator: AsyncIterator<ReadonlyArray<ReadonlyArray<string>>> | null = null;
+  return new ReadableStream<Uint8Array>(
+    {
+      start(controller) {
+        controller.enqueue(encoder.encode(`﻿${buildCsv([params.header])}\n`));
+      },
+      async pull(controller) {
+        try {
+          iterator ??= params.batches()[Symbol.asyncIterator]();
+          // Skip empty batches so every pull enqueues a chunk or closes.
+          for (;;) {
+            const next = await iterator.next();
+            if (next.done) {
+              controller.close();
+              return;
+            }
+            if (next.value.length) {
+              controller.enqueue(encoder.encode(`${buildCsv(next.value)}\n`));
+              return;
+            }
+          }
+        } catch {
+          controller.error(new Error(params.errorMessage));
+        }
+      },
+      async cancel() {
+        await iterator?.return?.();
+      },
+    },
+    // Read ahead by at most one batch.
+    { highWaterMark: 1 },
+  );
+}
+
+/** A streamed `text/csv` attachment (see `csvByteStream`). */
 export function csvStreamResponse(params: {
   header: ReadonlyArray<string>;
   batches: () => AsyncIterable<ReadonlyArray<ReadonlyArray<string>>>;
   filename: string;
   errorMessage: string;
 }): Response {
-  const encoder = new TextEncoder();
-  const stream = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      try {
-        controller.enqueue(encoder.encode(`﻿${buildCsv([params.header])}\n`));
-        for await (const rows of params.batches()) {
-          if (rows.length) controller.enqueue(encoder.encode(`${buildCsv(rows)}\n`));
-        }
-        controller.close();
-      } catch {
-        controller.error(new Error(params.errorMessage));
-      }
-    },
-  });
+  const stream = csvByteStream(params);
   return new Response(stream, {
     headers: {
       ...EXPORT_NO_STORE_HEADERS,

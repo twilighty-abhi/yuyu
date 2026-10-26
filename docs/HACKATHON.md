@@ -28,11 +28,68 @@ Builds on [team registration](TEAMS.md). This page is the design contract;
 | `judgingStatus` | `NOT_STARTED`, `OPEN`, `CLOSED`. Judges can only score while `OPEN`. Closing freezes scores. |
 | `projectGalleryPublic` | After the window closes, show submitted projects at `/{orgSlug}/{eventSlug}/projects`. |
 | `resultsPublishedAt` | Set when the organiser publishes results; clearing it unpublishes. |
-| `resultsAnnouncedAt` | Set by the first publication that emails entrants; see Results. |
+| `resultsAnnouncedAt` | Set whenever entrants are emailed the results: the publication time when publishing with the switch on, or the send time with **Send results email now**. A value older than `resultsPublishedAt` belongs to an earlier publication, so the current one is not yet announced; see Results. |
+| `emailEntrantsOnResults` | **Email entrants when results are published.** Off by default. See [Hackathon emails](#hackathon-emails). |
+| `emailSubmissionReceipts` | **Email a receipt when a project is submitted.** Off by default. |
 | `reviewsPerProject` | Target judges per project (1 to 20, CHECK constraint; null uses the default of 3). Drives Judging → Progress and is the automatic assignment default; applying an automatic assignment stores its number here. |
 
-Settings changes, disqualification, closing judging, and publishing or
-unpublishing results write audit events.
+Settings changes, disqualification, closing judging, publishing or
+unpublishing results, and sending the results email write audit events.
+
+## Hackathon emails
+
+Judging → Setup has a **Hackathon emails** section with two switches, both
+**off by default** on new and existing events (migration
+`20261028010000_hackathon_email_toggles`, `NOT NULL DEFAULT false`). They are
+saved with the other judging settings (`saveJudgingSettings` →
+`updateJudgingSettings`, owners and admins; a caller that leaves them out,
+such as the Settings tab card, keeps their saved values), and
+`JUDGING_SETTINGS_UPDATED` records both values and which changed. Cloning an
+event copies them. The rules live in `lib/hackathonEmails.ts` and are enforced
+on the server where the outbox rows are queued, never only in the UI:
+
+| Switch | Gates | When off |
+| --- | --- | --- |
+| Email entrants when results are published (`emailEntrantsOnResults`) | `results-published` | Publishing still works and records `resultsPublishedAt`, but queues nothing and leaves `resultsAnnouncedAt` as it was (unset, or older than the publication). |
+| Email a receipt when a project is submitted (`emailSubmissionReceipts`) | `submission-received` | Submitting queues no receipt. The switch is read under the Event lock in the submit transaction. |
+
+Everything else is registration or capability email and **always** goes out,
+with no switch: `rsvp-confirmation`, `rsvp-status`, `team-created`,
+`team-member-added`, `submission-link` (a solo entrant's only way into the
+form), email verification, password reset, invitations, broadcasts, and
+attendance confirmations.
+
+**Send results email now.** When results were published with the switch off,
+the organiser turns it on and saves; the Results tab then shows **Send results
+email now…** (offered while the current publication is not announced:
+`resultsAnnouncedAt` unset or older than `resultsPublishedAt`), whose confirmation gives the number of entrants and a note that
+a long list can run into the mail provider's sending limits.
+`sendResultsAnnouncement` (core and Server Action, `canManageJudging` like
+publishing, broadcast rate-limit bucket) requires published results and the
+switch on; under the Event row lock it sets `resultsAnnouncedAt` and queues the
+same one-email-per-confirmed-entrant-address announcement as publishing,
+skipping every address that already holds an announcement row for the event,
+so two concurrent calls send once and a later call is a no-op. Audited
+`JUDGING_RESULTS_ANNOUNCED` (recipient count and whether an earlier
+publication was announced).
+
+The Results tab says what will happen before publishing ("Publishing won't
+email entrants…" or "Publishing emails every confirmed entrant…"), and the
+publish confirmation says "Results will be published without emailing
+entrants." or "N entrants will be emailed." The count comes from
+`countResultsAnnouncementRecipients` (one SQL count with the same rules as the
+send). It only runs when a dialog will show it (switch on and the current
+publication not announced), because it scans the outbox. When an earlier
+publication was announced, a count of zero is explained as "everyone … was
+already emailed the results". After publication the card says whether
+entrants were emailed.
+
+Unpublish and republish keep the no-duplicate rules below. With the switch
+off, a republication emails nobody. If an earlier announcement was partly
+delivered before the unpublish withdrew the rest, the card says that anyone
+whose email was withdrawn hasn't been told, and once the switch is on **Send
+results email now** emails exactly those entrants (and any newly confirmed
+ones), never anyone who already holds an announcement for the event.
 
 Entrants only reach the submission form on a live event (`PUBLISHED`, website
 released). Submissions can be switched on while the event is a draft, so the
@@ -79,8 +136,9 @@ other check, inside `teamTransaction` so the registration webhooks are sent
 only after commit): a `SUBMITTED` solo project refuses the move until it
 is withdrawn (or disqualified); a `DISQUALIFIED` one refuses a join from the
 entrant side and is deleted by an organiser move; a `DRAFT` or `WITHDRAWN`
-one is deleted. The solo submission link is retired. `submission-received` email goes to the person
-who submitted. Organisers can disqualify (with a reason the entrant does not
+one is deleted. The solo submission link is retired. When receipts are on
+(`emailSubmissionReceipts`), the `submission-received` email goes to the
+person who submitted. Organisers can disqualify (with a reason the entrant does not
 see) and reinstate. Disqualifying removes the project's award places; the
 dialog lists the awards it holds and, once results are published, warns that
 the live results page changes straight away. Reinstating asks first and says
@@ -332,8 +390,9 @@ interest. Rules are pure functions in `lib/judgingProgress.ts`.
   fewer than 2 judges*; *Below target*.
 - **Publishing results** sets `resultsPublishedAt`, shows
   `/{orgSlug}/{eventSlug}/results` (awards, winners' project titles, team or
-  entrant display names, and links), and queues one `results-published` email
-  per confirmed entrant member, once: unpublishing withdraws undelivered
+  entrant display names, and links), and, only when
+  `emailEntrantsOnResults` is on (see [Hackathon emails](#hackathon-emails)),
+  queues one `results-published` email per confirmed entrant member, once: unpublishing withdraws undelivered
   announcements (and, when none had been delivered, clears
   `resultsAnnouncedAt`), and a re-publication emails only addresses whose copy
   was withdrawn. Scores and judge comments are never public.
@@ -380,6 +439,15 @@ interest. Rules are pure functions in `lib/judgingProgress.ts`.
   falling back, public-safe DTOs, the results page search, and the event
   page's visibility rules (organisation, gallery switch, window, page
   release, status, invite-only) as a real 404.
+  `tests/integration/hackathon-email-toggles.db.test.ts`: both switches
+  false for new events and rows written without them; publishing with the
+  results switch off queues nothing and leaves `resultsAnnouncedAt` null;
+  turning it on and **Send results email now** emails each confirmed entrant
+  member once, also under two concurrent sends, and unpublish/republish
+  still never duplicates; publishing with it on emails as before; receipts
+  only when on; registration, team and submission-link emails always queued;
+  JUDGE-only collaborators and other organisations refused; clone copies the
+  switches.
   `tests/integration/judging-ops.db.test.ts`: the `reviewsPerProject` CHECK,
   preview writing nothing, apply in one transaction (assignments, judges see
   only assigned, target stored, audit), stale fingerprints refused,
@@ -388,7 +456,9 @@ interest. Rules are pure functions in `lib/judgingProgress.ts`.
   assignments, organisation scoping, closed judging and published results
   refused, every action refused to judges and outsiders, and the progress
   lists (below target, per judge, outliers, stale, page clamping).
-- Unit tests: `tests/unit/judging-paging.test.ts` (cursor, query bounds,
+- Unit tests: `tests/unit/hackathon-emails.test.ts` (defaults, gating,
+  announcement states, dialog copy, the validator's optional switches),
+  `tests/unit/judging-paging.test.ts` (cursor, query bounds,
   `?page=`/`?q=` parsing, page clamping, gallery links),
   `tests/unit/gallery-query.test.ts` (`?filter=`/`?sort=` parsing and
   fallbacks, publication gating, short links, the bound and escaped search,
@@ -405,7 +475,10 @@ interest. Rules are pure functions in `lib/judgingProgress.ts`.
   publish hints, organiser versus judge copy, invited judges versus
   organisers, disqualify and reinstate impact, entrant window lines, the
   zoned CSV timestamp, and the active-tab scroll target).
-- End to end (`tests/e2e/judging.spec.ts`): the core journey, plus the draft
+- End to end (`tests/e2e/judging.spec.ts`): the core journey (both email
+  switches off by default; publishing says it won't email and queues nothing;
+  turning the switch on and **Send results email now** queues one email per
+  entrant), plus the draft
   warning, state-accurate publish hints, the organiser rubric link, the judges
   split, the disqualify warning after publication, and the active tab scrolled
   into view on a phone. `tests/e2e/judging-ops.spec.ts`: automatic

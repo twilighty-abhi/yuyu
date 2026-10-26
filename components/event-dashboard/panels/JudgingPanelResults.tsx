@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Download, ExternalLink } from "lucide-react";
 import type { JudgingStatus } from "@prisma/client";
-import { changeScoreNormalization, loadResultsPage, publishJudgingResults, unpublishJudgingResults } from "@/app/actions/judging-admin";
+import { changeScoreNormalization, loadResultsPage, publishJudgingResults, sendResultsAnnouncement, unpublishJudgingResults } from "@/app/actions/judging-admin";
 import { ConfirmationDialog } from "@/components/feedback/ConfirmationDialog";
 import { Button } from "@/components/ui/button";
 import { FilterChip, SwitchRow } from "@/components/ui/choice";
@@ -20,6 +20,14 @@ import { judgingResultsExportHref } from "@/lib/judgingExport";
 import { OpenTabButton } from "../EventDashboardTabs";
 import type { JudgingDashboardCriterion, JudgingDashboardJudge, JudgingDashboardResultsPage } from "@/lib/eventDashboard/judging";
 import { resultsPublishHint, scoreMethodCopy } from "./judgingCopy";
+import {
+  announcedBefore,
+  publishedResultsEmailLine,
+  publishResultsEmailCopy,
+  resultsAnnouncementState,
+  sendResultsEmailCopy,
+  unpublishedResultsEmailLine,
+} from "@/lib/hackathonEmails";
 import { PageNumberPager } from "@/components/ui/page-number-pager";
 import { formatScore, useJudgingAction, type JudgingScope } from "./JudgingPanelShared";
 
@@ -51,6 +59,9 @@ export function JudgingPanelResults({
   criteria,
   judgingStatus,
   resultsPublishedAt,
+  resultsAnnouncedAt = null,
+  emailEntrantsOnResults = false,
+  announcementRecipients = 0,
   resultsUrl,
   exportHref,
   timezone,
@@ -61,6 +72,12 @@ export function JudgingPanelResults({
   criteria: JudgingDashboardCriterion[];
   judgingStatus: JudgingStatus;
   resultsPublishedAt: string | null;
+  /** Set once entrants were emailed the results. */
+  resultsAnnouncedAt?: string | null;
+  /** "Email entrants when results are published" (Judging → Setup), off by default. */
+  emailEntrantsOnResults?: boolean;
+  /** How many entrants an announcement would email now. */
+  announcementRecipients?: number;
   resultsUrl: string;
   exportHref: string;
   timezone: string;
@@ -156,7 +173,16 @@ export function JudgingPanelResults({
   const scoreCounts = data.scoreCounts ?? initialPage.scoreCounts;
   return (
     <div className="flex flex-col gap-5">
-      <PublishCard scope={scope} judgingStatus={judgingStatus} resultsPublishedAt={resultsPublishedAt} resultsUrl={resultsUrl} timezone={timezone} />
+      <PublishCard
+        scope={scope}
+        judgingStatus={judgingStatus}
+        resultsPublishedAt={resultsPublishedAt}
+        resultsAnnouncedAt={resultsAnnouncedAt}
+        emailEntrantsOnResults={emailEntrantsOnResults}
+        announcementRecipients={announcementRecipients}
+        resultsUrl={resultsUrl}
+        timezone={timezone}
+      />
       <Card as="section">
         <CardHeader
           title="Ranking"
@@ -278,18 +304,27 @@ function PublishCard({
   scope,
   judgingStatus,
   resultsPublishedAt,
+  resultsAnnouncedAt,
+  emailEntrantsOnResults,
+  announcementRecipients,
   resultsUrl,
   timezone,
 }: {
   scope: JudgingScope;
   judgingStatus: JudgingStatus;
   resultsPublishedAt: string | null;
+  resultsAnnouncedAt: string | null;
+  emailEntrantsOnResults: boolean;
+  announcementRecipients: number;
   resultsUrl: string;
   timezone: string;
 }) {
   const { run, busy } = useJudgingAction();
-  const [confirming, setConfirming] = useState<"publish" | "unpublish" | null>(null);
+  const [confirming, setConfirming] = useState<"publish" | "unpublish" | "announce" | null>(null);
   const closed = judgingStatus === "CLOSED";
+  const announcement = resultsAnnouncementState({ resultsPublishedAt, resultsAnnouncedAt, emailEntrantsOnResults });
+  const announcedEarlier = announcedBefore({ resultsPublishedAt, resultsAnnouncedAt });
+  const emailLine = publishedResultsEmailLine(announcement, announcedEarlier);
   return (
     <Card as="section">
       <CardHeader
@@ -300,7 +335,13 @@ function PublishCard({
       {resultsPublishedAt ? (
         <div className="flex flex-col gap-3">
           <p className="text-body-ui text-ink-secondary">Published {formatDayTime(resultsPublishedAt, timezone)}. It follows the event page&apos;s visibility.</p>
+          {emailLine ? <p className="text-body-ui text-ink-secondary">{emailLine}</p> : null}
           <div className="flex flex-wrap gap-2.5">
+            {announcement === "ready" ? (
+              <Button variant="primary" loading={busy === "announce"} onClick={() => setConfirming("announce")}>
+                Send results email now…
+              </Button>
+            ) : null}
             <Button asChild variant="secondary">
               <a href={resultsUrl} target="_blank" rel="noopener noreferrer">
                 View results page
@@ -316,6 +357,7 @@ function PublishCard({
       ) : (
         <div className="flex flex-col gap-3">
           <Callout tone="info">{resultsPublishHint(judgingStatus)}</Callout>
+          <p className="text-body-ui text-ink-secondary">{unpublishedResultsEmailLine(emailEntrantsOnResults)}</p>
           <div>
             <Button variant="primary" disabled={!closed} loading={busy === "publish"} onClick={() => setConfirming("publish")}>
               Publish results…
@@ -326,7 +368,7 @@ function PublishCard({
       <ConfirmationDialog
         open={confirming === "publish"}
         title="Publish results?"
-        message="The results page goes live with the winners you picked on the Awards tab, and every confirmed registrant gets an email announcing it. Check the awards first."
+        message={`The results page goes live with the winners you picked on the Awards tab. ${publishResultsEmailCopy(emailEntrantsOnResults, announcementRecipients, announcedEarlier)} Check the awards first.`}
         confirmLabel="Publish results"
         destructive={false}
         loading={busy === "publish"}
@@ -334,7 +376,7 @@ function PublishCard({
           run(
             "publish",
             () => publishJudgingResults(scope),
-            "Results published.",
+            emailEntrantsOnResults && announcementRecipients > 0 ? "Results published. Entrants are being emailed." : "Results published.",
             () => setConfirming(null),
           )
         }
@@ -347,6 +389,16 @@ function PublishCard({
         confirmLabel="Unpublish"
         loading={busy === "unpublish"}
         onConfirm={() => run("unpublish", () => unpublishJudgingResults(scope), "Results unpublished.", () => setConfirming(null))}
+        onCancel={() => setConfirming(null)}
+      />
+      <ConfirmationDialog
+        open={confirming === "announce"}
+        title="Email entrants the results?"
+        message={sendResultsEmailCopy(announcementRecipients, announcedEarlier)}
+        confirmLabel="Send results email"
+        destructive={false}
+        loading={busy === "announce"}
+        onConfirm={() => run("announce", () => sendResultsAnnouncement(scope), "Results email queued.", () => setConfirming(null))}
         onCancel={() => setConfirming(null)}
       />
     </Card>

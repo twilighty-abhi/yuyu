@@ -147,6 +147,9 @@ export async function JudgingPanel({ ctx }: { ctx: EventDashboardContext }) {
               criteria={data.criteria}
               judgingStatus={settings.judgingStatus}
               resultsPublishedAt={settings.resultsPublishedAt}
+              resultsAnnouncedAt={settings.resultsAnnouncedAt}
+              emailEntrantsOnResults={settings.emailEntrantsOnResults}
+              announcementRecipients={data.announcementRecipients}
               resultsUrl={data.resultsUrl}
               exportHref={data.exportHref}
               timezone={settings.timezone}

@@ -39,6 +39,8 @@ export type CheckInResultData = {
   registrationDetails: RegistrationDetail[];
   /** TEAM events: the attendee's team name, shown at the desk, on badges and in the mobile `CheckInResult.teamName`. */
   teamName?: string | null;
+  /** An event crew ticket (docs/CREW.md): shown as a Crew badge at the desk. */
+  isCrew?: boolean;
 };
 
 /** Where a check-in came from; recorded in the immutable check-in history. */
@@ -133,6 +135,7 @@ async function resolveRsvpForToken(
     include: {
       user: { select: { name: true, email: true } },
       team: { select: { name: true } },
+      crewMember: { select: { foodPreference: true } },
       answers: { include: { field: { select: { key: true, label: true } } } },
       event: { select: { id: true, organisationId: true, slug: true } },
       eventInstance: {
@@ -191,9 +194,10 @@ export async function previewCheckInByTokenForUser(
       alreadyCheckedIn: Boolean(rsvp.checkedInAt),
       checkedInAt: rsvp.checkedInAt?.toISOString() ?? null,
       checkInQrToken: rsvp.checkInToken,
-      checkInDetails: getCheckInDetails(rsvp.answers),
+      checkInDetails: getCheckInDetails(rsvp.answers, rsvp.crewMember),
       registrationDetails: getRegistrationDetails(rsvp.answers),
       teamName: rsvp.team?.name ?? null,
+      isCrew: rsvp.isCrew,
       gate,
     },
   };
@@ -244,9 +248,10 @@ export async function checkInByTokenForUser(
         alreadyCheckedIn: true,
         checkedInAt: rsvp.checkedInAt.toISOString(),
         checkInQrToken: rsvp.checkInToken,
-        checkInDetails: getCheckInDetails(rsvp.answers),
+        checkInDetails: getCheckInDetails(rsvp.answers, rsvp.crewMember),
         registrationDetails: getRegistrationDetails(rsvp.answers),
         teamName: rsvp.team?.name ?? null,
+        isCrew: rsvp.isCrew,
       },
     };
   }
@@ -275,9 +280,10 @@ export async function checkInByTokenForUser(
         alreadyCheckedIn: true,
         checkedInAt: committed.checkedInAt.toISOString(),
         checkInQrToken: rsvp.checkInToken,
-        checkInDetails: getCheckInDetails(rsvp.answers),
+        checkInDetails: getCheckInDetails(rsvp.answers, rsvp.crewMember),
         registrationDetails: getRegistrationDetails(rsvp.answers),
         teamName: rsvp.team?.name ?? null,
+        isCrew: rsvp.isCrew,
       },
     };
   }
@@ -298,9 +304,10 @@ export async function checkInByTokenForUser(
       alreadyCheckedIn: false,
       checkedInAt: now.toISOString(),
       checkInQrToken: rsvp.checkInToken,
-      checkInDetails: getCheckInDetails(rsvp.answers),
+      checkInDetails: getCheckInDetails(rsvp.answers, rsvp.crewMember),
       registrationDetails: getRegistrationDetails(rsvp.answers),
       teamName: rsvp.team?.name ?? null,
+      isCrew: rsvp.isCrew,
     },
   };
 }
@@ -595,6 +602,7 @@ export async function previewCheckInByRsvpIdForUser(
     include: {
       user: { select: { name: true, email: true } },
       team: { select: { name: true } },
+      crewMember: { select: { foodPreference: true } },
       answers: { include: { field: { select: { key: true, label: true } } } },
     },
   });
@@ -610,9 +618,10 @@ export async function previewCheckInByRsvpIdForUser(
       alreadyCheckedIn: Boolean(rsvp.checkedInAt),
       checkedInAt: rsvp.checkedInAt?.toISOString() ?? null,
       checkInQrToken: rsvp.checkInToken,
-      checkInDetails: getCheckInDetails(rsvp.answers),
+      checkInDetails: getCheckInDetails(rsvp.answers, rsvp.crewMember),
       registrationDetails: getRegistrationDetails(rsvp.answers),
       teamName: rsvp.team?.name ?? null,
+      isCrew: rsvp.isCrew,
       gate: gateCheckInForStatus(rsvp.status, Boolean(force)),
     },
   };
@@ -642,6 +651,7 @@ export async function checkInByRsvpIdForUser(
     include: {
       user: { select: { name: true, email: true } },
       team: { select: { name: true } },
+      crewMember: { select: { foodPreference: true } },
       answers: { include: { field: { select: { key: true, label: true } } } },
       event: { select: { slug: true } },
       eventInstance: { select: { id: true } },
@@ -672,9 +682,10 @@ export async function checkInByRsvpIdForUser(
         alreadyCheckedIn: true,
         checkedInAt: rsvp.checkedInAt.toISOString(),
         checkInQrToken: rsvp.checkInToken,
-        checkInDetails: getCheckInDetails(rsvp.answers),
+        checkInDetails: getCheckInDetails(rsvp.answers, rsvp.crewMember),
         registrationDetails: getRegistrationDetails(rsvp.answers),
         teamName: rsvp.team?.name ?? null,
+        isCrew: rsvp.isCrew,
       },
     };
   }
@@ -703,9 +714,10 @@ export async function checkInByRsvpIdForUser(
         alreadyCheckedIn: true,
         checkedInAt: committed.checkedInAt.toISOString(),
         checkInQrToken: rsvp.checkInToken,
-        checkInDetails: getCheckInDetails(rsvp.answers),
+        checkInDetails: getCheckInDetails(rsvp.answers, rsvp.crewMember),
         registrationDetails: getRegistrationDetails(rsvp.answers),
         teamName: rsvp.team?.name ?? null,
+        isCrew: rsvp.isCrew,
       },
     };
   }
@@ -726,9 +738,10 @@ export async function checkInByRsvpIdForUser(
       alreadyCheckedIn: false,
       checkedInAt: now.toISOString(),
       checkInQrToken: rsvp.checkInToken,
-      checkInDetails: getCheckInDetails(rsvp.answers),
+      checkInDetails: getCheckInDetails(rsvp.answers, rsvp.crewMember),
       registrationDetails: getRegistrationDetails(rsvp.answers),
       teamName: rsvp.team?.name ?? null,
+      isCrew: rsvp.isCrew,
     },
   };
 }

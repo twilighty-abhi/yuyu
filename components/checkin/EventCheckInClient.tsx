@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import type { RsvpStatus } from "@prisma/client";
 import { useRouter } from "next/navigation";
-import { Check, CloudCheck, CloudOff, Download, Info, Printer, RefreshCw, Search, Users, X } from "lucide-react";
+import { BadgeCheck, Check, CloudCheck, CloudOff, Download, Info, Printer, RefreshCw, Search, Users, X } from "lucide-react";
 import { Button, IconButton } from "@/components/ui/button";
 import { Switch } from "@/components/ui/choice";
 import { Callout, Chip, ProgressBar, type ChipTone } from "@/components/ui/display";
@@ -85,6 +85,15 @@ const statusChips: Record<string, { label: string; tone: ChipTone }> = {
   REJECTED: { label: "Rejected", tone: "danger" },
   CANCELLED: { label: "Cancelled", tone: "neutral" },
 };
+
+/** A crew ticket (docs/CREW.md). `isCrew` is optional on check-in results, so older payloads show nothing. */
+function isCrewTicket(data: object): boolean {
+  return "isCrew" in data && data.isCrew === true;
+}
+
+function CrewChip({ data }: { data: object }) {
+  return isCrewTicket(data) ? <Chip size="sm" tone="accent" icon={<BadgeCheck />}>Crew</Chip> : null;
+}
 
 function StatusChip({ status }: { status: string }) {
   const chip = statusChips[status] ?? { label: status, tone: "neutral" as ChipTone };
@@ -746,6 +755,7 @@ export function EventCheckInClient(props: {
                 <p className="text-[15px] font-semibold">{lastResult.kind === "already" ? "Already checked in" : "Checked in"}</p>
                 <p className="break-words font-display text-[34px] font-extrabold leading-none tracking-[-0.03em]">{lastResult.displayName}</p>
                 {lastResult.teamName ? <p className="mt-1.5 flex items-center gap-1.5 text-[15px] font-semibold"><Users aria-hidden className="size-4 shrink-0" /><span className="sr-only">Team: </span>{lastResult.teamName}</p> : null}
+                {isCrewTicket(lastResult) ? <p className="mt-1.5 flex items-center gap-1.5 text-[15px] font-semibold"><BadgeCheck aria-hidden className="size-4 shrink-0" />Event crew</p> : null}
                 <p className="mt-2 text-sm opacity-90">
                   {lastResult.email ?? ""}
                   {lastResult.email && lastResult.checkedInAt ? " · " : ""}
@@ -835,6 +845,7 @@ export function EventCheckInClient(props: {
                 {scanPreview.teamName ? <p className="flex items-center gap-1.5 text-sm font-semibold text-ink"><Users aria-hidden className="size-4 shrink-0" />Team: {scanPreview.teamName}</p> : null}
                 <div className="flex flex-wrap gap-1.5 pt-1">
                   <StatusChip status={scanPreview.status} />
+                  <CrewChip data={scanPreview} />
                   {scanPreview.alreadyCheckedIn ? <Chip size="sm" tone="neutral">Already checked in</Chip> : null}
                 </div>
                 {!scanPreview.gate.ok ? <Callout tone={scanPreview.gate.blocked ? "danger" : "warning"}>{scanPreview.gate.reason}</Callout> : null}
@@ -891,6 +902,7 @@ export function EventCheckInClient(props: {
                 {detailsAttendee.teamName ? <p className="text-sm">Team: <span className="font-semibold">{detailsAttendee.teamName}</span></p> : null}
                 <div className="flex flex-wrap gap-1.5">
                   <StatusChip status={detailsAttendee.status} />
+                  <CrewChip data={detailsAttendee} />
                   {detailsAttendee.alreadyCheckedIn ? <Chip size="sm" tone="success">Already checked in</Chip> : null}
                 </div>
                 {detailsAttendee.checkedInAt ? <p className="text-sm">Checked in: <CheckInTimestamp value={detailsAttendee.checkedInAt} /></p> : null}

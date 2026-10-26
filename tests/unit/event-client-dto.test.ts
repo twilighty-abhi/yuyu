@@ -44,6 +44,7 @@ describe("event browser DTO", () => {
       scoreNormalization: "ZSCORE",
       emailEntrantsOnResults: true,
       emailSubmissionReceipts: true,
+      attendanceCheckReleaseOnDecline: true,
       shortCode: null,
       checkInStationPinHash: "bcrypt-secret",
       checkInStationPinEncrypted: "encrypted-secret",
@@ -66,5 +67,6 @@ describe("event browser DTO", () => {
     expect(serialized).not.toContain("emailSubmissionReceipts");
     expect(serialized).not.toContain("reviewsPerProject");
     expect(serialized).not.toContain("scoreNormalization");
+    expect(serialized).not.toContain("attendanceCheckReleaseOnDecline");
   });
 });

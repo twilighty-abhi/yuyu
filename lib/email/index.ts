@@ -469,6 +469,87 @@ export async function sendResultsPublishedEmail(params: {
   await transporter.sendMail({ messageId: params.messageId, from, to: params.to, subject, text, html });
 }
 
+/** Content of the "Are you still coming?" email; exported for the dashboard preview and unit tests. */
+export type AttendanceCheckEmailParams = {
+  eventTitle: string;
+  organisationName: string;
+  startDateTime: Date;
+  timezone: string;
+  /** "Online", the venue, or empty. */
+  location: string;
+  /** Site-relative `/attend/{token}` path; made absolute with NEXT_PUBLIC_BASE_URL. */
+  attendPath: string;
+  recipientName?: string;
+  /** A reminder to someone who has not replied yet. */
+  reminder?: boolean;
+  /**
+   * The event's "free the place on No" setting at delivery. Only then does the
+   * email say a No gives the place up; otherwise a No is just recorded.
+   */
+  releaseOnDecline?: boolean;
+  /** Absolute base for links; defaults to NEXT_PUBLIC_BASE_URL. */
+  baseUrl?: string;
+};
+
+export function buildAttendanceCheckEmail(params: AttendanceCheckEmailParams): { subject: string; html: string; text: string } {
+  const baseUrl = (params.baseUrl ?? getBaseUrl()).replace(/\/$/, "");
+  const formUrl = `${baseUrl}${params.attendPath}`;
+  const join = formUrl.includes("?") ? "&" : "?";
+  const yesUrl = `${formUrl}${join}answer=yes`;
+  const noUrl = `${formUrl}${join}answer=no`;
+  const salutation = greeting(params.recipientName);
+  const when = formatEventDateTime(params.startDateTime, params.timezone);
+  const where = params.location.replace(/[\u0000-\u001F\u007F]+/g, " ").trim().slice(0, 300);
+  const subject = `${params.reminder ? "Reminder: are" : "Are"} you still coming to ${headerText(params.eventTitle)}?`;
+  const safeTitle = escapeHtml(params.eventTitle);
+  const safeOrg = escapeHtml(params.organisationName);
+  const purpose = params.releaseOnDecline
+    ? "Your answer helps them plan. If you can't come, answering No gives up your place so someone else can have it."
+    : "Your answer helps them plan.";
+  const button = (url: string, label: string, primary: boolean) =>
+    `<a href="${escapeHtml(url)}" style="display:inline-block; margin:6px 8px 6px 0; padding:14px 24px; border-radius:999px; text-decoration:none; font-weight:600; font-size:16px; ${primary ? "background:#18181B; color:#fff;" : "background:#fff; color:#18181B; border:2px solid #18181B;"}">${escapeHtml(label)}</a>`;
+  const html = teamEmailShell(subject, `
+          <h2 style="margin-top:0; color:#18181B; font-size:20px;">Are you still coming?</h2>
+          <p>${salutation.html}<br><br>${safeOrg} would like to know whether you can still make it to <strong>${safeTitle}</strong>. ${escapeHtml(purpose)}</p>
+          <table role="presentation" style="margin:16px 0; border-collapse:collapse; font-size:15px; color:#1c1b1f;">
+            <tr><td style="padding:4px 12px 4px 0; color:#79747e;">When</td><td style="padding:4px 0;">${escapeHtml(when)}</td></tr>
+            ${where ? `<tr><td style="padding:4px 12px 4px 0; color:#79747e;">Where</td><td style="padding:4px 0;">${escapeHtml(where)}</td></tr>` : ""}
+          </table>
+          <p style="margin:24px 0 8px;">${button(yesUrl, "Yes, I'll be there", true)}${button(noUrl, "No, I can't make it", false)}</p>
+          <p style="font-size:13px; color:#666;">Each button opens a short page where you confirm your answer. You can change it there until the event starts. This link is personal; please don't forward it.</p>
+          <p style="font-size:13px; color:#666; overflow-wrap:anywhere;">${escapeHtml(formUrl)}</p>`);
+  const text = [
+    subject,
+    "",
+    salutation.text,
+    "",
+    `${params.organisationName} would like to know whether you can still make it to "${params.eventTitle}". ${purpose}`,
+    "",
+    `When: ${when}`,
+    ...(where ? [`Where: ${where}`] : []),
+    "",
+    `Yes, I'll be there: ${yesUrl}`,
+    `No, I can't make it: ${noUrl}`,
+    "",
+    "Each link opens a short page where you confirm your answer. You can change it there until the event starts. This link is personal; please don't forward it.",
+    "",
+    "Best regards,",
+    "Yuyu Events",
+  ].join("\n");
+  return { subject, html, text };
+}
+
+/** Sends one attendance confirmation question. The link is a bearer capability; never log it. */
+export async function sendAttendanceCheckEmail(params: AttendanceCheckEmailParams & { to: string; messageId?: string }): Promise<void> {
+  const { transporter, from } = await getEmailTransport();
+  const email = buildAttendanceCheckEmail(params);
+  if (!transporter) {
+    console.log("[EMAIL MOCK] attendance confirmation queued");
+    return;
+  }
+  await transporter.sendMail({ messageId: params.messageId, from, to: params.to, subject: email.subject, text: email.text, html: email.html });
+}
+
 export async function sendCollaboratorInvitation(params: { to: string; eventTitle: string; inviteUrl: string; messageId?: string }) {
   const { transporter, from } = await getEmailTransport();
   const subject = `Co-organizer invitation: ${headerText(params.eventTitle)}`;

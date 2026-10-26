@@ -8,6 +8,8 @@ export type EventClientDto = Omit<Event,
   | "submissionsEnabled" | "submissionsOpenAt" | "submissionsCloseAt" | "judgingStatus" | "judgesSeeAll"
   | "projectGalleryPublic" | "resultsPublishedAt" | "resultsAnnouncedAt" | "reviewsPerProject" | "scoreNormalization"
   | "emailEntrantsOnResults" | "emailSubmissionReceipts"
+  // Attendance confirmation has its own status DTO (lib/core/attendanceCheck.ts).
+  | "attendanceCheckReleaseOnDecline"
 >;
 
 export function toEventClientDto(event: Event): EventClientDto {

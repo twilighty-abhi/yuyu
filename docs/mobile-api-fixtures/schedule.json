@@ -1,0 +1,42 @@
+{
+  "ok": true,
+  "data": {
+    "generatedAt": "2030-05-10T09:58:12.000Z",
+    "tracks": [
+      {
+        "id": "trk_main",
+        "name": "Main stage",
+        "sessions": [
+          {
+            "id": "ses_keynote",
+            "title": "Opening keynote",
+            "type": "Keynote",
+            "visibility": "PUBLISHED",
+            "startDateTime": "2030-05-10T10:00:00.000Z",
+            "endDateTime": "2030-05-10T10:45:00.000Z",
+            "delayMinutes": 10,
+            "effectiveStartDateTime": "2030-05-10T10:00:00.000Z",
+            "effectiveEndDateTime": "2030-05-10T10:45:00.000Z",
+            "speakers": [
+              { "id": "spk_ada", "name": "Ada Lovelace", "headline": "Founder", "organisation": "Analytical Engines", "photoUrl": "https://events.example.org/api/uploads/speakers/ada.webp" }
+            ]
+          },
+          {
+            "id": "ses_panel",
+            "title": "Community panel",
+            "type": "Panel",
+            "visibility": "DRAFT",
+            "startDateTime": "2030-05-10T11:00:00.000Z",
+            "endDateTime": "2030-05-10T11:45:00.000Z",
+            "delayMinutes": 0,
+            "effectiveStartDateTime": "2030-05-10T11:10:00.000Z",
+            "effectiveEndDateTime": "2030-05-10T11:55:00.000Z",
+            "speakers": [
+              { "id": "spk_grace", "name": "Grace Hopper", "headline": null, "organisation": null, "photoUrl": null }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

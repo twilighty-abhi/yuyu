@@ -272,8 +272,9 @@ describe.sequential("list check-ins with exports, removal and deletion", () => {
     identity.id = ids.admin;
     const response = await exportAttendees(new Request(`https://events.example.test/api/exports/events/${eventId}/attendees`), { params: Promise.resolve({ eventId }) });
     const [header, row] = (await response.text()).replace(/^﻿/, "").split("\n");
-    expect(header!.endsWith(",Check-in: Badge pickup,Check-in: Old (archived)")).toBe(true);
-    expect(row!.endsWith(`,${checkedInAt.toISOString()},${checkedInAt.toISOString()}`)).toBe(true);
+    // The attendance confirmation columns come last (blank: nobody at this event was asked).
+    expect(header!.endsWith(",Check-in: Badge pickup,Check-in: Old (archived),Attendance confirmation,Attendance note")).toBe(true);
+    expect(row!.endsWith(`,${checkedInAt.toISOString()},${checkedInAt.toISOString()},,`)).toBe(true);
 
     // A CHECK_IN-only co-organiser still cannot download it.
     await prisma.eventCollaborator.create({ data: { eventId, userId: ids.checker, permissions: [EventPermission.CHECK_IN] } });

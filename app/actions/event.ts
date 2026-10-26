@@ -634,6 +634,8 @@ export async function cloneEvent(
         // Hackathon email switches carry over (lib/hackathonEmails.ts).
         emailEntrantsOnResults: source.emailEntrantsOnResults,
         emailSubmissionReceipts: source.emailSubmissionReceipts,
+        // The setting is copied; attendance checks (and their answers) never are.
+        attendanceCheckReleaseOnDecline: source.attendanceCheckReleaseOnDecline,
       },
     });
 

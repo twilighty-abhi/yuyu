@@ -205,7 +205,7 @@ Flat by default: cards use a 1px `--yy-border`, no shadow.
 - Respect `prefers-reduced-motion: reduce` → no translate/scale, fades ≤ 120ms.
 - Success moments (Registered, Checked in): a single 360ms scale-in of the check icon; no confetti.
 - **Colour-mode switch** (`components/providers.tsx`): the new mode grows from the toggle as a soft-edged circle (View Transitions + an animated `--yy-reveal` mask, 720ms, final frame held with `fill: "forwards"` so the old mode never flashes back). The light/dark illustration twins are decoded before the snapshot, waiting at most 150ms. Without View Transitions, colours cross-fade for 420ms. Reduced motion switches instantly.
-- **Loading:** `DotLoader` (`components/brand/DotLoader.tsx`) is three dots, two marigold and one ink, hopping left to right in turn (`.yy-dot-loader-jump`, 1.2s loop, 160ms stagger, `role="status"` with a hidden label). `PageLoader` centres it fixed in the viewport for route `loading.tsx` screens (dashboard, organisation, event). There is no root `loading.tsx`: a root Suspense boundary streams a 200 before `notFound()`/redirects run. Buttons keep their own pending state. With reduced motion the dots rest on the baseline.
+- **Loading:** `DotLoader` (`components/brand/DotLoader.tsx`) is three dots, two marigold and one ink, hopping left to right in turn (`.yy-dot-loader-jump`, 1.2s loop, 160ms stagger, `role="status"` with a hidden label). `PageLoader` centres it fixed in the viewport for route `loading.tsx` screens (dashboard home, organisation and event overviews, members, series, settings, check-in and schedule). A `loading.tsx` is a Suspense boundary around its segment's page and everything below it, and once its fallback streams the status is a fixed 200, so a `notFound()`/redirect inside it can no longer be a real 404/307. There is therefore no root, `app/dashboard` or organisation-wide `loading.tsx`: each loading screen sits below a layout that awaits the page's access check first (`lib/dashboardGuards.ts`), with route groups such as `(overview)` scoping a screen to one page, and `tests/unit/dashboard-loading-boundaries.test.ts` pins where they may live. Buttons keep their own pending state. With reduced motion the dots rest on the baseline.
 - **Dialogs** open in place: overlay fades in (180ms), panel fades and rises 8px from `scale(.98)` (`yy-dialog-in`, 240ms). Centring uses the `translate` property, so the keyframes animate only `transform`; mixing the two made dialogs fly in from the top-left.
 - **Physical objects** (envelope, letter, ticket stub) move on springs, with stages overlapping instead of waiting for each other (the flap is still swinging while the letter slides out). Gravity exits use an ease-in curve such as `[0.45, 0, 0.85, 0.35]`.
 - **Cross-fades between stages:** render each stage as its own full-screen centred layer (`absolute inset-0 grid place-items-center`) so the outgoing and incoming objects share the same spot and nothing shifts.
@@ -416,7 +416,7 @@ Phone-first. Heading "You're in, {firstName}!" (display, 34px). Stub card `r-2xl
 
 ### 5.3 Dashboard home & lists
 
-Built in `app/dashboard/page.tsx` from `lib/dashboardHome.ts`; every number comes from a real query scoped to the person's memberships.
+Built in `app/dashboard/(home)/page.tsx` from `lib/dashboardHome.ts`; every number comes from a real query scoped to the person's memberships.
 
 - **Greeting:** a dot face (Happy normally, Cheering during an event, Sleepy when nothing is planned), a time-of-day greeting in the viewer's timezone, and one sentence built from real numbers ("Demo Summit is tomorrow, and 12 people signed up in the last day.").
 - **Needs you:** one warning callout for pending approvals and drafts, only from organisations the person manages (OWNER/ADMIN). The sidebar shows the same approval count as a badge per organisation.
@@ -428,7 +428,7 @@ Built in `app/dashboard/page.tsx` from `lib/dashboardHome.ts`; every number come
 - **Organisations:** cards with a dotted strip, logo, upcoming/member/role chips, and a dashed "New organisation" card.
 - **First run:** until the person has a published event, a four-step checklist (organisation → logo → first event → publish); with no events yet, it replaces the page under a peach welcome banner.
 
-**Organisation workspace** (`app/dashboard/[orgSlug]/page.tsx`, data from `lib/orgDashboard.ts`, every query scoped to the one organisation):
+**Organisation workspace** (`app/dashboard/[orgSlug]/(overview)/page.tsx`, data from `lib/orgDashboard.ts`, every query scoped to the one organisation):
 
 - **Banner:** dotted strip, logo, name, description, `/slug` with Copy link and Public page, role and member count; Settings / New series / New event for managers.
 - **Needs you**, **event day** and **Next up** reuse the home components, scoped to this organisation. Next up sits beside a **mini month calendar** (`?month=YYYY-MM`) with a dot per event (in its accent) and per series date.

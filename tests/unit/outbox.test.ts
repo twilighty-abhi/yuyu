@@ -84,6 +84,24 @@ describe("outbox delivery", () => {
     expect(mocks.updateMany).not.toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: OutboxStatus.SENT }) }));
   });
 
+  it("words the confirmation from the RSVP's current crew flag", async () => {
+    mocks.rsvpFind.mockResolvedValue({ status: RsvpStatus.CONFIRMED, isCrew: true, guestName: "Asha" });
+    mocks.findMany.mockResolvedValue([message({
+      kind: "rsvp-confirmation",
+      payload: { to: "crew@example.test", eventTitle: "Event", status: RsvpStatus.CONFIRMED, checkInToken: "ticket-secret" },
+    })]);
+
+    await expect(deliverOutboxBatch()).resolves.toEqual({ sent: 1, failed: 0 });
+    expect(mocks.rsvp).toHaveBeenCalledWith(expect.objectContaining({ crew: true, recipientName: "Asha" }));
+
+    vi.clearAllMocks();
+    mocks.updateMany.mockResolvedValue({ count: 1 });
+    mocks.deleteMany.mockResolvedValue({ count: 1 });
+    mocks.rsvpFind.mockResolvedValue({ status: RsvpStatus.CONFIRMED, isCrew: false });
+    await deliverOutboxBatch();
+    expect(mocks.rsvp).toHaveBeenCalledWith(expect.objectContaining({ crew: false }));
+  });
+
   it("deletes a terminal capability failure instead of retaining its payload", async () => {
     const error = Object.assign(new Error("recipient@example.test https://events.test/join/secret"), { code: "ECONNRESET" });
     mocks.collaborator.mockRejectedValue(error);

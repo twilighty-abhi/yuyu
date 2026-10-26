@@ -45,12 +45,14 @@ Columns appear in this order:
 - **Ticket URL**: each guest's private ticket link.
 - One column for each question on your registration form, headed with the question.
 - One column for each custom check-in list, headed "Check-in:" and the list name, with the time the guest was checked into it.
+- **Attendance confirmation** and **Attendance note**: the guest's answer to [Are you still coming?](/help/guests/attendance-confirmation) (Coming, Not coming, No reply or Not asked) and any note they left. Both are empty until you've asked anyone.
 
 A few things to know when you open it:
 
 - **Status** uses the stored names: CONFIRMED (going), WAITLISTED, PENDING_APPROVAL (to approve) and REJECTED (declined).
 - Dates and times are in UTC in a standard format, for example `2026-10-14T09:30:00.000Z`. Most spreadsheets can convert them to your time zone.
 - Yes / no answers show as Yes or No.
+- Crew members are included, with the status CONFIRMED. The file has no separate crew column; the crew list itself is in **Guests** → **Crew**.
 
 <Callout kind="warning">
 

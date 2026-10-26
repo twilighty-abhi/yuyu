@@ -5,7 +5,7 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { isActionRateLimited } from "@/lib/actionRateLimit";
 import { resolveJudgeContext, type JudgeContext } from "@/lib/judgingAccess";
-import { listJudgeSubmissionsPage, loadSubmissionForJudge, saveJudgeScores, submitJudgeReview } from "@/lib/core/judging";
+import { listJudgeSubmissionsPage, loadSubmissionForJudge, nextSubmissionForJudge, saveJudgeScores, submitJudgeReview, type JudgeNextDto } from "@/lib/core/judging";
 import type { JudgeSubmissionDetailDto, JudgeSubmissionsPageDto } from "@/lib/judgingDto";
 import { judgeSubmissionsQuerySchema } from "@/lib/judgingPaging";
 import { judgeReviewSchema } from "@/lib/validators";
@@ -75,6 +75,20 @@ export async function loadJudgeSubmission(input: unknown): Promise<ActionResult<
   const detail = await loadSubmissionForJudge(gate.ctx, submissionId);
   if (!detail) return { ok: false, error: "This submission is not available to you." };
   return { ok: true, data: detail };
+}
+
+/**
+ * "Score next project": the core picks, on the server, the project this
+ * judge should score next (one they started, then the fewest reviews, then
+ * the oldest) and loads it as `loadJudgeSubmission` does. `next` is null when
+ * nothing is left to score or judging is not open.
+ */
+export async function loadNextJudgeSubmission(input: unknown): Promise<ActionResult<JudgeNextDto>> {
+  const gate = await judgeGate(input);
+  if (!gate.ok) return gate;
+  const result = await nextSubmissionForJudge(gate.ctx);
+  if (!result) return { ok: false, error: NO_ACCESS };
+  return { ok: true, data: result };
 }
 
 /** Save some or all of this judge's scores for one submission. */

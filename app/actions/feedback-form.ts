@@ -5,7 +5,9 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import type { ActionResult } from "@/app/actions/org";
 import { prisma } from "@/lib/db";
-import { requireOrgRole } from "@/lib/permissions";
+import { getMembership, isOrgAdmin, requireOrgRole } from "@/lib/permissions";
+import { auth } from "@/lib/auth";
+import { listFeedbackResponsesPage, type FeedbackResponsesPage } from "@/lib/eventDashboard/feedbackResponses";
 import { recordAuditEvent } from "@/lib/audit";
 import { isActionRateLimited } from "@/lib/actionRateLimit";
 import { getFeedbackTemplate } from "@/lib/feedbackTemplates";
@@ -165,4 +167,27 @@ export async function deleteFeedbackField(input: unknown): Promise<ActionResult<
   if ("error" in result && typeof result.error === "string") return { ok: false, error: result.error };
   revalidatePath(feedbackPath(context.organisation.slug, context.event.slug));
   return { ok: true, data: result };
+}
+
+const responsesPageInputSchema = base.extend({ page: z.number().int().min(1).max(100_000).optional() }).strict();
+
+/**
+ * One numbered page of anonymous feedback responses (Feedback → Responses).
+ * Read-only: the same organisation OWNER/ADMIN check as the responses card
+ * and the feedback CSV, with the event re-read inside the organisation, on
+ * the search rate-limit bucket. Answer values only.
+ */
+export async function loadFeedbackResponsesPage(input: unknown): Promise<ActionResult<FeedbackResponsesPage>> {
+  const parsed = responsesPageInputSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Invalid input." };
+  const session = await auth();
+  const userId = session?.user?.id;
+  if (!userId) return { ok: false, error: "You must be signed in." };
+  if (await isActionRateLimited("search", userId)) return { ok: false, error: "Too many requests. Try again shortly." };
+  const organisation = await prisma.organisation.findUnique({ where: { slug: parsed.data.organisationSlug }, select: { id: true } });
+  const membership = organisation ? await getMembership(userId, organisation.id) : null;
+  if (!organisation || !membership || !isOrgAdmin(membership.role)) return { ok: false, error: "You do not have permission to view feedback responses." };
+  const event = await prisma.event.findFirst({ where: { id: parsed.data.eventId, organisationId: organisation.id }, select: { id: true } });
+  if (!event) return { ok: false, error: "Event not found." };
+  return { ok: true, data: await listFeedbackResponsesPage({ eventId: event.id, organisationId: organisation.id }, { page: parsed.data.page ?? 1 }) };
 }

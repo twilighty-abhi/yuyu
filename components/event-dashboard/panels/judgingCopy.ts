@@ -90,3 +90,20 @@ export function reinstateImpact(input: { title: string; resultsPublished: boolea
   const base = `"${input.title}" goes back into judging and the ranking. Awards it lost when it was disqualified aren't given back: assign them again on the Awards tab if it should still win.`;
   return input.resultsPublished ? `${base} The live results page doesn't change until you do.` : base;
 }
+
+/**
+ * The Ranking card's description and the toast for "Adjust for harsh/generous
+ * judges" (Event.scoreNormalization; the formula is in lib/judgingScore.ts).
+ */
+export function scoreMethodCopy(method: "RAW" | "ZSCORE"): { description: string; savedToast: string } {
+  return method === "ZSCORE"
+    ? {
+        description:
+          "Ranked by the adjusted score: each judge's scores are rescaled so their own average is 50, so a harsh or generous judge moves projects as much as any other. Judges with fewer than 3 reviews, or who gave every project the same score, keep their raw scores. Projects with the same score share a rank.",
+        savedToast: "Ranking now adjusts for harsh and generous judges.",
+      }
+    : {
+        description: "Ranked by the raw score: each judge's weighted percentage, averaged over judges who submitted a review. Projects with the same score share a rank.",
+        savedToast: "Ranking now uses raw scores.",
+      };
+}

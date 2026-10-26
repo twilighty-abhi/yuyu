@@ -6,7 +6,7 @@ export type EventClientDto = Omit<Event,
   | "registrationManuallyClosedAt" | "registrationCutoffBeforeManualClose" | "registrationLeadBeforeManualClose"
   // Judging settings have their own DTOs (lib/core/judging.ts).
   | "submissionsEnabled" | "submissionsOpenAt" | "submissionsCloseAt" | "judgingStatus" | "judgesSeeAll"
-  | "projectGalleryPublic" | "resultsPublishedAt" | "resultsAnnouncedAt"
+  | "projectGalleryPublic" | "resultsPublishedAt" | "resultsAnnouncedAt" | "reviewsPerProject" | "scoreNormalization"
 >;
 
 export function toEventClientDto(event: Event): EventClientDto {

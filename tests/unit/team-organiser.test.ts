@@ -76,7 +76,7 @@ describe("Teams view helpers", () => {
   const teams = [
     team({}),
     team({ id: "t2", name: "Byte Club", status: "PENDING_APPROVAL", size: 1, incomplete: true, members: [{ name: "Kiran", email: "kiran@example.org", checkedIn: false }] }),
-    team({ id: "t3", name: "Full House", status: "WAITLISTED", size: 4 }),
+    team({ id: "t3", name: "Full House", status: "WAITLISTED", size: 4, lookingForMembers: true }),
     team({ id: "t4", name: "Nope", status: "REJECTED", size: 2 }),
   ];
 
@@ -84,6 +84,8 @@ describe("Teams view helpers", () => {
     expect(countTeamFilters(teams)).toMatchObject({ all: 4, going: 1, approve: 1, waitlist: 1, declined: 1, incomplete: 1 });
     expect(filterTeams(teams, { query: "kiran" }).map((t) => t.id)).toEqual(["t2"]);
     expect(filterTeams(teams, { status: "incomplete" }).map((t) => t.id)).toEqual(["t2"]);
+    expect(countTeamFilters(teams).looking).toBe(1);
+    expect(filterTeams(teams, { status: "looking" }).map((t) => t.id)).toEqual(["t3"]);
   });
 
   it("describes size and check-in", () => {

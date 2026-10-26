@@ -14,9 +14,14 @@ const mocks = vi.hoisted(() => ({
   publish: vi.fn(),
   reviews: vi.fn(),
   exportRows: vi.fn(),
+  planResults: vi.fn(),
+  planSubmissions: vi.fn(),
   listSubmissions: vi.fn(),
   resultsPage: vi.fn(),
   awardCandidates: vi.fn(),
+  setNormalization: vi.fn(),
+  listUnsubmitted: vi.fn(),
+  countUnsubmitted: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ auth: mocks.auth }));
@@ -25,6 +30,7 @@ vi.mock("@/lib/audit", () => ({ recordAuditEvent: mocks.audit }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("@/lib/judgingAccess", () => ({ resolveJudgingOrganiser: mocks.resolveOrganiser }));
 vi.mock("@/lib/db", () => ({ prisma: { event: { findUnique: mocks.eventFindUnique } } }));
+vi.mock("@/lib/core/judgingEntrants", () => ({ listUnsubmittedEntrants: mocks.listUnsubmitted, countUnsubmittedEntrants: mocks.countUnsubmitted }));
 vi.mock("@/lib/core/judging", () => ({
   updateJudgingSettings: mocks.updateSettings,
   setJudgingStatus: mocks.setStatus,
@@ -33,17 +39,22 @@ vi.mock("@/lib/core/judging", () => ({
   publishResults: mocks.publish,
   loadSubmissionReviewsForOrganiser: mocks.reviews,
   buildJudgingExportRows: mocks.exportRows,
+  planJudgingResultsExport: mocks.planResults,
+  planJudgingSubmissionsExport: mocks.planSubmissions,
   listSubmissionsForOrganiser: mocks.listSubmissions,
   loadJudgingResultsPage: mocks.resultsPage,
   searchAwardCandidates: mocks.awardCandidates,
+  setScoreNormalization: mocks.setNormalization,
 }));
 
 import {
   changeJudgingStatus,
+  changeScoreNormalization,
   disqualifyProject,
   loadProjectReviews,
   loadResultsPage,
   loadSubmissionsPage,
+  loadUnsubmittedEntrantsPage,
   publishJudgingResults,
   saveJudgingSettings,
   searchAwardCandidates,
@@ -163,9 +174,12 @@ describe("organiser judging paged reads", () => {
     expect(mocks.listSubmissions).toHaveBeenCalledWith(organiser, { query: "byte", status: "SUBMITTED", cursor: "0.sub_0" });
     expect(res).toMatchObject({ ok: true, data: { nextCursor: "1.sub_1", submissions: [{ id: "sub_1", submittedAt: "2030-01-01T00:00:00.000Z", updatedAt: "2030-01-02T00:00:00.000Z" }] } });
 
-    mocks.resultsPage.mockResolvedValue({ rows: [], page: 2, totalPages: 2, total: 60, start: 50, pageSize: 50, query: "", rankedTotal: 60, criteria: [] });
-    expect(await loadResultsPage({ ...scope, page: 2 })).toEqual({ ok: true, data: { rows: [], page: 2, totalPages: 2, total: 60, start: 50, pageSize: 50, query: "", rankedTotal: 60 } });
-    expect(mocks.resultsPage).toHaveBeenCalledWith(organiser, { query: "", page: 2 });
+    const scoreCounts = { all: 60, unscored: 4, underTwo: 9 };
+    mocks.resultsPage.mockResolvedValue({ rows: [], page: 2, totalPages: 2, total: 60, start: 50, pageSize: 50, query: "", rankedTotal: 60, criteria: [], scored: "all", scoreCounts });
+    expect(await loadResultsPage({ ...scope, page: 2 })).toEqual({ ok: true, data: { rows: [], page: 2, totalPages: 2, total: 60, start: 50, pageSize: 50, query: "", rankedTotal: 60, scored: "all", scoreCounts } });
+    expect(mocks.resultsPage).toHaveBeenCalledWith(organiser, { query: "", page: 2, scored: "all" });
+    await loadResultsPage({ ...scope, scored: "unscored" });
+    expect(mocks.resultsPage).toHaveBeenLastCalledWith(organiser, { query: "", page: 1, scored: "unscored" });
 
     mocks.awardCandidates.mockResolvedValue({ rows: [{ submissionId: "sub_1", title: "Byte", entrantName: "Ada L.", rank: 1, score: 80 }], total: 21, nextOffset: 20 });
     expect(await searchAwardCandidates({ ...scope, query: "by" })).toEqual({ ok: true, data: { candidates: [{ submissionId: "sub_1", title: "Byte", entrantName: "Ada L.", rank: 1, score: 80 }], total: 21, nextOffset: 20 } });
@@ -180,36 +194,52 @@ describe("organiser judging paged reads", () => {
   });
 });
 
-describe("judging scores CSV export route", () => {
+describe("judging CSV export route", () => {
   const routeContext = { params: Promise.resolve({ eventId: "event_1" }) };
-  const request = new Request("https://events.example.test/api/exports/events/event_1/judging");
+  const request = (query = "") => new Request(`https://events.example.test/api/exports/events/event_1/judging${query ? `?${query}` : ""}`);
+  const plan = (rows: string[][]) => ({
+    header: ["Rank", "Project", "Entrant"],
+    rows: rows.length,
+    method: "RAW",
+    batches: async function* () {
+      yield rows;
+    },
+  });
 
   beforeEach(() => {
     mocks.eventFindUnique.mockResolvedValue({ id: "event_1", title: "Hack Night", organisation: { slug: "club" } });
-    mocks.exportRows.mockResolvedValue([
-      ["Rank", "Project", "Entrant"],
-      ["1", "=HYPERLINK(\"https://evil.example\")", "@team"],
-    ]);
+    mocks.planResults.mockResolvedValue(plan([["1", "=HYPERLINK(\"https://evil.example\")", "@team"]]));
+    mocks.planSubmissions.mockResolvedValue(plan([["-cmd", "Team A", "Team"]]));
   });
 
   it("returns a bare 404 to signed-out users", async () => {
     mocks.auth.mockResolvedValue(null);
-    const response = await GET(request, routeContext);
+    const response = await GET(request(), routeContext);
     expect(response.status).toBe(404);
-    expect(mocks.exportRows).not.toHaveBeenCalled();
+    expect(mocks.planResults).not.toHaveBeenCalled();
   });
 
   it("returns a bare 404 to anyone who cannot manage judging", async () => {
     mocks.resolveOrganiser.mockResolvedValue(null);
-    const response = await GET(request, routeContext);
-    expect(response.status).toBe(404);
-    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
-    expect(mocks.exportRows).not.toHaveBeenCalled();
+    for (const query of ["", "view=submissions"]) {
+      const response = await GET(request(query), routeContext);
+      expect(response.status).toBe(404);
+      expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+    }
+    expect(mocks.planResults).not.toHaveBeenCalled();
+    expect(mocks.planSubmissions).not.toHaveBeenCalled();
     expect(mocks.audit).not.toHaveBeenCalled();
   });
 
-  it("exports formula-safe CSV, uncached, and audits the export", async () => {
-    const response = await GET(request, routeContext);
+  it("refuses malformed filters before reading anything", async () => {
+    for (const query of ["view=all", "method=MEDIAN", "status=SUBMITTED", "view=submissions&scored=unscored", `q=${"x".repeat(101)}`]) {
+      expect((await GET(request(query), routeContext)).status).toBe(404);
+    }
+    expect(mocks.eventFindUnique).not.toHaveBeenCalled();
+  });
+
+  it("exports formula-safe Results CSV, uncached, and audits filter names only", async () => {
+    const response = await GET(request("q=Secret%20Team&method=ZSCORE&scored=unscored"), routeContext);
     expect(response.status).toBe(200);
     expect(response.headers.get("Content-Type")).toBe("text/csv; charset=utf-8");
     expect(response.headers.get("Cache-Control")).toBe("private, no-store");
@@ -218,6 +248,64 @@ describe("judging scores CSV export route", () => {
     expect(body).toContain(`"'=HYPERLINK(""https://evil.example"")"`);
     expect(body).toContain("'@team");
     expect(mocks.resolveOrganiser).toHaveBeenCalledWith("user_1", "club", "event_1");
-    expect(mocks.audit).toHaveBeenCalledWith(expect.objectContaining({ action: "JUDGING_SCORES_EXPORTED", organisationId: "org_1", targetId: "event_1" }));
+    expect(mocks.planResults).toHaveBeenCalledWith(organiser, { query: "Secret Team", scored: "unscored", method: "ZSCORE" });
+    expect(mocks.audit).toHaveBeenCalledWith(expect.objectContaining({ action: "JUDGING_SCORES_EXPORTED", organisationId: "org_1", targetId: "event_1", metadata: expect.objectContaining({ surface: "results", filters: "scored,search" }) }));
+    expect(JSON.stringify(mocks.audit.mock.calls)).not.toContain("Secret");
+  });
+
+  it("exports the Submissions view under its status filter", async () => {
+    const response = await GET(request("view=submissions&status=DRAFT"), routeContext);
+    expect(response.headers.get("Content-Disposition")).toMatch(/^attachment; filename="submissions_Hack_Night_/);
+    expect(await response.text()).toContain("'-cmd");
+    expect(mocks.planSubmissions).toHaveBeenCalledWith(organiser, { query: "", status: "DRAFT" });
+    expect(mocks.planResults).not.toHaveBeenCalled();
+    expect(mocks.audit).toHaveBeenCalledWith(expect.objectContaining({ action: "JUDGING_SUBMISSIONS_EXPORTED", metadata: { surface: "submissions", filters: "status" } }));
+  });
+});
+
+describe("score method switch", () => {
+  it("passes the method to the core for an organiser and revalidates", async () => {
+    mocks.setNormalization.mockResolvedValue({ ok: true, data: { scoreNormalization: "ZSCORE" } });
+    expect(await changeScoreNormalization({ ...scope, scoreNormalization: "ZSCORE" })).toEqual({ ok: true, data: { scoreNormalization: "ZSCORE" } });
+    expect(mocks.setNormalization).toHaveBeenCalledWith(organiser, "ZSCORE");
+    expect(mocks.revalidatePath).toHaveBeenCalled();
+  });
+
+  it("refuses anyone who is not an organisation owner or admin", async () => {
+    mocks.resolveOrganiser.mockResolvedValue(null);
+    expect(await changeScoreNormalization({ ...scope, scoreNormalization: "ZSCORE" })).toMatchObject({ ok: false });
+    expect(mocks.setNormalization).not.toHaveBeenCalled();
+  });
+});
+
+describe("Not submitted entrants page", () => {
+  it("is organiser-only, on the search bucket, and counts only on the first page", async () => {
+    mocks.listUnsubmitted.mockResolvedValue({
+      entrants: [{ kind: "team", id: "team_1", name: "Byte Club", size: 3, submissionStatus: "DRAFT", submissionTitle: "Draft", registeredAt: new Date("2030-01-01T00:00:00.000Z") }],
+      nextCursor: "1.team_1",
+    });
+    mocks.countUnsubmitted.mockResolvedValue(7);
+    const first = await loadUnsubmittedEntrantsPage({ ...scope, query: "byte" });
+    expect(first).toEqual({
+      ok: true,
+      data: {
+        entrants: [{ kind: "team", id: "team_1", name: "Byte Club", size: 3, submissionStatus: "DRAFT", submissionTitle: "Draft", registeredAt: "2030-01-01T00:00:00.000Z" }],
+        nextCursor: "1.team_1",
+        total: 7,
+      },
+    });
+    expect(mocks.listUnsubmitted).toHaveBeenCalledWith(organiser, { query: "byte", cursor: null });
+    expect(mocks.countUnsubmitted).toHaveBeenCalledWith(organiser, "byte");
+    expect(mocks.rateLimit).toHaveBeenCalledWith("search", "user_1");
+
+    mocks.countUnsubmitted.mockClear();
+    const more = await loadUnsubmittedEntrantsPage({ ...scope, cursor: "1.team_1" });
+    expect(more).toMatchObject({ ok: true, data: { total: null } });
+    expect(mocks.countUnsubmitted).not.toHaveBeenCalled();
+
+    mocks.resolveOrganiser.mockResolvedValue(null);
+    mocks.listUnsubmitted.mockClear();
+    expect(await loadUnsubmittedEntrantsPage(scope)).toEqual({ ok: false, error: "You do not have permission to manage judging for this event." });
+    expect(mocks.listUnsubmitted).not.toHaveBeenCalled();
   });
 });

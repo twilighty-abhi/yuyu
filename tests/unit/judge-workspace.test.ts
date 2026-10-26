@@ -6,6 +6,7 @@ import {
   judgingStatusNotice,
   linkLabel,
   scoreMapFrom,
+  scoreNextToast,
   scoresToSave,
 } from "@/components/event-dashboard/judging/judgeProgress";
 
@@ -71,5 +72,13 @@ describe("judge workspace scores", () => {
   it("labels project links by host", () => {
     expect(linkLabel("https://www.github.com/acme/app")).toBe("github.com");
     expect(linkLabel("not a url")).toBe("not a url");
+  });
+});
+
+describe("score next project", () => {
+  it("says which project opened next and how many are left", () => {
+    expect(scoreNextToast({ title: "Robo", remaining: 4 })).toBe("Review submitted. Next up: “Robo” (4 left to score).");
+    expect(scoreNextToast({ title: "Robo", remaining: 1 })).toBe("Review submitted. Next up: “Robo” (this is the last one).");
+    expect(scoreNextToast(null)).toMatch(/every project you can score/);
   });
 });

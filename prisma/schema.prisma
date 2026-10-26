@@ -154,6 +154,24 @@ enum JudgingStatus {
   CLOSED
 }
 
+/// How judges' result scores are combined (docs/HACKATHON.md).
+/// RAW: plain mean of judges' scores. ZSCORE: each judge's scores are
+/// standardised before averaging, to correct for harsh or lenient judges.
+enum ScoreNormalization {
+  RAW
+  ZSCORE
+}
+
+/// Which paged event-dashboard list a saved view filters (Saved views in
+/// docs/FEATURES.md). Each surface has its own allow-list in lib/savedViews.ts.
+enum SavedViewSurface {
+  GUESTS_PEOPLE
+  GUESTS_TEAMS
+  JUDGING_SUBMISSIONS
+  JUDGING_RESULTS
+  JUDGING_PROGRESS
+}
+
 model User {
   id                 String    @id @default(cuid())
   name               String?
@@ -192,6 +210,7 @@ model User {
   judgeScores                  JudgeScore[]
   judgeReviews                 JudgeReview[]
   webhookEndpointsCreated WebhookEndpoint[] @relation("WebhookEndpointCreatedBy")
+  savedViews              SavedView[]
 }
 
 model Account {
@@ -279,6 +298,7 @@ model Organisation {
   rsvpDeletionUndos RsvpDeletionUndo[]
   apiClients        ApiClient[]
   webhookEndpoints  WebhookEndpoint[]
+  savedViews        SavedView[]
 }
 
 /// A tenant-bound machine identity. It never authenticates through Auth.js.
@@ -426,6 +446,11 @@ model Event {
   /// First delivery of the results-published announcement; kept across
   /// unpublish/republish so nobody is emailed twice.
   resultsAnnouncedAt                  DateTime?
+  /// Target number of judges per project for automatic assignment and the
+  /// progress dashboard; null means not set. CHECK keeps it in 1..20.
+  reviewsPerProject                   Int?
+  /// How result scores are combined across judges.
+  scoreNormalization                  ScoreNormalization @default(RAW)
   createdAt             DateTime         @default(now())
 
   organisation     Organisation           @relation(fields: [organisationId], references: [id], onDelete: Cascade)
@@ -452,6 +477,7 @@ model Event {
   awards              EventAward[]
   broadcastDrafts  EventBroadcastDraft[]
   checkInLists     CheckInList[]
+  savedViews       SavedView[]
 
   @@unique([organisationId, slug])
   @@index([organisationId])
@@ -1502,4 +1528,32 @@ model WebhookDelivery {
   @@index([endpointId, createdAt])
   @@index([organisationId, createdAt])
   @@index([createdAt])
+}
+
+/// A named filter/search state on one event-dashboard list. `params` is
+/// validated against the surface's allow-list on write and again on read
+/// (unknown keys dropped); it never grants access: the surface's own
+/// permission is checked first. Shared views are visible to everyone who can
+/// open that surface on the event.
+model SavedView {
+  id             String           @id @default(cuid())
+  organisationId String
+  eventId        String
+  /// The creator; only they can rename, re-share or (with owners/admins for shared views) delete it.
+  userId         String
+  surface        SavedViewSurface
+  /// Up to 60 characters.
+  name           String
+  params         Json
+  shared         Boolean          @default(false)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  event        Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([eventId, surface])
+  @@index([userId])
+  @@index([organisationId])
 }

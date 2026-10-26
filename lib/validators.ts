@@ -946,6 +946,9 @@ export const judgeAssignmentSchema = z
 
 export const judgingStatusSchema = z.enum(["NOT_STARTED", "OPEN", "CLOSED"]);
 
+/** Which result score ranks: RAW, or ZSCORE ("Adjust for harsh/generous judges", lib/judgingScore.ts). */
+export const scoreNormalizationSchema = z.enum(["RAW", "ZSCORE"]);
+
 /** A judge's (partial) scores for one submission: whole numbers, each criterion once. */
 export const judgeScoresSchema = z
   .object({

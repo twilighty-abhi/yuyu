@@ -214,7 +214,27 @@ to 30 characters).
   kind, team and search filters run in the query and the chip counts are
   separate counts under the same search. **Export emails** downloads every
   match of the current filters from
-  `/api/exports/events/:eventId/attendee-emails`.
+  `/api/exports/events/:eventId/attendee-emails`, and **Export CSV** the full
+  attendee CSV for the same matches (`/api/exports/events/:eventId/attendees`
+  with the filter parameters; without them it is every registration, as
+  before).
+- Teams **Export CSV** (`/api/exports/events/:eventId/teams?status=&q=`)
+  downloads every team matching the chip and search showing, read through
+  the Teams query (`listEventTeamsForOrganiser`) in keyset batches of 200:
+  team, status, size, incomplete, looking for members, leader and email,
+  members (`Name <email>`), submission status (`None` without a project) and
+  creation time. Same access as the Teams view; every denial is an empty 404;
+  the audit (`TEAM_LIST_EXPORTED`) records filter names only. Cells go
+  through `lib/csv.ts`.
+- Both views keep their filters and search in the address bar and have a
+  **Views** menu ([Features → Saved views](FEATURES.md#saved-views)). People
+  adds a *Not checked in* status filter (`notCheckedIn`: `CONFIRMED` with no
+  entry check-in) and presets *Waitlisted*, *Checked in*, *Not checked in*
+  and *Solo*. Teams adds a *Looking for members* filter (`looking`:
+  `lookingForMembers` set) and presets *Incomplete*, *Pending approval* and
+  *Looking for members*. Both filters run in the list query and have chip
+  counts; a saved view is checked with the same `canManageRegistrationsFor`
+  as the list.
 - Permission checks are unchanged: the same checks that guard the individual
   RSVP actions guard the team ones. Every query is scoped by event and
   organisation, and a team id from the browser is always re-read with its

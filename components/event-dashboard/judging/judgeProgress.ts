@@ -105,3 +105,13 @@ export function linkLabel(url: string): string {
     return url;
   }
 }
+
+/**
+ * Toast after a submitted review moves the judge on ("Score next project"):
+ * which project opened and how many are left, or that they are done.
+ */
+export function scoreNextToast(next: { title: string; remaining: number } | null): string {
+  if (!next) return "Review submitted. You've reviewed every project you can score.";
+  const left = next.remaining === 1 ? "this is the last one" : `${next.remaining} left to score`;
+  return `Review submitted. Next up: “${next.title}” (${left}).`;
+}

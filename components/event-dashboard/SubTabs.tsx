@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import * as TabsPrimitive from "@radix-ui/react-tabs";
 import { useActiveTabIntoView } from "@/components/ui/tabs";
 import { cn } from "@/lib/cn";
+import { clearViewParamsFromUrl } from "@/lib/savedViews";
 import { resolveTab, useEventTabs } from "./EventDashboardTabs";
 
 export type SubTab = { value: string; label: string; count?: number; content: ReactNode };
@@ -40,6 +41,8 @@ export function SubTabs({ items, label, className }: { items: SubTab[]; label: s
         setValue(next);
         const url = new URL(window.location.href);
         url.searchParams.set("sub", next);
+        // List filters (saved views) belong to the sub-tab that was showing.
+        clearViewParamsFromUrl(url);
         window.history.replaceState(window.history.state, "", url);
       }}
       className={cn("flex flex-col gap-5", className)}

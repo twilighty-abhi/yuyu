@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { EventStatus, JudgingStatus, SubmissionStatus } from "@prisma/client";
+import type { EventStatus, JudgingStatus, ScoreNormalization, SubmissionStatus } from "@prisma/client";
 import {
   listSubmissionsForOrganiser,
   loadJudgeProgress,
@@ -12,7 +12,9 @@ import {
   type OrganiserSubmissionsPage,
   type ResultRowDto,
 } from "@/lib/core/judging";
+import { countUnsubmittedEntrants, type UnsubmittedEntrantsPage } from "@/lib/core/judgingEntrants";
 import type { JudgingOrganiserContext } from "@/lib/judgingAccess";
+import type { ResultsScoreFilter } from "@/lib/judgingOrganiserPaging";
 import { prisma } from "@/lib/db";
 import type { EventDashboardContext } from "@/lib/eventDashboard/context";
 import { safeTimeZone, zonedDatetimeLocalValue } from "@/lib/timeZone";
@@ -74,7 +76,10 @@ export type JudgingDashboardResultRow = {
   title: string;
   entrantName: string;
   status: SubmissionStatus;
+  /** The active method's score, which ranks. */
   score: number | null;
+  rawScore: number | null;
+  adjustedScore: number | null;
   judgesCounted: number;
   rank: number | null;
   criterionAverages: Array<{ criterionId: string; average: number | null }>;
@@ -85,6 +90,37 @@ export type JudgingDashboardSubmissionsPage = {
   submissions: JudgingDashboardSubmission[];
   nextCursor: string | null;
 };
+
+/** Judging → Submissions → Not submitted: one entrant without a SUBMITTED project. */
+export type JudgingDashboardUnsubmittedEntrant = {
+  kind: "team" | "solo";
+  id: string;
+  name: string;
+  size: number;
+  submissionStatus: SubmissionStatus | null;
+  submissionTitle: string | null;
+  registeredAt: string;
+};
+
+export type JudgingDashboardUnsubmittedPage = {
+  entrants: JudgingDashboardUnsubmittedEntrant[];
+  nextCursor: string | null;
+};
+
+export function toDashboardUnsubmittedPage(page: UnsubmittedEntrantsPage): JudgingDashboardUnsubmittedPage {
+  return {
+    entrants: page.entrants.map((row) => ({
+      kind: row.kind,
+      id: row.id,
+      name: row.name,
+      size: row.size,
+      submissionStatus: row.submissionStatus,
+      submissionTitle: row.submissionTitle,
+      registeredAt: row.registeredAt.toISOString(),
+    })),
+    nextCursor: page.nextCursor,
+  };
+}
 
 /** One numbered page of the ranked table; ranks are computed over every project. */
 export type JudgingDashboardResultsPage = {
@@ -99,6 +135,12 @@ export type JudgingDashboardResultsPage = {
   query: string;
   /** Rows in the whole ranking, before any search. */
   rankedTotal: number;
+  /** Which score ranks: RAW, or ZSCORE ("Adjust for harsh/generous judges"). */
+  scoreNormalization: ScoreNormalization;
+  /** The score filter applied ("all" for none). */
+  scored: ResultsScoreFilter;
+  /** Rows per score filter over the whole ranking, for the chips. */
+  scoreCounts: Record<ResultsScoreFilter, number>;
 };
 
 /** A project the Awards winner picker offers (SUBMITTED only). */
@@ -115,6 +157,8 @@ export type JudgingDashboardData = {
   counts: Record<SubmissionStatus, number>;
   /** Every project of the event, whatever its status. */
   submissionsTotal: number;
+  /** Confirmed teams and solo registrants without a SUBMITTED project (the "Not submitted" chip). */
+  unsubmittedCount: number;
   /** The first page of Judging → Submissions; further pages come from `loadSubmissionsPage`. */
   submissions: JudgingDashboardSubmissionsPage;
   judges: JudgingDashboardJudge[];
@@ -209,6 +253,8 @@ function toDashboardResultRow(row: ResultRowDto): JudgingDashboardResultRow {
     entrantName: row.entrantName,
     status: row.status,
     score: row.score,
+    rawScore: row.rawScore,
+    adjustedScore: row.adjustedScore,
     judgesCounted: row.judgesCounted,
     rank: row.rank,
     criterionAverages: row.criterionAverages.map((average) => ({ ...average })),
@@ -225,6 +271,9 @@ export function toDashboardResultsPage(page: JudgingResultsPageDto): JudgingDash
     pageSize: page.pageSize,
     query: page.query,
     rankedTotal: page.rankedTotal,
+    scoreNormalization: page.scoreNormalization,
+    scored: page.scored,
+    scoreCounts: { ...page.scoreCounts },
   };
 }
 
@@ -236,11 +285,12 @@ export function toDashboardResultsPage(page: JudgingResultsPageDto): JudgingDash
 export async function loadJudgingDashboard(ctx: EventDashboardContext): Promise<JudgingDashboardData | null> {
   const organiser = judgingOrganiserContext(ctx);
   if (!organiser) return null;
-  const [setup, submissions, judges, results] = await Promise.all([
+  const [setup, submissions, judges, results, unsubmittedCount] = await Promise.all([
     loadJudgingSetup(organiser),
     listSubmissionsForOrganiser(organiser),
     loadJudgeProgress(organiser),
     loadJudgingResultsPage(organiser),
+    countUnsubmittedEntrants(organiser),
   ]);
   if (!setup || !judges || !results) return null;
 
@@ -251,6 +301,7 @@ export async function loadJudgingDashboard(ctx: EventDashboardContext): Promise<
     awards: setup.awards.map((award) => ({ ...award, winners: award.winners.map((winner) => ({ ...winner })) })),
     counts: setup.counts,
     submissionsTotal: Object.values(setup.counts).reduce((sum, count) => sum + count, 0),
+    unsubmittedCount,
     submissions: toDashboardSubmissionsPage(submissions),
     judges: judges.map((judge) => ({ ...judge })),
     results: toDashboardResultsPage(results),

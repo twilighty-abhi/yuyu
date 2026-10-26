@@ -20,6 +20,8 @@ export type ActionResult<T = void> =
       fieldErrors?: Record<string, string[]>;
       /** e.g. check-in requires staff override for this RSVP status */
       needsForce?: boolean;
+      /** The action needs a fresh sign-in (lib/reauth.ts); the UI offers one. */
+      reauthRequired?: boolean;
       /** Machine-readable reason for API clients; e.g. a TEAMS_ONLY event refusing a solo registration. */
       code?: ActionErrorCode;
     };

@@ -47,6 +47,52 @@ Apply these with `npm run db:deploy` before rolling out the matching application
 | `20261023000000_check_in_lists` | New `CheckInList`, `CheckInListRecord` and `CheckInListEvent` tables for custom check-in lists: a partial unique index on (`eventId`, `lower(name)`) for non-archived lists, a unique (`listId`, `rsvpId`) record per guest, CHECKs on the name shape, sort order, sources and history actions, cascades from `Event` and `RSVP` (history keeps a null `rsvpId`), and `SET NULL` on the acting `User`. Purely additive; entry check-in tables and rows are unchanged, and no backfill runs. `db:verify` now checks the three tables and their key constraints |
 | `20261023010000_org_webhooks` | New `WebhookEndpoint` and `WebhookDelivery` tables and the `WebhookDeliveryStatus` enum for organisation webhooks, cascading on `Organisation` (endpoints) and `WebhookEndpoint` (deliveries), with CHECKs on URL/description length, event-type count, failure counter, attempts, error length and the lease shape. Purely additive; no existing table or row changes |
 | `20261022000000_event_broadcast_drafts` | New `EventBroadcastDraft` table for saved Emails-tab drafts: one row per event and organiser (unique on `eventId`, `userId`), cascading on `Event` and `User`, with CHECKs bounding the subject to 150 characters and the audience to four statuses. Purely additive; no existing table or row changes |
+| `20261024000000_team_registration` | Team registration: `Event.registrationMode` (default `INDIVIDUAL`), solo policy and team-size columns with CHECKs, new `Team`, `TeamSeekerProfile` and `TeamJoinRequest` tables, nullable `RSVP.teamId`. Existing events stay individual; no backfill. `ALTER TABLE "Event"` takes a brief ACCESS EXCLUSIVE lock (see the lock checklist below) |
+| `20261024010000_hackathon_judging` | Submissions and judging tables (`Submission`, `SubmissionLink`, `JudgingCriterion`, `JudgeAssignment`, `JudgeScore`, `JudgeReview`, `EventAward`, `EventAwardWinner`) and judging columns on `Event` with defaults. Additive; `ALTER TABLE "Event"` as above |
+| `20261024020000_judging_results_announced` | Nullable `Event.resultsAnnouncedAt`. Additive; `ALTER TABLE "Event"` as above |
+| `20261025000000_judging_ops` | `Event.reviewsPerProject` and `Event.scoreNormalization` (default `RAW`) with a range CHECK. Additive; `ALTER TABLE "Event"` as above |
+| `20261025010000_saved_views` | New `SavedView` table and `SavedViewSurface` enum, cascading on `Event`, `User` and `Organisation`. Purely additive |
+| `20261026000000_large_event_indexes` | Six composite indexes on `RSVP`, `Team`, `Submission` and `EventInvite` (docs/PERFORMANCE.md). Plain `CREATE INDEX IF NOT EXISTS` inside the migration transaction: each build blocks writes to its table (RSVPs, check-ins, submissions, invites) until it finishes. Pre-build them concurrently on a large instance (below) |
+| `20261027000000_drop_orphan_event_session_type` | Drops the unused `EventSessionType` enum (no column has used it since `20260915010000_simplify_event_session_fields`). No table changes; brings the database in line with `schema.prisma` so `prisma migrate diff` is empty |
+
+#### Lock checklist for the team, judging and large-event migrations
+
+Prisma applies each migration in one transaction, without a lock timeout. The
+four migrations that alter `Event` wait for an ACCESS EXCLUSIVE lock, and while
+they wait every new read and write of `Event` from the running pods queues
+behind them; `20261026000000_large_event_indexes` blocks writes to `RSVP`,
+`Team`, `Submission` and `EventInvite` while its indexes build. On a quiet
+database the whole upgrade takes well under a second. Before running the
+migration job:
+
+1. Deploy at low traffic, and make sure nothing holds a long transaction:
+
+   ```sql
+   SELECT pid, state, now() - xact_start AS age, left(query, 80)
+   FROM pg_stat_activity
+   WHERE datname = current_database() AND xact_start IS NOT NULL
+   ORDER BY xact_start;
+   ```
+
+   End long reports and `idle in transaction` sessions before you continue.
+2. On a large instance, pre-build the large-event indexes on the existing
+   tables without blocking writes. The migration's `IF NOT EXISTS` then skips
+   them:
+
+   ```sql
+   CREATE INDEX CONCURRENTLY IF NOT EXISTS "RSVP_eventId_createdAt_id_idx" ON "RSVP"("eventId", "createdAt", "id");
+   CREATE INDEX CONCURRENTLY IF NOT EXISTS "RSVP_eventId_checkedInAt_id_idx" ON "RSVP"("eventId", "checkedInAt", "id");
+   CREATE INDEX CONCURRENTLY IF NOT EXISTS "EventInvite_eventId_createdAt_id_idx" ON "EventInvite"("eventId", "createdAt", "id");
+   ```
+
+   `Team` and `Submission` are created by earlier migrations in this release,
+   so they do not exist yet and are empty when their indexes are built. A
+   failed `CONCURRENTLY` build leaves an `INVALID` index: drop it and run the
+   statement again before migrating.
+3. If the job does wait on a lock, find the blocker with
+   `SELECT pid, pg_blocking_pids(pid), left(query, 80) FROM pg_stat_activity WHERE cardinality(pg_blocking_pids(pid)) > 0;`
+   and end it (`SELECT pg_terminate_backend(<pid>);`) rather than killing the
+   migration job, which would leave a failed migration to resolve.
 
 ## Instance-managed services
 

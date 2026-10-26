@@ -1,6 +1,8 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { load } from "js-yaml";
+import Ajv2020 from "ajv/dist/2020";
+import addFormats from "ajv-formats";
 import { describe, expect, it } from "vitest";
 import type { z } from "zod";
 import * as dto from "@/lib/mobile/schemas";
@@ -115,6 +117,55 @@ describe("mobile API contract", () => {
     expect(parsed.success ? [] : parsed.error.issues).toEqual([]);
   });
 
+  // The small validator above flattens allOf itself; a standard JSON Schema
+  // 2020-12 validator (what codegen and API tools use) must accept the same
+  // fixtures, so compositions cannot be unsatisfiable.
+  const ajv = new Ajv2020({ strict: false, allErrors: true });
+  addFormats(ajv);
+  ajv.addSchema({ $id: "openapi", components: spec.components } as Schema);
+
+  it.each(fixtures)("%s passes a standard JSON Schema 2020-12 validator", (file, component) => {
+    const value = JSON.parse(readFileSync(join(root, "docs/mobile-api-fixtures", file), "utf8"));
+    const check = ajv.compile({ $ref: `openapi#/components/schemas/${component}` });
+    expect(check(value) ? [] : check.errors).toEqual([]);
+  });
+
+  it("standard validation still rejects unknown properties on composed schemas", () => {
+    const value = JSON.parse(readFileSync(join(root, "docs/mobile-api-fixtures/org-event-detail.json"), "utf8"));
+    value.data.event.leak = "x";
+    expect(ajv.compile({ $ref: "openapi#/components/schemas/OrgEventDetailResponse" })(value)).toBe(false);
+  });
+
+  it("every $ref resolves when the spec is read by a standard YAML parser", () => {
+    const refs: string[] = [];
+    const collect = (node: unknown) => {
+      if (Array.isArray(node)) node.forEach(collect);
+      else if (node && typeof node === "object") {
+        for (const [key, value] of Object.entries(node)) {
+          if (key === "$ref" && typeof value === "string") refs.push(value);
+          else collect(value);
+        }
+      }
+    };
+    collect(spec);
+    expect(refs.length).toBeGreaterThan(0);
+    const missing = refs.filter((ref) => {
+      let node: unknown = spec;
+      for (const part of ref.replace(/^#\//, "").split("/")) node = node && typeof node === "object" ? (node as Record<string, unknown>)[part] : undefined;
+      return node === undefined;
+    });
+    expect(missing).toEqual([]);
+  });
+
+  it("gives every operation a default error response", () => {
+    const missing = Object.entries(spec.paths).flatMap(([path, item]) =>
+      Object.entries(item)
+        .filter(([method]) => ["get", "post", "patch", "put", "delete"].includes(method))
+        .filter(([, operation]) => !(operation as { responses?: Record<string, unknown> }).responses?.default)
+        .map(([method]) => `${method.toUpperCase()} ${path}`));
+    expect(missing).toEqual([]);
+  });
+
   it("the validator itself rejects drift", () => {
     const value = JSON.parse(readFileSync(join(root, "docs/mobile-api-fixtures/guests.json"), "utf8"));
     value.data.guests[0].ticketToken = "leak";
@@ -133,7 +184,8 @@ describe("mobile API contract", () => {
     const walk = (dir: string) => {
       for (const entry of readdirSync(dir)) {
         const full = join(dir, entry);
-        if (statSync(full).isDirectory()) walk(full);
+        // The [...path] catch-all only answers unknown paths with a JSON 404.
+        if (statSync(full).isDirectory()) { if (!entry.startsWith("[...")) walk(full); }
         else if (entry === "route.ts") {
           const path = `/api/mobile/v1/${relative(routeDir, dir)}`.replace(/\/$/, "").replace(/\[([^\]]+)\]/g, "{$1}");
           const methods = [...readFileSync(full, "utf8").matchAll(/export const (GET|POST|PATCH|PUT|DELETE)\b/g)].map((match) => match[1]!.toLowerCase()).sort();

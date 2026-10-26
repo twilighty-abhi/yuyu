@@ -7,29 +7,31 @@ import { Callout } from "@/components/ui/display";
 import QRCode from "react-qr-code";
 import { createOrRotateCheckInStation, disableCheckInStation, revealCheckInStationPin } from "@/app/actions/checkin-station";
 import { useToast } from "@/components/feedback/ToastProvider";
+import { useActionErrorToast } from "@/components/auth/useActionErrorToast";
 
 export function CheckInStationSettings({ organisationSlug, eventId, stationUrl, enabled }: { organisationSlug: string; eventId: string; stationUrl: string; enabled: boolean }) {
   const [pending, startTransition] = useTransition();
   const [pin, setPin] = useState<string | null>(null);
   const { showToast } = useToast();
+  const showActionError = useActionErrorToast();
   const copy = async (value: string, message: string) => {
     try { await navigator.clipboard.writeText(value); showToast(message, "success"); } catch { showToast("Could not copy to the clipboard.", "error"); }
   };
   const generate = () => startTransition(async () => {
     const result = await createOrRotateCheckInStation({ organisationSlug, eventId });
-    if (!result.ok) return showToast(result.error, "error");
+    if (!result.ok) return showActionError(result);
     setPin(result.data!.pin);
     showToast(enabled ? "Venue PIN rotated." : "Venue check-in station enabled.", "success");
   });
   const disable = () => startTransition(async () => {
     const result = await disableCheckInStation({ organisationSlug, eventId });
-    if (!result.ok) return showToast(result.error, "error");
+    if (!result.ok) return showActionError(result);
     setPin(null);
     showToast("Venue check-in station disabled.", "success");
   });
   const reveal = () => startTransition(async () => {
     const result = await revealCheckInStationPin({ organisationSlug, eventId });
-    if (!result.ok) return showToast(result.error, "error");
+    if (!result.ok) return showActionError(result);
     setPin(result.data!.pin);
   });
   return (

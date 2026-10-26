@@ -12,6 +12,7 @@ import { Callout } from "@/components/ui/display";
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader } from "@/components/ui/dialog";
 import { Field, Input, Dropdown } from "@/components/ui/field";
 import { cn } from "@/lib/cn";
+import { zonedInputToIso } from "@/lib/timeZone";
 import {
   DEFAULT_TEAM_SETTINGS,
   TeamSettingsFields,
@@ -95,13 +96,20 @@ export function CreateEventDialog(props: {
     e.preventDefault();
     if (activeStep !== 2) return;
     setError(null);
-    if (!start || start < new Date()) {
-      setError("Start time must be now or in the future.");
+    const form = e.currentTarget;
+    const fd = new FormData(form);
+    // The pickers hold wall-clock times; read them in the event's timezone,
+    // not the browser's or the server's.
+    const timezone = String(fd.get("timezone") ?? "Asia/Kolkata");
+    const startIso = start ? zonedInputToIso(toDatetimeLocalValue(start), timezone) : null;
+    const endIso = end ? zonedInputToIso(toDatetimeLocalValue(end), timezone) : null;
+    if (!startIso || new Date(startIso) < new Date()) {
+      setError(start && !startIso ? `That start time does not exist in ${timezone}.` : "Start time must be now or in the future.");
       setActiveStep(1);
       return;
     }
-    if (!end || end <= start) {
-      setError("End time must be after start time.");
+    if (!endIso || new Date(endIso) <= new Date(startIso)) {
+      setError(end && !endIso ? `That end time does not exist in ${timezone}.` : "End time must be after start time.");
       setActiveStep(1);
       return;
     }
@@ -110,8 +118,6 @@ export function CreateEventDialog(props: {
       focusTeamSettingsProblem(e.currentTarget, teamSettings);
       return;
     }
-    const form = e.currentTarget;
-    const fd = new FormData(form);
     startTransition(async () => {
       const res = await createEvent({
         organisationSlug,
@@ -119,9 +125,9 @@ export function CreateEventDialog(props: {
         aboutHtml: String(fd.get("aboutHtml") ?? ""),
         tags: String(fd.get("tags") ?? ""),
         coverImageUrl: "",
-        startDateTime: String(fd.get("startDateTime") ?? ""),
-        endDateTime: String(fd.get("endDateTime") ?? ""),
-        timezone: String(fd.get("timezone") ?? "Asia/Kolkata"),
+        startDateTime: startIso,
+        endDateTime: endIso,
+        timezone,
         location: String(fd.get("location") ?? ""),
         mapLinkUrl: String(fd.get("mapLinkUrl") ?? ""),
         isOnline: isOnline,

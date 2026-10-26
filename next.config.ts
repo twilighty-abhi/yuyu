@@ -81,6 +81,20 @@ const nextConfig: NextConfig = {
         source: "/submit/:token",
         headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
       },
+      // Invitation, password-reset and email-verification links carry their
+      // token in the URL as well.
+      {
+        source: "/join/:kind/:token",
+        headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
+      },
+      {
+        source: "/reset-password",
+        headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
+      },
+      {
+        source: "/verify-email",
+        headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
+      },
     ];
   },
 };

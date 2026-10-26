@@ -46,7 +46,19 @@ function allowedEmbedAncestors() {
 function isNoStorePage(pathname: string): boolean {
   return /^\/(?:ticket|team|submit)\/[^/]+\/?$/.test(pathname)
     || /^\/[^/]+\/[^/]+\/team\/[^/]+\/?$/.test(pathname)
-    || /^\/account\/submissions\/[^/]+\/?$/.test(pathname);
+    || /^\/account\/submissions\/[^/]+\/?$/.test(pathname)
+    // Signed-in areas and the remaining capability links: organisation and
+    // co-organiser invitations, password reset and email verification.
+    || /^\/(?:dashboard|account|super-admin|super-admin-mfa|join|reset-password|verify-email|login)(?:\/|$)/.test(pathname);
+}
+
+/**
+ * The Auth.js session cookie (lib/auth.ts), including its chunked form. A
+ * signed-in request can render personalised HTML on any page, so it is never
+ * stored either.
+ */
+function hasSessionCookie(request: NextRequest): boolean {
+  return request.cookies.getAll().some(({ name }) => /^(?:__Secure-)?yuyu\.session-token\.v2(?:\.\d+)?$/.test(name));
 }
 
 export async function proxy(request: NextRequest) {
@@ -151,10 +163,11 @@ export async function proxy(request: NextRequest) {
   // the per-request nonce policy, so instruct intermediaries not to transform
   // application HTML.
   // Bearer-capability pages (ticket, team management and join links, solo
-  // submission links; docs/TEAMS.md, docs/HACKATHON.md) and the account
-  // submission page must never be stored by a browser or shared cache. This
-  // header replaces Next's own `private, no-store` in production, so say it here.
-  response.headers.set("Cache-Control", isNoStorePage(pathname) ? "private, no-cache, no-store, max-age=0, must-revalidate, no-transform" : "no-transform");
+  // submission links, invitations, password reset and email verification;
+  // docs/TEAMS.md, docs/HACKATHON.md), signed-in areas and any signed-in
+  // request must never be stored by a browser or shared cache. This header
+  // replaces Next's own `private, no-store` in production, so say it here.
+  response.headers.set("Cache-Control", isNoStorePage(pathname) || hasSessionCookie(request) ? "private, no-cache, no-store, max-age=0, must-revalidate, no-transform" : "no-transform");
   if (!isEmbedPage) response.headers.set("X-Frame-Options", "DENY");
   return response;
 }

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { OutboxStatus, RsvpStatus } from "@prisma/client";
 
 const mocks = vi.hoisted(() => ({
@@ -34,6 +34,15 @@ vi.mock("@/lib/email/passwordReset", () => ({ sendPasswordResetEmail: mocks.pass
 vi.mock("@/lib/email/emailVerification", () => ({ sendEmailVerificationEmail: mocks.verification }));
 
 import { deliverOutboxBatch } from "@/lib/outbox";
+
+// Expected links below use this base URL; pin it so a release environment's
+// NEXT_PUBLIC_BASE_URL cannot change them.
+beforeAll(() => {
+  vi.stubEnv("NEXT_PUBLIC_BASE_URL", "http://localhost:3000");
+});
+afterAll(() => {
+  vi.unstubAllEnvs();
+});
 
 function message(overrides: Record<string, unknown>) {
   return {

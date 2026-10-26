@@ -140,7 +140,7 @@ export default async function InstanceEventPage({ params }: Props) {
                 {series.capacity != null ? <ProgressBar value={confirmedCount} max={series.capacity} tone="ink" label="Places taken" /> : null}
                 {full ? <p className="text-caption text-ink-muted">Join the waitlist below.</p> : null}
               </div>
-              <RsvpForm orgSlug={org.slug} eventInstanceId={instance.id} />
+              <RsvpForm orgSlug={org.slug} eventInstanceId={instance.id} refreshPageOnSave />
             </>
           ) : (
             <p className="text-body-ui text-ink-muted">

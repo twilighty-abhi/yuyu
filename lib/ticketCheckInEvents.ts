@@ -2,6 +2,7 @@ import "server-only";
 
 import { EventEmitter } from "node:events";
 import Redis from "ioredis";
+import { REDIS_FAIL_FAST_OPTIONS } from "@/lib/redisOptions";
 
 /**
  * Realtime "your ticket was just checked in" notifications.
@@ -54,11 +55,7 @@ function usesRedis(): boolean {
 
 function createClient(role: "publisher" | "subscriber"): Redis {
   // Mirrors lib/rateLimit.ts: fail fast per command and connect on first use.
-  const client = new Redis(process.env.REDIS_URL as string, {
-    maxRetriesPerRequest: 1,
-    connectTimeout: 1000,
-    lazyConnect: true,
-  });
+  const client = new Redis(process.env.REDIS_URL as string, REDIS_FAIL_FAST_OPTIONS);
   client.on("error", () => {
     console.warn(`[ticketCheckInEvents] Redis ${role} error`);
   });

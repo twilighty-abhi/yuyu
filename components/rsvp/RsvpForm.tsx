@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { useSession } from "next-auth/react";
+import { useAuthSession } from "@/components/auth/useAuthSession";
 import Link from "next/link";
 import type { RsvpStatus } from "@prisma/client";
 import { CheckCircle2, Download } from "lucide-react";
@@ -11,6 +11,7 @@ import { Callout } from "@/components/ui/display";
 import { Field, Input } from "@/components/ui/field";
 import { RegistrationQuestions, focusQuestion, useRegistrationAnswers } from "@/components/rsvp/QuestionField";
 import { identityErrors } from "@/components/rsvp/registrationAnswers";
+import { TeamRegistrationFields, useTeamRegistration, type TeamRegistrationConfig } from "@/components/rsvp/TeamRegistrationFields";
 
 async function postRsvp(body: unknown) {
   const res = await fetch("/api/rsvp", {
@@ -79,11 +80,13 @@ export function RsvpForm(props: {
   eventSlug?: string;
   eventInstanceId?: string;
   registrationFields?: RegistrationFieldDefinition[];
+  /** Team event settings (docs/TEAMS.md); omit for individual registration. */
+  team?: TeamRegistrationConfig | null;
   /** Lets a containing event page update immediately after this tab saves an RSVP. */
-  onRsvpSaved?: (rsvp: { ticketToken: string; status: RsvpStatus | null }) => void;
+  onRsvpSaved?: (rsvp: { ticketToken: string; status: RsvpStatus | null; teamMode: "create" | "join" | "solo" | null }) => void;
 }) {
-  const { orgSlug, eventSlug, eventInstanceId, registrationFields, onRsvpSaved } = props;
-  const { data: session, status } = useSession();
+  const { orgSlug, eventSlug, eventInstanceId, registrationFields, team, onRsvpSaved } = props;
+  const { data: session, status } = useAuthSession();
   const lsKey = storageKey({ orgSlug, eventSlug, eventInstanceId });
   const [guestEmail, setGuestEmail] = useState("");
   const [name, setName] = useState("");
@@ -91,6 +94,7 @@ export function RsvpForm(props: {
   const [done, setDone] = useState(false);
   const [rsvpStatus, setRsvpStatus] = useState<RsvpStatus | null>(null);
   const [ticketToken, setTicketToken] = useState("");
+  const [registeredAs, setRegisteredAs] = useState<"create" | "join" | "solo" | null>(null);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -105,26 +109,30 @@ export function RsvpForm(props: {
 
   const fields = useMemo(() => registrationFields ?? [], [registrationFields]);
   const questionsState = useRegistrationAnswers(fields);
+  const teamState = useTeamRegistration(team);
   const [identity, setIdentity] = useState<{ name?: string; email?: string }>({});
   const formRef = useRef<HTMLDivElement & HTMLFormElement>(null);
   const requireName = !session?.user?.name?.trim();
   const isGuest = !session?.user;
-  const problemCount = Object.keys(questionsState.errors).length + Object.values(identity).filter(Boolean).length;
+  const problemCount = Object.keys(questionsState.errors).length + Object.values(identity).filter(Boolean).length + teamState.problemCount();
 
   /** Client-side checks first, so each question shows its own message; the server still decides. */
   function checkBeforeSubmit() {
+    const firstTeamProblem = teamState.validate();
     const who = identityErrors({ name, email: guestEmail, requireName: isGuest || requireName, requireEmail: isGuest });
     const questionErrors = questionsState.validate();
     setIdentity(who);
     const firstQuestion = fields.find((field) => questionErrors[field.key])?.key;
-    const first = who.name ? "__name" : who.email ? "__email" : firstQuestion;
+    const first = firstTeamProblem ?? (who.name ? "__name" : who.email ? "__email" : firstQuestion);
     if (first) focusQuestion(formRef.current, first);
     return !first;
   }
 
   function submit() {
     setError(null);
+    if (teamState.awaitingLink) return;
     if (!checkBeforeSubmit()) return;
+    const teamIntent = teamState.payload();
     startTransition(async () => {
       const res = await postRsvp({
         orgSlug,
@@ -132,13 +140,17 @@ export function RsvpForm(props: {
         ...(isGuest ? { guestEmail } : {}),
         name,
         answers: questionsState.payload(),
+        ...(teamIntent ? { team: teamIntent } : {}),
       });
       if (!res.ok) setError(res.error);
-      else saveSuccessfulRsvp({ ticketToken: res.ticketToken, status: res.status });
+      else {
+        setRegisteredAs(teamIntent?.mode ?? null);
+        saveSuccessfulRsvp({ ticketToken: res.ticketToken, status: res.status }, teamIntent?.mode ?? null);
+      }
     });
   }
 
-  function saveSuccessfulRsvp(rsvp: { ticketToken: string; status: RsvpStatus | null }) {
+  function saveSuccessfulRsvp(rsvp: { ticketToken: string; status: RsvpStatus | null }, teamMode: "create" | "join" | "solo" | null = null) {
     setTicketToken(rsvp.ticketToken);
     setRsvpStatus(rsvp.status);
     if (rsvp.ticketToken) {
@@ -156,7 +168,7 @@ export function RsvpForm(props: {
         // this browser has disabled local storage.
       }
     }
-    onRsvpSaved?.(rsvp);
+    onRsvpSaved?.({ ...rsvp, teamMode });
     setDone(true);
   }
 
@@ -176,6 +188,13 @@ export function RsvpForm(props: {
             ? "Registration confirmed. Download and save your ticket now — you’ll need it for check-in."
             : "Registration received. We’ll let you know when its status changes."}
         </p>
+        {registeredAs === "create" ? (
+          <p className="text-body-ui">
+            Your team is registered. Check your email for your team page link, where you manage the team, and the join link to share with your teammates.
+          </p>
+        ) : registeredAs === "join" && team?.joinTeam ? (
+          <p className="text-body-ui">You’re on {team.joinTeam.name}. Your registration follows the team’s status.</p>
+        ) : null}
         <div className="flex flex-wrap gap-2">
           {isConfirmed && ticketDownloadUrl ? (
             <Button asChild variant="primary" size="sm">
@@ -196,36 +215,48 @@ export function RsvpForm(props: {
   }
 
   const questions = <RegistrationQuestions controller={questionsState} />;
+  const teamFields = <TeamRegistrationFields controller={teamState} />;
   const problems = problemCount > 0 ? (
     <Callout tone="danger" role="alert">
       {problemCount === 1 ? "One answer needs a quick fix before you can register." : `${problemCount} answers need a quick fix before you can register.`}
     </Callout>
   ) : null;
 
+  // "Join with a link" without a link: only the explanation, nothing to
+  // submit. The team choice stays in the same element either way, so moving
+  // between the options with the arrow keys never remounts the radio group
+  // (which would drop keyboard focus out of it).
+  const awaitingLink = teamState.awaitingLink;
+
   if (session?.user) {
     return (
       <div ref={formRef} className="flex flex-col gap-3.5">
         {error ? <Callout tone="danger" role="alert">{error}</Callout> : null}
         {problems}
-        <div data-question-key="__name">
-          <Field label="Name" optional={!requireName} required={requireName} error={identity.name} helperText={!requireName ? `Leave blank to use ${session.user.name}.` : undefined}>
-            <Input
-              name="name"
-              autoComplete="name"
-              value={name}
-              placeholder={session.user.name ?? ""}
-              onChange={(event) => {
-                setName(event.target.value);
-                if (identity.name && event.target.value.trim()) setIdentity((current) => ({ ...current, name: undefined }));
-              }}
-              maxLength={200}
-            />
-          </Field>
-        </div>
-        {questions}
-        <Button variant="accent" size="lg" fullWidth loading={pending} loadingLabel="Registering…" onClick={submit}>
-          Register
-        </Button>
+        {teamFields}
+        {awaitingLink ? null : (
+          <>
+            <div data-question-key="__name">
+              <Field label="Name" optional={!requireName} required={requireName} error={identity.name} helperText={!requireName ? `Leave blank to use ${session.user.name}.` : undefined}>
+                <Input
+                  name="name"
+                  autoComplete="name"
+                  value={name}
+                  placeholder={session.user.name ?? ""}
+                  onChange={(event) => {
+                    setName(event.target.value);
+                    if (identity.name && event.target.value.trim()) setIdentity((current) => ({ ...current, name: undefined }));
+                  }}
+                  maxLength={200}
+                />
+              </Field>
+            </div>
+            {questions}
+            <Button variant="accent" size="lg" fullWidth loading={pending} loadingLabel="Registering…" onClick={submit}>
+              Register
+            </Button>
+          </>
+        )}
       </div>
     );
   }
@@ -242,42 +273,47 @@ export function RsvpForm(props: {
     >
       {error ? <Callout tone="danger" role="alert">{error}</Callout> : null}
       {problems}
-      <p className="text-body-ui text-ink-muted">Register with your email</p>
-      <div data-question-key="__name">
-        <Field label="Name" required error={identity.name}>
-          <Input
-            name="name"
-            autoComplete="name"
-            value={name}
-            onChange={(event) => {
-              setName(event.target.value);
-              if (identity.name && event.target.value.trim()) setIdentity((current) => ({ ...current, name: undefined }));
-            }}
-            maxLength={200}
-          />
-        </Field>
-      </div>
-      <div data-question-key="__email">
-        <Field label="Email" required error={identity.email} helperText="We’ll send your ticket here.">
-          <Input
-            name="guestEmail"
-            type="email"
-            autoComplete="email"
-            value={guestEmail}
-            onChange={(event) => {
-              setGuestEmail(event.target.value);
-              if (identity.email) {
-                const recheck = identityErrors({ name, email: event.target.value, requireName: false, requireEmail: true }).email;
-                setIdentity((current) => ({ ...current, email: recheck }));
-              }
-            }}
-          />
-        </Field>
-      </div>
-      {questions}
-      <Button variant="accent" size="lg" fullWidth type="submit" loading={pending} loadingLabel="Registering…">
-        Register
-      </Button>
+      {teamFields}
+      {awaitingLink ? null : (
+        <>
+          <p className="text-body-ui text-ink-muted">Register with your email</p>
+          <div data-question-key="__name">
+            <Field label="Name" required error={identity.name}>
+              <Input
+                name="name"
+                autoComplete="name"
+                value={name}
+                onChange={(event) => {
+                  setName(event.target.value);
+                  if (identity.name && event.target.value.trim()) setIdentity((current) => ({ ...current, name: undefined }));
+                }}
+                maxLength={200}
+              />
+            </Field>
+          </div>
+          <div data-question-key="__email">
+            <Field label="Email" required error={identity.email} helperText="We’ll send your ticket here.">
+              <Input
+                name="guestEmail"
+                type="email"
+                autoComplete="email"
+                value={guestEmail}
+                onChange={(event) => {
+                  setGuestEmail(event.target.value);
+                  if (identity.email) {
+                    const recheck = identityErrors({ name, email: event.target.value, requireName: false, requireEmail: true }).email;
+                    setIdentity((current) => ({ ...current, email: recheck }));
+                  }
+                }}
+              />
+            </Field>
+          </div>
+          {questions}
+          <Button variant="accent" size="lg" fullWidth type="submit" loading={pending} loadingLabel="Registering…">
+            Register
+          </Button>
+        </>
+      )}
     </form>
   );
 }

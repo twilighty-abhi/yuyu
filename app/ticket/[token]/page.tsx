@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { DotFace } from "@/components/brand/DotFace";
 import { ArrowLeft, ArrowUpRight, CalendarPlus, Check } from "lucide-react";
@@ -16,6 +17,18 @@ import { accentStyle, INK_ACCENT } from "@/lib/theme/accent";
 import { formatDayShort, formatTime, formatTimeZoneName } from "@/lib/format/datetime";
 import { Button } from "@/components/ui/button";
 import { Callout, Chip, type ChipTone } from "@/components/ui/display";
+import { RegistrationMode, SoloPolicy } from "@prisma/client";
+import { auth } from "@/lib/auth";
+import {
+  listSeekersForSeeker,
+  listTeamsLookingForMembers,
+  loadMemberTeamView,
+  loadSeekerView,
+  type TicketHolder,
+} from "@/lib/core/teams";
+import { TicketSeekerPanel, TicketTeamCard } from "@/components/team/TicketTeamSection";
+import { TicketSubmissionCard, type TicketSubmissionMode } from "@/components/submission/TicketSubmissionCard";
+import { TicketJoinTeamForm } from "@/components/team/JoinTeamWithRegistration";
 
 type Props = {
   params: Promise<{ token: string }>;
@@ -94,7 +107,12 @@ export default async function TicketPage({ params }: Props) {
           mapLinkUrl: true,
           isOnline: true,
           slug: true,
-          page: { select: { accentColor: true } },
+          organisationId: true,
+          registrationMode: true,
+          soloPolicy: true,
+          status: true,
+          submissionsEnabled: true,
+          page: { select: { accentColor: true, isPublished: true } },
           organisation: { select: { slug: true, name: true } },
         },
       },
@@ -169,6 +187,101 @@ export default async function TicketPage({ params }: Props) {
   const confirmed = rsvp.status === "CONFIRMED";
   const name = displayName(rsvp);
   const eventPageHref = eventSlug ? `/${orgSlug}/${eventSlug}` : `/${orgSlug}`;
+
+  // Team section (docs/TEAMS.md). The ticket token identifies a member for
+  // viewing their team and for their own leave and seeker actions only; it
+  // never grants team management. Like cancellation, an account-owned
+  // registration needs that account signed in before anything can change,
+  // and the private seeker lists are only shown to someone who can act.
+  const teamEvent = rsvp.event?.registrationMode === RegistrationMode.TEAM && rsvp.eventId ? rsvp.event : null;
+  // Same publication rule as the submission pages themselves (loadEntrantSubmission).
+  const submissionsEvent =
+    rsvp.event?.submissionsEnabled && rsvp.event.status === "PUBLISHED" && rsvp.event.page?.isPublished && rsvp.eventId
+      ? rsvp.event
+      : null;
+  const session = teamEvent || submissionsEvent ? await auth() : null;
+  const viewerId = session?.user?.id ?? null;
+  let teamSection: ReactNode = null;
+  if (teamEvent && rsvp.eventId) {
+    const canAct = !rsvp.userId || rsvp.userId === viewerId;
+    const holder: TicketHolder = {
+      rsvpId: rsvp.id,
+      eventId: rsvp.eventId,
+      organisationId: teamEvent.organisationId,
+      userId: rsvp.userId,
+      teamId: rsvp.teamId,
+    };
+    if (rsvp.teamId) {
+      const team = await loadMemberTeamView(holder);
+      if (team) {
+        teamSection = (
+          <TicketTeamCard
+            ticketToken={rsvp.checkInToken}
+            team={team}
+            manageHref={team.isLeader && rsvp.userId && rsvp.userId === viewerId ? `/account/teams/${rsvp.teamId}` : null}
+            canLeave={canAct && !isCheckedIn && rsvp.status !== "REJECTED"}
+            eventPageHref={eventPageHref}
+          />
+        );
+      }
+    } else if (rsvp.status !== "REJECTED" && !canAct) {
+      teamSection = <Callout tone="info">Sign in to the account you registered with to join or find a team.</Callout>;
+    } else if (rsvp.status !== "REJECTED") {
+      // A solo registrant can join a team with its join link (and, on
+      // SOLO_WITH_MATCHING events, list themselves as looking for a team).
+      const joinForm = teamEvent.endDateTime > new Date() ? <TicketJoinTeamForm ticketToken={rsvp.checkInToken} /> : null;
+      teamSection = joinForm;
+      if (teamEvent.soloPolicy === SoloPolicy.SOLO_WITH_MATCHING) {
+        const [seekerView, seekers, teams] = await Promise.all([
+          loadSeekerView(holder),
+          listSeekersForSeeker(holder),
+          listTeamsLookingForMembers(holder),
+        ]);
+        if (seekerView) {
+          teamSection = (
+            <>
+              <TicketSeekerPanel
+                ticketToken={rsvp.checkInToken}
+                profile={seekerView.profile}
+                invites={seekerView.invites}
+                requests={seekerView.requests}
+                seekers={seekers}
+                teams={teams}
+              />
+              {joinForm}
+            </>
+          );
+        }
+      }
+    }
+  }
+
+  // Hackathon submissions (docs/HACKATHON.md). The ticket token never edits a
+  // project: a signed-in owner opens their account submission page, and a
+  // solo guest registration can only have its submission link emailed to the
+  // registration's own address.
+  let submissionSection: ReactNode = null;
+  if (submissionsEvent && rsvp.eventId && rsvp.status !== "REJECTED") {
+    const ownsAccount = Boolean(rsvp.userId && rsvp.userId === viewerId);
+    const mode: TicketSubmissionMode = ownsAccount
+      ? { kind: "account", href: `/account/submissions/${encodeURIComponent(rsvp.eventId)}`, isTeam: Boolean(rsvp.teamId) }
+      : rsvp.teamId
+        ? { kind: "team-info" }
+        : rsvp.userId
+          ? { kind: "sign-in" }
+          : confirmed
+            ? { kind: "email" }
+            : { kind: "not-confirmed" };
+    submissionSection = <TicketSubmissionCard ticketToken={rsvp.checkInToken} mode={mode} />;
+  } else if (
+    rsvp.event?.submissionsEnabled &&
+    (rsvp.event.status === "DRAFT" || rsvp.event.status === "HIDDEN") &&
+    rsvp.status !== "REJECTED"
+  ) {
+    // Submissions are on but the event isn't live: say why there is no form
+    // yet instead of nothing (the submission pages themselves stay 404).
+    submissionSection = <TicketSubmissionCard ticketToken={rsvp.checkInToken} mode={{ kind: "not-live", offline: rsvp.event.status === "HIDDEN" }} />;
+  }
 
   const ticketMain = (
     <>
@@ -268,7 +381,11 @@ export default async function TicketPage({ params }: Props) {
           </div>
         ) : null}
 
-        {!isCheckedIn && rsvp.status !== "REJECTED" ? (
+        {teamSection}
+
+        {submissionSection}
+
+        {!isCheckedIn && rsvp.status !== "REJECTED" && !rsvp.teamId ? (
           <HideAfterLiveCheckIn>
             <CancelRsvpButton checkInToken={rsvp.checkInToken} eventPageHref={eventPageHref} />
           </HideAfterLiveCheckIn>

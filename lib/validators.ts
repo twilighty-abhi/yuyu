@@ -1,4 +1,4 @@
-import { BroadcastAttendanceFilter, EventPrivacyType, EventStatus, RsvpStatus } from "@prisma/client";
+import { BroadcastAttendanceFilter, EventPrivacyType, EventStatus, RegistrationMode, RsvpStatus, SoloPolicy } from "@prisma/client";
 import { z } from "zod";
 import { isValidTimeZone } from "@/lib/timeZone";
 import { isUploadedImageUrl } from "@/lib/uploadUrl";
@@ -52,6 +52,179 @@ const attendeeNameSchema = z
   .min(1, "Name is required")
   .max(200, "Name must be at most 200 characters")
   .refine(isValidAttendeeName, "Enter a valid name");
+
+/** Upper bound for `teamMaxSize`; keeps a single unit from swallowing an event. */
+export const TEAM_MAX_SIZE_LIMIT = 100;
+export const TEAM_NAME_MAX_LENGTH = 60;
+export const SEEKER_HEADLINE_MAX_LENGTH = 120;
+export const SEEKER_MAX_SKILLS = 8;
+export const SEEKER_SKILL_MAX_LENGTH = 30;
+
+const emptyToUndefined = (value: unknown) =>
+  value === "" || value === null ? undefined : value;
+
+const optionalTeamSize = z.preprocess((value) => {
+  if (value === "" || value === null || value === undefined) return undefined;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : value;
+}, z.number().int("Team size must be a whole number").min(1).max(TEAM_MAX_SIZE_LIMIT).optional());
+
+/**
+ * Team registration settings shared by the one-off event create and update
+ * schemas. On update every field is optional: an omitted `registrationMode`
+ * leaves all four settings untouched, so older forms cannot reset them.
+ */
+const teamSettingsFields = {
+  registrationMode: z.preprocess(emptyToUndefined, z.nativeEnum(RegistrationMode).optional()),
+  teamMinSize: optionalTeamSize,
+  teamMaxSize: optionalTeamSize,
+  soloPolicy: z.preprocess(emptyToUndefined, z.nativeEnum(SoloPolicy).optional()),
+};
+
+function validateTeamSettings(
+  data: { registrationMode?: RegistrationMode; teamMinSize?: number; teamMaxSize?: number },
+  ctx: z.RefinementCtx,
+) {
+  if (data.registrationMode !== RegistrationMode.TEAM) return;
+  if (data.teamMaxSize == null) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["teamMaxSize"], message: "Set a maximum team size." });
+    return;
+  }
+  if (data.teamMaxSize < 2) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["teamMaxSize"], message: "Teams need room for at least 2 people." });
+  }
+  if (data.teamMinSize != null && data.teamMinSize > data.teamMaxSize) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["teamMinSize"], message: "Minimum team size cannot be above the maximum." });
+  }
+}
+
+/**
+ * The stored team settings for a validated create/update payload. INDIVIDUAL
+ * events keep no sizes; `null` means "leave the settings unchanged".
+ */
+export function normalizedTeamSettings(data: {
+  registrationMode?: RegistrationMode;
+  teamMinSize?: number;
+  teamMaxSize?: number;
+  soloPolicy?: SoloPolicy;
+}): { registrationMode: RegistrationMode; teamMinSize: number | null; teamMaxSize: number | null; soloPolicy: SoloPolicy } | null {
+  if (data.registrationMode === undefined) return null;
+  if (data.registrationMode === RegistrationMode.INDIVIDUAL) {
+    return { registrationMode: RegistrationMode.INDIVIDUAL, teamMinSize: null, teamMaxSize: null, soloPolicy: SoloPolicy.SOLO_ALLOWED };
+  }
+  return {
+    registrationMode: RegistrationMode.TEAM,
+    teamMinSize: data.teamMinSize ?? null,
+    teamMaxSize: data.teamMaxSize ?? null,
+    soloPolicy: data.soloPolicy ?? SoloPolicy.SOLO_ALLOWED,
+  };
+}
+
+const seriesTeamMessage = "Team registration is only available for one-off events.";
+const refusedForSeries = z.preprocess(
+  emptyToUndefined,
+  z.undefined({ error: seriesTeamMessage }),
+);
+
+/** Recurring series stay individual: any team setting is refused, not ignored. */
+const seriesTeamSettingsRefusal = {
+  registrationMode: z.preprocess(
+    emptyToUndefined,
+    z.literal(RegistrationMode.INDIVIDUAL, { error: seriesTeamMessage }).optional(),
+  ),
+  teamMinSize: refusedForSeries,
+  teamMaxSize: refusedForSeries,
+  soloPolicy: refusedForSeries,
+};
+
+function isValidTeamName(value: string) {
+  return /[\p{L}\p{N}]/u.test(value) && !/[<>\u0000-\u001F\u007F]/.test(value);
+}
+
+export const teamNameSchema = z
+  .string()
+  .trim()
+  .min(1, "Team name is required")
+  .max(TEAM_NAME_MAX_LENGTH, `Team name must be at most ${TEAM_NAME_MAX_LENGTH} characters`)
+  .transform((value) => value.replace(/\s+/g, " "))
+  .refine(isValidTeamName, "Enter a valid team name");
+
+/** Case- and spacing-insensitive key behind the per-event unique team name. */
+export function teamNameKey(name: string) {
+  return name.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+/** Join links and management links carry 43-character base64url tokens. */
+export const teamTokenSchema = z
+  .string()
+  .trim()
+  .regex(/^[A-Za-z0-9_-]{32,128}$/, "Invalid link");
+
+/** Shape of an RSVP check-in (ticket) token, as validated by the ticket page. */
+export const ticketTokenSchema = z
+  .string()
+  .trim()
+  .regex(/^[A-Za-z0-9_-]{8,128}$/, "Invalid ticket");
+
+const seekerSkillsSchema = z
+  .array(
+    z
+      .string()
+      .trim()
+      .min(1)
+      .max(SEEKER_SKILL_MAX_LENGTH, `Each skill must be at most ${SEEKER_SKILL_MAX_LENGTH} characters`)
+      .refine((value) => !/[<>\u0000-\u001F\u007F]/.test(value), "Enter a valid skill"),
+  )
+  .max(SEEKER_MAX_SKILLS, `Add up to ${SEEKER_MAX_SKILLS} skills`)
+  .transform((skills) => {
+    const seen = new Set<string>();
+    return skills.filter((skill) => {
+      const key = skill.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  });
+
+/** "Looking for a team" profile fields (headline and skills). */
+export const seekerProfileFieldsSchema = z
+  .object({
+    headline: z
+      .string()
+      .trim()
+      .min(1, "Add a short headline")
+      .max(SEEKER_HEADLINE_MAX_LENGTH, `Keep the headline under ${SEEKER_HEADLINE_MAX_LENGTH} characters`)
+      .refine((value) => !/[<>\u0000-\u001F\u007F]/.test(value), "Enter a valid headline"),
+    skills: seekerSkillsSchema.optional().default([]),
+  })
+  .strict();
+
+/**
+ * How a registration on a TEAM event is made. Parsed separately from the RSVP
+ * body by the web registration route and passed to `submitRsvpCore` in its
+ * options, so API clients that only send the RSVP body always register solo.
+ */
+export const teamRegistrationIntentSchema = z.discriminatedUnion("mode", [
+  z.object({ mode: z.literal("create"), name: teamNameSchema }).strict(),
+  z.object({ mode: z.literal("join"), joinToken: teamTokenSchema }).strict(),
+  z.object({ mode: z.literal("solo"), seeker: seekerProfileFieldsSchema.optional() }).strict(),
+]);
+export type TeamRegistrationIntent = z.infer<typeof teamRegistrationIntentSchema>;
+
+/** Leader adds a member by name and email from the team page. */
+export const addTeamMemberSchema = z
+  .object({
+    name: attendeeNameSchema,
+    email: z.string().trim().email("Valid email required").max(320),
+  })
+  .strict();
+
+/** Seeker profile edit from the ticket page (ticket token proves ownership). */
+export const upsertSeekerProfileSchema = seekerProfileFieldsSchema.extend({
+  visible: z.boolean().optional().default(true),
+});
+
+export const renameTeamSchema = z.object({ name: teamNameSchema }).strict();
 
 const registrationCutoffSchema = {
   registrationClosesAt: z.preprocess(
@@ -172,9 +345,11 @@ export const createEventSchema = z
       .optional()
       .default(EventPrivacyType.PUBLIC),
     ...registrationCutoffSchema,
+    ...teamSettingsFields,
   })
   .superRefine((data, ctx) => {
     validateEventScheduleAndLocation(data, ctx);
+    validateTeamSettings(data, ctx);
     if (data.registrationClosesAt && data.registrationLeadMinutes != null)
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -305,9 +480,11 @@ export const updateEventSchema = z
     pageLogoUrl: eventPageLogoUrlSchema,
     pageAboutHtml: z.string().max(50_000).optional(),
     ...registrationCutoffSchema,
+    ...teamSettingsFields,
   })
   .superRefine((data, ctx) => {
     validateEventScheduleAndLocation(data, ctx);
+    validateTeamSettings(data, ctx);
     if (data.registrationClosesAt && data.registrationLeadMinutes != null)
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -446,6 +623,7 @@ export const createSeriesSchema = z
       .nativeEnum(EventPrivacyType)
       .optional()
       .default(EventPrivacyType.PUBLIC),
+    ...seriesTeamSettingsRefusal,
   })
   .refine((d) => d.anchorEndDateTime > d.anchorStartDateTime, {
     message: "End must be after start",
@@ -473,6 +651,7 @@ export const updateSeriesMetaSchema = orgScoped.extend({
   }, z.number().int().positive().optional()),
   status: z.nativeEnum(EventStatus),
   privacyType: z.nativeEnum(EventPrivacyType),
+  ...seriesTeamSettingsRefusal,
 });
 
 export const deleteSeriesSchema = orgScoped.extend({
@@ -567,6 +746,237 @@ export const sendEventBroadcastTestSchema = orgScoped.extend({
 
 export const previewEventBroadcastSchema = sendEventBroadcastTestSchema;
 
+/** Organiser action on a whole team (approve, reject, promote, delete). */
+export const organiserTeamActionSchema = orgScoped
+  .extend({
+    eventId: z.string().trim().min(1).max(128),
+    teamId: z.string().trim().min(1).max(128),
+  })
+  .strict();
+
+export const organiserRenameTeamSchema = organiserTeamActionSchema.extend({
+  name: teamNameSchema,
+});
+
+/** Move one registration into another team of the same event. */
+export const organiserMoveTeamMemberSchema = orgScoped
+  .extend({
+    eventId: z.string().trim().min(1).max(128),
+    rsvpId: z.string().trim().min(1).max(128),
+    targetTeamId: z.string().trim().min(1).max(128),
+  })
+  .strict();
+
+// ---------------------------------------------------------------------------
+// Hackathon submissions, judging, and results (docs/HACKATHON.md)
+// ---------------------------------------------------------------------------
+
+export const SUBMISSION_TITLE_MAX_LENGTH = 120;
+export const SUBMISSION_SUMMARY_MAX_LENGTH = 4000;
+export const SUBMISSION_URL_MAX_LENGTH = 500;
+export const JUDGING_CRITERION_NAME_MAX_LENGTH = 80;
+export const JUDGING_TEXT_DESCRIPTION_MAX_LENGTH = 500;
+export const JUDGE_REVIEW_COMMENT_MAX_LENGTH = 2000;
+export const EVENT_AWARD_NAME_MAX_LENGTH = 80;
+export const DISQUALIFY_REASON_MAX_LENGTH = 500;
+export const JUDGING_WEIGHT_MAX = 10;
+export const JUDGING_MAX_SCORE_LIMIT = 10;
+/** Upper bounds that keep one event's rubric, awards, and podiums small. */
+export const JUDGING_CRITERIA_LIMIT = 20;
+export const EVENT_AWARDS_LIMIT = 30;
+export const EVENT_AWARD_PLACE_MAX = 20;
+
+const judgingIdSchema = z.string().trim().min(1).max(128);
+/** Control characters other than tab, line feed, and carriage return. */
+const CONTROL_CHARACTERS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
+const SINGLE_LINE_CONTROL = /[\u0000-\u001F\u007F]/;
+
+const singleLineText = (label: string, max: number) =>
+  z
+    .string()
+    .trim()
+    .min(1, `${label} is required`)
+    .max(max, `${label} must be at most ${max} characters`)
+    .refine((value) => !SINGLE_LINE_CONTROL.test(value), `Enter a valid ${label.toLowerCase()}`);
+
+const plainTextBlock = (label: string, max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max, `${label} must be at most ${max} characters`)
+    .refine((value) => !CONTROL_CHARACTERS.test(value), `Enter valid ${label.toLowerCase()} text`);
+
+/**
+ * The canonical form of a project link, or null when it is not acceptable:
+ * `https:` only, parsed with `URL`, no credentials, whitespace, or control
+ * characters. The result is `URL.href`, so the scheme is always the literal
+ * lowercase `https://` the database CHECK requires (`HTTPS://x` and
+ * `https:x` both normalise), and it still fits in the length limit.
+ */
+export function normalizeHttpsSubmissionUrl(value: string): string | null {
+  if (value.length > SUBMISSION_URL_MAX_LENGTH || /[\s\u0000-\u001F\u007F]/.test(value)) return null;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" || url.hostname.length === 0 || url.username !== "" || url.password !== "") return null;
+    const href = url.href;
+    return href.startsWith("https://") && href.length <= SUBMISSION_URL_MAX_LENGTH ? href : null;
+  } catch {
+    return null;
+  }
+}
+
+/** `https:` only, parsed with `URL`; no credentials, whitespace, or control characters. */
+export function isHttpsSubmissionUrl(value: string): boolean {
+  return normalizeHttpsSubmissionUrl(value) !== null;
+}
+
+/** Optional project link: "" or missing clears it (null); otherwise an https URL. */
+const submissionUrlSchema = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() === "" ? null : value ?? null),
+  z
+    .string()
+    .trim()
+    .max(SUBMISSION_URL_MAX_LENGTH, `Links must be at most ${SUBMISSION_URL_MAX_LENGTH} characters`)
+    .refine(isHttpsSubmissionUrl, "Use a full https:// link")
+    // Store the canonical href, which always satisfies the database CHECK.
+    .transform((value) => normalizeHttpsSubmissionUrl(value) ?? value)
+    .nullable(),
+);
+
+/** Checkbox values from forms ("on", "true") and real booleans. */
+const formBoolean = z.preprocess((value) => {
+  if (value === "on" || value === "true") return true;
+  if (value === "false" || value === "" || value == null) return false;
+  return value;
+}, z.boolean());
+
+const optionalDate = z.preprocess(
+  (value) => (value === "" || value == null ? null : value),
+  z.coerce.date().nullable(),
+);
+
+/** Entrant-side project fields (draft and submit share them). */
+export const submissionContentSchema = z
+  .object({
+    title: singleLineText("Title", SUBMISSION_TITLE_MAX_LENGTH),
+    summary: plainTextBlock("Summary", SUBMISSION_SUMMARY_MAX_LENGTH).optional().default(""),
+    repoUrl: submissionUrlSchema.optional().default(null),
+    demoUrl: submissionUrlSchema.optional().default(null),
+    videoUrl: submissionUrlSchema.optional().default(null),
+  })
+  .strict();
+export type SubmissionContentInput = z.infer<typeof submissionContentSchema>;
+
+/** `/submit/{token}` links carry 43-character base64url tokens. */
+export const submissionTokenSchema = z
+  .string()
+  .trim()
+  .regex(/^[A-Za-z0-9_-]{32,128}$/, "Invalid link");
+
+/** Organiser judging settings. Saving with submissions enabled needs a full window. */
+export const judgingSettingsSchema = z
+  .object({
+    submissionsEnabled: formBoolean,
+    submissionsOpenAt: optionalDate,
+    submissionsCloseAt: optionalDate,
+    judgesSeeAll: formBoolean,
+    projectGalleryPublic: formBoolean,
+  })
+  .strict()
+  .superRefine((data, ctx) => {
+    if (data.submissionsEnabled && (!data.submissionsOpenAt || !data.submissionsCloseAt)) {
+      ctx.addIssue({ code: "custom", path: [data.submissionsOpenAt ? "submissionsCloseAt" : "submissionsOpenAt"], message: "Set when submissions open and close." });
+    }
+    if (data.submissionsOpenAt && data.submissionsCloseAt && data.submissionsCloseAt <= data.submissionsOpenAt) {
+      ctx.addIssue({ code: "custom", path: ["submissionsCloseAt"], message: "Submissions must close after they open." });
+    }
+  });
+export type JudgingSettingsInput = z.infer<typeof judgingSettingsSchema>;
+
+const boundedInt = (label: string, min: number, max: number) =>
+  z.coerce.number().int(`${label} must be a whole number`).min(min, `${label} must be at least ${min}`).max(max, `${label} must be at most ${max}`);
+
+export const judgingCriterionSchema = z
+  .object({
+    name: singleLineText("Name", JUDGING_CRITERION_NAME_MAX_LENGTH),
+    description: plainTextBlock("Description", JUDGING_TEXT_DESCRIPTION_MAX_LENGTH).optional().default(""),
+    weight: boundedInt("Weight", 1, JUDGING_WEIGHT_MAX),
+    maxScore: boundedInt("Maximum score", 1, JUDGING_MAX_SCORE_LIMIT),
+  })
+  .strict();
+export type JudgingCriterionInput = z.infer<typeof judgingCriterionSchema>;
+
+/** A full new order for the rubric or the awards (every id exactly once). */
+export const judgingReorderSchema = z
+  .array(judgingIdSchema)
+  .min(1)
+  .max(Math.max(JUDGING_CRITERIA_LIMIT, EVENT_AWARDS_LIMIT))
+  .refine((ids) => new Set(ids).size === ids.length, "Each item can appear once.");
+
+export const eventAwardSchema = z
+  .object({
+    name: singleLineText("Name", EVENT_AWARD_NAME_MAX_LENGTH),
+    description: plainTextBlock("Description", JUDGING_TEXT_DESCRIPTION_MAX_LENGTH).optional().default(""),
+  })
+  .strict();
+export type EventAwardInput = z.infer<typeof eventAwardSchema>;
+
+export const awardWinnerSchema = z
+  .object({
+    awardId: judgingIdSchema,
+    submissionId: judgingIdSchema,
+    place: boundedInt("Place", 1, EVENT_AWARD_PLACE_MAX).optional().default(1),
+  })
+  .strict();
+
+export const removeAwardWinnerSchema = z
+  .object({ awardId: judgingIdSchema, place: boundedInt("Place", 1, EVENT_AWARD_PLACE_MAX) })
+  .strict();
+
+export const disqualifySubmissionSchema = z
+  .object({
+    submissionId: judgingIdSchema,
+    reason: singleLineText("Reason", DISQUALIFY_REASON_MAX_LENGTH),
+  })
+  .strict();
+
+export const judgeAssignmentSchema = z
+  .object({ judgeUserId: judgingIdSchema, submissionId: judgingIdSchema })
+  .strict();
+
+export const judgingStatusSchema = z.enum(["NOT_STARTED", "OPEN", "CLOSED"]);
+
+/** Which result score ranks: RAW, or ZSCORE ("Adjust for harsh/generous judges", lib/judgingScore.ts). */
+export const scoreNormalizationSchema = z.enum(["RAW", "ZSCORE"]);
+
+/** A judge's (partial) scores for one submission: whole numbers, each criterion once. */
+export const judgeScoresSchema = z
+  .object({
+    submissionId: judgingIdSchema,
+    scores: z
+      .array(
+        z
+          .object({
+            criterionId: judgingIdSchema,
+            score: z.coerce.number().int("Scores are whole numbers").min(0, "Scores cannot be negative").max(JUDGING_MAX_SCORE_LIMIT),
+          })
+          .strict(),
+      )
+      .max(JUDGING_CRITERIA_LIMIT)
+      .refine((rows) => new Set(rows.map((row) => row.criterionId)).size === rows.length, "Each criterion can be scored once."),
+  })
+  .strict();
+export type JudgeScoresInput = z.infer<typeof judgeScoresSchema>;
+
+/** The judge's private comment; `submit` marks the review complete. */
+export const judgeReviewSchema = z
+  .object({
+    submissionId: judgingIdSchema,
+    comment: plainTextBlock("Comment", JUDGE_REVIEW_COMMENT_MAX_LENGTH).optional().default(""),
+    submit: z.boolean().optional().default(true),
+  })
+  .strict();
+export type JudgeReviewInput = z.infer<typeof judgeReviewSchema>;
 /** Identifies the signed-in organiser's own draft for one event. */
 export const eventBroadcastDraftRefSchema = orgScoped.extend({
   eventId: z.string().trim().min(1).max(128),

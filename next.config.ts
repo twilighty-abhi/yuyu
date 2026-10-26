@@ -61,6 +61,26 @@ const nextConfig: NextConfig = {
         source: "/api/feedback/certificate/:token",
         headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
       },
+      // Ticket, team management and join links are bearer capabilities too
+      // (docs/TEAMS.md); the pages also set a no-referrer meta tag, but the
+      // header covers the request before the document is parsed.
+      {
+        source: "/ticket/:token",
+        headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
+      },
+      {
+        source: "/team/:token",
+        headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
+      },
+      {
+        source: "/:orgSlug/:eventSlug/team/:joinToken",
+        headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
+      },
+      // Solo submission links (docs/HACKATHON.md) are bearer capabilities.
+      {
+        source: "/submit/:token",
+        headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
+      },
     ];
   },
 };

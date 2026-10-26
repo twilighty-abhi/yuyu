@@ -479,3 +479,23 @@ export function importIdCardDesign(text: string, eventTitle: string, organisatio
     return null;
   }
 }
+
+/* ---------- Merge fields (docs/TEAMS.md) ---------- */
+
+/** Typed into the heading, badge label or footer; replaced by the attendee's team name (empty when solo). */
+export const ID_CARD_TEAM_MERGE_FIELD = "{{team}}";
+
+/** The printable "Team" line in the answers list. Not a registration question, so it has its own prefix. */
+export const ID_CARD_TEAM_FIELD_KEY = "attendee:team";
+
+const TEAM_MERGE_PATTERN = /\{\{\s*team\s*\}\}/gi;
+
+/**
+ * Fill `{{team}}` in a badge text. Text without a merge field is returned
+ * untouched; with one, the result is trimmed and doubled spaces collapsed so
+ * a solo attendee's badge does not print a gap.
+ */
+export function applyIdCardMergeFields(text: string, values: { team?: string | null }): string {
+  if (!text.match(TEAM_MERGE_PATTERN)) return text;
+  return text.replace(TEAM_MERGE_PATTERN, (values.team ?? "").trim()).replace(/ {2,}/g, " ").trim();
+}

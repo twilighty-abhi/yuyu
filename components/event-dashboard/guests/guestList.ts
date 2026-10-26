@@ -6,8 +6,10 @@ import { formatDate, formatDayShort, formatRelativeTime, formatTime } from "@/li
  * live counts, search, labels and relative "when" copy. No React, no I/O.
  */
 
-export type GuestStatusFilter = "all" | "going" | "waitlist" | "approve" | "declined" | "checkedIn";
+export type GuestStatusFilter = "all" | "going" | "waitlist" | "approve" | "declined" | "checkedIn" | "notCheckedIn";
 export type GuestKindFilter = "all" | "guests" | "users";
+/** TEAM events only: registrations in a team, or on their own. */
+export type GuestTeamFilter = "all" | "team" | "solo";
 
 /** The minimum a row needs for filtering and labelling. */
 export type GuestLike = {
@@ -17,6 +19,8 @@ export type GuestLike = {
   guestEmail: string | null;
   guestName?: string | null;
   user: { name: string | null; email: string | null } | null;
+  /** TEAM events: the registration's team, null when solo. */
+  team?: { name: string } | null;
 };
 
 export const GUEST_FILTERS: Array<{ value: GuestStatusFilter; label: string }> = [
@@ -26,6 +30,7 @@ export const GUEST_FILTERS: Array<{ value: GuestStatusFilter; label: string }> =
   { value: "approve", label: "To approve" },
   { value: "declined", label: "Declined" },
   { value: "checkedIn", label: "Checked in" },
+  { value: "notCheckedIn", label: "Not checked in" },
 ];
 
 export const GUEST_STATUS_LABELS: Record<RsvpStatus, string> = {
@@ -49,6 +54,8 @@ export function matchesGuestFilter(guest: GuestLike, filter: GuestStatusFilter) 
       return guest.status === "REJECTED";
     case "checkedIn":
       return guest.checkedInAt != null;
+    case "notCheckedIn":
+      return guest.status === "CONFIRMED" && guest.checkedInAt == null;
   }
 }
 
@@ -70,18 +77,32 @@ export function guestDisplayName(guest: GuestLike) {
   return guest.guestName?.trim() || (guest.guestEmail ? guest.guestEmail.split("@")[0]! : "") || "Guest";
 }
 
-export function filterGuests<T extends GuestLike>(guests: T[], options: { status?: GuestStatusFilter; kind?: GuestKindFilter; query?: string }): T[] {
-  const { status = "all", kind = "all", query = "" } = options;
+export function matchesTeamFilter(guest: GuestLike, filter: GuestTeamFilter) {
+  if (filter === "team") return guest.team != null;
+  if (filter === "solo") return guest.team == null;
+  return true;
+}
+
+/** Searches name and email, and the team name on TEAM events. */
+export function filterGuests<T extends GuestLike>(guests: T[], options: { status?: GuestStatusFilter; kind?: GuestKindFilter; team?: GuestTeamFilter; query?: string }): T[] {
+  const { status = "all", kind = "all", team = "all", query = "" } = options;
   const q = query.trim().toLowerCase();
   return guests.filter((guest) => {
     if (kind === "guests" && guest.user) return false;
     if (kind === "users" && !guest.user) return false;
+    if (!matchesTeamFilter(guest, team)) return false;
     if (!matchesGuestFilter(guest, status)) return false;
     if (!q) return true;
     const name = (guest.user?.name ?? guest.guestName ?? "").toLowerCase();
     const email = (guestEmail(guest) ?? "").toLowerCase();
-    return name.includes(q) || email.includes(q);
+    const teamName = (guest.team?.name ?? "").toLowerCase();
+    return name.includes(q) || email.includes(q) || teamName.includes(q);
   });
+}
+
+/** Team members change status only with their whole team, from the Teams view. */
+export function isManagedByTeam(guest: GuestLike) {
+  return guest.team != null;
 }
 
 const WHEN_VERB: Record<RsvpStatus, string> = {

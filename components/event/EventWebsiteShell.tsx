@@ -1,9 +1,10 @@
 import Link from "next/link";
-import { ArrowRight, ArrowUpRight, ChevronDown, MapPin, Video } from "lucide-react";
+import { ArrowRight, ArrowUpRight, ChevronDown, LayoutGrid, MapPin, Trophy, Video } from "lucide-react";
 import { accentStyle } from "@/lib/theme/accent";
 import { formatDateBlock, formatDayLong, formatTime, formatTimeRange, formatTimeZoneName } from "@/lib/format/datetime";
 import { Avatar, Callout, Chip, DateBlock } from "@/components/ui/display";
 import type { RegistrationFieldDefinition } from "@/components/rsvp/registrationTypes";
+import type { TeamRegistrationConfig } from "@/components/rsvp/TeamRegistrationFields";
 import { RegistrationCard } from "./RegistrationCard";
 import { SectionNav } from "./SectionNav";
 
@@ -54,6 +55,13 @@ type Props = {
   /** At capacity: new registrations join the waitlist. Derived server-side. */
   registrationFull: boolean;
   approvalRequired: boolean;
+  /** Team event settings (docs/TEAMS.md); null for individual registration. */
+  team?: TeamRegistrationConfig | null;
+  /**
+   * Hackathon pages (docs/HACKATHON.md): each href is set only when that page
+   * is live (results published; gallery public after the window closed).
+   */
+  judging?: { resultsHref: string | null; projectsHref: string | null } | null;
 };
 
 const SECTION_LABELS: Record<string, string> = {
@@ -177,6 +185,7 @@ export function EventWebsiteShell(p: Props) {
               capacity={p.event.capacity}
               state={{ cancelled: p.event.status === "CANCELLED", open: p.registrationOpen, full: p.registrationFull, approvalRequired: p.approvalRequired }}
               accentColor={p.page.accentColor}
+              team={p.team}
             />
           </div>
         </aside>
@@ -184,6 +193,31 @@ export function EventWebsiteShell(p: Props) {
         {/* Sections */}
         <div className="flex min-w-0 flex-col gap-10 md:col-start-1 md:row-start-2 md:gap-12">
           <SectionNav items={navItems} />
+
+          {p.judging && (p.judging.resultsHref || p.judging.projectsHref) ? (
+            <nav aria-label="Hackathon" className="grid gap-3 sm:grid-cols-2">
+              {p.judging.resultsHref ? (
+                <Link href={p.judging.resultsHref} className="flex items-center gap-3 rounded-lg bg-accent-soft p-4 transition-[filter] hover:brightness-[0.98]">
+                  <span aria-hidden className="flex size-10 shrink-0 items-center justify-center rounded-md bg-canvas text-accent-text"><Trophy className="size-5" /></span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[15px] font-bold text-accent-text">Results are in</span>
+                    <span className="block text-sm text-ink-secondary">See the awards and winning projects</span>
+                  </span>
+                  <ArrowRight aria-hidden className="size-4 shrink-0 text-accent-text" />
+                </Link>
+              ) : null}
+              {p.judging.projectsHref ? (
+                <Link href={p.judging.projectsHref} className="flex items-center gap-3 rounded-lg border border-line bg-canvas p-4 transition-colors hover:bg-subtle">
+                  <span aria-hidden className="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted text-ink-secondary"><LayoutGrid className="size-5" /></span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[15px] font-bold text-ink">Projects</span>
+                    <span className="block text-sm text-ink-muted">Browse everything that was submitted</span>
+                  </span>
+                  <ArrowRight aria-hidden className="size-4 shrink-0 text-ink-muted" />
+                </Link>
+              ) : null}
+            </nav>
+          ) : null}
 
           {rendered.has("ABOUT") ? (
             <section id="about" aria-label="About" className="flex scroll-mt-6 flex-col gap-5">

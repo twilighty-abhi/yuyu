@@ -4,6 +4,9 @@ import type { Event } from "@prisma/client";
 export type EventClientDto = Omit<Event,
   "checkInStationPinHash" | "checkInStationPinEncrypted" | "checkInStationSecretVersion"
   | "registrationManuallyClosedAt" | "registrationCutoffBeforeManualClose" | "registrationLeadBeforeManualClose"
+  // Judging settings have their own DTOs (lib/core/judging.ts).
+  | "submissionsEnabled" | "submissionsOpenAt" | "submissionsCloseAt" | "judgingStatus" | "judgesSeeAll"
+  | "projectGalleryPublic" | "resultsPublishedAt" | "resultsAnnouncedAt" | "reviewsPerProject" | "scoreNormalization"
 >;
 
 export function toEventClientDto(event: Event): EventClientDto {
@@ -29,6 +32,10 @@ export function toEventClientDto(event: Event): EventClientDto {
     registrationClosesAt: event.registrationClosesAt,
     registrationLeadMinutes: event.registrationLeadMinutes,
     shortCode: event.shortCode,
+    registrationMode: event.registrationMode,
+    teamMinSize: event.teamMinSize,
+    teamMaxSize: event.teamMaxSize,
+    soloPolicy: event.soloPolicy,
     createdAt: event.createdAt,
   };
 }

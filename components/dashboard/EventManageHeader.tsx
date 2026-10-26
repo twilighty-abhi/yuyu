@@ -16,7 +16,7 @@ function statusChip(status: string) {
   return { label: status === "CANCELLED" ? "Cancelled" : status, tone: "danger" as const };
 }
 
-export type EventHeaderStat = { label: string; value: ReactNode; meter?: { filled: number; total: number; tone: "accent" | "success" } };
+export type EventHeaderStat = { label: string; value: ReactNode; detail?: string; meter?: { filled: number; total: number; tone: "accent" | "success" } };
 
 /**
  * The header every event-management screen starts with: back link, then a
@@ -85,6 +85,7 @@ export function EventManageHeader({
                       color={stat.meter.tone === "success" ? "var(--yy-success-solid)" : accent}
                     />
                   ) : null}
+                  {stat.detail ? <span className="w-full text-caption text-ink-muted">{stat.detail}</span> : null}
                 </dd>
               </div>
             ))}

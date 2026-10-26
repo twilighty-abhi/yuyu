@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EventPrivacyType, EventStatus, type Event } from "@prisma/client";
+import { EventPrivacyType, EventStatus, JudgingStatus, RegistrationMode, SoloPolicy, type Event } from "@prisma/client";
 import { toEventClientDto } from "@/lib/eventDto";
 
 describe("event browser DTO", () => {
@@ -28,6 +28,20 @@ describe("event browser DTO", () => {
       registrationManuallyClosedAt: new Date("2034-01-01T00:00:00Z"),
       registrationCutoffBeforeManualClose: null,
       registrationLeadBeforeManualClose: 90,
+      registrationMode: RegistrationMode.INDIVIDUAL,
+      teamMinSize: null,
+      teamMaxSize: null,
+      soloPolicy: SoloPolicy.SOLO_ALLOWED,
+      submissionsEnabled: true,
+      submissionsOpenAt: null,
+      submissionsCloseAt: null,
+      judgingStatus: JudgingStatus.OPEN,
+      judgesSeeAll: false,
+      projectGalleryPublic: false,
+      resultsPublishedAt: null,
+      resultsAnnouncedAt: new Date("2034-01-03T00:00:00Z"),
+      reviewsPerProject: 3,
+      scoreNormalization: "ZSCORE",
       shortCode: null,
       checkInStationPinHash: "bcrypt-secret",
       checkInStationPinEncrypted: "encrypted-secret",
@@ -43,5 +57,10 @@ describe("event browser DTO", () => {
     expect(serialized).not.toContain("checkInStation");
     expect(serialized).not.toContain("ManualClose");
     expect(serialized).not.toContain("registrationManuallyClosedAt");
+    expect(serialized).not.toContain("judgingStatus");
+    expect(serialized).not.toContain("judgesSeeAll");
+    expect(serialized).not.toContain("resultsAnnouncedAt");
+    expect(serialized).not.toContain("reviewsPerProject");
+    expect(serialized).not.toContain("scoreNormalization");
   });
 });

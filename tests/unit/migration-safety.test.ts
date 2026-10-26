@@ -96,5 +96,81 @@ describe("production migration safety contracts", () => {
     expect(sql).toContain('"CheckInListEvent_rsvpId_fkey" FOREIGN KEY ("rsvpId") REFERENCES "RSVP"("id") ON DELETE SET NULL');
     expect(sql).toContain(`CHECK ("source" IN ('online', 'mobile-scan', 'mobile-manual'))`);
   });
+
+  it("adds team registration without rewriting existing rows", () => {
+    const sql = readFileSync(resolve(root, "prisma/migrations/20261024000000_team_registration/migration.sql"), "utf8");
+    expect(sql).not.toMatch(/\bDROP\b/i);
+    expect(sql).not.toMatch(/^\s*UPDATE\s/im);
+    expect(sql).toContain('ADD COLUMN     "registrationMode" "RegistrationMode" NOT NULL DEFAULT \'INDIVIDUAL\'');
+    expect(sql).toContain('ALTER TABLE "RSVP" ADD COLUMN     "teamId" TEXT;');
+    expect(sql).toContain('"Event_team_min_size_positive" CHECK ("teamMinSize" IS NULL OR "teamMinSize" >= 1)');
+    expect(sql).toContain('"Event_team_max_size_at_least_two" CHECK ("teamMaxSize" IS NULL OR "teamMaxSize" >= 2)');
+    expect(sql).toContain('"Event_team_size_order" CHECK ("teamMinSize" IS NULL OR "teamMaxSize" IS NULL OR "teamMaxSize" >= "teamMinSize")');
+    expect(sql).toContain('"Event_team_mode_requires_max_size" CHECK ("registrationMode" <> \'TEAM\' OR "teamMaxSize" IS NOT NULL)');
+    expect(sql).toContain('CREATE UNIQUE INDEX "TeamJoinRequest_one_pending_per_team_rsvp" ON "TeamJoinRequest"("teamId", "rsvpId") WHERE "status" = \'PENDING\'');
+    expect(sql).toContain('CREATE UNIQUE INDEX "Team_eventId_nameKey_key"');
+    expect(sql).toContain('CREATE UNIQUE INDEX "Team_manageTokenHash_key"');
+    expect(sql).toContain('"RSVP_teamId_fkey" FOREIGN KEY ("teamId") REFERENCES "Team"("id") ON DELETE SET NULL');
+    expect(sql).toContain('"Team_eventId_fkey" FOREIGN KEY ("eventId") REFERENCES "Event"("id") ON DELETE CASCADE');
+    expect(sql).toContain('"TeamSeekerProfile_rsvpId_fkey" FOREIGN KEY ("rsvpId") REFERENCES "RSVP"("id") ON DELETE CASCADE');
+    expect(sql).toContain('"TeamJoinRequest_teamId_fkey" FOREIGN KEY ("teamId") REFERENCES "Team"("id") ON DELETE CASCADE');
+  });
+
+  it("adds hackathon judging without rewriting existing rows", () => {
+    const sql = readFileSync(resolve(root, "prisma/migrations/20261024010000_hackathon_judging/migration.sql"), "utf8");
+    expect(sql).not.toMatch(/\bDROP\b/i);
+    expect(sql).not.toMatch(/^\s*UPDATE\s/im);
+    expect(sql).toContain(`ALTER TYPE "EventPermission" ADD VALUE 'JUDGE';`);
+    expect(sql).toContain('ADD COLUMN     "submissionsEnabled" BOOLEAN NOT NULL DEFAULT false');
+    expect(sql).toContain('ADD COLUMN     "judgingStatus" "JudgingStatus" NOT NULL DEFAULT \'NOT_STARTED\'');
+    expect(sql).toContain('"Submission_exactly_one_entrant" CHECK (num_nonnulls("teamId", "rsvpId") = 1)');
+    expect(sql).toContain('"Event_submission_window_order" CHECK ("submissionsOpenAt" IS NULL OR "submissionsCloseAt" IS NULL OR "submissionsCloseAt" > "submissionsOpenAt")');
+    expect(sql).toContain('"JudgingCriterion_weight_range" CHECK ("weight" BETWEEN 1 AND 10)');
+    expect(sql).toContain('"JudgingCriterion_max_score_range" CHECK ("maxScore" BETWEEN 1 AND 10)');
+    expect(sql).toContain('"JudgeScore_score_range" CHECK ("score" BETWEEN 0 AND 10)');
+    expect(sql).toContain('"EventAwardWinner_place_positive" CHECK ("place" >= 1)');
+    expect(sql).toContain('CREATE UNIQUE INDEX "Submission_teamId_key"');
+    expect(sql).toContain('CREATE UNIQUE INDEX "Submission_rsvpId_key"');
+    expect(sql).toContain('CREATE UNIQUE INDEX "SubmissionLink_tokenHash_key"');
+    expect(sql).toContain('CREATE UNIQUE INDEX "JudgeScore_submissionId_judgeUserId_criterionId_key"');
+    expect(sql).toContain('CREATE UNIQUE INDEX "JudgeReview_submissionId_judgeUserId_key"');
+    expect(sql).toContain('CREATE UNIQUE INDEX "EventAwardWinner_awardId_place_key"');
+    expect(sql).toContain('"Submission_teamId_fkey" FOREIGN KEY ("teamId") REFERENCES "Team"("id") ON DELETE CASCADE');
+    expect(sql).toContain('"Submission_rsvpId_fkey" FOREIGN KEY ("rsvpId") REFERENCES "RSVP"("id") ON DELETE CASCADE');
+    expect(sql).toContain('"Submission_eventId_fkey" FOREIGN KEY ("eventId") REFERENCES "Event"("id") ON DELETE CASCADE');
+  });
+
+  it("adds the results announcement marker as a nullable column", () => {
+    const sql = readFileSync(resolve(root, "prisma/migrations/20261024020000_judging_results_announced/migration.sql"), "utf8");
+    expect(sql).not.toMatch(/\bDROP\b/i);
+    expect(sql).not.toMatch(/^\s*UPDATE\s/im);
+    expect(sql).toContain('ALTER TABLE "Event" ADD COLUMN "resultsAnnouncedAt" TIMESTAMP(3);');
+  });
+
+  it("adds judging operations settings without rewriting existing rows", () => {
+    const sql = readFileSync(resolve(root, "prisma/migrations/20261025000000_judging_ops/migration.sql"), "utf8");
+    expect(sql).not.toMatch(/\bDROP\b/i);
+    expect(sql).not.toMatch(/^\s*UPDATE\s/im);
+    expect(sql).toContain(`CREATE TYPE "ScoreNormalization" AS ENUM ('RAW', 'ZSCORE');`);
+    expect(sql).toContain('ALTER TABLE "Event" ADD COLUMN "reviewsPerProject" INTEGER;');
+    expect(sql).toContain('ALTER TABLE "Event" ADD COLUMN "scoreNormalization" "ScoreNormalization" NOT NULL DEFAULT \'RAW\';');
+    expect(sql).toContain('"Event_reviews_per_project_range"');
+    expect(sql).toContain('CHECK ("reviewsPerProject" IS NULL OR "reviewsPerProject" BETWEEN 1 AND 20)');
+  });
+
+  it("adds saved views as a new table that cascades from its event, organisation and creator", () => {
+    const sql = readFileSync(resolve(root, "prisma/migrations/20261025010000_saved_views/migration.sql"), "utf8");
+    expect(sql).not.toMatch(/\bDROP\b/i);
+    expect(sql).not.toMatch(/^\s*UPDATE\s/im);
+    expect(sql).not.toMatch(/ALTER TABLE "(Event|User|Organisation)"/);
+    expect(sql).toContain(`CREATE TYPE "SavedViewSurface" AS ENUM ('GUESTS_PEOPLE', 'GUESTS_TEAMS', 'JUDGING_SUBMISSIONS', 'JUDGING_RESULTS', 'JUDGING_PROGRESS');`);
+    expect(sql).toContain('"shared" BOOLEAN NOT NULL DEFAULT false');
+    expect(sql).toContain('"SavedView_name_length" CHECK (char_length("name") BETWEEN 1 AND 60)');
+    expect(sql).toContain(`"SavedView_params_object" CHECK (jsonb_typeof("params") = 'object')`);
+    expect(sql).toContain('CREATE INDEX "SavedView_eventId_surface_idx" ON "SavedView"("eventId", "surface");');
+    expect(sql).toContain('"SavedView_eventId_fkey" FOREIGN KEY ("eventId") REFERENCES "Event"("id") ON DELETE CASCADE');
+    expect(sql).toContain('"SavedView_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE');
+    expect(sql).toContain('"SavedView_organisationId_fkey" FOREIGN KEY ("organisationId") REFERENCES "Organisation"("id") ON DELETE CASCADE');
+  });
 });
 

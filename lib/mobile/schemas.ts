@@ -22,7 +22,7 @@ export const attendanceSchema = z.enum(["ANY", "CHECKED_IN", "NOT_CHECKED_IN"]);
 export const errorEnvelopeSchema = z.object({
   ok: z.literal(false),
   error: z.object({
-    code: z.enum(["INVALID_REQUEST", "UNAUTHENTICATED", "MFA_REQUIRED", "EMAIL_VERIFICATION_REQUIRED", "FORBIDDEN", "NOT_FOUND", "CONFLICT", "NEEDS_FORCE", "RATE_LIMITED", "INTERNAL_ERROR"]),
+    code: z.enum(["INVALID_REQUEST", "UNAUTHENTICATED", "MFA_REQUIRED", "EMAIL_VERIFICATION_REQUIRED", "FORBIDDEN", "NOT_FOUND", "CONFLICT", "NEEDS_FORCE", "RATE_LIMITED", "TEAM_REQUIRED", "INTERNAL_ERROR"]),
     message: z.string(),
     fieldErrors: z.record(z.string(), z.array(z.string())).optional(),
   }).strict(),
@@ -214,6 +214,8 @@ export const eventCountsSchema = z.object({
   pending: z.number().int(),
   checkedIn: z.number().int(),
   capacity: z.number().int().nullable(),
+  /** What `capacity` is compared with: confirmed RSVPs, or on TEAM events confirmed teams plus solo registrants. */
+  capacityUsed: z.number().int(),
 }).strict();
 
 export const orgEventsDtoSchema = z.object({

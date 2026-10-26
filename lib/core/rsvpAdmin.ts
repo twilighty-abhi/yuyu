@@ -1,6 +1,6 @@
 import "server-only";
 
-import { Prisma, RsvpStatus } from "@prisma/client";
+import { Prisma, RegistrationMode, RsvpStatus } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
@@ -13,6 +13,9 @@ import { submitManualGuestRsvpCore } from "@/lib/rsvpCore";
 import { validateAndNormalizeAnswers } from "@/lib/rsvpCore";
 import { isActionRateLimited } from "@/lib/actionRateLimit";
 import { hasCapacityToRestoreConfirmedRsvp } from "@/lib/rsvpCapacity";
+import { emitTeamWebhooks, promoteOldestWaitlistedUnit, settleTeamAfterMemberLeft, type RegistrationStatusWebhook } from "@/lib/teamUnits";
+import { isTeamDeletionSnapshot, restoreTeamDeletionSnapshot, soleMemberTeamSnapshotTx } from "@/lib/core/teams";
+import { captureSubmissionSnapshotTx, restoreSubmissionSnapshotTx, submissionSnapshotSchema, type SubmissionSnapshot } from "@/lib/core/submissionLifecycle";
 import { emitWebhookEvent } from "@/lib/webhooks/emit";
 import { CHECK_IN_LIST_SOURCES, MAX_CHECK_IN_LISTS } from "@/lib/checkInLists";
 
@@ -140,6 +143,8 @@ const snapshotSchema = z.object({
   checkInToken: z.string().min(8).max(256),
   checkedInAt: z.string().datetime().nullable(),
   createdAt: z.string().datetime(),
+  /** Team the RSVP belonged to (TEAM events); restored into it only if it still exists with room. */
+  teamId: z.string().min(1).max(128).nullable().optional(),
   answers: z.array(z.object({
     fieldId: z.string().min(1),
     valueText: z.string().nullable(),
@@ -147,6 +152,8 @@ const snapshotSchema = z.object({
     valueNumber: z.number().finite().nullable(),
     valueDate: z.string().datetime().nullable(),
   })).max(200),
+  /** A solo registrant's project and its judging record (docs/HACKATHON.md), recreated on undo. */
+  submission: submissionSnapshotSchema.nullable().optional(),
   /** Custom check-in list records, restored for lists that still belong to the event. */
   listCheckIns: z.array(z.object({
     listId: z.string().min(1).max(128),
@@ -192,13 +199,14 @@ export async function deleteRsvpForUser(actorUserId: string | null, input: unkno
     },
     include: {
       answers: true,
-      event: { select: { slug: true } },
+      event: { select: { slug: true, registrationMode: true } },
       checkInListRecords: { select: { listId: true, checkedInAt: true, source: true } },
     },
   });
   if (!rsvp) return { ok: false, error: "RSVP not found." };
+  const teamEvent = rsvp.eventId && rsvp.event?.registrationMode === RegistrationMode.TEAM ? rsvp.eventId : null;
 
-  const snapshot = {
+  const snapshot: Record<string, unknown> & { teamId?: string | null; submission?: SubmissionSnapshot | null } = {
     eventId: rsvp.eventId,
     eventInstanceId: rsvp.eventInstanceId,
     userId: rsvp.userId,
@@ -209,6 +217,7 @@ export async function deleteRsvpForUser(actorUserId: string | null, input: unkno
     checkInToken: rsvp.checkInToken,
     checkedInAt: rsvp.checkedInAt?.toISOString() ?? null,
     createdAt: rsvp.createdAt.toISOString(),
+    ...(teamEvent ? { teamId: rsvp.teamId } : {}),
     answers: rsvp.answers.map((answer) => ({
       fieldId: answer.fieldId,
       valueText: answer.valueText,
@@ -223,7 +232,31 @@ export async function deleteRsvpForUser(actorUserId: string | null, input: unkno
     })),
   };
 
+  const promotedWebhooks: RegistrationStatusWebhook[] = [];
   const undo = await prisma.$transaction(async (tx) => {
+    // TEAM events: take the shared Event lock and re-read the team under it,
+    // so leadership passes on or an emptied team is deleted (freeing its unit).
+    let teamId: string | null = null;
+    let payload: Prisma.InputJsonValue = snapshot as Prisma.InputJsonValue;
+    if (teamEvent) {
+      await tx.$queryRaw`SELECT "id" FROM "Event" WHERE "id" = ${teamEvent} FOR UPDATE`;
+      const current = await tx.rSVP.findUnique({ where: { id: rsvp.id }, select: { teamId: true } });
+      teamId = current?.teamId ?? null;
+      snapshot.teamId = teamId;
+      // The last member's delete also deletes the emptied team, so a member
+      // snapshot could never be restored into it. Keep the whole team instead.
+      const teamSnapshot = teamId ? await soleMemberTeamSnapshotTx(tx, { teamId, eventId: teamEvent, rsvpId: rsvp.id }) : null;
+      if (teamSnapshot) payload = teamSnapshot as Prisma.InputJsonValue;
+    } else if (rsvp.eventId) {
+      // Same lock order as entrant submission writes (Event, then RSVP).
+      await tx.$queryRaw`SELECT "id" FROM "Event" WHERE "id" = ${rsvp.eventId} FOR UPDATE`;
+    }
+    // A solo registration's project (and its scores) cascades with the RSVP;
+    // keep it in the undo snapshot so restoring brings it back.
+    if (rsvp.eventId && !teamId) {
+      snapshot.submission = await captureSubmissionSnapshotTx(tx, { eventId: rsvp.eventId, rsvpId: rsvp.id });
+      payload = snapshot as Prisma.InputJsonValue;
+    }
     // Keep the short-lived undo table bounded even when no scheduled cleanup is
     // configured. Expired snapshots are never eligible for restoration.
     await tx.rsvpDeletionUndo.deleteMany({ where: { expiresAt: { lte: new Date() } } });
@@ -231,12 +264,20 @@ export async function deleteRsvpForUser(actorUserId: string | null, input: unkno
       data: {
         organisationId: org.id,
         deletedByUserId: session.user.id,
-        payload: snapshot as Prisma.InputJsonValue,
+        payload,
         expiresAt: new Date(Date.now() + UNDO_TTL_MS),
       },
       select: { id: true },
     });
     await tx.rSVP.delete({ where: { id: rsvp.id } });
+    if (teamEvent && teamId) {
+      const settled = await settleTeamAfterMemberLeft(tx, { teamId, eventId: teamEvent, leftRsvpId: rsvp.id });
+      if (settled.freedConfirmedUnit) {
+        const event = await tx.event.findUnique({ where: { id: teamEvent }, select: { id: true, title: true, capacity: true, privacyType: true } });
+        const promoted = event ? await promoteOldestWaitlistedUnit(tx, event) : null;
+        if (promoted) promotedWebhooks.push(...promoted.webhooks);
+      }
+    }
     return created;
   });
 
@@ -247,6 +288,7 @@ export async function deleteRsvpForUser(actorUserId: string | null, input: unkno
     previousStatus: rsvp.status,
     snapshot: { id: rsvp.id, eventId: rsvp.eventId, eventInstanceId: rsvp.eventInstanceId, userId: rsvp.userId, guestName: rsvp.guestName, createdAt: rsvp.createdAt, checkedInAt: rsvp.checkedInAt },
   });
+  emitTeamWebhooks(promotedWebhooks);
   await recordAuditEvent({ action: "RSVP_DELETED", actorUserId: session.user.id, organisationId: org.id, targetType: "RSVP", targetId: rsvp.id });
 
   revalidateRsvpPaths(org.slug, { eventId: rsvp.eventId, eventInstanceId: rsvp.eventInstanceId, eventSlug: rsvp.event?.slug });
@@ -273,6 +315,18 @@ export async function restoreRsvpForUser(actorUserId: string | null, input: unkn
     },
   });
   if (!undo) return { ok: false, error: "This undo has expired or is unavailable." };
+  if (isTeamDeletionSnapshot(undo.payload)) {
+    // Same re-check as a single RSVP restore, against the snapshot's event.
+    const teamEventId = (undo.payload as { eventId?: unknown }).eventId;
+    if (typeof teamEventId !== "string" || !(await canManageRegistrationsFor({ userId: session.user.id, organisationId: org.id, eventId: teamEventId }))) {
+      return { ok: false, error: "You do not have permission to restore RSVPs." };
+    }
+    const restoredTeam = await restoreTeamDeletionSnapshot(undo, org.id);
+    if (!restoredTeam.ok || !restoredTeam.data) return restoredTeam.ok ? { ok: false, error: "Could not restore the team." } : restoredTeam;
+    revalidateRsvpPaths(org.slug, { eventId: restoredTeam.data.eventId, eventInstanceId: null, eventSlug: restoredTeam.data.eventSlug });
+    await recordAuditEvent({ action: "TEAM_RESTORED", actorUserId: session.user.id, organisationId: org.id, targetType: "Team", targetId: restoredTeam.data.teamId });
+    return { ok: true };
+  }
   const snapshot = snapshotSchema.safeParse(undo.payload);
   if (!snapshot.success) return { ok: false, error: "Could not restore this RSVP safely." };
   // Re-checked against the snapshot's own event or occurrence: the undo row is
@@ -287,9 +341,26 @@ export async function restoreRsvpForUser(actorUserId: string | null, input: unkn
   if (!targetExists) return { ok: false, error: "The original event no longer exists." };
 
   let restoredId: string;
+  let refusal = "This RSVP cannot be restored because the event is now at capacity.";
   try {
     const restored = await prisma.$transaction(async (tx) => {
-      if (snapshot.data.status === RsvpStatus.CONFIRMED) {
+      let status = snapshot.data.status;
+      let teamId: string | null = null;
+      if (snapshot.data.teamId && snapshot.data.eventId) {
+        // A team member goes back into their team (taking its current status)
+        // only if it still exists with room; joining never uses a unit.
+        await tx.$queryRaw`SELECT "id" FROM "Event" WHERE "id" = ${snapshot.data.eventId} FOR UPDATE`;
+        const team = await tx.team.findFirst({
+          where: { id: snapshot.data.teamId, eventId: snapshot.data.eventId },
+          select: { id: true, status: true, _count: { select: { members: true } }, event: { select: { teamMaxSize: true } } },
+        });
+        if (!team || team.status === RsvpStatus.REJECTED || team.event.teamMaxSize == null || team._count.members >= team.event.teamMaxSize) {
+          refusal = "This RSVP cannot be restored because its team no longer exists or is full.";
+          return null;
+        }
+        status = team.status;
+        teamId = team.id;
+      } else if (snapshot.data.status === RsvpStatus.CONFIRMED) {
         const target = snapshot.data.eventId ? { eventId: snapshot.data.eventId } : { eventInstanceId: snapshot.data.eventInstanceId! };
         if (!(await hasCapacityToRestoreConfirmedRsvp(tx, target))) return null;
       }
@@ -300,7 +371,8 @@ export async function restoreRsvpForUser(actorUserId: string | null, input: unkn
           userId: snapshot.data.userId,
           guestEmail: snapshot.data.guestEmail,
           guestName: snapshot.data.guestName,
-          status: snapshot.data.status,
+          status,
+          ...(teamId ? { teamId } : {}),
           attendeeKey: snapshot.data.attendeeKey,
           checkInToken: snapshot.data.checkInToken,
           checkedInAt: snapshot.data.checkedInAt ? new Date(snapshot.data.checkedInAt) : null,
@@ -314,6 +386,9 @@ export async function restoreRsvpForUser(actorUserId: string | null, input: unkn
           })) },
         },
       });
+      if (snapshot.data.submission && snapshot.data.eventId && !teamId) {
+        await restoreSubmissionSnapshotTx(tx, snapshot.data.submission, { eventId: snapshot.data.eventId, rsvpId: created.id });
+      }
       const listCheckIns = snapshot.data.listCheckIns ?? [];
       if (snapshot.data.eventId && listCheckIns.length > 0) {
         // Only lists that still exist on the same event; history is not rewritten.
@@ -332,7 +407,7 @@ export async function restoreRsvpForUser(actorUserId: string | null, input: unkn
       await tx.rsvpDeletionUndo.delete({ where: { id: undo.id } });
       return created;
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-    if (!restored) return { ok: false, error: "This RSVP cannot be restored because the event is now at capacity." };
+    if (!restored) return { ok: false, error: refusal };
     restoredId = restored.id;
     emitWebhookEvent({ type: "registration.status_changed", rsvpId: restored.id, status: restored.status, previousStatus: "REMOVED" });
   } catch (error) {

@@ -10,6 +10,7 @@ import {
 } from "react";
 import { useSearchParams } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { clearViewParamsFromUrl } from "@/lib/savedViews";
 
 export const EVENT_TABS = [
   { value: "overview", label: "Overview" },
@@ -17,6 +18,7 @@ export const EVENT_TABS = [
   { value: "page", label: "Event page" },
   { value: "emails", label: "Emails" },
   { value: "check-in", label: "Check-in" },
+  { value: "judging", label: "Judging" },
   { value: "feedback", label: "Feedback" },
   { value: "analytics", label: "Analytics" },
   { value: "settings", label: "Settings" },
@@ -63,36 +65,48 @@ export function useEventTabs() {
   return useContext(TabsContext);
 }
 
-/** Keeps `?tab=` (and drops a stale `?sub=`) in the address bar so tabs can be linked and survive a reload. */
+/** Keeps `?tab=` (and drops a stale `?sub=` and list filters) in the address bar so tabs can be linked and survive a reload. */
 function writeQuery(tab: EventTab) {
   const url = new URL(window.location.href);
   if (tab === "overview") url.searchParams.delete("tab");
   else url.searchParams.set("tab", tab);
   url.searchParams.delete("sub");
+  // List filters belong to the list that was showing (saved views).
+  clearViewParamsFromUrl(url);
   window.history.replaceState(window.history.state, "", url);
 }
 
+const NO_HIDDEN_TABS: readonly EventTab[] = [];
+
 /**
- * The event dashboard's eight tabs. Panels are rendered on the server and
- * passed in; this component only switches between them.
+ * The event dashboard's tabs. Panels are rendered on the server and passed
+ * in; this component only switches between them. `hidden` drops tabs that do
+ * not apply to this event or person (e.g. Judging); a link to a hidden tab
+ * opens Overview instead.
  */
 export function EventDashboardTabs({
   panels,
   badges = {},
+  hidden = NO_HIDDEN_TABS,
 }: {
-  panels: Record<EventTab, ReactNode>;
+  panels: Partial<Record<EventTab, ReactNode>>;
   badges?: Partial<Record<EventTab, number>>;
+  hidden?: readonly EventTab[];
 }) {
   const searchParams = useSearchParams();
-  const [tab, setTab] = useState<EventTab>(
-    () => resolveTab(searchParams.get("tab")).tab,
+  const tabs = EVENT_TABS.filter((item) => !hidden.includes(item.value));
+  const visibleTab = (value: EventTab): EventTab =>
+    tabs.some((item) => item.value === value) ? value : "overview";
+  const [tab, setTab] = useState<EventTab>(() =>
+    visibleTab(resolveTab(searchParams.get("tab")).tab),
   );
   const [requestedSub, setRequestedSub] =
     useState<TabsApi["requestedSub"]>(null);
   const openTab = useCallback((value: string, sub?: string) => {
     const resolved = resolveTab(value);
-    setTab(resolved.tab);
-    writeQuery(resolved.tab);
+    const next = hidden.includes(resolved.tab) ? "overview" : resolved.tab;
+    setTab(next);
+    writeQuery(next);
     const wanted = sub ?? resolved.sub;
     if (wanted) setRequestedSub({ value: wanted, nonce: Date.now() });
     window.scrollTo({
@@ -101,7 +115,7 @@ export function EventDashboardTabs({
         ? "auto"
         : "smooth",
     });
-  }, []);
+  }, [hidden]);
   const api = useMemo(
     () => ({ openTab, requestedSub }),
     [openTab, requestedSub],
@@ -109,14 +123,16 @@ export function EventDashboardTabs({
   return (
     <TabsContext.Provider value={api}>
       <Tabs
-        value={tab}
+        // A tab can disappear after a refresh (e.g. Judging once submissions
+        // are turned off with nothing left to judge): show Overview instead.
+        value={visibleTab(tab)}
         onValueChange={(value) => {
           setTab(value as EventTab);
           writeQuery(value as EventTab);
         }}
       >
         <TabsList aria-label="Manage event">
-          {EVENT_TABS.map((item) => (
+          {tabs.map((item) => (
             <TabsTrigger key={item.value} value={item.value}>
               {item.label}
               {badges[item.value] ? (
@@ -128,7 +144,7 @@ export function EventDashboardTabs({
             </TabsTrigger>
           ))}
         </TabsList>
-        {EVENT_TABS.map((item) => (
+        {tabs.map((item) => (
           <TabsContent key={item.value} value={item.value} className="pt-6">
             {panels[item.value]}
           </TabsContent>

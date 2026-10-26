@@ -23,6 +23,13 @@ export type ReadinessInput = {
   stationPinSet: boolean;
   approvalRequired: boolean;
   pendingApprovals: number;
+  /** TEAM events: pending requests are counted as units (each team once, each solo registrant once). */
+  teamMode?: boolean;
+  /**
+   * TEAM events: how many of `pendingApprovals` are teams. Teams are reviewed
+   * in Guests → Teams and solo registrants in Guests → People.
+   */
+  pendingTeams?: number;
   emailsSent: number;
   permissions: Pick<
     EventCapabilities,
@@ -32,6 +39,12 @@ export type ReadinessInput = {
 
 function plural(count: number, one: string, many = `${one}s`) {
   return `${count} ${count === 1 ? one : many}`;
+}
+
+/** Where pending approvals are reviewed: Teams only when every pending unit is a team. */
+function approvalsSubTab(input: ReadinessInput): "teams" | "people" {
+  const teams = input.pendingTeams ?? 0;
+  return input.teamMode && teams > 0 && teams >= input.pendingApprovals ? "teams" : "people";
 }
 
 /**
@@ -91,7 +104,7 @@ export function readinessItems(input: ReadinessInput): ReadinessItem[] {
         key: "approvals",
         label: `${input.pendingApprovals} waiting for approval`,
         done: false,
-        action: { kind: "tab", label: "Review", tab: "guests", sub: "people" },
+        action: { kind: "tab", label: "Review", tab: "guests", sub: approvalsSubTab(input) },
       });
     } else if (input.approvalRequired) {
       items.push({ key: "approvals", label: "No one waiting for approval", done: true });

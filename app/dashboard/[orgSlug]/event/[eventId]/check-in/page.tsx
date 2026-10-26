@@ -10,7 +10,8 @@ import { getRequestOrigin } from "@/lib/publicUrl";
 import { EventManageHeader } from "@/components/dashboard/EventManageHeader";
 import { CheckInListDesk } from "@/components/checkin/CheckInListDesk";
 import { CheckInListSwitcher } from "@/components/checkin/CheckInListSwitcher";
-import { loadCheckInListRoster, loadCheckInLists } from "@/lib/eventDashboard/checkInLists";
+import { loadCheckInListRosterPage, loadCheckInLists } from "@/lib/eventDashboard/checkInLists";
+import { listRecentCheckIns } from "@/lib/checkInRecent";
 
 type Props = {
   params: Promise<{ orgSlug: string; eventId: string }>;
@@ -18,16 +19,6 @@ type Props = {
 };
 
 export const metadata = { title: "Event check-in", robots: { index: false, follow: false } };
-
-function labelAttendee(r: {
-  user: { name: string | null; email: string | null } | null;
-  guestEmail: string | null;
-}) {
-  const name = r.user?.name?.trim();
-  if (name) return name;
-  const email = r.user?.email ?? r.guestEmail;
-  return email ?? "Guest";
-}
 
 export default async function EventCheckInPage({ params, searchParams }: Props) {
   const { orgSlug, eventId } = await params;
@@ -77,7 +68,7 @@ export default async function EventCheckInPage({ params, searchParams }: Props) 
   ) : null;
 
   if (selectedList) {
-    const roster = await loadCheckInListRoster(event.id, selectedList);
+    const roster = await loadCheckInListRosterPage(event.id, selectedList);
     return (
       <div className="flex flex-col gap-6">
         {header}
@@ -88,26 +79,21 @@ export default async function EventCheckInPage({ params, searchParams }: Props) 
           eventId={event.id}
           timeZone={event.timezone}
           list={selectedList}
-          roster={roster.rows}
-          rosterTruncated={roster.truncated}
+          initialRoster={roster}
         />
       </div>
     );
   }
 
-  const [confirmed, checkedInCount, recentRsvps, registrationForm] = await Promise.all([
+  const [confirmed, checkedInCount, recentPage, registrationForm] = await Promise.all([
     prisma.rSVP.count({
       where: { eventId: event.id, status: "CONFIRMED" },
     }),
     prisma.rSVP.count({
       where: { eventId: event.id, checkedInAt: { not: null } },
     }),
-    prisma.rSVP.findMany({
-      where: { eventId: event.id, checkedInAt: { not: null } },
-      orderBy: { checkedInAt: "desc" },
-      take: 200,
-      include: { user: { select: { name: true, email: true } } },
-    }),
+    // The first page of Recent check-ins; "Load more" pages through loadRecentCheckIns.
+    listRecentCheckIns(event.id),
     prisma.eventRegistrationForm.findUnique({
       where: { eventId: event.id },
       select: {
@@ -118,13 +104,6 @@ export default async function EventCheckInPage({ params, searchParams }: Props) 
       },
     }),
   ]);
-
-  const recent = recentRsvps.map((r) => ({
-    rsvpId: r.id,
-    displayName: labelAttendee(r),
-    email: r.user?.email ?? r.guestEmail,
-    checkedInAt: r.checkedInAt!.toISOString(),
-  }));
 
   const origin = await getRequestOrigin();
   const stationUrl = `${origin}/${organisation.slug}/${event.slug}/check-in`;
@@ -139,8 +118,11 @@ export default async function EventCheckInPage({ params, searchParams }: Props) 
         eventId={event.id}
         eventTitle={event.title}
         registrationFields={registrationForm?.fields ?? []}
+        teamEvent={event.registrationMode === "TEAM"}
         stats={{ confirmed, checkedIn: checkedInCount }}
-        recent={recent}
+        recent={recentPage.rows}
+        recentNextCursor={recentPage.nextCursor}
+        attendeeExportHref={capabilities.canExportAttendees ? `/api/exports/events/${event.id}/attendees` : null}
       />
       {capabilities.canManageCheckInStation ? <CheckInStationSettings organisationSlug={organisation.slug} eventId={event.id} stationUrl={stationUrl} enabled={Boolean(event.checkInStationPinHash)} /> : null}
     </div>

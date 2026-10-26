@@ -16,7 +16,8 @@ const tabClasses =
   "relative inline-flex min-h-11 shrink-0 items-center gap-1.5 whitespace-nowrap px-3 text-[15px] font-semibold text-ink-muted transition-colors duration-[180ms] ease-yy hover:text-ink after:absolute after:inset-x-3 after:-bottom-px after:h-0.5 after:rounded-full after:bg-transparent [&_svg]:size-4";
 
 /**
- * Tab rows scroll sideways on narrow screens. These hints show a faded arrow
+ * Tab rows scroll sideways on narrow screens; the active tab is scrolled into
+ * view (`useActiveTabIntoView`). These hints show a faded arrow
  * on each side that has hidden tabs, so people know there is more to see;
  * clicking an arrow scrolls the row. Keyboard users keep the tabs' own
  * arrow-key navigation, so the hint buttons are skipped in the tab order.
@@ -50,7 +51,67 @@ function useScrollHints<T extends HTMLElement>() {
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     el.scrollBy({ left: direction * Math.max(120, el.clientWidth * 0.7), behavior: reduce ? "auto" : "smooth" });
   };
+  useActiveTabIntoView(node);
   return { node, edges, scroll };
+}
+
+/** Room kept clear on each side for the faded scroll hint (§4.4), so an active tab is never hidden under it. */
+const ACTIVE_TAB_MARGIN = 56;
+
+/**
+ * Where a sideways-scrolling tab row should scroll so its active tab is fully
+ * visible, or null when it already is. `tab.left` is measured from the start
+ * of the row's scrollable content.
+ */
+export function activeTabScrollTarget(
+  row: { scrollLeft: number; clientWidth: number; scrollWidth: number },
+  tab: { left: number; width: number },
+  margin = ACTIVE_TAB_MARGIN,
+): number | null {
+  const maxScroll = Math.max(0, row.scrollWidth - row.clientWidth);
+  if (maxScroll === 0) return null;
+  const viewStart = row.scrollLeft;
+  const viewEnd = row.scrollLeft + row.clientWidth;
+  // Keep the margin only where there is more row to scroll to on that side.
+  const startRoom = tab.left > 0 ? margin : 0;
+  const endRoom = tab.left + tab.width < row.scrollWidth ? margin : 0;
+  let target: number;
+  if (tab.left - startRoom < viewStart) target = tab.left - startRoom;
+  else if (tab.left + tab.width + endRoom > viewEnd) target = tab.left + tab.width + endRoom - row.clientWidth;
+  else return null;
+  const clamped = Math.min(maxScroll, Math.max(0, Math.round(target)));
+  return clamped === Math.round(row.scrollLeft) ? null : clamped;
+}
+
+const ACTIVE_TAB_SELECTOR = '[data-state="active"][role="tab"], [aria-current="page"]';
+
+/**
+ * On phones a tab row scrolls sideways, so the active tab can sit off-screen
+ * (a deep link to the ninth tab, or a panel switching tabs). This scrolls the
+ * row, never the page, to show it: instantly on mount, smoothly when the
+ * active tab changes unless reduced motion is preferred.
+ */
+export function useActiveTabIntoView<T extends HTMLElement>(node: { current: T | null }, margin = ACTIVE_TAB_MARGIN) {
+  useEffect(() => {
+    const el = node.current;
+    if (!el) return;
+    const reveal = (behavior: ScrollBehavior) => {
+      const tab = el.querySelector<HTMLElement>(ACTIVE_TAB_SELECTOR);
+      if (!tab) return;
+      const rowBox = el.getBoundingClientRect();
+      const tabBox = tab.getBoundingClientRect();
+      const target = activeTabScrollTarget(el, { left: tabBox.left - rowBox.left + el.scrollLeft, width: tabBox.width }, margin);
+      if (target === null) return;
+      el.scrollTo({ left: target, behavior });
+    };
+    reveal("auto");
+    const observer = new MutationObserver(() => {
+      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      reveal(reduce ? "auto" : "smooth");
+    });
+    observer.observe(el, { subtree: true, attributes: true, attributeFilter: ["data-state", "aria-current"] });
+    return () => observer.disconnect();
+  }, [node, margin]);
 }
 
 function setRefs<T>(...refs: Array<Ref<T> | undefined>) {

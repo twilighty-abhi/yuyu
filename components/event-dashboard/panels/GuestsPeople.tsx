@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useCallback, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Download, Plus } from "lucide-react";
+import { AtSign, Download, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Callout, EmptyState } from "@/components/ui/display";
 import { Dropdown, SearchInput } from "@/components/ui/field";
@@ -10,7 +10,6 @@ import { cn } from "@/lib/cn";
 import type { AttendeeRow } from "@/components/attendees/types";
 import { ManualRsvpDialog } from "@/components/attendees/ManualRsvpDialog";
 import { EditRsvpDialog } from "@/components/attendees/EditRsvpDialog";
-import { ExportEmailsButton } from "@/components/attendees/ExportEmailsButton";
 import type { RegistrationFieldRow } from "@/components/registration/EventRegistrationFormEditor";
 import { ConfirmationDialog } from "@/components/feedback/ConfirmationDialog";
 import { useToast } from "@/components/feedback/ToastProvider";
@@ -18,17 +17,30 @@ import { deleteRsvp, restoreRsvp } from "@/app/actions/rsvp-admin";
 import { approveRsvp, promoteFromWaitlist, reacceptRsvp, rejectRsvp } from "@/app/actions/rsvp-lifecycle";
 import { undoCheckIn } from "@/app/actions/checkin";
 import { GuestRow, type GuestRowActions } from "@/components/event-dashboard/guests/GuestRow";
+import { useEventTabs } from "@/components/event-dashboard/EventDashboardTabs";
+import { MoveToTeamDialog } from "@/components/event-dashboard/guests/MoveToTeamDialog";
 import {
   GUEST_FILTERS,
-  countGuestFilters,
-  filterGuests,
   guestDisplayName,
-  pageRange,
   type GuestKindFilter,
   type GuestStatusFilter,
+  type GuestTeamFilter,
 } from "@/components/event-dashboard/guests/guestList";
+import { useDebouncedValue, useServerPages, type ServerPageResult } from "@/components/event-dashboard/guests/useServerPages";
+import { loadAttendeesPage } from "@/app/actions/guest-list";
+import { attendeeViewSearchParams } from "@/lib/attendeeListQuery";
+import { showingLabel } from "@/lib/keysetCursor";
+import type { AttendeeFilterCounts, AttendeesPage } from "@/lib/eventDashboard/attendees";
+import { viewParam, type SavedViewDto, type ViewParams } from "@/lib/savedViews";
+import { SavedViewsMenu } from "@/components/event-dashboard/views/SavedViewsMenu";
+import { useInitialViewParams, useSyncViewToUrl } from "@/components/event-dashboard/views/useViewUrl";
 
-const PAGE_SIZE = 25;
+const SEARCH_DELAY_MS = 300;
+
+const NO_COUNTS: AttendeeFilterCounts = { all: 0, going: 0, waitlist: 0, approve: 0, declined: 0, checkedIn: 0, notCheckedIn: 0 };
+
+type View = { status: GuestStatusFilter; kind: GuestKindFilter; team: GuestTeamFilter; query: string };
+type Meta = { counts: AttendeeFilterCounts; total: number };
 
 const FILTER_DOTS: Record<GuestStatusFilter, string> = {
   all: "bg-ink",
@@ -37,11 +49,16 @@ const FILTER_DOTS: Record<GuestStatusFilter, string> = {
   approve: "bg-warning-fg",
   declined: "bg-danger-fg",
   checkedIn: "bg-accent",
+  notCheckedIn: "bg-ink-muted",
 };
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
 /**
+ * Guests · People. The list is paged, filtered and searched on the server
+ * (`loadAttendeesPage`), so every registration can be found and the chip
+ * counts cover the whole event; "Load more" appends the next page.
+ *
  * Whose registrations the list shows. A one-off event gets the full toolset;
  * a series date (RSVPs keyed by `eventInstanceId`) only gets the actions that
  * accept an instance id, so manual add, the CSV/email exports and undo
@@ -57,10 +74,11 @@ export function GuestsPeople({
   title = "Guests",
   timeZone,
   now,
-  attendees,
-  truncated,
+  initialPage,
   registrationFields,
+  teamMode = false,
   canUndoCheckIn = true,
+  savedViews,
 }: {
   organisationSlug: string;
   target: GuestListTarget;
@@ -68,32 +86,77 @@ export function GuestsPeople({
   timeZone: string;
   /** Server render time (ISO) so relative labels match between server and client. */
   now: string;
-  attendees: AttendeeRow[];
-  truncated: boolean;
+  /** The first page of the unfiltered list, with its counts. */
+  initialPage: AttendeesPage;
   registrationFields: RegistrationFieldRow[];
+  /** TEAM event: show each guest's team, the In a team / Solo filter, route status changes to Teams, and offer Move to team. */
+  teamMode?: boolean;
   /** Undo check-in is a CHECK_IN operation, separate from managing registrations. */
   canUndoCheckIn?: boolean;
+  /** Saved views for this list (event dashboard only); omitted on a series date. */
+  savedViews?: SavedViewDto[];
 }) {
   const router = useRouter();
   const { showToast } = useToast();
   const [manualRsvpOpen, setManualRsvpOpen] = useState(false);
-  const [status, setStatus] = useState<GuestStatusFilter>("all");
-  const [kind, setKind] = useState<GuestKindFilter>("all");
-  const [query, setQuery] = useState("");
-  const [page, setPage] = useState(0);
+  // Filters live in the address bar (saved views): a link reopens the same view.
+  const fromUrl = useInitialViewParams("GUESTS_PEOPLE");
+  const [status, setStatus] = useState<GuestStatusFilter>(viewParam(fromUrl, "status") as GuestStatusFilter);
+  const [kind, setKind] = useState<GuestKindFilter>(viewParam(fromUrl, "kind") as GuestKindFilter);
+  const [team, setTeam] = useState<GuestTeamFilter>(viewParam(fromUrl, "team") as GuestTeamFilter);
+  const { openTab } = useEventTabs();
+  const [query, setQuery] = useState(viewParam(fromUrl, "q"));
   const [pending, startTransition] = useTransition();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [editGuest, setEditGuest] = useState<AttendeeRow | null>(null);
   const [removeGuest, setRemoveGuest] = useState<AttendeeRow | null>(null);
   const [undoGuest, setUndoGuest] = useState<AttendeeRow | null>(null);
+  const [moveGuest, setMoveGuest] = useState<AttendeeRow | null>(null);
 
   const eventId = target.kind === "event" ? target.eventId : undefined;
   const scope = target.kind === "event" ? { eventId: target.eventId } : { eventInstanceId: target.instanceId };
 
-  const counts = useMemo(() => countGuestFilters(attendees), [attendees]);
-  const visible = useMemo(() => filterGuests(attendees, { status, kind, query }), [attendees, status, kind, query]);
-  const range = pageRange(visible.length, page, PAGE_SIZE);
-  const pageRows = visible.slice(range.page * PAGE_SIZE, range.page * PAGE_SIZE + PAGE_SIZE);
+  const searchedQuery = useDebouncedValue(query.trim(), SEARCH_DELAY_MS);
+  const viewParams = useMemo(() => {
+    const params: ViewParams = {};
+    if (status !== "all") params.status = status;
+    if (kind !== "all") params.kind = kind;
+    if (teamMode && team !== "all") params.team = team;
+    if (searchedQuery) params.q = searchedQuery;
+    return params;
+  }, [status, kind, team, teamMode, searchedQuery]);
+  useSyncViewToUrl("GUESTS_PEOPLE", viewParams);
+  const applyView = useCallback((params: ViewParams) => {
+    setStatus(viewParam(params, "status") as GuestStatusFilter);
+    setKind(viewParam(params, "kind") as GuestKindFilter);
+    setTeam(viewParam(params, "team") as GuestTeamFilter);
+    setQuery(viewParam(params, "q"));
+  }, []);
+  const view: View = useMemo(() => ({ status, kind, team: teamMode ? team : "all", query: searchedQuery }), [status, kind, team, teamMode, searchedQuery]);
+  const viewKey = JSON.stringify(view);
+  const isDefaultView = view.status === "all" && view.kind === "all" && view.team === "all" && !view.query;
+  const initial = useMemo(
+    () => ({ rows: initialPage.rows as AttendeeRow[], nextCursor: initialPage.nextCursor, meta: { counts: initialPage.counts ?? NO_COUNTS, total: initialPage.total ?? 0 } as Meta }),
+    [initialPage],
+  );
+  const scopeIds = useMemo(() => (target.kind === "event" ? { eventId: target.eventId } : { eventInstanceId: target.instanceId }), [target]);
+  const fetchPage = useCallback(
+    async (current: View, cursor: string | null): Promise<ServerPageResult<AttendeeRow, Meta>> => {
+      const res = await loadAttendeesPage({ organisationSlug, ...scopeIds, ...current, cursor });
+      if (!res.ok || !res.data) return { ok: false, error: res.ok ? "Could not load guests." : res.error };
+      const { rows, nextCursor, counts, total } = res.data;
+      return { ok: true, page: { rows, nextCursor, meta: counts && total != null ? { counts, total } : null } };
+    },
+    [organisationSlug, scopeIds],
+  );
+  const list = useServerPages<AttendeeRow, View, Meta>({ initial, view, viewKey, isDefaultView, delayMs: 0, fetchPage, keyOf: (row) => row.id });
+  const { counts, total } = list.meta;
+  const shownTotal = counts[view.status];
+  // Both exports carry the list's current filters and search, so they hold
+  // every matching registration, not only the rows loaded here.
+  const viewQuery = attendeeViewSearchParams(view);
+  const emailExportHref = eventId ? `/api/exports/events/${eventId}/attendee-emails${viewQuery ? `?${viewQuery}` : ""}` : null;
+  const csvExportHref = eventId ? `/api/exports/events/${eventId}/attendees${viewQuery ? `?${viewQuery}` : ""}` : null;
 
   function run<R extends ActionResult>(guest: AttendeeRow, action: () => Promise<R>, success: string | ((res: R & { ok: true }) => string)) {
     setBusyId(guest.id);
@@ -128,33 +191,45 @@ export function GuestsPeople({
     edit: (guest) => setEditGuest(guest),
     undoCheckIn: eventId && canUndoCheckIn ? (guest) => setUndoGuest(guest) : undefined,
     remove: (guest) => setRemoveGuest(guest),
+    openTeams: teamMode && target.kind === "event" ? () => openTab("guests", "teams") : undefined,
+    // The dialog searches the event's teams on the server; the move itself is re-checked there.
+    moveToTeam: teamMode && target.kind === "event" ? (guest) => setMoveGuest(guest) : undefined,
   };
-
-  function resetPage<T>(setter: (value: T) => void) {
-    return (value: T) => {
-      setter(value);
-      setPage(0);
-    };
-  }
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
-      {truncated ? (
-        <Callout tone="warning">
-          {target.kind === "event"
-            ? "Only the 250 most recent registrations are loaded in this browser view, and its email export is limited to those records. Download the full attendee CSV for the complete list."
-            : "Only the 250 most recent registrations are loaded in this browser view."}
-        </Callout>
-      ) : null}
-
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-h4 text-ink">{title}</h2>
         {target.kind === "event" ? (
           <div className="flex flex-wrap gap-2">
-            <ExportEmailsButton size="md" eventTitle={target.eventTitle} attendees={visible} title="Export emails for the guests shown" />
-            <Button asChild variant="secondary" startIcon={<Download />}>
-              <a href={`/api/exports/events/${target.eventId}/attendees`}>Download CSV</a>
-            </Button>
+            {savedViews ? (
+              <SavedViewsMenu
+                surface="GUESTS_PEOPLE"
+                scope={{ organisationSlug, eventId: target.eventId }}
+                params={viewParams}
+                onApply={applyView}
+                initialViews={savedViews}
+                teamMode={teamMode}
+              />
+            ) : null}
+            {emailExportHref && shownTotal > 0 ? (
+              <Button asChild variant="secondary" startIcon={<AtSign />}>
+                <a href={emailExportHref} title="Export emails for every guest matching these filters">Export emails</a>
+              </Button>
+            ) : (
+              <Button variant="secondary" startIcon={<AtSign />} disabled title="No guests match these filters">
+                Export emails
+              </Button>
+            )}
+            {csvExportHref && shownTotal > 0 ? (
+              <Button asChild variant="secondary" startIcon={<Download />}>
+                <a href={csvExportHref} title="Export every guest matching these filters, with their answers">Export CSV</a>
+              </Button>
+            ) : (
+              <Button variant="secondary" startIcon={<Download />} disabled title="No guests match these filters">
+                Export CSV
+              </Button>
+            )}
             <Button variant="primary" startIcon={<Plus />} onClick={() => setManualRsvpOpen(true)}>
               Add guest
             </Button>
@@ -162,7 +237,7 @@ export function GuestsPeople({
         ) : null}
       </div>
 
-      {attendees.length === 0 ? (
+      {total === 0 && list.rows.length === 0 ? (
         <EmptyState mood="sleepy" title="No guests yet.">
           Registrations appear here as people sign up.{eventId ? " You can also add a guest yourself." : null}
         </EmptyState>
@@ -177,7 +252,7 @@ export function GuestsPeople({
                     key={value}
                     type="button"
                     aria-pressed={on}
-                    onClick={() => resetPage(setStatus)(value)}
+                    onClick={() => setStatus(value)}
                     className={cn(
                       "inline-flex min-h-[38px] items-center gap-2 rounded-full border px-3.5 text-sm font-semibold transition-colors",
                       on ? "border-primary bg-primary text-on-primary" : "border-line-strong bg-canvas text-ink hover:bg-subtle",
@@ -193,20 +268,30 @@ export function GuestsPeople({
             <div className="flex w-full min-w-0 flex-wrap gap-2 sm:ml-auto sm:w-auto sm:flex-nowrap">
               <div className="min-w-0 flex-1 sm:w-[160px] sm:flex-none">
                 <label htmlFor="guest-kind" className="sr-only">Registration type</label>
-                <Dropdown id="guest-kind" value={kind} onChange={(event) => resetPage(setKind)(event.target.value as GuestKindFilter)} className="py-2 sm:text-sm">
+                <Dropdown id="guest-kind" value={kind} onChange={(event) => setKind(event.target.value as GuestKindFilter)} className="py-2 sm:text-sm">
                   <option value="all">Everyone</option>
                   <option value="guests">Guests only</option>
                   <option value="users">Signed-in users</option>
                 </Dropdown>
               </div>
+              {teamMode ? (
+                <div className="min-w-0 flex-1 sm:w-[140px] sm:flex-none">
+                  <label htmlFor="guest-team" className="sr-only">Team</label>
+                  <Dropdown id="guest-team" value={team} onChange={(event) => setTeam(event.target.value as GuestTeamFilter)} className="py-2 sm:text-sm">
+                    <option value="all">Teams and solo</option>
+                    <option value="team">In a team</option>
+                    <option value="solo">Solo</option>
+                  </Dropdown>
+                </div>
+              ) : null}
               <div className="w-full min-w-0 sm:w-[260px]">
                 <label htmlFor="guest-search" className="sr-only">Search guests by name or email</label>
                 <SearchInput
                   id="guest-search"
-                  placeholder="Search name or email"
+                  placeholder={teamMode ? "Search name, email or team" : "Search name or email"}
                   value={query}
-                  onChange={(event) => resetPage(setQuery)(event.target.value)}
-                  onClear={() => resetPage(setQuery)("")}
+                  onChange={(event) => setQuery(event.target.value)}
+                  onClear={() => setQuery("")}
                   autoComplete="off"
                   className="py-2 sm:text-sm"
                 />
@@ -214,30 +299,27 @@ export function GuestsPeople({
             </div>
           </div>
 
-          {visible.length === 0 ? (
-            <EmptyState>{query.trim() ? "No guests match that search." : "No guests in this view."}</EmptyState>
+          {list.error ? <Callout tone="danger" role="alert">{list.error}</Callout> : null}
+
+          {list.loading === "replace" ? (
+            <p role="status" className="text-body-ui text-ink-muted">Loading guests…</p>
+          ) : list.rows.length === 0 ? (
+            <EmptyState>{view.query ? "No guests match that search." : "No guests in this view."}</EmptyState>
           ) : (
-            <ul aria-label="Guests" className="flex flex-col gap-2">
-              {pageRows.map((guest) => (
+            <ul id={list.listId} aria-label="Guests" aria-busy={list.loading != null} className="flex flex-col gap-2">
+              {list.rows.map((guest) => (
                 <GuestRow key={guest.id} guest={guest} timeZone={timeZone} now={now} busy={pending && busyId === guest.id} disabled={pending} actions={actions} />
               ))}
             </ul>
           )}
 
-          {visible.length > 0 ? (
+          {list.rows.length > 0 && list.loading !== "replace" ? (
             <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-ink-secondary">
-              <span aria-live="polite">
-                Showing {range.first}–{range.last} of {visible.length}
-              </span>
-              {range.lastPage > 0 ? (
-                <div className="flex gap-1.5">
-                  <Button size="sm" variant="secondary" disabled={range.page === 0} onClick={() => setPage(range.page - 1)}>
-                    Previous
-                  </Button>
-                  <Button size="sm" variant="secondary" disabled={range.page >= range.lastPage} onClick={() => setPage(range.page + 1)}>
-                    Next
-                  </Button>
-                </div>
+              <span aria-live="polite">{showingLabel(list.rows.length, Math.max(shownTotal, list.rows.length), shownTotal === 1 ? "guest" : "guests")}</span>
+              {list.nextCursor ? (
+                <Button size="sm" variant="secondary" loading={list.loading === "more"} loadingLabel="Loading…" onClick={() => void list.loadMore()}>
+                  Load more guests
+                </Button>
               ) : null}
             </div>
           ) : null}
@@ -245,6 +327,16 @@ export function GuestsPeople({
       )}
 
       {manualRsvpOpen && eventId ? <ManualRsvpDialog organisationSlug={organisationSlug} eventId={eventId} fields={registrationFields} onClose={() => setManualRsvpOpen(false)} onAdded={() => router.refresh()} /> : null}
+
+      {moveGuest && eventId ? (
+        <MoveToTeamDialog
+          organisationSlug={organisationSlug}
+          eventId={eventId}
+          person={{ rsvpId: moveGuest.id, name: guestDisplayName(moveGuest), teamId: moveGuest.team?.id ?? null }}
+          onClose={() => setMoveGuest(null)}
+          onMoved={() => router.refresh()}
+        />
+      ) : null}
 
       {editGuest ? (
         <EditRsvpDialog

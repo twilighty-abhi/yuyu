@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   compareWindows,
@@ -100,6 +102,15 @@ describe("super-admin insight helpers", () => {
     expect(new Set(SECURITY_AUDIT_ACTIONS).size).toBe(SECURITY_AUDIT_ACTIONS.length);
     expect(SECURITY_AUDIT_ACTIONS).toContain("MFA_DISABLED");
     expect(SECURITY_AUDIT_ACTIONS).toContain("ATTENDEE_LIST_EXPORTED");
+  });
+
+  it("lists every audit action a data-export route records", () => {
+    const root = join(process.cwd(), "app/api/exports");
+    const routes = readdirSync(root, { recursive: true, encoding: "utf8" }).filter((file) => file.endsWith("route.ts"));
+    const actions = new Set(routes.flatMap((file) => [...readFileSync(join(root, file), "utf8").matchAll(/action: "([A-Z_]+)"/g)].map((match) => match[1])));
+    expect(actions).toContain("TEAM_LIST_EXPORTED");
+    expect(actions).toContain("JUDGING_SUBMISSIONS_EXPORTED");
+    for (const action of actions) expect(SECURITY_AUDIT_ACTIONS as readonly string[]).toContain(action);
   });
 
   it("reads list search params defensively", () => {

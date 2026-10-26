@@ -11,6 +11,7 @@ import { getMembership, isOrgAdmin } from "@/lib/permissions";
 import { attendeeDisplayName, eventSummarySelect, guestRsvpSelect, toEventSummary, toGuest } from "@/lib/mobile/dto";
 import type { EventCountsDto, EventPermissionsDto } from "@/lib/mobile/schemas";
 import { canSeeGuests, eventPermissionsFor } from "@/lib/mobile/permissions";
+import { hasNonJudgePermission } from "@/lib/judgingPermissions";
 
 export { canSeeGuests, eventPermissionsFor };
 import {
@@ -56,7 +57,9 @@ export async function resolveEventContext(userId: string, orgSlug: string, event
   const grant = isAdmin
     ? null
     : await prisma.eventCollaborator.findFirst({ where: { eventId: event.id, userId }, select: { permissions: true } });
-  if (!access.membership && !grant) return null;
+  // A JUDGE-only grant opens the web judging workspace and nothing else; the
+  // mobile organiser API has no judging surface (docs/HACKATHON.md).
+  if (!access.membership && !(grant && hasNonJudgePermission(grant.permissions))) return null;
   return {
     organisation: access.organisation,
     membership: access.membership,
@@ -68,11 +71,14 @@ export async function resolveEventContext(userId: string, orgSlug: string, event
 async function loadCounts(eventIds: string[]): Promise<Map<string, Omit<EventCountsDto, "capacity">>> {
   const result = new Map<string, Omit<EventCountsDto, "capacity">>();
   if (eventIds.length === 0) return result;
-  const [byStatus, checkedIn] = await Promise.all([
+  const [byStatus, checkedIn, teamed, teams] = await Promise.all([
     prisma.rSVP.groupBy({ by: ["eventId", "status"], where: { eventId: { in: eventIds } }, _count: { _all: true } }),
     prisma.rSVP.groupBy({ by: ["eventId"], where: { eventId: { in: eventIds }, checkedInAt: { not: null } }, _count: { _all: true } }),
+    // TEAM events fill capacity in units: confirmed people outside teams plus confirmed teams.
+    prisma.rSVP.groupBy({ by: ["eventId"], where: { eventId: { in: eventIds }, status: RsvpStatus.CONFIRMED, teamId: { not: null } }, _count: { _all: true } }),
+    prisma.team.groupBy({ by: ["eventId"], where: { eventId: { in: eventIds }, status: RsvpStatus.CONFIRMED }, _count: { _all: true } }),
   ]);
-  for (const id of eventIds) result.set(id, { confirmed: 0, waitlisted: 0, pending: 0, checkedIn: 0 });
+  for (const id of eventIds) result.set(id, { confirmed: 0, waitlisted: 0, pending: 0, checkedIn: 0, capacityUsed: 0 });
   for (const row of byStatus) {
     const entry = row.eventId ? result.get(row.eventId) : undefined;
     if (!entry) continue;
@@ -84,6 +90,9 @@ async function loadCounts(eventIds: string[]): Promise<Map<string, Omit<EventCou
     const entry = row.eventId ? result.get(row.eventId) : undefined;
     if (entry) entry.checkedIn = row._count._all;
   }
+  const teamedBy = new Map(teamed.map((row) => [row.eventId, row._count._all]));
+  const teamsBy = new Map(teams.map((row) => [row.eventId, row._count._all]));
+  for (const [id, entry] of result) entry.capacityUsed = entry.confirmed - (teamedBy.get(id) ?? 0) + (teamsBy.get(id) ?? 0);
   return result;
 }
 
@@ -98,7 +107,7 @@ export async function listOrgEvents(userId: string, orgSlug: string, filter: "up
     : await prisma.eventCollaborator.findMany({
         where: { userId, eventId: { not: null }, event: { organisationId: access.organisation.id } },
         select: { eventId: true, permissions: true },
-      });
+      }).then((rows) => rows.filter((row) => hasNonJudgePermission(row.permissions)));
   if (!access.membership && grants.length === 0) return null;
   const grantByEvent = new Map(grants.map((grant) => [grant.eventId!, grant.permissions]));
 

@@ -7,7 +7,8 @@ import { recordAuditEvent } from "@/lib/audit";
 import type { ActionResult } from "@/app/actions/org";
 import { z } from "zod";
 import { isActionRateLimited } from "@/lib/actionRateLimit";
-import { EventPrivacyType, RsvpStatus } from "@prisma/client";
+import { EventPrivacyType, RegistrationMode, RsvpStatus } from "@prisma/client";
+import { emitTeamWebhooks, promoteOldestWaitlistedUnit, settleTeamAfterMemberLeft } from "@/lib/teamUnits";
 import { emitWebhookEvent, type RsvpWebhookSnapshot } from "@/lib/webhooks/emit";
 
 const cancelRsvpSchema = z.object({ checkInToken: z.string().trim().min(8).max(256) }).strict();
@@ -19,6 +20,11 @@ const cancelRsvpSchema = z.object({ checkInToken: z.string().trim().min(8).max(2
  *
  * When a CONFIRMED RSVP is cancelled and there are WAITLISTED RSVPs,
  * the oldest waitlisted RSVP is auto-promoted to CONFIRMED.
+ *
+ * On a TEAM event (docs/TEAMS.md) the freed thing is a unit: cancelling a
+ * team member frees nothing unless they were the last member (the empty team
+ * is deleted); a leader's leadership passes to the longest-standing member.
+ * Leaving a team is this same cancellation.
  */
 export async function cancelRsvpForUser(actorUserId: string | null, input: unknown): Promise<ActionResult<{ cancelled: true }>> {
   const parsed = cancelRsvpSchema.safeParse(input);
@@ -76,7 +82,24 @@ export async function cancelRsvpForUser(actorUserId: string | null, input: unkno
     if (!current) return { error: "RSVP not found." };
     if (current.checkedInAt) return { error: "Cannot cancel — you have already checked in." };
     let promotedId: string | null = null;
+    const snapshot: RsvpWebhookSnapshot = { id: current.id, eventId: current.eventId, eventInstanceId: current.eventInstanceId, userId: current.userId, guestName: current.guestName, createdAt: current.createdAt, checkedInAt: current.checkedInAt };
     await tx.rSVP.delete({ where: { id: current.id } });
+    if (current.eventId) {
+      const event = await tx.event.findUnique({
+        where: { id: current.eventId },
+        select: { id: true, title: true, capacity: true, privacyType: true, registrationMode: true },
+      });
+      if (event?.registrationMode === RegistrationMode.TEAM) {
+        let freedUnit = !current.teamId && current.status === RsvpStatus.CONFIRMED;
+        if (current.teamId) {
+          const settled = await settleTeamAfterMemberLeft(tx, { teamId: current.teamId, eventId: event.id, leftRsvpId: current.id });
+          freedUnit = settled.freedConfirmedUnit;
+        }
+        const promotedUnit = freedUnit ? await promoteOldestWaitlistedUnit(tx, event) : null;
+        // A promoted team raises one webhook per member; a promoted solo RSVP, one.
+        return { error: null, snapshot, previousStatus: current.status, promotedId, promotedWebhooks: promotedUnit?.webhooks ?? [] };
+      }
+    }
     const privacyType = rsvp.event?.privacyType ?? rsvp.eventInstance?.series.privacyType;
     if (current.status === "CONFIRMED" && privacyType !== EventPrivacyType.APPROVAL_REQUIRED) {
       const target = current.eventId ? { eventId: current.eventId } : { eventInstanceId: current.eventInstanceId! };
@@ -102,8 +125,7 @@ export async function cancelRsvpForUser(actorUserId: string | null, input: unkno
         }
       }
     }
-    const snapshot: RsvpWebhookSnapshot = { id: current.id, eventId: current.eventId, eventInstanceId: current.eventInstanceId, userId: current.userId, guestName: current.guestName, createdAt: current.createdAt, checkedInAt: current.checkedInAt };
-    return { error: null, snapshot, previousStatus: current.status, promotedId };
+    return { error: null, snapshot, previousStatus: current.status, promotedId, promotedWebhooks: [] };
   });
   if (cancellation.error) return { ok: false, error: cancellation.error };
   if (cancellation.snapshot && cancellation.previousStatus) {
@@ -112,6 +134,7 @@ export async function cancelRsvpForUser(actorUserId: string | null, input: unkno
   if (cancellation.promotedId) {
     emitWebhookEvent({ type: "registration.status_changed", rsvpId: cancellation.promotedId, status: RsvpStatus.CONFIRMED, previousStatus: RsvpStatus.WAITLISTED });
   }
+  emitTeamWebhooks(cancellation.promotedWebhooks ?? []);
 
   await recordAuditEvent({
     action: "RSVP_CANCELLED",

@@ -1,4 +1,5 @@
 import { EventPermission, type MembershipRole } from "@prisma/client";
+import { judgingPermissionsFor } from "@/lib/judgingPermissions";
 
 /*
  * The single source of truth for what the event and series dashboards show.
@@ -56,6 +57,16 @@ export type EventCapabilities = {
   canDeleteEvent: boolean;
   /** Co-organiser invites, grants and removal. */
   canManageCollaborators: boolean;
+  /** Judging workspace: org owner/admin or a `JUDGE` collaborator (docs/HACKATHON.md). */
+  canJudge: boolean;
+  /** Judging settings, rubric, assignments, awards, and results: org owner/admin only. */
+  canManageJudging: boolean;
+  /**
+   * A non-member collaborator whose only grant is `JUDGE`. The page shows
+   * nothing but the judging workspace: no overview data, guests, page editor,
+   * emails, check-in, feedback, analytics, or settings.
+   */
+  isJudgeOnly: boolean;
 };
 
 export type SeriesCapabilities = {
@@ -86,6 +97,8 @@ export function eventCapabilities(
 ): EventCapabilities {
   const { isAdmin, has } = access(role, grant);
   const registrations = has(EventPermission.MANAGE_REGISTRATIONS);
+  // JUDGE never satisfies `has` for any other permission (grants are exact).
+  const judging = judgingPermissionsFor(isAdmin, role != null, grant ?? []);
   return {
     isAdmin,
     canManageRegistrations: registrations,
@@ -111,6 +124,9 @@ export function eventCapabilities(
     canEmbedEvent: isAdmin,
     canDeleteEvent: isAdmin,
     canManageCollaborators: isAdmin,
+    canJudge: judging.canJudge,
+    canManageJudging: judging.canManageJudging,
+    isJudgeOnly: judging.isJudgeOnly,
   };
 }
 

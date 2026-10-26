@@ -28,4 +28,27 @@ describe("public RSVP route", () => {
     expect(mocks.limit).toHaveBeenCalledWith("rsvp", expect.stringMatching(/^subject:[a-f0-9]{32}$/));
     expect(mocks.submit).not.toHaveBeenCalled();
   });
+
+  it("passes a parsed team intent to the core and registers solo without one", async () => {
+    const post = (body: unknown) => POST(new Request("https://events.example.test/api/rsvp", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }));
+    await post({ orgSlug: "org", eventSlug: "event", guestEmail: "a@example.test", name: "Ada", team: { mode: "create", name: "  Byte   Club " } });
+    expect(mocks.submit).toHaveBeenLastCalledWith(expect.anything(), { userId: null, team: { mode: "create", name: "Byte Club" } });
+    await post({ orgSlug: "org", eventSlug: "event", guestEmail: "a@example.test", name: "Ada" });
+    expect(mocks.submit).toHaveBeenLastCalledWith(expect.anything(), { userId: null, team: undefined });
+  });
+
+  it("refuses a malformed team intent before any RSVP work", async () => {
+    const response = await POST(new Request("https://events.example.test/api/rsvp", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ orgSlug: "org", eventSlug: "event", guestEmail: "a@example.test", name: "Ada", team: { mode: "join", joinToken: "../x" } }),
+    }));
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({ ok: false, error: "Invalid link" });
+    expect(mocks.submit).not.toHaveBeenCalled();
+  });
 });

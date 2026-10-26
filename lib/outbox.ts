@@ -2,7 +2,9 @@ import "server-only";
 
 import { OutboxStatus, Prisma, RsvpStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { sendApprovalNotification, sendCollaboratorInvitation, sendEventBroadcast, sendEventInvitation, sendRSVPConfirmation } from "@/lib/email";
+import { sendApprovalNotification, sendCollaboratorInvitation, sendEventBroadcast, sendEventInvitation, sendResultsPublishedEmail, sendRSVPConfirmation, sendSubmissionLinkEmail, sendSubmissionReceivedEmail, sendTeamCreatedEmail, sendTeamMemberAddedEmail } from "@/lib/email";
+import { hashSubmissionLinkToken, isSubmissionTokenShape, resultsPath, submissionLinkPath } from "@/lib/submissionToken";
+import { hashTeamManageToken, isTeamTokenShape, teamJoinPath, teamManagePath } from "@/lib/teamToken";
 import { broadcastHtmlToText, formatBroadcastEventDate, renderBroadcastHtml, renderBroadcastTemplate, sampleBroadcastVariables } from "@/lib/broadcastTemplate";
 import { broadcastBrandFor, broadcastBrandSelect, broadcastEventUrl, broadcastFeedbackUrl, broadcastScheduleUrl, broadcastTicketUrl, rsvpMatchesBroadcastAudience } from "@/lib/eventBroadcast";
 import { isBroadcastDesign } from "@/lib/email/broadcastDesigns";
@@ -18,6 +20,8 @@ type RsvpConfirmationPayload = {
   eventTitle: string;
   status: RsvpStatus;
   checkInToken: string;
+  /** Set for registrations on a TEAM event that belong to a team. */
+  teamName?: string;
 };
 
 type RsvpStatusPayload = {
@@ -26,7 +30,47 @@ type RsvpStatusPayload = {
   approved: boolean;
   checkInToken?: string;
   recipientName?: string;
+  /** Team status changes email each member, naming the team. */
+  teamName?: string;
 };
+
+/**
+ * Team page link for a (new) team leader. Carries the raw management token,
+ * which exists nowhere else; the message is dropped if the team was deleted
+ * or the token rotated before delivery. Team name and join link are read at
+ * send time.
+ */
+export type TeamCreatedPayload = {
+  to: string;
+  teamId: string;
+  manageToken: string;
+  /** "created": a new team; "leader": leadership passed to this member. */
+  reason?: "created" | "leader" | "reset";
+};
+
+/** A member the leader added: their own ticket link, resolved at send time from the token. */
+export type TeamMemberAddedPayload = {
+  to: string;
+  checkInToken: string;
+  addedByName?: string;
+};
+
+/**
+ * Hackathon submission confirmation to the person who submitted. Event and
+ * project titles are read at send time; the message is dropped when the
+ * submission is gone or no longer SUBMITTED.
+ */
+export type SubmissionReceivedPayload = { to: string; submissionId: string; recipientName?: string };
+
+/**
+ * A solo registrant's `/submit/{token}` link, sent only to the RSVP's own
+ * address. Carries the raw token (a capability), which exists nowhere else;
+ * dropped when the link was regenerated or the registration removed.
+ */
+export type SubmissionLinkPayload = { to: string; rsvpId: string; token: string };
+
+/** Results announcement per confirmed entrant member; dropped if results were unpublished before delivery. */
+export type ResultsPublishedPayload = { to: string; eventId: string; recipientName?: string };
 
 type PasswordResetPayload = {
   to: string;
@@ -92,6 +136,29 @@ export async function enqueueRsvpStatusNotification(
   });
 }
 
+export async function enqueueTeamCreated(client: OutboxClient, payload: TeamCreatedPayload) {
+  return client.outboxMessage.create({ data: { kind: "team-created", payload: payload as Prisma.InputJsonValue } });
+}
+
+export async function enqueueTeamMemberAdded(client: OutboxClient, payload: TeamMemberAddedPayload) {
+  return client.outboxMessage.create({ data: { kind: "team-member-added", payload: payload as Prisma.InputJsonValue } });
+}
+
+export async function enqueueSubmissionReceived(client: OutboxClient, payload: SubmissionReceivedPayload) {
+  return client.outboxMessage.create({ data: { kind: "submission-received", payload: payload as Prisma.InputJsonValue } });
+}
+
+export async function enqueueSubmissionLink(client: OutboxClient, payload: SubmissionLinkPayload) {
+  return client.outboxMessage.create({ data: { kind: "submission-link", payload: payload as Prisma.InputJsonValue } });
+}
+
+export async function enqueueResultsPublished(client: OutboxClient, payloads: ResultsPublishedPayload[]) {
+  if (payloads.length === 0) return { count: 0 };
+  return client.outboxMessage.createMany({
+    data: payloads.map((payload) => ({ kind: "results-published", payload: payload as Prisma.InputJsonValue })),
+  });
+}
+
 export async function enqueuePasswordReset(
   client: OutboxClient,
   payload: PasswordResetPayload,
@@ -152,7 +219,7 @@ function isExpired(expiresAt: string | undefined, now = new Date()) {
 }
 
 function containsCapability(kind: string, payload: Prisma.JsonValue) {
-  if (["rsvp-confirmation", "password-reset", "email-verification", "collaborator-invite"].includes(kind)) return true;
+  if (["rsvp-confirmation", "password-reset", "email-verification", "collaborator-invite", "team-created", "team-member-added", "submission-link"].includes(kind)) return true;
   return kind === "rsvp-status" && Boolean(payload && typeof payload === "object" && !Array.isArray(payload) && typeof (payload as Record<string, unknown>).checkInToken === "string");
 }
 
@@ -182,11 +249,64 @@ function asRsvpConfirmationPayload(value: Prisma.JsonValue): RsvpConfirmationPay
     !isEmail(payload.to) ||
     !isBoundedString(payload.eventTitle, 200) ||
     !isBoundedString(payload.checkInToken, 128) ||
-    !Object.values(RsvpStatus).includes(payload.status as RsvpStatus)
+    !Object.values(RsvpStatus).includes(payload.status as RsvpStatus) ||
+    (payload.teamName !== undefined && !isBoundedString(payload.teamName, 200))
   ) {
     return null;
   }
   return payload as RsvpConfirmationPayload;
+}
+
+export function asTeamCreatedPayload(value: Prisma.JsonValue): TeamCreatedPayload | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const payload = value as Record<string, unknown>;
+  if (
+    !isEmail(payload.to) ||
+    !isBoundedString(payload.teamId, 64) ||
+    !isTeamTokenShape(payload.manageToken) ||
+    (payload.reason !== undefined && payload.reason !== "created" && payload.reason !== "leader" && payload.reason !== "reset")
+  ) return null;
+  return payload as TeamCreatedPayload;
+}
+
+export function asTeamMemberAddedPayload(value: Prisma.JsonValue): TeamMemberAddedPayload | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const payload = value as Record<string, unknown>;
+  if (
+    !isEmail(payload.to) ||
+    !isBoundedString(payload.checkInToken, 128) ||
+    (payload.addedByName !== undefined && !isBoundedString(payload.addedByName, 200))
+  ) return null;
+  return payload as TeamMemberAddedPayload;
+}
+
+export function asSubmissionReceivedPayload(value: Prisma.JsonValue): SubmissionReceivedPayload | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const payload = value as Record<string, unknown>;
+  if (
+    !isEmail(payload.to) ||
+    !isBoundedString(payload.submissionId, 64) ||
+    (payload.recipientName !== undefined && !isBoundedString(payload.recipientName, 200))
+  ) return null;
+  return payload as SubmissionReceivedPayload;
+}
+
+export function asSubmissionLinkPayload(value: Prisma.JsonValue): SubmissionLinkPayload | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const payload = value as Record<string, unknown>;
+  if (!isEmail(payload.to) || !isBoundedString(payload.rsvpId, 64) || !isSubmissionTokenShape(payload.token)) return null;
+  return payload as SubmissionLinkPayload;
+}
+
+export function asResultsPublishedPayload(value: Prisma.JsonValue): ResultsPublishedPayload | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const payload = value as Record<string, unknown>;
+  if (
+    !isEmail(payload.to) ||
+    !isBoundedString(payload.eventId, 64) ||
+    (payload.recipientName !== undefined && !isBoundedString(payload.recipientName, 200))
+  ) return null;
+  return payload as ResultsPublishedPayload;
 }
 
 function asRsvpStatusPayload(value: Prisma.JsonValue): RsvpStatusPayload | null {
@@ -198,7 +318,8 @@ function asRsvpStatusPayload(value: Prisma.JsonValue): RsvpStatusPayload | null 
     typeof payload.approved !== "boolean" ||
     (payload.approved && !isBoundedString(payload.checkInToken, 128)) ||
     (payload.checkInToken !== undefined && !isBoundedString(payload.checkInToken, 128)) ||
-    (payload.recipientName !== undefined && !isBoundedString(payload.recipientName, 200))
+    (payload.recipientName !== undefined && !isBoundedString(payload.recipientName, 200)) ||
+    (payload.teamName !== undefined && !isBoundedString(payload.teamName, 200))
   ) return null;
   return payload as RsvpStatusPayload;
 }
@@ -380,11 +501,134 @@ export async function deliverOutboxBatch(limit = 20) {
             checkInToken: payload.checkInToken,
             recipientName: attendeeName(rsvp),
             calendarEvent: calendarEvent(rsvp),
+            teamName: payload.teamName,
             messageId: stableMessageId,
           });
         } else {
           await sendApprovalNotification({ ...payload, messageId: stableMessageId });
         }
+      } else if (message.kind === "team-created") {
+        const payload = asTeamCreatedPayload(message.payload);
+        if (!payload) throw new PermanentOutboxError();
+        const team = await prisma.team.findUnique({
+          where: { id: payload.teamId },
+          select: {
+            name: true,
+            joinToken: true,
+            manageTokenHash: true,
+            event: { select: { title: true, slug: true, organisation: { select: { slug: true } } } },
+            leaderRsvp: { select: { guestName: true, user: { select: { name: true } } } },
+          },
+        });
+        // The team was deleted, or the link was regenerated (or leadership
+        // moved on) before delivery: never send a link that no longer works.
+        if (!team || team.manageTokenHash !== hashTeamManageToken(payload.manageToken)) {
+          await prisma.outboxMessage.deleteMany({ where: { id: message.id, status: OutboxStatus.PROCESSING, lockedAt: claimTime } });
+          continue;
+        }
+        await sendTeamCreatedEmail({
+          to: payload.to,
+          eventTitle: team.event.title,
+          teamName: team.name,
+          managePath: teamManagePath(payload.manageToken),
+          joinPath: teamJoinPath(team.event.organisation.slug, team.event.slug, team.joinToken),
+          reason: payload.reason ?? "created",
+          recipientName: team.leaderRsvp?.user?.name?.trim() || team.leaderRsvp?.guestName?.trim() || undefined,
+          messageId: stableMessageId,
+        });
+      } else if (message.kind === "team-member-added") {
+        const payload = asTeamMemberAddedPayload(message.payload);
+        if (!payload) throw new PermanentOutboxError();
+        const rsvp = await prisma.rSVP.findUnique({
+          where: { checkInToken: payload.checkInToken },
+          select: {
+            status: true,
+            guestName: true,
+            user: { select: { name: true } },
+            event: { select: { title: true } },
+            team: { select: { name: true } },
+          },
+        });
+        if (!rsvp?.event || !rsvp.team) {
+          await prisma.outboxMessage.deleteMany({ where: { id: message.id, status: OutboxStatus.PROCESSING, lockedAt: claimTime } });
+          continue;
+        }
+        await sendTeamMemberAddedEmail({
+          to: payload.to,
+          eventTitle: rsvp.event.title,
+          teamName: rsvp.team.name,
+          status: rsvp.status,
+          checkInToken: payload.checkInToken,
+          addedByName: payload.addedByName,
+          recipientName: rsvp.user?.name?.trim() || rsvp.guestName?.trim() || undefined,
+          messageId: stableMessageId,
+        });
+      } else if (message.kind === "submission-received") {
+        const payload = asSubmissionReceivedPayload(message.payload);
+        if (!payload) throw new PermanentOutboxError();
+        const submission = await prisma.submission.findUnique({
+          where: { id: payload.submissionId },
+          select: {
+            status: true,
+            title: true,
+            team: { select: { name: true } },
+            event: { select: { title: true, slug: true, organisation: { select: { slug: true } } } },
+          },
+        });
+        if (!submission || submission.status !== "SUBMITTED") {
+          await prisma.outboxMessage.deleteMany({ where: { id: message.id, status: OutboxStatus.PROCESSING, lockedAt: claimTime } });
+          continue;
+        }
+        await sendSubmissionReceivedEmail({
+          to: payload.to,
+          eventTitle: submission.event.title,
+          projectTitle: submission.title,
+          teamName: submission.team?.name,
+          eventPath: `/${encodeURIComponent(submission.event.organisation.slug)}/${encodeURIComponent(submission.event.slug)}`,
+          recipientName: payload.recipientName,
+          messageId: stableMessageId,
+        });
+      } else if (message.kind === "submission-link") {
+        const payload = asSubmissionLinkPayload(message.payload);
+        if (!payload) throw new PermanentOutboxError();
+        const link = await prisma.submissionLink.findUnique({
+          where: { rsvpId: payload.rsvpId },
+          select: {
+            tokenHash: true,
+            rsvp: { select: { teamId: true, guestName: true, user: { select: { name: true } }, event: { select: { title: true } } } },
+          },
+        });
+        // Regenerated, removed, or the registrant joined a team since: never
+        // send a link that no longer works.
+        if (!link || link.tokenHash !== hashSubmissionLinkToken(payload.token) || !link.rsvp.event || link.rsvp.teamId) {
+          await prisma.outboxMessage.deleteMany({ where: { id: message.id, status: OutboxStatus.PROCESSING, lockedAt: claimTime } });
+          continue;
+        }
+        await sendSubmissionLinkEmail({
+          to: payload.to,
+          eventTitle: link.rsvp.event.title,
+          submitPath: submissionLinkPath(payload.token),
+          recipientName: link.rsvp.user?.name?.trim() || link.rsvp.guestName?.trim() || undefined,
+          messageId: stableMessageId,
+        });
+      } else if (message.kind === "results-published") {
+        const payload = asResultsPublishedPayload(message.payload);
+        if (!payload) throw new PermanentOutboxError();
+        const event = await prisma.event.findUnique({
+          where: { id: payload.eventId },
+          select: { title: true, slug: true, resultsPublishedAt: true, organisation: { select: { slug: true } } },
+        });
+        if (!event?.resultsPublishedAt) {
+          await prisma.outboxMessage.deleteMany({ where: { id: message.id, status: OutboxStatus.PROCESSING, lockedAt: claimTime } });
+          continue;
+        }
+        await sendResultsPublishedEmail({
+          to: payload.to,
+          eventTitle: event.title,
+          resultsPath: resultsPath(event.organisation.slug, event.slug),
+          recipientName: payload.recipientName,
+          messageId: stableMessageId,
+        });
       } else if (message.kind === "password-reset") {
         const payload = asPasswordResetPayload(message.payload);
         if (!payload) throw new PermanentOutboxError();

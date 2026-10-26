@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import bcrypt from "bcryptjs";
-import { PrismaClient } from "@prisma/client";
+import { EventPrivacyType, EventStatus, PrismaClient } from "@prisma/client";
 import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
+import { zonedInputToIso } from "../../lib/timeZone";
 
 // End-to-end journeys through the redesigned (V1) organiser and attendee UI.
 // The file is one ordered story: later steps rely on the organisation, event,
@@ -163,7 +164,8 @@ test("the three-step dialog creates a draft event and opens its dashboard", asyn
   const start = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
   start.setHours(18, 0, 0, 0);
   const local = (date: Date) => new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
-  await dialog.getByLabel(/^Start/).fill(local(start));
+  const startValue = local(start);
+  await dialog.getByLabel(/^Start/).fill(startValue);
   await dialog.getByLabel(/^End/).fill(local(new Date(start.getTime() + 2 * 60 * 60 * 1000)));
   await dialog.getByRole("button", { name: "Next" }).click();
 
@@ -173,9 +175,12 @@ test("the three-step dialog creates a draft event and opens its dashboard", asyn
 
   await page.waitForURL(/\/dashboard\/[^/]+\/event\/[^/?]+/);
   eventId = page.url().match(/\/event\/([^/?]+)/)![1]!;
-  const event = await prisma.event.findUniqueOrThrow({ where: { id: eventId }, select: { slug: true, status: true } });
+  const event = await prisma.event.findUniqueOrThrow({ where: { id: eventId }, select: { slug: true, status: true, startDateTime: true, timezone: true } });
   eventSlug = event.slug;
   expect(event.status).toBe("DRAFT");
+  // The picked wall-clock time is read on the event's clock, not the browser's.
+  expect(event.timezone).toBe("Asia/Kolkata");
+  expect(event.startDateTime.toISOString()).toBe(zonedInputToIso(startValue, "Asia/Kolkata"));
   await expect(page.getByRole("heading", { level: 1, name: eventTitle })).toBeVisible();
   await expect(page.getByText("Draft", { exact: true }).first()).toBeVisible();
   expect(errors).toEqual([]);
@@ -361,6 +366,40 @@ test("the dashboard navigation drawer works on a phone", async ({ browser }) => 
   await expect(drawer).toBeHidden();
   await expect(page.getByRole("heading", { level: 1, name: "Members" })).toBeVisible();
   await context.close();
+});
+
+test("a long unbroken event title, tag and place never widen /discover on a phone", async ({ browser }) => {
+  const organisation = await prisma.organisation.findUniqueOrThrow({ where: { slug: orgSlug }, select: { id: true } });
+  const title = `Unbroken${suffix}`.padEnd(200, "x");
+  const start = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+  const event = await prisma.event.create({
+    data: {
+      organisationId: organisation.id,
+      title,
+      slug: `unbroken-${suffix}`,
+      startDateTime: start,
+      endDateTime: new Date(start.getTime() + 2 * 60 * 60 * 1000),
+      timezone: "UTC",
+      location: `Hall${"y".repeat(300)}`,
+      tags: ["z".repeat(80)],
+      status: EventStatus.PUBLISHED,
+      privacyType: EventPrivacyType.PUBLIC,
+      page: { create: { isPublished: true, aboutHtml: "<p>Checks that long words wrap.</p>" } },
+    },
+  });
+  try {
+    for (const colorScheme of ["light", "dark"] as const) {
+      const context = await newContext(browser, { colorScheme, viewport: { width: 390, height: 844 }, isMobile: true });
+      const page = await context.newPage();
+      // The longest search the page accepts, echoed in the results heading.
+      await page.goto(`/discover?q=${encodeURIComponent(title.slice(0, 120))}`);
+      await expect(page.getByRole("heading", { level: 3, name: title })).toBeVisible();
+      expect(await horizontalOverflow(page), colorScheme).toBeLessThanOrEqual(1);
+      await context.close();
+    }
+  } finally {
+    await prisma.event.delete({ where: { id: event.id } });
+  }
 });
 
 test("redesigned pages fit phone and desktop widths in light and dark mode", async ({ browser }) => {

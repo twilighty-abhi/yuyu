@@ -12,7 +12,7 @@ import { Callout } from "@/components/ui/display";
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader } from "@/components/ui/dialog";
 import { Field, Input, Dropdown } from "@/components/ui/field";
 import { cn } from "@/lib/cn";
-import { zonedInputToIso } from "@/lib/timeZone";
+import { zonedDatetimeLocalValue, zonedInputToIso } from "@/lib/timeZone";
 import {
   DEFAULT_TEAM_SETTINGS,
   TeamSettingsFields,
@@ -33,17 +33,33 @@ const timezones = [
   "Australia/Sydney",
 ];
 
-function toDatetimeLocalValue(d: Date) {
-  const t = new Date(d);
-  const off = t.getTimezoneOffset() * 60000;
-  return new Date(t.getTime() - off).toISOString().slice(0, 16);
+const DEFAULT_TIMEZONE = "Asia/Kolkata";
+const HOUR_MS = 60 * 60 * 1000;
+
+/** Shifts a `datetime-local` wall-clock value by whole hours (calendar arithmetic, no timezone). */
+function addWallClockHours(value: string, hours: number) {
+  const parsed = Date.parse(`${value}:00Z`);
+  return Number.isNaN(parsed) ? "" : new Date(parsed + hours * HOUR_MS).toISOString().slice(0, 16);
 }
 
-/** Parse a datetime-local value as browser-local wall time, like the previous picker. */
-function fromDatetimeLocalValue(value: string) {
-  if (!value) return null;
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
+/** The next whole hour on the event's own clock, as a `datetime-local` value. */
+function nextWholeHour(timeZone: string) {
+  return `${zonedDatetimeLocalValue(new Date(Date.now() + HOUR_MS), timeZone).slice(0, 13)}:00`;
+}
+
+/**
+ * The pickers hold wall-clock times on the event's clock, never the browser's
+ * or the server's. Converts them to instants and explains the first problem.
+ */
+function checkSchedule(start: string, end: string, timeZone: string): { error: string } | { startIso: string; endIso: string } {
+  if (!start || !end) return { error: "Please select both start and end times." };
+  const startIso = zonedInputToIso(start, timeZone);
+  if (!startIso) return { error: `That start time does not exist in ${timeZone}.` };
+  if (new Date(startIso) < new Date()) return { error: "Start time must be now or in the future." };
+  const endIso = zonedInputToIso(end, timeZone);
+  if (!endIso) return { error: `That end time does not exist in ${timeZone}.` };
+  if (new Date(endIso) <= new Date(startIso)) return { error: "End time must be after start time." };
+  return { startIso, endIso };
 }
 
 const STEP_TITLES = ["Create Event: Basics", "Create Event: Schedule", "Create Event: Location & sign-ups"];
@@ -62,8 +78,10 @@ export function CreateEventDialog(props: {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-  const [start, setStart] = useState<Date | null>(null);
-  const [end, setEnd] = useState<Date | null>(null);
+  // `datetime-local` values on the event's clock (`timezone`).
+  const [start, setStart] = useState("");
+  const [end, setEnd] = useState("");
+  const [timezone, setTimezone] = useState(DEFAULT_TIMEZONE);
   const [tagsPreview, setTagsPreview] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
   const [formKey, setFormKey] = useState(0);
@@ -77,8 +95,9 @@ export function CreateEventDialog(props: {
   const resetDraft = () => {
     setActiveStep(0);
     setError(null);
-    setStart(null);
-    setEnd(null);
+    setStart("");
+    setEnd("");
+    setTimezone(DEFAULT_TIMEZONE);
     setTagsPreview([]);
     setTagInput("");
     setIsOnline(false);
@@ -98,21 +117,13 @@ export function CreateEventDialog(props: {
     setError(null);
     const form = e.currentTarget;
     const fd = new FormData(form);
-    // The pickers hold wall-clock times; read them in the event's timezone,
-    // not the browser's or the server's.
-    const timezone = String(fd.get("timezone") ?? "Asia/Kolkata");
-    const startIso = start ? zonedInputToIso(toDatetimeLocalValue(start), timezone) : null;
-    const endIso = end ? zonedInputToIso(toDatetimeLocalValue(end), timezone) : null;
-    if (!startIso || new Date(startIso) < new Date()) {
-      setError(start && !startIso ? `That start time does not exist in ${timezone}.` : "Start time must be now or in the future.");
+    const schedule = checkSchedule(start, end, timezone);
+    if ("error" in schedule) {
+      setError(schedule.error);
       setActiveStep(1);
       return;
     }
-    if (!endIso || new Date(endIso) <= new Date(startIso)) {
-      setError(end && !endIso ? `That end time does not exist in ${timezone}.` : "End time must be after start time.");
-      setActiveStep(1);
-      return;
-    }
+    const { startIso, endIso } = schedule;
     if (teamSettingsProblem(teamSettings)) {
       // The message is already shown (and announced) under the size inputs; move focus to the field.
       focusTeamSettingsProblem(e.currentTarget, teamSettings);
@@ -151,14 +162,9 @@ export function CreateEventDialog(props: {
 
   const handleOpen = () => {
     resetDraft();
-    const now = new Date();
-    const base = new Date(now);
-    base.setMinutes(0, 0, 0);
-    base.setHours(base.getHours() + 1);
+    const base = nextWholeHour(DEFAULT_TIMEZONE);
     setStart(base);
-    const e = new Date(base);
-    e.setHours(e.getHours() + 1);
-    setEnd(e);
+    setEnd(addWallClockHours(base, 1));
     setOpen(true);
   };
 
@@ -268,27 +274,25 @@ export function CreateEventDialog(props: {
                 <Field label="Start" required helperText="Pick date and time">
                   <Input
                     type="datetime-local"
-                    value={start ? toDatetimeLocalValue(start) : ""}
-                    min={toDatetimeLocalValue(new Date())}
+                    value={start}
+                    min={zonedDatetimeLocalValue(new Date(), timezone)}
                     onChange={(e) => {
-                      const v = fromDatetimeLocalValue(e.target.value);
+                      const v = e.target.value;
                       setStart(v);
-                      if (v) setEnd(new Date(v.getTime() + 60 * 60 * 1000));
+                      if (v) setEnd(addWallClockHours(v, 1));
                     }}
                   />
                 </Field>
                 <Field label="End" required helperText="Must be after start">
                   <Input
                     type="datetime-local"
-                    value={end ? toDatetimeLocalValue(end) : ""}
-                    min={start ? toDatetimeLocalValue(start) : undefined}
-                    onChange={(e) => setEnd(fromDatetimeLocalValue(e.target.value))}
+                    value={end}
+                    min={start || undefined}
+                    onChange={(e) => setEnd(e.target.value)}
                   />
                 </Field>
-                <input type="hidden" name="startDateTime" value={start ? toDatetimeLocalValue(start) : ""} />
-                <input type="hidden" name="endDateTime" value={end ? toDatetimeLocalValue(end) : ""} />
-                <Field label="Timezone" required>
-                  <Dropdown name="timezone" defaultValue="Asia/Kolkata">
+                <Field label="Timezone" required helperText="Start and end are times on this clock.">
+                  <Dropdown name="timezone" value={timezone} onChange={(e) => setTimezone(e.target.value)}>
                     {timezones.map((tz) => (
                       <option key={tz} value={tz}>
                         {tz}
@@ -369,16 +373,9 @@ export function CreateEventDialog(props: {
                         }
                       }
                       if (activeStep === 1) {
-                        if (!start || !end) {
-                          setError("Please select both start and end times.");
-                          return;
-                        }
-                        if (start < new Date()) {
-                          setError("Start time must be now or in the future.");
-                          return;
-                        }
-                        if (end <= start) {
-                          setError("End time must be after start time.");
+                        const schedule = checkSchedule(start, end, timezone);
+                        if ("error" in schedule) {
+                          setError(schedule.error);
                           return;
                         }
                       }

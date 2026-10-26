@@ -27,7 +27,7 @@ import type { ActionResult } from "./org";
 /*
  * Event crew (Guests → Crew, docs/CREW.md). Organiser actions need
  * MANAGE_REGISTRATIONS (the guest-list rule, via resolveOrganiserEvent) and
- * share the "rsvp" rate-limit bucket. The crew link actions are public: the
+ * use the dashboard "action" rate-limit bucket. The crew link actions are public: the
  * link token is the capability, and both are rate limited per IP.
  */
 
@@ -43,7 +43,8 @@ async function gate(input: unknown, schema: z.ZodTypeAny = targetSchema): Promis
   const session = await auth();
   const userId = session?.user?.id;
   if (!userId) return { ok: false, error: "You must be signed in." };
-  if (await isActionRateLimited("rsvp", userId)) return { ok: false, error: "Too many crew updates. Try again shortly." };
+  // The dashboard editing budget: reordering or showing a whole crew is many quick calls.
+  if (await isActionRateLimited("action", userId)) return { ok: false, error: "Too many crew updates. Try again shortly." };
   const parsed = schema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "Invalid input." };
   const data = parsed.data as z.infer<typeof targetSchema>;

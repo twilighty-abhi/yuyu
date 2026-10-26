@@ -170,6 +170,11 @@ function isUniqueViolation(error: unknown) {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
 }
 
+/** Which table a unique violation came from: the crew list, or the event's registrations. */
+function uniqueViolationModel(error: unknown): string | undefined {
+  return error instanceof Prisma.PrismaClientKnownRequestError ? (error.meta?.modelName as string | undefined) : undefined;
+}
+
 /** Returned instead of a reason when a link sign-up must not change anything; the caller answers as for a duplicate. */
 const LINK_SIGNUP_IGNORED = "link-signup-ignored";
 const ALREADY_ON_CREW = "This email is already on the crew.";
@@ -198,7 +203,7 @@ async function addCrewMemberTx(
       }
       const existing = await tx.rSVP.findFirst({
         where: { eventId: event.id, OR: [{ attendeeKey: `guest:${data.email}` }, { user: { email: { equals: data.email, mode: "insensitive" } } }] },
-        select: { id: true, teamId: true, checkInToken: true, isCrew: true },
+        select: { id: true, teamId: true, checkInToken: true, isCrew: true, userId: true },
       });
       // The crew link proves nothing about who owns an email, so a link
       // sign-up never turns someone's registration into a crew ticket (that
@@ -212,7 +217,9 @@ async function addCrewMemberTx(
       if (existing) {
         rsvp = await tx.rSVP.update({
           where: { id: existing.id },
-          data: { isCrew: true, status: RsvpStatus.CONFIRMED },
+          // A guest ticket takes the crew name, as later edits do; an
+          // account-linked ticket keeps the account's identity.
+          data: { isCrew: true, status: RsvpStatus.CONFIRMED, ...(existing.userId ? {} : { guestName: data.name }) },
           select: { id: true, checkInToken: true },
         });
         // A former seeker listing would let teams invite a crew member.
@@ -281,9 +288,13 @@ export async function updateCrewMemberAsOrganiser(ctx: OrganiserCrewContext, mem
   }
   try {
     return await prisma.$transaction(async (tx) => {
-      const member = await tx.eventCrewMember.findFirst({ where: { id: memberId, eventId: event.id }, select: { id: true, rsvpId: true, rsvp: { select: { userId: true } } } });
+      const member = await tx.eventCrewMember.findFirst({ where: { id: memberId, eventId: event.id }, select: { id: true, email: true, rsvpId: true, rsvp: { select: { userId: true, checkInToken: true } } } });
       if (!member) return fail("Crew member not found.");
       await tx.eventCrewMember.update({ where: { id: member.id }, data: { ...data, showOnPage } });
+      // A new address gets the ticket too; the old one keeps working (same QR).
+      if (data.email !== member.email) {
+        await enqueueRsvpConfirmation(tx, { to: data.email, eventTitle: event.title, status: RsvpStatus.CONFIRMED, checkInToken: member.rsvp.checkInToken });
+      }
       // Keep the ticket's name and email in step. An account-linked ticket
       // takes its identity from the account, so only guest tickets change.
       if (!member.rsvp.userId) {
@@ -292,7 +303,7 @@ export async function updateCrewMemberAsOrganiser(ctx: OrganiserCrewContext, mem
       return { ok: true as const, data: undefined };
     });
   } catch (error) {
-    if (isUniqueViolation(error)) return fail("This email is already registered for this event.");
+    if (isUniqueViolation(error)) return fail(uniqueViolationModel(error) === "EventCrewMember" ? ALREADY_ON_CREW : "This email is already registered for this event.");
     throw error;
   }
 }
@@ -315,9 +326,9 @@ export async function removeCrewMember(ctx: OrganiserCrewContext, memberId: stri
   if (!member) return fail("Crew member not found.");
   // The crew row cascades from the RSVP.
   const removed = await prisma.rSVP.deleteMany({ where: { id: member.rsvp.id, eventId: ctx.eventId, isCrew: true } });
-  if (removed.count === 1) {
-    emitWebhookEvent({ type: "registration.status_changed", rsvpId: member.rsvp.id, status: "CANCELLED", previousStatus: RsvpStatus.CONFIRMED, snapshot: rsvpWebhookSnapshot(member.rsvp) });
-  }
+  // Lost a race with another removal: nothing was deleted here.
+  if (removed.count !== 1) return fail("Crew member not found.");
+  emitWebhookEvent({ type: "registration.status_changed", rsvpId: member.rsvp.id, status: "CANCELLED", previousStatus: RsvpStatus.CONFIRMED, snapshot: rsvpWebhookSnapshot(member.rsvp) });
   return { ok: true, data: { name: member.name } };
 }
 

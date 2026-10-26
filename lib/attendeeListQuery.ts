@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { decodeTimeCursor } from "@/lib/keysetCursor";
+import { ATTENDANCE_STATE_LABELS, attendanceStateOf, type AttendanceResponseValue, type AttendanceState } from "@/lib/attendanceCheck";
 
 /*
  * The Guests · People list query, shared by the dashboard loader, its
@@ -16,10 +17,18 @@ export const ATTENDEES_PAGE_SIZE = 50;
 export const ATTENDEE_STATUS_FILTERS = ["all", "going", "waitlist", "approve", "declined", "checkedIn", "notCheckedIn"] as const;
 export const ATTENDEE_KIND_FILTERS = ["all", "guests", "users"] as const;
 export const ATTENDEE_TEAM_FILTERS = ["all", "team", "solo"] as const;
+/**
+ * The attendance confirmation reply (docs/FEATURES.md, "Attendance
+ * confirmation"); one-off events only. `noReply` and `notAsked` cover going
+ * (CONFIRMED) guests only, matching the Emails card's counts; `coming` and
+ * `notComing` keep a reply even if the registration changed since.
+ */
+export const ATTENDEE_ATTENDANCE_FILTERS = ["all", "coming", "notComing", "noReply", "notAsked"] as const;
 
 export type AttendeeStatusFilter = (typeof ATTENDEE_STATUS_FILTERS)[number];
 export type AttendeeKindFilter = (typeof ATTENDEE_KIND_FILTERS)[number];
 export type AttendeeTeamFilter = (typeof ATTENDEE_TEAM_FILTERS)[number];
+export type AttendeeAttendanceFilter = (typeof ATTENDEE_ATTENDANCE_FILTERS)[number];
 
 export const attendeeListViewSchema = z
   .object({
@@ -27,6 +36,7 @@ export const attendeeListViewSchema = z
     status: z.enum(ATTENDEE_STATUS_FILTERS).optional().default("all"),
     kind: z.enum(ATTENDEE_KIND_FILTERS).optional().default("all"),
     team: z.enum(ATTENDEE_TEAM_FILTERS).optional().default("all"),
+    attendance: z.enum(ATTENDEE_ATTENDANCE_FILTERS).optional().default("all"),
     cursor: z.string().trim().max(160).nullable().optional(),
   })
   .strict();
@@ -73,14 +83,37 @@ export function attendeeStatusWhere(status: AttendeeStatusFilter): Prisma.RSVPWh
   }
 }
 
+/** One attendance reply filter as a condition ("all" adds nothing). */
+export function attendeeAttendanceWhere(attendance: AttendeeAttendanceFilter): Prisma.RSVPWhereInput {
+  switch (attendance) {
+    case "all":
+      return {};
+    case "coming":
+      return { attendanceCheck: { is: { response: "ATTENDING" } } };
+    case "notComing":
+      return { attendanceCheck: { is: { response: "NOT_ATTENDING" } } };
+    case "noReply":
+      return { status: "CONFIRMED", attendanceCheck: { is: { response: null } } };
+    case "notAsked":
+      return { status: "CONFIRMED", attendanceCheck: { is: null } };
+  }
+}
+
 /**
  * Everything but the status chip: the scope, guests-or-users, team-or-solo
- * (TEAM events only) and the search over names, emails and, on TEAM events,
- * the team name (matched inside the scoped event only). The chip counts use
- * this condition so they describe the current search.
+ * (TEAM events only), the attendance reply (one-off events only) and the
+ * search over names, emails and, on TEAM events, the team name (matched
+ * inside the scoped event only). The chip counts use this condition so they
+ * describe the current search and dropdowns.
  */
-export function attendeeBaseWhere(scope: AttendeeScope, view: Pick<AttendeeListView, "query" | "kind" | "team">, options: { teamMode: boolean }): Prisma.RSVPWhereInput {
+export function attendeeBaseWhere(
+  scope: AttendeeScope,
+  view: Pick<AttendeeListView, "query" | "kind" | "team"> & { attendance?: AttendeeAttendanceFilter },
+  options: { teamMode: boolean },
+): Prisma.RSVPWhereInput {
   const and: Prisma.RSVPWhereInput[] = [attendeeScopeWhere(scope)];
+  // Series occurrences are never asked, so the filter only applies to one-off events.
+  if (scope.kind === "event" && view.attendance && view.attendance !== "all") and.push(attendeeAttendanceWhere(view.attendance));
   if (view.kind === "guests") and.push({ userId: null });
   if (view.kind === "users") and.push({ userId: { not: null } });
   if (options.teamMode && view.team === "team") and.push({ teamId: { not: null } });
@@ -112,11 +145,12 @@ export function attendeeCursorWhere(cursor: string | null | undefined): Prisma.R
 }
 
 /** Query-string form of a view, for the filtered email export link. */
-export function attendeeViewSearchParams(view: Pick<AttendeeListView, "query" | "status" | "kind" | "team">): string {
+export function attendeeViewSearchParams(view: Pick<AttendeeListView, "query" | "status" | "kind" | "team"> & { attendance?: AttendeeAttendanceFilter }): string {
   const params = new URLSearchParams();
   if (view.status !== "all") params.set("status", view.status);
   if (view.kind !== "all") params.set("kind", view.kind);
   if (view.team !== "all") params.set("team", view.team);
+  if (view.attendance && view.attendance !== "all") params.set("attendance", view.attendance);
   if (view.query.trim()) params.set("q", view.query.trim());
   return params.toString();
 }
@@ -128,6 +162,34 @@ export function parseAttendeeViewSearchParams(params: URLSearchParams): Attendee
     status: params.get("status") ?? undefined,
     kind: params.get("kind") ?? undefined,
     team: params.get("team") ?? undefined,
+    attendance: params.get("attendance") ?? undefined,
   });
   return parsed.success ? { ...parsed.data, cursor: null } : null;
+}
+
+/**
+ * The attendance badge for one registration, or null when there is nothing
+ * to say: a guest who was never asked shows "Not asked" only while going
+ * (CONFIRMED), and only when `showNotAsked` (someone at the event has been
+ * asked; before the first send every going guest would carry it).
+ */
+export function attendanceBadgeState(
+  rsvp: { status: string; attendanceCheck: { response: AttendanceResponseValue | null } | null | undefined },
+  options: { showNotAsked?: boolean } = {},
+): AttendanceState | null {
+  if (rsvp.attendanceCheck) return attendanceStateOf(rsvp.attendanceCheck);
+  return rsvp.status === "CONFIRMED" && options.showNotAsked !== false ? "notAsked" : null;
+}
+
+/**
+ * The attendee CSV's "Attendance confirmation" and "Attendance note" cells,
+ * with the same "Not asked" rule as the badge. Raw text: lib/csv.ts
+ * neutralises formulas when the row is written.
+ */
+export function attendanceCsvCells(
+  rsvp: { status: string; attendanceCheck: { response: AttendanceResponseValue | null; note: string | null } | null | undefined },
+  options: { showNotAsked?: boolean } = {},
+): [string, string] {
+  const state = attendanceBadgeState(rsvp, options);
+  return [state ? ATTENDANCE_STATE_LABELS[state] : "", rsvp.attendanceCheck?.note ?? ""];
 }

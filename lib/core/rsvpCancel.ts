@@ -26,7 +26,20 @@ const cancelRsvpSchema = z.object({ checkInToken: z.string().trim().min(8).max(2
  * is deleted); a leader's leadership passes to the longest-standing member.
  * Leaving a team is this same cancellation.
  */
-export async function cancelRsvpForUser(actorUserId: string | null, input: unknown): Promise<ActionResult<{ cancelled: true }>> {
+export async function cancelRsvpForUser(
+  actorUserId: string | null,
+  input: unknown,
+  options: {
+    /**
+     * Revalidate the public organisation and event paths (default). The
+     * attendance reply form (/attend/:token) turns it off: inside its Server
+     * Action a revalidation re-renders the current page, whose link the
+     * release has just retired, so the guest would see a 404 instead of
+     * "Your place has been released". Both public pages render per request.
+     */
+    revalidate?: boolean;
+  } = {},
+): Promise<ActionResult<{ cancelled: true }>> {
   const parsed = cancelRsvpSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, error: "Missing token." };
@@ -150,7 +163,7 @@ export async function cancelRsvpForUser(actorUserId: string | null, input: unkno
   const orgSlug =
     rsvp.event?.organisation.slug ??
     rsvp.eventInstance?.series.organisation.slug;
-  if (orgSlug) {
+  if (orgSlug && options.revalidate !== false) {
     revalidatePath(`/${orgSlug}`);
     if (rsvp.event) {
       revalidatePath(`/${orgSlug}/${rsvp.event.slug}`);

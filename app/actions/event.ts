@@ -631,6 +631,8 @@ export async function cloneEvent(
         teamMinSize: source.teamMinSize,
         teamMaxSize: source.teamMaxSize,
         soloPolicy: source.soloPolicy,
+        // The setting is copied; attendance checks (and their answers) never are.
+        attendanceCheckReleaseOnDecline: source.attendanceCheckReleaseOnDecline,
       },
     });
 

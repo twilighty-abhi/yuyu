@@ -8,6 +8,7 @@ import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "@/compo
 import type { AttendeeRow } from "@/components/attendees/types";
 import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format/datetime";
+import { ATTENDANCE_STATE_LABELS, type AttendanceState } from "@/lib/attendanceCheck";
 import { GUEST_STATUS_LABELS, describeCheckIn, describeGuestWhen, guestDisplayName, guestEmail, isManagedByTeam } from "./guestList";
 
 const CHIP_TONES: Record<AttendeeRow["status"], ChipTone> = {
@@ -22,6 +23,13 @@ const AVATAR_TONES: Record<AttendeeRow["status"], "success" | "warning" | "neutr
   WAITLISTED: "neutral",
   PENDING_APPROVAL: "warning",
   REJECTED: "neutral",
+};
+
+const ATTENDANCE_TONES: Record<AttendanceState, ChipTone> = {
+  coming: "success",
+  notComing: "danger",
+  noReply: "warning",
+  notAsked: "outline",
 };
 
 export type GuestRowActions = {
@@ -56,6 +64,8 @@ export function GuestRow({ guest, timeZone, now, busy, disabled, actions }: { gu
   const teamManaged = isManagedByTeam(guest);
   // Crew tickets are edited and removed only in Guests → Crew (the server refuses it here too).
   const crew = guest.isCrew === true;
+  const attendanceState = guest.attendance?.state ?? null;
+  const attendanceNote = guest.attendance?.note ?? null;
 
   return (
     <li className="flex min-w-0 flex-wrap items-center gap-x-3.5 gap-y-2.5 rounded-xl border border-line bg-canvas px-4 py-3">
@@ -72,6 +82,12 @@ export function GuestRow({ guest, timeZone, now, busy, disabled, actions }: { gu
         {crew ? (
           <Chip size="sm" tone="accent" icon={<BadgeCheck />}>
             Crew
+          </Chip>
+        ) : null}
+        {attendanceState ? (
+          <Chip size="sm" tone={ATTENDANCE_TONES[attendanceState]}>
+            <span className="sr-only">Attendance confirmation: </span>
+            {ATTENDANCE_STATE_LABELS[attendanceState]}
           </Chip>
         ) : null}
         {guest.team ? (
@@ -178,6 +194,12 @@ export function GuestRow({ guest, timeZone, now, busy, disabled, actions }: { gu
             </li>
           ))}
         </ul>
+      ) : null}
+      {attendanceNote ? (
+        <p className="basis-full whitespace-pre-wrap break-words text-caption text-ink-secondary">
+          <span className="font-semibold text-ink">Attendance note: </span>
+          {attendanceNote}
+        </p>
       ) : null}
       {answers.length > 0 ? (
         <div id={answersId} hidden={!answersOpen} className="basis-full">

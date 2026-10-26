@@ -369,16 +369,31 @@ export const broadcastPreviewDtoSchema = z.object({ subject: z.string(), html: z
 export const broadcastTestDtoSchema = z.object({ to: z.string() }).strict();
 export const broadcastSendDtoSchema = z.object({ broadcastId: z.string(), recipientCount: z.number().int() }).strict();
 
+export const scheduleSpeakerSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  headline: z.string().nullable(),
+  organisation: z.string().nullable(),
+  photoUrl: z.string().nullable(),
+}).strict();
+
 export const scheduleDtoSchema = z.object({
+  generatedAt: iso,
   tracks: z.array(z.object({
     id: z.string().nullable(),
     name: z.string(),
     sessions: z.array(z.object({
       id: z.string(),
       title: z.string(),
+      type: z.string(),
+      visibility: z.enum(["DRAFT", "PUBLISHED", "HIDDEN"]),
       startDateTime: iso,
       endDateTime: iso,
       delayMinutes: z.number().int(),
+      /** Planned times shifted by the delays of earlier sessions in the track, as on the public page. */
+      effectiveStartDateTime: iso,
+      effectiveEndDateTime: iso,
+      speakers: z.array(scheduleSpeakerSchema),
     }).strict()),
   }).strict()),
 }).strict();

@@ -25,6 +25,8 @@ tags:
   - name: Me
   - name: Public
   - name: Organiser
+  - name: Teams
+  - name: Judging
   - name: Check-in
   - name: Emails
   - name: Day-of
@@ -173,6 +175,20 @@ paths:
         "200": { $ref: "#/components/responses/Null" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
+
+  /api/mobile/v1/me/registrations/{rsvpId}/team:
+    get:
+      tags: [Me]
+      summary: The team of one of the caller's own registrations (names only)
+      description: |
+        `{ "team": null }` for a solo registration. Anyone else's RSVP is
+        `NOT_FOUND`. Members are shown as first name and last initial; never
+        emails, answers, tickets or team links.
+      parameters: [{ $ref: "#/components/parameters/rsvpId" }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/MyTeamResponse" } } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/public/discover:
     get:
@@ -356,42 +372,231 @@ paths:
     post:
       tags: [Organiser]
       summary: Approve a pending request (organisation admins)
+      description: A guest who belongs to a team is refused with `TEAM_MEMBER` (409); change the whole team with `…/teams/{teamId}/approve`.
       parameters: [{ $ref: "#/components/parameters/orgSlug" }, { $ref: "#/components/parameters/eventId" }, { $ref: "#/components/parameters/rsvpId" }]
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GuestResponse" } } } }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
-        "409": { $ref: "#/components/responses/Error" }
+        "409": { description: "`CONFLICT`, or `TEAM_MEMBER` for a guest in a team.", content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } } }
 
   /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/guests/{rsvpId}/reject:
     post:
       tags: [Organiser]
       summary: Reject a pending or waitlisted guest (organisation admins)
+      description: A guest who belongs to a team is refused with `TEAM_MEMBER` (409); change the whole team with `…/teams/{teamId}/reject`.
       parameters: [{ $ref: "#/components/parameters/orgSlug" }, { $ref: "#/components/parameters/eventId" }, { $ref: "#/components/parameters/rsvpId" }]
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GuestResponse" } } } }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
-        "409": { $ref: "#/components/responses/Error" }
+        "409": { description: "`CONFLICT`, or `TEAM_MEMBER` for a guest in a team.", content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } } }
 
   /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/guests/{rsvpId}/promote:
     post:
       tags: [Organiser]
       summary: Promote a waitlisted guest (organisation admins)
+      description: A guest who belongs to a team is refused with `TEAM_MEMBER` (409); change the whole team with `…/teams/{teamId}/promote`.
+      parameters: [{ $ref: "#/components/parameters/orgSlug" }, { $ref: "#/components/parameters/eventId" }, { $ref: "#/components/parameters/rsvpId" }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GuestResponse" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { description: "`CONFLICT`, or `TEAM_MEMBER` for a guest in a team.", content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } } }
+
+  /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/guests/{rsvpId}/reaccept:
+    post:
+      tags: [Organiser]
+      summary: Re-accept a declined guest (organisation admins); confirmed when there is room, otherwise waitlisted
+      description: A member of a declined team is refused with `TEAM_MEMBER` (409).
       parameters: [{ $ref: "#/components/parameters/orgSlug" }, { $ref: "#/components/parameters/eventId" }, { $ref: "#/components/parameters/rsvpId" }]
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GuestResponse" } } } }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
 
-  /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/guests/{rsvpId}/reaccept:
-    post:
-      tags: [Organiser]
-      summary: Re-accept a declined guest (organisation admins); confirmed when there is room, otherwise waitlisted
-      parameters: [{ $ref: "#/components/parameters/orgSlug" }, { $ref: "#/components/parameters/eventId" }, { $ref: "#/components/parameters/rsvpId" }]
+  /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/teams:
+    get:
+      tags: [Teams]
+      summary: Teams view (organisation admins or the MANAGE_REGISTRATIONS grant)
+      description: |
+        The web Guests → Teams view: same permission (`canManageRegistrationsFor`;
+        a `CHECK_IN`- or `JUDGE`-only collaborator gets `FORBIDDEN`), query and
+        `search` rate-limit bucket. Oldest team first, keyset cursor. `q` matches
+        team names and members' names and emails (wildcards literal). `counts`
+        are per filter over the whole event.
+      parameters:
+        - { $ref: "#/components/parameters/orgSlug" }
+        - { $ref: "#/components/parameters/eventId" }
+        - { name: status, in: query, schema: { type: string, enum: [ALL, CONFIRMED, WAITLISTED, PENDING_APPROVAL, REJECTED, INCOMPLETE, LOOKING], default: ALL } }
+        - { name: q, in: query, schema: { type: string, maxLength: 100 } }
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
       responses:
-        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GuestResponse" } } } }
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/TeamListResponse" } } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+
+  /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/teams/{teamId}/approve:
+    post:
+      tags: [Teams]
+      summary: Approve a whole pending team (every member confirmed together)
+      description: Same permission (`canManageRegistrationsFor`), core (`transitionTeamStatus`), transaction, emails, webhooks, audit and `rsvp` rate limit as the dashboard. Returns the updated team.
+      parameters: [{ $ref: "#/components/parameters/orgSlug" }, { $ref: "#/components/parameters/eventId" }, { $ref: "#/components/parameters/teamId" }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/TeamResponse" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { description: "`TEAM_INCOMPLETE` below the minimum team size, `CAPACITY_FULL` with no free unit, `CONFLICT` when not pending, the event is closed, or another organiser changed it.", content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } } }
+        "429": { $ref: "#/components/responses/Error" }
+
+  /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/teams/{teamId}/reject:
+    post:
+      tags: [Teams]
+      summary: Decline a whole pending or waitlisted team
+      description: Same permission (`canManageRegistrationsFor`), core (`transitionTeamStatus`), transaction, emails, webhooks, audit and `rsvp` rate limit as the dashboard. Returns the updated team.
+      parameters: [{ $ref: "#/components/parameters/orgSlug" }, { $ref: "#/components/parameters/eventId" }, { $ref: "#/components/parameters/teamId" }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/TeamResponse" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { description: "`CONFLICT` for any other status or a concurrent change.", content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } } }
+        "429": { $ref: "#/components/responses/Error" }
+
+  /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/teams/{teamId}/promote:
+    post:
+      tags: [Teams]
+      summary: Give a waitlisted team a place (one unit)
+      description: Same permission (`canManageRegistrationsFor`), core (`transitionTeamStatus`), transaction, emails, webhooks, audit and `rsvp` rate limit as the dashboard. Returns the updated team.
+      parameters: [{ $ref: "#/components/parameters/orgSlug" }, { $ref: "#/components/parameters/eventId" }, { $ref: "#/components/parameters/teamId" }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/TeamResponse" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { description: "`CAPACITY_FULL` while the event is still full, `CONFLICT` when not waitlisted or changed concurrently.", content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } } }
+        "429": { $ref: "#/components/responses/Error" }
+
+  /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/judging/submissions:
+    get:
+      tags: [Judging]
+      summary: The judge's projects (25 per page, oldest submission first)
+      description: |
+        Judges only (organisation OWNER/ADMIN or the event `JUDGE` grant, as the
+        web judge workspace). Lists only projects this judge may score:
+        `SUBMITTED`, assigned unless judges see all, and never an entrant the
+        judge's own account belongs to (conflict of interest). `counts` cover
+        everything the judge may see, ignoring the search. `search` rate-limit
+        bucket. An organiser without the judging right gets `FORBIDDEN`; an
+        event without submissions switched on is `NOT_FOUND`.
+      parameters:
+        - { $ref: "#/components/parameters/orgSlug" }
+        - { $ref: "#/components/parameters/eventId" }
+        - { name: filter, in: query, schema: { type: string, enum: [all, todo, inProgress, reviewed], default: all } }
+        - { name: q, in: query, schema: { type: string, maxLength: 100 }, description: Project title, team name, or a solo entrant's first name. }
+        - { name: cursor, in: query, schema: { type: string } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/JudgeSubmissionListResponse" } } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+
+  /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/judging/next:
+    get:
+      tags: [Judging]
+      summary: Score next project (picked on the server)
+      description: |
+        Among the projects this judge may score and has not submitted a review
+        for: one they started first, then the fewest submitted reviews, then the
+        oldest submission. `next` is null when nothing is left or judging is not
+        `OPEN`; `remaining` counts what is left including `next`.
+      parameters: [{ $ref: "#/components/parameters/orgSlug" }, { $ref: "#/components/parameters/eventId" }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/JudgeNextResponse" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+
+  /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/judging/criteria:
+    get:
+      tags: [Judging]
+      summary: The rubric and the judging status
+      parameters: [{ $ref: "#/components/parameters/orgSlug" }, { $ref: "#/components/parameters/eventId" }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/JudgingCriteriaResponse" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+
+  /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/judging/submissions/{submissionId}:
+    get:
+      tags: [Judging]
+      summary: One project with this judge's own saved scores and comment
+      description: "`NOT_VISIBLE` (404) for a project this judge may not score (unassigned, conflict of interest, not submitted, or another event's); `NOT_FOUND` (404) when the event no longer takes submissions, as on every judging route."
+      parameters: [{ $ref: "#/components/parameters/orgSlug" }, { $ref: "#/components/parameters/eventId" }, { $ref: "#/components/parameters/submissionId" }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/JudgeSubmissionDetailResponse" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+
+  /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/judging/submissions/{submissionId}/scores:
+    put:
+      tags: [Judging]
+      summary: Save some or all scores (and optionally the comment) without submitting
+      description: |
+        Upserts this judge's score per criterion (whole numbers, 0..maxScore).
+        With `comment`, also saves the private comment as a draft. Refusals:
+        `JUDGING_CLOSED` (409, judging not open), `NOT_VISIBLE` (404),
+        `INVALID_REQUEST` (unknown criterion, out of range, duplicate criterion).
+      parameters: [{ $ref: "#/components/parameters/orgSlug" }, { $ref: "#/components/parameters/eventId" }, { $ref: "#/components/parameters/submissionId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [scores]
+              properties:
+                scores: { type: array, maxItems: 100, items: { $ref: "#/components/schemas/ScoreInput" } }
+                comment: { type: string, maxLength: 2000, description: Private comment (organisers only); saved as a draft. }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/JudgeScoresSavedResponse" } } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+
+  /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/judging/submissions/{submissionId}/review:
+    post:
+      tags: [Judging]
+      summary: Submit this judge's review
+      description: |
+        Optional `scores` are saved first; the review is then submitted once
+        every criterion is scored. Without `comment`, the saved draft comment
+        is kept. Refusals: `JUDGING_CLOSED` (409), `INCOMPLETE_SCORES` (409,
+        a criterion is unscored or there is no rubric), `NOT_VISIBLE` (404).
+        Returns the project as `GET …/judging/submissions/{submissionId}`.
+      parameters: [{ $ref: "#/components/parameters/orgSlug" }, { $ref: "#/components/parameters/eventId" }, { $ref: "#/components/parameters/submissionId" }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                scores: { type: array, maxItems: 100, items: { $ref: "#/components/schemas/ScoreInput" } }
+                comment: { type: string, maxLength: 2000 }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/JudgeSubmissionDetailResponse" } } } }
+        "400": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
@@ -785,6 +990,8 @@ components:
     eventSlug: { name: eventSlug, in: path, required: true, schema: { type: string } }
     eventId: { name: eventId, in: path, required: true, schema: { type: string } }
     rsvpId: { name: rsvpId, in: path, required: true, schema: { type: string } }
+    teamId: { name: teamId, in: path, required: true, schema: { type: string } }
+    submissionId: { name: submissionId, in: path, required: true, schema: { type: string } }
 
   responses:
     Error:
@@ -808,6 +1015,9 @@ components:
     EventPermission: { type: string, enum: [EDIT_DETAILS, MANAGE_REGISTRATIONS, MANAGE_INVITATIONS, CHECK_IN, PUBLISH_AND_SCHEDULE] }
     FieldType: { type: string, enum: [TEXT, TEXTAREA, EMAIL, PHONE, SELECT, MULTI_SELECT, RADIO, CHECKBOX, NUMBER, DATE] }
     Attendance: { type: string, enum: [ANY, CHECKED_IN, NOT_CHECKED_IN], default: ANY }
+    RegistrationMode: { type: string, enum: [INDIVIDUAL, TEAM], description: "TEAM: capacity counts teams plus solo registrants (\"teams & solo places\")." }
+    JudgingStatus: { type: string, enum: [NOT_STARTED, OPEN, CLOSED] }
+    ReviewStatus: { type: string, enum: [NONE, DRAFT, SUBMITTED], description: "SUBMITTED once submitted; DRAFT once any score or comment is saved." }
     DateTime: { type: string, format: date-time }
     NullableDateTime: { type: [string, "null"], format: date-time }
     NullableUrl: { type: [string, "null"], format: uri }
@@ -823,7 +1033,7 @@ components:
           additionalProperties: false
           required: [code, message]
           properties:
-            code: { type: string, enum: [INVALID_REQUEST, UNAUTHENTICATED, MFA_REQUIRED, EMAIL_VERIFICATION_REQUIRED, FORBIDDEN, NOT_FOUND, CONFLICT, NEEDS_FORCE, RATE_LIMITED, TEAM_REQUIRED, INTERNAL_ERROR] }
+            code: { type: string, enum: [INVALID_REQUEST, UNAUTHENTICATED, MFA_REQUIRED, EMAIL_VERIFICATION_REQUIRED, FORBIDDEN, NOT_FOUND, CONFLICT, NEEDS_FORCE, RATE_LIMITED, TEAM_REQUIRED, TEAM_MEMBER, TEAM_INCOMPLETE, CAPACITY_FULL, JUDGING_CLOSED, INCOMPLETE_SCORES, NOT_VISIBLE, INTERNAL_ERROR] }
             message: { type: string, description: UI-safe text. }
             fieldErrors: { type: object, additionalProperties: { type: array, items: { type: string } } }
 
@@ -887,19 +1097,34 @@ components:
         eventTitle: { type: string }
         permissions: { type: array, items: { $ref: "#/components/schemas/EventPermission" } }
 
+    JudgingEvent:
+      type: object
+      additionalProperties: false
+      description: An event the caller judges through a JUDGE grant, once it takes submissions. Organisation admins use `myPermissions.judge` on the org event list.
+      required: [organisation, eventId, eventTitle, startDateTime, endDateTime, timezone, judgingStatus]
+      properties:
+        organisation: { type: object, additionalProperties: false, required: [slug, name], properties: { slug: { type: string }, name: { type: string } } }
+        eventId: { type: string }
+        eventTitle: { type: string }
+        startDateTime: { $ref: "#/components/schemas/DateTime" }
+        endDateTime: { $ref: "#/components/schemas/DateTime" }
+        timezone: { type: string }
+        judgingStatus: { $ref: "#/components/schemas/JudgingStatus" }
+
     Me:
       type: object
       additionalProperties: false
-      required: [user, organisations, collaborations]
+      required: [user, organisations, collaborations, judging]
       properties:
         user: { $ref: "#/components/schemas/User" }
         organisations: { type: array, items: { $ref: "#/components/schemas/OrgSummary" } }
         collaborations: { type: array, items: { $ref: "#/components/schemas/Collaboration" } }
+        judging: { type: array, items: { $ref: "#/components/schemas/JudgingEvent" } }
 
     EventSummary:
       type: object
       additionalProperties: false
-      required: [id, slug, title, coverImageUrl, startDateTime, endDateTime, timezone, location, mapLinkUrl, isOnline, accentColor, status, organisation]
+      required: [id, slug, title, coverImageUrl, startDateTime, endDateTime, timezone, location, mapLinkUrl, isOnline, accentColor, status, registrationMode, organisation]
       properties:
         id: { type: string }
         slug: { type: string }
@@ -913,6 +1138,7 @@ components:
         isOnline: { type: boolean }
         accentColor: { type: [string, "null"] }
         status: { $ref: "#/components/schemas/EventStatus" }
+        registrationMode: { $ref: "#/components/schemas/RegistrationMode" }
         organisation:
           type: object
           additionalProperties: false
@@ -943,6 +1169,38 @@ components:
         ticketToken: { type: [string, "null"], description: Only for CONFIRMED registrations. }
         event: { $ref: "#/components/schemas/EventSummary" }
         instanceId: { type: [string, "null"], description: Set for a recurring-series occurrence; `event` then describes the series. }
+        team: { $ref: "#/components/schemas/MyTeam" }
+
+    MyTeam:
+      type: object
+      additionalProperties: false
+      description: The caller's own team (present only for a registration in a team). Names only.
+      required: [id, name, role, size, maxSize, members]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        role: { type: string, enum: [LEADER, MEMBER], description: The caller's role. }
+        size: { type: integer }
+        maxSize: { type: [integer, "null"] }
+        members:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [displayName, isLeader]
+            properties:
+              displayName: { type: string, description: First name and last initial. }
+              isLeader: { type: boolean }
+
+    MyTeamResult:
+      type: object
+      additionalProperties: false
+      required: [team]
+      properties:
+        team:
+          oneOf:
+            - { $ref: "#/components/schemas/MyTeam" }
+            - { type: "null" }
 
     Registrations:
       type: object
@@ -1099,7 +1357,7 @@ components:
     EventPermissions:
       type: object
       additionalProperties: false
-      required: [checkIn, manageRegistrations, sendEmails, schedule, manageFeedback, manageRegistrationWindow]
+      required: [checkIn, manageRegistrations, sendEmails, schedule, manageFeedback, manageRegistrationWindow, judge]
       properties:
         checkIn: { type: boolean }
         manageRegistrations: { type: boolean }
@@ -1107,6 +1365,7 @@ components:
         schedule: { type: boolean }
         manageFeedback: { type: boolean }
         manageRegistrationWindow: { type: boolean }
+        judge: { type: boolean, description: Can open the judging workspace (OWNER/ADMIN or the JUDGE grant) on an event with submissions switched on. }
 
     EventCounts:
       type: object
@@ -1181,6 +1440,7 @@ components:
         checkedInAt: { $ref: "#/components/schemas/NullableDateTime" }
         registeredAt: { $ref: "#/components/schemas/DateTime" }
         isGuest: { type: boolean, description: True when the registration has no Yuyu account. }
+        teamName: { type: string, description: TEAM events only; absent for solo registrants. }
 
     Detail:
       type: object
@@ -1226,6 +1486,7 @@ components:
         checkedInAt: { $ref: "#/components/schemas/NullableDateTime" }
         checkInDetails: { type: array, items: { $ref: "#/components/schemas/Detail" } }
         registrationDetails: { type: array, items: { $ref: "#/components/schemas/Detail" } }
+        teamName: { type: string, description: TEAM events only; absent for solo registrants. }
 
     CheckInPreview:
       allOf:
@@ -1390,6 +1651,160 @@ components:
                     delayMinutes: { type: integer, description: The session's stored live delay (what the delay control sets); planned times are unchanged. }
 
     # Success envelopes
+    OrganiserTeam:
+      type: object
+      additionalProperties: false
+      required: [id, name, status, size, minSize, maxSize, incomplete, lookingForMembers, leaderDisplayName, members]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        status: { $ref: "#/components/schemas/RsvpStatus" }
+        size: { type: integer }
+        minSize: { type: [integer, "null"] }
+        maxSize: { type: [integer, "null"] }
+        incomplete: { type: boolean, description: Below the minimum team size; cannot be approved. }
+        lookingForMembers: { type: boolean }
+        leaderDisplayName: { type: [string, "null"] }
+        members:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [rsvpId, displayName, isLeader, checkedIn]
+            properties:
+              rsvpId: { type: string, description: Use with the guest routes (detail, check-in). }
+              displayName: { type: string }
+              isLeader: { type: boolean }
+              checkedIn: { type: boolean }
+
+    TeamList:
+      type: object
+      additionalProperties: false
+      required: [teams, nextCursor, counts]
+      properties:
+        teams: { type: array, items: { $ref: "#/components/schemas/OrganiserTeam" } }
+        nextCursor: { type: [string, "null"] }
+        counts:
+          type: object
+          additionalProperties: false
+          required: [ALL, CONFIRMED, WAITLISTED, PENDING_APPROVAL, REJECTED, INCOMPLETE, LOOKING]
+          properties:
+            ALL: { type: integer }
+            CONFIRMED: { type: integer }
+            WAITLISTED: { type: integer }
+            PENDING_APPROVAL: { type: integer }
+            REJECTED: { type: integer }
+            INCOMPLETE: { type: integer }
+            LOOKING: { type: integer }
+
+    JudgingCriterion:
+      type: object
+      additionalProperties: false
+      required: [id, name, description, weight, maxScore]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        weight: { type: integer, minimum: 1, maximum: 10 }
+        maxScore: { type: integer, minimum: 1, maximum: 10 }
+
+    ScoreInput:
+      type: object
+      additionalProperties: false
+      required: [criterionId, score]
+      properties:
+        criterionId: { type: string }
+        score: { type: integer, minimum: 0, description: "0..the criterion's maxScore." }
+
+    MyReview:
+      type: object
+      additionalProperties: false
+      required: [status, scoredCriteria]
+      properties:
+        status: { $ref: "#/components/schemas/ReviewStatus" }
+        scoredCriteria: { type: integer }
+
+    JudgeSubmission:
+      type: object
+      additionalProperties: false
+      description: Project content and display names only; never entrant emails, answers, ticket links, disqualification reasons or other judges' scores.
+      required: [id, title, summary, links, entrantName, myReview]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        summary: { type: string, description: Plain text. }
+        links:
+          type: object
+          additionalProperties: false
+          required: [repo, demo, video]
+          properties:
+            repo: { $ref: "#/components/schemas/NullableUrl" }
+            demo: { $ref: "#/components/schemas/NullableUrl" }
+            video: { $ref: "#/components/schemas/NullableUrl" }
+        entrantName: { type: string, description: Team name, or a solo entrant's first name and last initial. }
+        teamName: { type: string, description: Present only for a team entrant. }
+        myReview: { $ref: "#/components/schemas/MyReview" }
+
+    JudgeSubmissionList:
+      type: object
+      additionalProperties: false
+      required: [judgingStatus, submissions, nextCursor, counts]
+      properties:
+        judgingStatus: { $ref: "#/components/schemas/JudgingStatus" }
+        submissions: { type: array, items: { $ref: "#/components/schemas/JudgeSubmission" } }
+        nextCursor: { type: [string, "null"] }
+        counts:
+          type: object
+          additionalProperties: false
+          required: [all, todo, inProgress, reviewed]
+          properties:
+            all: { type: integer }
+            todo: { type: integer, description: No submitted review yet (includes inProgress). }
+            inProgress: { type: integer }
+            reviewed: { type: integer }
+
+    JudgingCriteria:
+      type: object
+      additionalProperties: false
+      required: [judgingStatus, criteria]
+      properties:
+        judgingStatus: { $ref: "#/components/schemas/JudgingStatus" }
+        criteria: { type: array, items: { $ref: "#/components/schemas/JudgingCriterion" } }
+
+    JudgeSubmissionDetail:
+      type: object
+      additionalProperties: false
+      required: [judgingStatus, criteria, submission, myScores, myComment, mySubmittedAt]
+      properties:
+        judgingStatus: { $ref: "#/components/schemas/JudgingStatus" }
+        criteria: { type: array, items: { $ref: "#/components/schemas/JudgingCriterion" } }
+        submission: { $ref: "#/components/schemas/JudgeSubmission" }
+        myScores:
+          type: array
+          items: { type: object, additionalProperties: false, required: [criterionId, score], properties: { criterionId: { type: string }, score: { type: integer } } }
+        myComment: { type: [string, "null"], description: This judge's own private comment. }
+        mySubmittedAt: { $ref: "#/components/schemas/NullableDateTime" }
+
+    JudgeNext:
+      type: object
+      additionalProperties: false
+      required: [next, remaining]
+      properties:
+        next:
+          oneOf:
+            - { $ref: "#/components/schemas/JudgeSubmissionDetail" }
+            - { type: "null" }
+        remaining: { type: integer }
+
+    JudgeScoresSaved:
+      type: object
+      additionalProperties: false
+      required: [scored, total, myReview]
+      properties:
+        scored: { type: integer }
+        total: { type: integer }
+        myReview: { $ref: "#/components/schemas/MyReview" }
+
     SessionResponse: { type: object, additionalProperties: false, required: [ok, data], properties: { ok: { const: true }, data: { $ref: "#/components/schemas/Session" } } }
     AuthConfigResponse: { type: object, additionalProperties: false, required: [ok, data], properties: { ok: { const: true }, data: { $ref: "#/components/schemas/AuthConfig" } } }
     MeResponse: { type: object, additionalProperties: false, required: [ok, data], properties: { ok: { const: true }, data: { $ref: "#/components/schemas/Me" } } }
@@ -1429,3 +1844,11 @@ components:
         registrationClosedReason: { type: [string, "null"], description: UI-safe reason when registration is closed. }
         registrationManuallyClosed: { type: boolean }
     RegistrationStateResponse: { type: object, additionalProperties: false, required: [ok, data], properties: { ok: { const: true }, data: { $ref: "#/components/schemas/RegistrationState" } } }
+    MyTeamResponse: { type: object, additionalProperties: false, required: [ok, data], properties: { ok: { const: true }, data: { $ref: "#/components/schemas/MyTeamResult" } } }
+    TeamListResponse: { type: object, additionalProperties: false, required: [ok, data], properties: { ok: { const: true }, data: { $ref: "#/components/schemas/TeamList" } } }
+    TeamResponse: { type: object, additionalProperties: false, required: [ok, data], properties: { ok: { const: true }, data: { $ref: "#/components/schemas/OrganiserTeam" } } }
+    JudgeSubmissionListResponse: { type: object, additionalProperties: false, required: [ok, data], properties: { ok: { const: true }, data: { $ref: "#/components/schemas/JudgeSubmissionList" } } }
+    JudgingCriteriaResponse: { type: object, additionalProperties: false, required: [ok, data], properties: { ok: { const: true }, data: { $ref: "#/components/schemas/JudgingCriteria" } } }
+    JudgeSubmissionDetailResponse: { type: object, additionalProperties: false, required: [ok, data], properties: { ok: { const: true }, data: { $ref: "#/components/schemas/JudgeSubmissionDetail" } } }
+    JudgeNextResponse: { type: object, additionalProperties: false, required: [ok, data], properties: { ok: { const: true }, data: { $ref: "#/components/schemas/JudgeNext" } } }
+    JudgeScoresSavedResponse: { type: object, additionalProperties: false, required: [ok, data], properties: { ok: { const: true }, data: { $ref: "#/components/schemas/JudgeScoresSaved" } } }

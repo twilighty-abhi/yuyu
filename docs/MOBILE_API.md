@@ -4,9 +4,9 @@
 
 `/api/mobile/v1` is the user-authenticated REST API used by the Yuyu mobile
 apps (Android and iOS). It covers only phone-first tasks: signing in, an
-attendee's own registrations and tickets, and organiser day-of work (check-in,
-guest approval, emails, live programme delays, feedback open/close, closing
-sign-ups).
+attendee's own registrations, tickets and team, organiser day-of work (check-in,
+guest and team approval, emails, live programme delays, feedback open/close,
+closing sign-ups), and hackathon judging.
 
 The machine-readable contract is [`mobile-api.openapi.yaml`](mobile-api.openapi.yaml)
 (OpenAPI 3.1), with example responses in [`mobile-api-fixtures/`](mobile-api-fixtures/).
@@ -35,6 +35,24 @@ limits, emails and audit behaviour are identical.
   `NEEDS_FORCE` (409, check-in status override available), `RATE_LIMITED`
   (429, with `Retry-After`), `TEAM_REQUIRED` (409, `POST /rsvp` on an event
   that registers teams only), `INTERNAL_ERROR` (500).
+- Team and judging refusals carry their own codes so the app can react
+  without parsing messages:
+  - `TEAM_MEMBER` (409): an individual approve, reject, promote or re-accept
+    on a guest who belongs to a team. Change the whole team instead
+    (`…/teams/:teamId/approve|reject|promote`).
+  - `TEAM_INCOMPLETE` (409): approving a team below the event's minimum team
+    size.
+  - `CAPACITY_FULL` (409): approving or promoting a team with no free unit.
+  - `JUDGING_CLOSED` (409): judging is not `OPEN`, so scores and reviews are
+    frozen.
+  - `INCOMPLETE_SCORES` (409): submitting a review before every criterion is
+    scored (or while the event has no rubric).
+  - `NOT_VISIBLE` (404): a project this judge may not score (not submitted,
+    unassigned, conflict of interest, or another event's). Treat it like
+    `NOT_FOUND`.
+
+  Older apps see these as unknown codes with the usual HTTP status and a
+  UI-safe message.
 - Error messages are the same UI-safe texts as the website (for example
   "Only pending requests can be approved."); show them as-is.
 - Timestamps are ISO-8601 UTC strings. Event times come with the IANA `timezone`.
@@ -138,10 +156,16 @@ Account creation and password reset happen on the website.
 
 ### `GET /me` (auth)
 
-`{ "user": User, "organisations": [OrgSummary], "collaborations": [{ "organisation": { "slug", "name" }, "eventId", "eventTitle", "permissions": ["CHECK_IN", …] }] }`
+`{ "user": User, "organisations": [OrgSummary], "collaborations": [{ "organisation": { "slug", "name" }, "eventId", "eventTitle", "permissions": ["CHECK_IN", …] }], "judging": [JudgingEvent] }`
 
 `OrgSummary = { "id", "slug", "name", "logoUrl|null", "role": "OWNER|ADMIN|MEMBER" }`.
-Collaborations list standalone-event grants only.
+Collaborations list standalone-event grants only; `JUDGE` is never listed in
+`permissions`, and a `JUDGE`-only grant is not a collaboration.
+
+`JudgingEvent = { "organisation": { "slug", "name" }, "eventId", "eventTitle", "startDateTime", "endDateTime", "timezone", "judgingStatus": "NOT_STARTED|OPEN|CLOSED" }`:
+events the caller judges through a `JUDGE` grant, once the event takes
+submissions. Organisation owners and admins judge through their role: they
+find their events through `myPermissions.judge` on the organiser event list.
 
 ### `PATCH /me` (auth)
 
@@ -162,9 +186,21 @@ with `?upcoming=`, `?past=` and `?certificates=`; this endpoint does not.
 }
 ```
 
-`Registration = { "rsvpId", "status", "checkedInAt|null", "registeredAt", "canCancel", "ticketToken|null" (only for CONFIRMED), "event": EventSummary, "instanceId|null" }`.
+`Registration = { "rsvpId", "status", "checkedInAt|null", "registeredAt", "canCancel", "ticketToken|null" (only for CONFIRMED), "event": EventSummary, "instanceId|null", "team"?: MyTeam }`.
 For a recurring-series occurrence `instanceId` is set and `event` describes the
 series (its `id`/`slug`, the occurrence's times, no cover image).
+
+`team` is present only for a registration in a team:
+`MyTeam = { "id", "name", "role": "LEADER|MEMBER" (the caller's), "size", "maxSize|null", "members": [{ "displayName", "isLeader" }] }`.
+Members are shown as first name and last initial ("Ada L."), as on the
+seeker list; never emails, answers, tickets, or the join and management links
+(team management stays on the website).
+
+### `GET /me/registrations/:rsvpId/team` (auth)
+
+`{ "team": MyTeam|null }` for one of the caller's own registrations (`null`
+for a solo registration). Anyone else's RSVP, including a teammate's, is
+`NOT_FOUND`.
 
 ### `POST /me/registrations/:rsvpId/cancel` (auth)
 
@@ -174,7 +210,11 @@ check-in, promotes the waitlist, queues emails, audited) → `null`.
 
 ## Public (no auth required; a valid bearer, if sent, identifies the attendee; an invalid one is 401)
 
-`EventSummary = { "id", "slug", "title", "coverImageUrl|null", "startDateTime", "endDateTime", "timezone", "location", "mapLinkUrl|null", "isOnline", "accentColor|null", "status", "organisation": { "slug", "name", "logoUrl|null" } }`
+`EventSummary = { "id", "slug", "title", "coverImageUrl|null", "startDateTime", "endDateTime", "timezone", "location", "mapLinkUrl|null", "isOnline", "accentColor|null", "status", "registrationMode": "INDIVIDUAL|TEAM", "organisation": { "slug", "name", "logoUrl|null" } }`
+
+On `TEAM` events capacity counts registration units (each team, and each solo
+registrant, is one): word it as "teams & solo places" ([Team registration](TEAMS.md)).
+Recurring-series occurrences are always `INDIVIDUAL`.
 
 ### `GET /public/discover?cursor=&limit=`
 
@@ -266,10 +306,12 @@ collaborator grant on that event (as on the event dashboard); anything else,
 including an id from another organisation, is `NOT_FOUND`. A visible event
 without the needed permission is `FORBIDDEN`.
 
-`EventPermissions = { "checkIn", "manageRegistrations", "sendEmails", "schedule", "manageFeedback", "manageRegistrationWindow" }`,
+`EventPermissions = { "checkIn", "manageRegistrations", "sendEmails", "schedule", "manageFeedback", "manageRegistrationWindow", "judge" }`,
 derived exactly as the event dashboard does: `checkIn` = organisation
 OWNER/ADMIN or the event `CHECK_IN` grant; `schedule` = OWNER/ADMIN or
-`PUBLISH_AND_SCHEDULE`; `manageRegistrations`, `sendEmails`, `manageFeedback`
+`PUBLISH_AND_SCHEDULE`; `judge` = OWNER/ADMIN or the `JUDGE` grant, on an
+event with submissions switched on (the judging routes below);
+`manageRegistrations`, `sendEmails`, `manageFeedback`
 and `manageRegistrationWindow` = organisation OWNER/ADMIN (the website's email,
 feedback-settings and event-edit actions are admin-only). The shared RSVP cores
 also accept the event's `MANAGE_REGISTRATIONS` grant, as the web guest list
@@ -298,8 +340,9 @@ up to 200.
 
 ### Guests
 
-`Guest = { "rsvpId", "displayName", "email|null", "status", "checkedInAt|null", "registeredAt", "isGuest" }`
-(`isGuest`: the registration has no Yuyu account). Guest rows never include
+`Guest = { "rsvpId", "displayName", "email|null", "status", "checkedInAt|null", "registeredAt", "isGuest", "teamName"? }`
+(`isGuest`: the registration has no Yuyu account; `teamName`: on `TEAM` events,
+the guest's team, absent for solo registrants). Guest rows never include
 ticket tokens.
 
 - `GET …/guests?status=ALL|CONFIRMED|WAITLISTED|PENDING_APPROVAL|REJECTED&checkedIn=any|yes|no&q=&cursor=&limit=`
@@ -308,7 +351,9 @@ ticket tokens.
 - `GET …/guests/:rsvpId` → `Guest & { "answers": [{ "label", "value" }] }` (same permission).
 - `POST …/guests/:rsvpId/approve` · `…/reject` · `…/promote` → the updated
   `Guest`. Same rules, capacity transaction, emails and audit as `approveRsvp`
-  / `rejectRsvp` / `promoteFromWaitlist` (organisation admins).
+  / `rejectRsvp` / `promoteFromWaitlist` (organisation admins). A guest who
+  belongs to a team is refused with `TEAM_MEMBER` (teams change status only
+  as a whole, see Teams below).
 - `POST …/guests/:rsvpId/reaccept` → the updated `Guest`. Reverses a decline
   (as `reacceptRsvp`; organisation admins): only a `REJECTED` guest, and only
   while the event is open. The guest becomes `CONFIRMED` when there is room
@@ -316,15 +361,44 @@ ticket tokens.
   or waitlist email and a `RSVP_REACCEPTED` audit event. Any other status is
   `CONFLICT` ("Only declined registrations can be re-accepted."). Older apps
   that do not call it are unaffected; `approve` still accepts only pending
-  requests.
+  requests. A member of a declined team is refused with `TEAM_MEMBER`.
 - `POST …/guests` `{ "name", "email", "answers"? }` → `201` `Guest` (as `addManualRsvp`).
 - `DELETE …/guests/:rsvpId` → `{ "undoId" }` (as `deleteRsvp`; the undo lasts five minutes).
 - `POST …/guests/restore` `{ "undoId" }` → `null` (as `restoreRsvp`). `NOT_FOUND`
   unless the undo was created by the caller for this same event.
 
+### Teams (`TEAM` events)
+
+The web Guests → Teams view. Permission: `canManageRegistrationsFor`
+(organisation OWNER/ADMIN or the event's `MANAGE_REGISTRATIONS` grant), the
+same check as on the web; a visible event without it (for example a
+`CHECK_IN`-only collaborator) is `FORBIDDEN`, and a `JUDGE`-only collaborator
+gets `NOT_FOUND` like every organiser route.
+
+`Team = { "id", "name", "status", "size", "minSize|null", "maxSize|null", "incomplete", "lookingForMembers", "leaderDisplayName|null", "members": [{ "rsvpId", "displayName", "isLeader", "checkedIn" }] }`
+(`incomplete`: below `minSize`, cannot be approved). Organisers see full
+names; no emails, answers, tokens or team links (use `GET …/guests/:rsvpId`
+with a member's `rsvpId` for contact details).
+
+- `GET …/teams?status=ALL|CONFIRMED|WAITLISTED|PENDING_APPROVAL|REJECTED|INCOMPLETE|LOOKING&q=&cursor=&limit=`
+  (limit 1–100, default 50; oldest team first, opaque keyset cursor; `q` up to
+  100 characters matches team names and members' names and emails, wildcards
+  literal) → `{ "teams": [Team], "nextCursor", "counts": { "ALL", "CONFIRMED", "WAITLISTED", "PENDING_APPROVAL", "REJECTED", "INCOMPLETE", "LOOKING" } }`.
+  The counts cover the whole event. The query is the dashboard's
+  (`listEventTeamsForOrganiser`) on the `search` rate-limit bucket.
+- `POST …/teams/:teamId/approve` · `…/reject` · `…/promote` → the updated
+  `Team`. The whole team and every member RSVP change in one transaction under
+  the event lock (`transitionTeamStatus`, shared with the dashboard through
+  `lib/core/teamOrganiser.ts`), with one status email and webhook per member,
+  a `TEAM_APPROVED` / `TEAM_REJECTED` / `TEAM_WAITLIST_PROMOTED` audit and the
+  `rsvp` rate limit. Refusals: `TEAM_INCOMPLETE` (approve below the minimum
+  size), `CAPACITY_FULL` (approve or promote with no free unit), `CONFLICT`
+  (wrong status, event closed for approvals, or changed by another
+  organiser), `NOT_FOUND` (a team of another event or organisation).
+
 ### Check-in (the event `CHECK_IN` permission, checked by the shared core)
 
-`CheckInResult = { "rsvpId", "displayName", "email|null", "status", "alreadyCheckedIn", "checkedInAt|null", "checkInDetails": [{ "label", "value" }], "registrationDetails": [{ "label", "value" }] }`
+`CheckInResult = { "rsvpId", "displayName", "email|null", "status", "alreadyCheckedIn", "checkedInAt|null", "checkInDetails": [{ "label", "value" }], "registrationDetails": [{ "label", "value" }], "teamName"? }`
 `CheckInPreview = CheckInResult & { "gate": { "ok": true } | { "ok": false, "reason", "needsForce", "blocked"? } }`
 
 - `POST …/check-in/preview` `{ "rawInput": "<QR payload, ticket URL or typed code>" }` or `{ "rsvpId" }` → `CheckInPreview`.
@@ -334,9 +408,9 @@ ticket tokens.
 - `POST …/check-in/undo` `{ "rsvpId" }` → `null`.
 - `GET …/check-in/lookup?q=` (min 2 chars, max 12 rows) → `{ "rows": [Guest] }`.
   Matches guest names and emails and, on team events, team names (teams of the
-  same event only, listing their members). `Guest` has no team field yet.
+  same event only, listing their members). Rows carry `teamName`.
 - `GET …/check-in/stats` → `{ "confirmed", "checkedIn", "recent": [{ "rsvpId", "displayName", "checkedInAt" }] }` (ten latest).
-- `GET …/check-in/roster` → `{ "generatedAt", "rows": [Guest & { "ticketToken", "checkInDetails", "registrationDetails" }] }`
+- `GET …/check-in/roster` → `{ "generatedAt", "rows": [Guest & { "ticketToken", "checkInDetails", "registrationDetails" }] }` (rows carry `teamName` like `Guest`)
   (as `downloadOfflineCheckInRoster`: confirmed, waitlisted and pending). Keep it
   in encrypted storage and delete it after the event.
 - `POST …/check-in/sync` `{ "checkIns": [{ "rsvpId", "checkedInAt", "force", "clientMutationId"? }] }` (1–500)
@@ -385,6 +459,61 @@ send call client-side.
   admins only (the same permission as editing the event on the web), rate
   limited, revalidated and audited as `EVENT_REGISTRATION_CLOSED` /
   `EVENT_REGISTRATION_REOPENED`.
+
+## Judging (judges)
+
+The web judge workspace ([Hackathon judging](HACKATHON.md)). Who may judge is
+`resolveJudgeContext`: organisation OWNER/ADMIN, or the event's `JUDGE`
+grant (also a `JUDGE`-only collaborator, who has no other organiser route).
+An event outside what the caller can see, including another organisation's,
+is `NOT_FOUND`; an event the caller sees as an organiser without the right to
+judge is `FORBIDDEN`; an event without submissions switched on is
+`NOT_FOUND`. Every call re-resolves the judge, and the cores re-check
+visibility, the judging status and the rubric inside their transactions.
+Rate limits are the web judge actions' (`search` bucket for the list, `action`
+for the rest).
+
+Judges see project content and display names only: never entrant emails,
+answers, ticket links, disqualification reasons or status, other judges'
+scores or comments, results or ranks. A judge whose account owns a
+registration of an entrant never sees or scores that project (conflict of
+interest).
+
+`JudgeSubmission = { "id", "title", "summary", "links": { "repo|null", "demo|null", "video|null" }, "entrantName", "teamName"?, "myReview": { "status": "NONE|DRAFT|SUBMITTED", "scoredCriteria" } }`
+(`entrantName`: the team name, or a solo entrant's first name and last
+initial; `teamName` only for teams; `DRAFT` once any score or comment is
+saved). `Criterion = { "id", "name", "description", "weight", "maxScore" }`.
+`JudgeSubmissionDetail = { "judgingStatus", "criteria": [Criterion], "submission": JudgeSubmission, "myScores": [{ "criterionId", "score" }], "myComment|null", "mySubmittedAt|null" }`.
+
+- `GET …/judging/submissions?filter=all|todo|inProgress|reviewed&q=&cursor=`
+  → `{ "judgingStatus", "submissions": [JudgeSubmission], "nextCursor", "counts": { "all", "todo", "inProgress", "reviewed" } }`.
+  25 per page, oldest submission first (opaque keyset cursor). Only projects
+  this judge may score: `SUBMITTED`, assigned unless the organisers let judges
+  see all, no conflict of interest. `todo` includes `inProgress`. `q` (up to
+  100 characters) matches the title, team name, or a solo entrant's first
+  name. `counts` ignore the search.
+- `GET …/judging/next` → `{ "next": JudgeSubmissionDetail|null, "remaining" }`:
+  "Score next project" picked on the server (one the judge started, then the
+  fewest submitted reviews, then the oldest). `next` is null when nothing is
+  left or judging is not `OPEN`.
+- `GET …/judging/criteria` → `{ "judgingStatus", "criteria": [Criterion] }`.
+- `GET …/judging/submissions/:submissionId` → `JudgeSubmissionDetail`, with
+  only the caller's own scores and private comment; `NOT_VISIBLE` for a
+  project the caller may not score. Every judging route returns `NOT_FOUND`
+  once the event no longer takes submissions.
+- `PUT …/judging/submissions/:submissionId/scores` `{ "scores": [{ "criterionId", "score" }], "comment"?: "…" }`
+  → `{ "scored", "total", "myReview": { "status", "scoredCriteria" } }`. Saves
+  some or all scores (whole numbers, 0 to the criterion's `maxScore`, each
+  criterion once) and, with `comment` (up to 2000 characters), the private
+  comment as a draft; nothing is submitted. Refusals: `JUDGING_CLOSED`,
+  `NOT_VISIBLE`, `INVALID_REQUEST` (unknown criterion or out of range).
+- `POST …/judging/submissions/:submissionId/review` `{ "scores"?: […], "comment"?: "…" }`
+  → `JudgeSubmissionDetail`. Saves `scores` first (as the web "Submit review"),
+  then submits the review once every criterion is scored. Without `comment`
+  the saved draft comment is kept. Refusals: `JUDGING_CLOSED`,
+  `INCOMPLETE_SCORES` (scores already saved stay saved), `NOT_VISIBLE`.
+
+Comments are private to organisers; judges cannot see each other's work.
 
 ## App links
 

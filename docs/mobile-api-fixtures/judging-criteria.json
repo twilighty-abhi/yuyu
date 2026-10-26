@@ -1,0 +1,10 @@
+{
+  "ok": true,
+  "data": {
+    "judgingStatus": "OPEN",
+    "criteria": [
+      { "id": "clcrit0000000000000000001", "name": "Impact", "description": "Who does it help, and how much?", "weight": 3, "maxScore": 10 },
+      { "id": "clcrit0000000000000000002", "name": "Execution", "description": "Does it work?", "weight": 2, "maxScore": 5 }
+    ]
+  }
+}

@@ -2,7 +2,7 @@
   "ok": true,
   "data": {
     "guests": [
-      { "rsvpId": "clrsvp000000000000000011", "displayName": "Grace Guest", "email": "grace@example.test", "status": "CONFIRMED", "checkedInAt": "2030-05-10T17:04:00.000Z", "registeredAt": "2030-04-10T10:00:00.000Z", "isGuest": true },
+      { "rsvpId": "clrsvp000000000000000011", "displayName": "Grace Guest", "email": "grace@example.test", "status": "CONFIRMED", "checkedInAt": "2030-05-10T17:04:00.000Z", "registeredAt": "2030-04-10T10:00:00.000Z", "isGuest": true, "teamName": "Byte Club" },
       { "rsvpId": "clrsvp000000000000000012", "displayName": "Linus Member", "email": "linus@example.test", "status": "PENDING_APPROVAL", "checkedInAt": null, "registeredAt": "2030-04-09T10:00:00.000Z", "isGuest": false }
     ],
     "nextCursor": "eyJ2IjoxLCJ0aW1lc3RhbXAiOiIyMDMwLTA0LTA5VDEwOjAwOjAwLjAwMFoiLCJpZCI6ImNscnN2cDAwMDAwMDAwMDAwMDAwMDEyIn0"

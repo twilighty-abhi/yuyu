@@ -18,6 +18,12 @@ export type MobileErrorCode =
   | "NEEDS_FORCE"
   | "RATE_LIMITED"
   | "TEAM_REQUIRED"
+  | "TEAM_MEMBER"
+  | "TEAM_INCOMPLETE"
+  | "CAPACITY_FULL"
+  | "JUDGING_CLOSED"
+  | "INCOMPLETE_SCORES"
+  | "NOT_VISIBLE"
   | "INTERNAL_ERROR";
 
 export const MOBILE_ERROR_STATUS: Record<MobileErrorCode, number> = {
@@ -31,6 +37,12 @@ export const MOBILE_ERROR_STATUS: Record<MobileErrorCode, number> = {
   NEEDS_FORCE: 409,
   RATE_LIMITED: 429,
   TEAM_REQUIRED: 409,
+  TEAM_MEMBER: 409,
+  TEAM_INCOMPLETE: 409,
+  CAPACITY_FULL: 409,
+  JUDGING_CLOSED: 409,
+  INCOMPLETE_SCORES: 409,
+  NOT_VISIBLE: 404,
   INTERNAL_ERROR: 500,
 };
 
@@ -45,6 +57,12 @@ const DEFAULT_MESSAGES: Record<MobileErrorCode, string> = {
   NEEDS_FORCE: "This guest needs a staff override to check in.",
   RATE_LIMITED: "Too many requests. Try again shortly.",
   TEAM_REQUIRED: "This event registers teams only. Register on the event website to create or join a team.",
+  TEAM_MEMBER: "This registration belongs to a team. Approve, reject or promote the whole team.",
+  TEAM_INCOMPLETE: "This team is below the minimum team size, so it can't be approved yet.",
+  CAPACITY_FULL: "The event is at capacity.",
+  JUDGING_CLOSED: "Judging is not open.",
+  INCOMPLETE_SCORES: "Score every criterion before submitting your review.",
+  NOT_VISIBLE: "This submission is not available to you.",
   INTERNAL_ERROR: "Something went wrong. Please try again.",
 };
 
@@ -78,7 +96,11 @@ export function mobileError(
 export const unauthenticated = () => mobileError("UNAUTHENTICATED");
 export const notFound = () => mobileError("NOT_FOUND");
 
-type FailedActionResult = { ok: false; error: string; fieldErrors?: Record<string, string[]>; needsForce?: boolean; code?: "TEAM_REQUIRED" };
+/** Core refusal codes passed through unchanged (ActionErrorCode, JudgingRefusalCode). */
+const PASS_THROUGH_CODES = ["TEAM_REQUIRED", "TEAM_MEMBER", "TEAM_INCOMPLETE", "CAPACITY_FULL", "JUDGING_CLOSED", "INCOMPLETE_SCORES", "NOT_VISIBLE"] as const;
+type PassThroughCode = (typeof PASS_THROUGH_CODES)[number];
+
+type FailedActionResult = { ok: false; error: string; fieldErrors?: Record<string, string[]>; needsForce?: boolean; code?: PassThroughCode };
 
 /**
  * Map a Server Action failure (UI-safe message) to a mobile error code. The
@@ -87,12 +109,13 @@ type FailedActionResult = { ok: false; error: string; fieldErrors?: Record<strin
 export function classifyActionError(result: FailedActionResult): MobileErrorCode {
   const message = result.error;
   if (result.needsForce) return "NEEDS_FORCE";
-  if (result.code === "TEAM_REQUIRED") return "TEAM_REQUIRED";
+  if (result.code && (PASS_THROUGH_CODES as readonly string[]).includes(result.code)) return result.code;
   if (/^You must be signed in/i.test(message)) return "UNAUTHENTICATED";
   if (/^Too many/i.test(message)) return "RATE_LIMITED";
   if (result.fieldErrors) return "INVALID_REQUEST";
   if (/not found\.?$|no longer exists|is not for this event|No matching ticket|^Invalid registration/i.test(message)) return "NOT_FOUND";
   if (/permission|^Only owners and admins|can only cancel your own|^Verify your own email/i.test(message)) return "FORBIDDEN";
+  if (/^Unknown criterion|go up to \d+\.$/i.test(message)) return "INVALID_REQUEST";
   if (/^Invalid|^Check the|^Missing|^Choose|is required|^Enter |^Could not read|^The message is empty/i.test(message)) return "INVALID_REQUEST";
   if (/^Could not (queue|save|restore|update)|could not be completed/i.test(message)) return "INTERNAL_ERROR";
   return "CONFLICT";

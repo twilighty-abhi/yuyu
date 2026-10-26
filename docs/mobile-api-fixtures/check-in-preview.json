@@ -9,6 +9,7 @@
     "checkedInAt": null,
     "checkInDetails": [ { "label": "T-shirt size", "value": "M" } ],
     "registrationDetails": [ { "label": "T-shirt size", "value": "M" }, { "label": "Company", "value": "Example Ltd" } ],
+    "teamName": "Byte Club",
     "gate": { "ok": false, "reason": "Guest is on the waitlist — use “Override” to check in at the door.", "needsForce": true }
   }
 }

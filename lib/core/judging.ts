@@ -13,6 +13,7 @@ import {
 } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { flattenZodErrors } from "@/app/actions/utils";
+import type { ActionErrorCode } from "@/app/actions/org";
 import { recordAuditEvent } from "@/lib/audit";
 import { isOrgAdmin } from "@/lib/permissions";
 import { escapeLikePattern, resolveTeamByManageToken } from "@/lib/core/teams";
@@ -114,7 +115,20 @@ import {
 
 export type JudgingResult<T = undefined> =
   | { ok: true; data: T }
-  | { ok: false; error: string; fieldErrors?: Record<string, string[]> };
+  | { ok: false; error: string; fieldErrors?: Record<string, string[]>; code?: JudgingRefusalCode };
+
+/**
+ * Machine-readable judge-side refusals, passed through by the mobile API
+ * (docs/MOBILE_API.md); the web shows only `error`.
+ * - JUDGING_CLOSED: judging is not OPEN, so scores and reviews are frozen.
+ * - INCOMPLETE_SCORES: submitting a review before every criterion is scored (or with no rubric).
+ * - NOT_VISIBLE: the submission is not one this judge may score (not SUBMITTED, unassigned, conflict of interest, or another event's).
+ */
+export type JudgingRefusalCode = Extract<ActionErrorCode, "JUDGING_CLOSED" | "INCOMPLETE_SCORES" | "NOT_VISIBLE">;
+
+function refuse(error: string, code: JudgingRefusalCode): { ok: false; error: string; code: JudgingRefusalCode } {
+  return { ok: false, error, code };
+}
 
 /** How an entrant proved who they are. Re-verified in every transaction. */
 export type EntrantAuth =
@@ -1285,9 +1299,9 @@ async function lockedJudgeTarget(tx: Prisma.TransactionClient, ctx: JudgeContext
   const event = await lockEventShared(tx, ctx.eventId);
   if (!event || event.organisationId !== ctx.organisationId || !event.submissionsEnabled) return fail(EVENT_NOT_FOUND);
   if (!(await isEligibleJudge(tx, event.organisationId, event.id, ctx.userId))) return fail(NOT_FOUND);
-  if (event.judgingStatus !== JudgingStatus.OPEN) return fail(JUDGING_NOT_OPEN);
+  if (event.judgingStatus !== JudgingStatus.OPEN) return refuse(JUDGING_NOT_OPEN, "JUDGING_CLOSED");
   const visible = await visibleSubmissionIds(tx, event, ctx.userId, submissionId);
-  if (!visible.includes(submissionId)) return fail(NOT_FOUND);
+  if (!visible.includes(submissionId)) return refuse(NOT_FOUND, "NOT_VISIBLE");
   return ok({ event });
 }
 
@@ -1336,9 +1350,9 @@ export async function submitJudgeReview(ctx: JudgeContext, input: unknown): Prom
     if (!target.ok) return target;
     if (submit) {
       const criteria = await criteriaFor(tx, target.data.event.id);
-      if (criteria.length === 0) return fail("This event has no rubric yet.");
+      if (criteria.length === 0) return refuse("This event has no rubric yet.", "INCOMPLETE_SCORES");
       const scored = await tx.judgeScore.count({ where: { submissionId, judgeUserId: ctx.userId, criterionId: { in: criteria.map((c) => c.id) } } });
-      if (scored < criteria.length) return fail("Score every criterion before submitting your review.");
+      if (scored < criteria.length) return refuse("Score every criterion before submitting your review.", "INCOMPLETE_SCORES");
     }
     const submittedAt = submit ? new Date() : null;
     await tx.$executeRaw`

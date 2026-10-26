@@ -1,0 +1,8 @@
+{
+  "ok": true,
+  "data": {
+    "scored": 1,
+    "total": 2,
+    "myReview": { "status": "DRAFT", "scoredCriteria": 1 }
+  }
+}

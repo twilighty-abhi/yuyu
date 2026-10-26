@@ -1,0 +1,7 @@
+{
+  "ok": false,
+  "error": {
+    "code": "TEAM_MEMBER",
+    "message": "This registration belongs to a team. Approve, reject or promote the whole team from the Teams view."
+  }
+}

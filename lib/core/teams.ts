@@ -12,7 +12,7 @@ import {
 } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import type { ActionResult } from "@/app/actions/org";
+import type { ActionErrorCode, ActionResult } from "@/app/actions/org";
 import { flattenZodErrors } from "@/app/actions/utils";
 import { canManageRegistrationsFor } from "@/lib/eventAccess";
 import { isRegistrationClosed } from "@/lib/registrationCutoff";
@@ -108,8 +108,8 @@ const TEAM_DECLINED = "The organisers declined this team, so it can't be changed
 export const INVITE_ONLY_ADD_REFUSED =
   "This event is invite-only. Share your team's join link instead; each person signs in with their invited account to join.";
 
-function fail(error: string): { ok: false; error: string } {
-  return { ok: false, error };
+function fail(error: string, code?: ActionErrorCode): { ok: false; error: string; code?: ActionErrorCode } {
+  return code ? { ok: false, error, code } : { ok: false, error };
 }
 
 function isUniqueViolation(error: unknown) {
@@ -811,13 +811,13 @@ export async function transitionTeamStatus(
       if (event.status !== EventStatus.PUBLISHED || event.endDateTime <= new Date()) return fail("This event is no longer open for approvals.");
       const size = await tx.rSVP.count({ where: { teamId: team.id } });
       if (event.teamMinSize != null && size < event.teamMinSize) {
-        return fail(`This team is incomplete (${size} of at least ${event.teamMinSize} members), so it can't be approved yet.`);
+        return fail(`This team is incomplete (${size} of at least ${event.teamMinSize} members), so it can't be approved yet.`, "TEAM_INCOMPLETE");
       }
     } else if (team.status !== RsvpStatus.WAITLISTED) {
       return fail("Only waitlisted teams can be promoted.");
     }
     if (event.capacity != null && (await countConfirmedUnits(tx, event.id)) >= event.capacity) {
-      return fail(action === "approve" ? "Event is at capacity. Free a spot or promote from waitlist first." : "Event is still at capacity.");
+      return fail(action === "approve" ? "Event is at capacity. Free a spot or promote from waitlist first." : "Event is still at capacity.", "CAPACITY_FULL");
     }
     const confirmed = await setTeamStatusTx(tx, { teamId: team.id, eventId: event.id, eventTitle: event.title, from: [team.status], to: RsvpStatus.CONFIRMED });
     if (!confirmed) return changed;

@@ -1,7 +1,6 @@
 "use server";
 
 import type { RsvpStatus } from "@prisma/client";
-import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { recordAuditEvent } from "@/lib/audit";
 import { isActionRateLimited } from "@/lib/actionRateLimit";
@@ -13,8 +12,6 @@ import {
   organiserMoveMember,
   organiserRenameTeam,
   resolveOrganiserEvent,
-  transitionTeamStatus,
-  type OrganiserEventContext,
   type TeamMoveTargetsPage,
   type TeamTransition,
 } from "@/lib/core/teams";
@@ -25,6 +22,13 @@ import {
   organiserTeamActionSchema,
 } from "@/lib/validators";
 import { toDashboardTeam, type DashboardTeam } from "@/lib/eventDashboard/teams";
+import {
+  TEAM_ORGANISER_NO_PERMISSION as NO_PERMISSION,
+  revalidateTeamPaths,
+  teamOrganiserGate,
+  transitionTeamStatusForUser,
+  type TeamOrganiserGate,
+} from "@/lib/core/teamOrganiser";
 import type { ActionResult } from "./org";
 import { flattenZodErrors } from "./utils";
 
@@ -37,51 +41,18 @@ import { flattenZodErrors } from "./utils";
  * through the existing deleteRsvp action, which keeps its undo snapshot.
  */
 
-const NO_PERMISSION = "You do not have permission to manage attendees.";
-
-type Gate = { ok: true; ctx: OrganiserEventContext } | { ok: false; error: string };
+type Gate = TeamOrganiserGate;
 
 async function organiserGate(organisationSlug: string, eventId: string): Promise<Gate> {
   const session = await auth();
-  const userId = session?.user?.id;
-  if (!userId) return { ok: false, error: "You must be signed in." };
-  if (await isActionRateLimited("rsvp", userId)) return { ok: false, error: "Too many attendee updates. Try again shortly." };
-  const ctx = await resolveOrganiserEvent(userId, organisationSlug, eventId);
-  if (!ctx) return { ok: false, error: NO_PERMISSION };
-  return { ok: true, ctx };
+  return teamOrganiserGate(session?.user?.id, organisationSlug, eventId);
 }
-
-function revalidateTeamPaths(ctx: OrganiserEventContext) {
-  revalidatePath(`/${ctx.orgSlug}`);
-  revalidatePath(`/dashboard/${ctx.orgSlug}`);
-  revalidatePath(`/${ctx.orgSlug}/${ctx.eventSlug}`);
-  revalidatePath(`/dashboard/${ctx.orgSlug}/event/${ctx.eventId}`);
-  revalidatePath(`/dashboard/${ctx.orgSlug}/event/${ctx.eventId}/check-in`);
-}
-
-const TRANSITION_AUDIT: Record<TeamTransition, string> = {
-  approve: "TEAM_APPROVED",
-  reject: "TEAM_REJECTED",
-  promote: "TEAM_WAITLIST_PROMOTED",
-};
 
 async function transition(input: unknown, action: TeamTransition): Promise<ActionResult<{ status: RsvpStatus }>> {
   const parsed = organiserTeamActionSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "Invalid input.", fieldErrors: flattenZodErrors(parsed.error) };
-  const gate = await organiserGate(parsed.data.organisationSlug, parsed.data.eventId);
-  if (!gate.ok) return gate;
-  const result = await transitionTeamStatus(gate.ctx, parsed.data.teamId, action);
-  if (!result.ok) return result;
-  await recordAuditEvent({
-    action: TRANSITION_AUDIT[action],
-    actorUserId: gate.ctx.userId,
-    organisationId: gate.ctx.organisationId,
-    targetType: "Team",
-    targetId: parsed.data.teamId,
-    metadata: { eventId: gate.ctx.eventId },
-  });
-  revalidateTeamPaths(gate.ctx);
-  return result;
+  const session = await auth();
+  return transitionTeamStatusForUser(session?.user?.id, parsed.data, action);
 }
 
 /** Approve a pending team; every member is confirmed together. */

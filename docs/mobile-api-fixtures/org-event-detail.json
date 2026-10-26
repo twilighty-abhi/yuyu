@@ -14,6 +14,7 @@
       "isOnline": false,
       "accentColor": null,
       "status": "PUBLISHED",
+      "registrationMode": "TEAM",
       "organisation": { "slug": "civic-tech", "name": "Civic Tech Meetup", "logoUrl": null },
       "privacyType": "PUBLIC",
       "registrationOpen": true,
@@ -25,6 +26,6 @@
       "shortUrl": "https://yuyu.example/Ab3dEf9"
     },
     "counts": { "confirmed": 42, "waitlisted": 5, "pending": 0, "checkedIn": 0, "capacity": 80, "capacityUsed": 42 },
-    "myPermissions": { "checkIn": true, "manageRegistrations": true, "sendEmails": true, "schedule": true, "manageFeedback": true, "manageRegistrationWindow": true }
+    "myPermissions": { "checkIn": true, "manageRegistrations": true, "sendEmails": true, "schedule": true, "manageFeedback": true, "manageRegistrationWindow": true, "judge": true }
   }
 }

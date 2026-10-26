@@ -12,6 +12,7 @@ import {
   SubmissionStatus,
 } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { sqlUtcTimestamp, SQL_UTC_NOW } from "@/lib/sqlTimestamp";
 import { flattenZodErrors } from "@/app/actions/utils";
 import type { ActionErrorCode } from "@/app/actions/org";
 import { recordAuditEvent } from "@/lib/audit";
@@ -383,11 +384,11 @@ async function writeSubmission(
   auth: EntrantAuth,
   input: unknown,
   mode: "draft" | "submit",
-): Promise<JudgingResult<{ submissionId: string; status: SubmissionStatus }>> {
+): Promise<JudgingResult<{ submissionId: string; status: SubmissionStatus; receiptQueued: boolean }>> {
   const parsed = submissionContentSchema.safeParse(input);
   if (!parsed.success) return invalid(parsed.error);
   try {
-    return await prisma.$transaction(async (tx): Promise<JudgingResult<{ submissionId: string; status: SubmissionStatus }>> => {
+    return await prisma.$transaction(async (tx): Promise<JudgingResult<{ submissionId: string; status: SubmissionStatus; receiptQueued: boolean }>> => {
       const event = await lockEventShared(tx, auth.eventId);
       if (!event) return fail(EVENT_NOT_FOUND);
       await lockEntrantRow(tx, auth);
@@ -420,14 +421,16 @@ async function writeSubmission(
           });
       // The receipt is opt-in per event (lib/hackathonEmails.ts); read under
       // the Event lock, so it can't race a settings change.
-      if (mode === "submit" && !wasSubmitted && entrant.submitter.email && shouldQueueSubmissionReceipt(event)) {
+      const receiptQueued = Boolean(mode === "submit" && !wasSubmitted && entrant.submitter.email && shouldQueueSubmissionReceipt(event));
+      if (receiptQueued && entrant.submitter.email) {
         await enqueueSubmissionReceived(tx, {
           to: entrant.submitter.email,
           submissionId: saved.id,
           ...(entrant.submitter.name ? { recipientName: entrant.submitter.name.slice(0, 200) } : {}),
         });
       }
-      return ok({ submissionId: saved.id, status: saved.status });
+      // The entrant is told about the email only when one was really queued.
+      return ok({ submissionId: saved.id, status: saved.status, receiptQueued });
     });
   } catch (error) {
     // A concurrent first save for the same entrant, or the team/RSVP was
@@ -1454,9 +1457,9 @@ export async function saveJudgeScores(ctx: JudgeContext, input: unknown): Promis
     for (const entry of scores) {
       await tx.$executeRaw`
         INSERT INTO "JudgeScore" ("id", "submissionId", "judgeUserId", "criterionId", "score", "createdAt", "updatedAt")
-        VALUES (${crypto.randomUUID()}, ${submissionId}, ${ctx.userId}, ${entry.criterionId}, ${entry.score}, NOW(), NOW())
+        VALUES (${crypto.randomUUID()}, ${submissionId}, ${ctx.userId}, ${entry.criterionId}, ${entry.score}, ${SQL_UTC_NOW}, ${SQL_UTC_NOW})
         ON CONFLICT ("submissionId", "judgeUserId", "criterionId")
-        DO UPDATE SET "score" = EXCLUDED."score", "updatedAt" = NOW()`;
+        DO UPDATE SET "score" = EXCLUDED."score", "updatedAt" = ${SQL_UTC_NOW}`;
     }
     const scored = await tx.judgeScore.count({ where: { submissionId, judgeUserId: ctx.userId, criterionId: { in: criteria.map((c) => c.id) } } });
     return ok({ scored, total: criteria.length });
@@ -1484,11 +1487,11 @@ export async function submitJudgeReview(ctx: JudgeContext, input: unknown): Prom
     const submittedAt = submit ? new Date() : null;
     await tx.$executeRaw`
       INSERT INTO "JudgeReview" ("id", "submissionId", "judgeUserId", "comment", "submittedAt", "createdAt", "updatedAt")
-      VALUES (${crypto.randomUUID()}, ${submissionId}, ${ctx.userId}, ${comment}, ${submittedAt}, NOW(), NOW())
+      VALUES (${crypto.randomUUID()}, ${submissionId}, ${ctx.userId}, ${comment}, ${sqlUtcTimestamp(submittedAt)}, ${SQL_UTC_NOW}, ${SQL_UTC_NOW})
       ON CONFLICT ("submissionId", "judgeUserId")
       DO UPDATE SET "comment" = EXCLUDED."comment",
                     "submittedAt" = COALESCE(EXCLUDED."submittedAt", "JudgeReview"."submittedAt"),
-                    "updatedAt" = NOW()`;
+                    "updatedAt" = ${SQL_UTC_NOW}`;
     const review = await tx.judgeReview.findUnique({ where: { submissionId_judgeUserId: { submissionId, judgeUserId: ctx.userId } }, select: { submittedAt: true } });
     return ok({ submitted: Boolean(review?.submittedAt) });
   });

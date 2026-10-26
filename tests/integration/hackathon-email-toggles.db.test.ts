@@ -320,16 +320,18 @@ describe.sequential("hackathon email toggles", () => {
     const auth = await teamAuth(leader.teamId!);
     const submitted = await submitSubmission(auth, { title: "No receipt" });
     if (!submitted.ok) throw new Error(submitted.error);
+    // The entrant is not told about an email that was never queued.
+    expect(submitted.data.receiptQueued).toBe(false);
     const receipts = () => prisma.outboxMessage.count({ where: { kind: "submission-received", payload: { path: ["submissionId"], equals: submitted.data.submissionId } } });
     expect(await receipts()).toBe(0);
 
     // Turn receipts on; a fresh submission (withdraw, then submit) gets exactly one.
     expect(await updateJudgingSettings(ctx, { ...windowSettings(), emailSubmissionReceipts: true })).toMatchObject({ ok: true, data: { emailSubmissionReceipts: true, emailEntrantsOnResults: false } });
     expect(await withdrawSubmission(auth)).toMatchObject({ ok: true });
-    expect(await submitSubmission(auth, { title: "With receipt" })).toMatchObject({ ok: true });
+    expect(await submitSubmission(auth, { title: "With receipt" })).toMatchObject({ ok: true, data: { receiptQueued: true } });
     expect(await receipts()).toBe(1);
     // Editing a submitted project doesn't send another.
-    expect(await submitSubmission(auth, { title: "Edited" })).toMatchObject({ ok: true });
+    expect(await submitSubmission(auth, { title: "Edited" })).toMatchObject({ ok: true, data: { receiptQueued: false } });
     expect(await receipts()).toBe(1);
 
     // Settings saved without the switches (the Settings tab card) keep them.

@@ -30,6 +30,7 @@ vi.mock("@/lib/core/judging", () => ({
   requestSubmissionLink: mocks.requestLink,
 }));
 
+import { submittedMessage } from "@/components/submission/submissionWindow";
 import {
   requestSubmissionLinkAction,
   saveSubmissionDraftAction,
@@ -53,7 +54,7 @@ beforeEach(() => {
   mocks.byLink.mockResolvedValue(soloAuth);
   mocks.forUser.mockResolvedValue(null);
   mocks.saveDraft.mockResolvedValue({ ok: true, data: { submissionId: "sub_1", status: "DRAFT" } });
-  mocks.submit.mockResolvedValue({ ok: true, data: { submissionId: "sub_1", status: "SUBMITTED" } });
+  mocks.submit.mockResolvedValue({ ok: true, data: { submissionId: "sub_1", status: "SUBMITTED", receiptQueued: false } });
   mocks.withdraw.mockResolvedValue({ ok: true, data: { status: "WITHDRAWN" } });
   mocks.requestLink.mockResolvedValue({ ok: true, data: { sent: true } });
   mocks.byTicket.mockResolvedValue({ rsvpId: "rsvp_1", eventId: "event_1", organisationId: "org_1", userId: null, teamId: null });
@@ -153,5 +154,16 @@ describe("requestSubmissionLinkAction", () => {
     mocks.requestLink.mockResolvedValue({ ok: true, data: { sent: false } });
     expect(await requestSubmissionLinkAction("ticket-token-1")).toEqual({ ok: true, data: { sent: false } });
     expect(mocks.audit).not.toHaveBeenCalled();
+  });
+});
+
+describe("submit confirmation copy", () => {
+  it("passes on whether a receipt was queued, and mentions an email only then", async () => {
+    mocks.submit.mockResolvedValueOnce({ ok: true, data: { submissionId: "sub_1", status: "SUBMITTED", receiptQueued: false } });
+    expect(await submitSubmissionAction({ submissionToken: LINK_TOKEN }, input)).toEqual({ ok: true, data: { status: "SUBMITTED", receiptQueued: false } });
+    mocks.submit.mockResolvedValueOnce({ ok: true, data: { submissionId: "sub_1", status: "SUBMITTED", receiptQueued: true } });
+    expect(await submitSubmissionAction({ submissionToken: LINK_TOKEN }, input)).toEqual({ ok: true, data: { status: "SUBMITTED", receiptQueued: true } });
+    expect(submittedMessage(false)).not.toMatch(/email/i);
+    expect(submittedMessage(true)).toMatch(/emailed a confirmation/);
   });
 });

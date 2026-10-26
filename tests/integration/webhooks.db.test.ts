@@ -364,11 +364,16 @@ describe.sequential("organisation webhooks", () => {
     await prisma.webhookEndpoint.update({ where: { id: endpointId }, data: { consecutiveFailures: WEBHOOK_AUTO_DISABLE_AFTER - 1 } });
     const waiting = await enqueueWebhookPing({ id: endpointId, organisation: { id: orgId, slug: orgSlug } });
     const id = await enqueueWebhookPing({ id: endpointId, organisation: { id: orgId, slug: orgSlug } });
+    // A third delivery already failed once and is waiting for its retry.
+    const retrying = await enqueueWebhookPing({ id: endpointId, organisation: { id: orgId, slug: orgSlug } });
     await prisma.webhookDelivery.update({ where: { id: waiting }, data: { nextAttemptAt: new Date(Date.now() + 3_600_000) } });
+    await prisma.webhookDelivery.update({ where: { id: retrying }, data: { nextAttemptAt: new Date(Date.now() + 3_600_000), attempts: 1, lastError: "HTTP 503" } });
     await deliverWebhookNow(id);
     const endpoint = await prisma.webhookEndpoint.findUniqueOrThrow({ where: { id: endpointId } });
     expect(endpoint).toMatchObject({ enabled: false, disabledReason: "auto_disabled", consecutiveFailures: WEBHOOK_AUTO_DISABLE_AFTER });
     await expect(prisma.webhookDelivery.findUniqueOrThrow({ where: { id: waiting } })).resolves.toMatchObject({ status: WebhookDeliveryStatus.FAILED, lastError: "Endpoint disabled" });
+    // The root cause of an earlier failure is kept.
+    await expect(prisma.webhookDelivery.findUniqueOrThrow({ where: { id: retrying } })).resolves.toMatchObject({ status: WebhookDeliveryStatus.FAILED, lastError: "Endpoint disabled after: HTTP 503" });
     const audit = await prisma.auditEvent.findFirstOrThrow({ where: { action: "WEBHOOK_ENDPOINT_AUTO_DISABLED", targetId: endpointId } });
     expect(audit.actorUserId).toBeNull();
     expect((await getWebhookEndpointDetail(orgId, endpointId))!.endpoint.state).toBe("auto_disabled");

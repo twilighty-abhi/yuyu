@@ -4,6 +4,7 @@
  */
 
 import { safeTimeZone } from "@/lib/timeZone";
+import { cachedDateTimeFormat } from "@/lib/format/intlCache";
 
 type DateInput = Date | string | number;
 
@@ -14,7 +15,7 @@ function toDate(value: DateInput): Date {
 }
 
 function parts(value: DateInput, timeZone: string, options: Intl.DateTimeFormatOptions) {
-  return new Intl.DateTimeFormat(LOCALE, { timeZone: safeTimeZone(timeZone), ...options }).formatToParts(toDate(value));
+  return cachedDateTimeFormat(LOCALE, { timeZone: safeTimeZone(timeZone), ...options }).formatToParts(toDate(value));
 }
 
 function pick(list: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPartTypes) {
@@ -63,7 +64,7 @@ export function formatTime(value: DateInput, timeZone: string) {
 /** "IST", "GMT+5:30", "BST" — the abbreviation for the event's zone at that instant. */
 export function formatTimeZoneName(value: DateInput, timeZone: string) {
   const zone = safeTimeZone(timeZone);
-  const short = pick(new Intl.DateTimeFormat("en-US", { timeZone: zone, timeZoneName: "short" }).formatToParts(toDate(value)), "timeZoneName");
+  const short = pick(cachedDateTimeFormat("en-US", { timeZone: zone, timeZoneName: "short" }).formatToParts(toDate(value)), "timeZoneName");
   if (zone === "Asia/Kolkata" || zone === "Asia/Calcutta") return "IST";
   return short;
 }

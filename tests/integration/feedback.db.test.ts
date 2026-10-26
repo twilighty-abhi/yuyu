@@ -36,7 +36,7 @@ describe.sequential("event feedback integration", () => {
   });
   it("allows repeat certificate feedback but excludes waitlisted registrations", async () => {
     await expect(submitFeedback({ orgSlug, eventSlug, email: `attendee-${suffix}@example.test`, answers: { comment: "Again" } })).resolves.toMatchObject({ ok: true, data: { certificateToken: expect.any(String) } });
-    await expect(submitFeedback({ orgSlug, eventSlug, email: `wait-${suffix}@example.test`, answers: { comment: "Please" } })).resolves.toMatchObject({ ok: false, error: "Certificate verification failed." });
+    await expect(submitFeedback({ orgSlug, eventSlug, email: `wait-${suffix}@example.test`, answers: { comment: "Please" } })).resolves.toMatchObject({ ok: false, error: expect.stringContaining("couldn't find a confirmed registration") });
   });
   it("accepts repeat anonymous feedback without collecting an RSVP identity", async () => {
     await expect(submitFeedback({ orgSlug, eventSlug: anonymousEventSlug, email: `attendee-${suffix}@example.test`, answers: { comment: "First" } })).resolves.toEqual({ ok: true, data: { certificateToken: null } });

@@ -5,7 +5,7 @@ import { hashEventCollaboratorToken } from "@/lib/eventCollaboratorToken";
 import { AcceptInviteButton } from "@/components/invites/AcceptInviteButton";
 import type { Metadata } from "next";
 
-export const metadata: Metadata = { title: "Co-organizer invitation", robots: { index: false, follow: false }, referrer: "no-referrer" };
+export const metadata: Metadata = { title: "Co-organiser invitation", robots: { index: false, follow: false }, referrer: "no-referrer" };
 
 export default async function JoinEventCollaboratorPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
@@ -26,7 +26,7 @@ export default async function JoinEventCollaboratorPage({ params }: { params: Pr
   }
   return (
     <div className="mx-auto flex w-full max-w-[440px] flex-col gap-4 rounded-2xl border border-line bg-canvas p-6 shadow-raised sm:p-8">
-      <p className="text-sm text-ink-muted">Co-organizer invitation</p>
+      <p className="text-sm text-ink-muted">Co-organiser invitation</p>
       <h1 className="text-h1 break-words text-ink">{invite.event?.title ?? invite.series?.title ?? "this event"}</h1>
       <p className="rounded-lg bg-muted px-4 py-3 text-body-ui text-ink-secondary">Accept the invitation to help manage <strong className="font-semibold text-ink">{invite.event?.title ?? invite.series?.title ?? "this event"}</strong>.</p>
       <div className="w-full [&>div]:items-stretch [&_button]:w-full">

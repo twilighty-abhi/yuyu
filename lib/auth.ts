@@ -8,7 +8,7 @@ import { prisma } from "@/lib/db";
 import { hasVerifiedGoogleEmail } from "@/lib/googleAuth";
 import { verifyPasswordCredentials } from "@/lib/credentialsAuth";
 import { evaluateGoogleSignIn, loadGoogleSsoSettings } from "@/lib/googleSignIn";
-import { logOpsError } from "@/lib/opsAlerts";
+import { logAuthError } from "@/lib/authLogger";
 
 /**
  * This code is returned only after the supplied password is valid. It lets the
@@ -42,13 +42,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth(async () => {
   },
   trustHost: true,
   logger: {
-    // Auth.js error causes can contain provider responses and credentials, so
-    // the log line stays fixed; only the redacted alert carries the detail.
-    error(error) {
-      const { type } = error as Error & { type?: unknown };
-      const label = typeof type === "string" ? type : error.name;
-      logOpsError("[auth] Authentication failed", { level: "error", source: "auth", title: `Sign-in failed (${label})`, error });
-    },
+    // Expected sign-in outcomes are skipped; see lib/authLogger.ts.
+    error: logAuthError,
   },
   pages: {
     signIn: "/login",

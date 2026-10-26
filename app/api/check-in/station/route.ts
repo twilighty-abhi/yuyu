@@ -6,7 +6,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { attendanceStateOf, type AttendanceResponseValue } from "@/lib/attendanceCheck";
 import { getClientIpFromHeaders, checkRateLimitById } from "@/lib/rateLimit";
-import { CHECK_IN_STATION_COOKIE, createCheckInStationProof, hasValidCheckInStationProof, stationExpiresAt, verifyStationPin } from "@/lib/checkInStation";
+import { CHECK_IN_STATION_COOKIE, createCheckInStationProof, hasValidCheckInStationProof, stationExpiresAt, stationOpensAt, verifyStationPin } from "@/lib/checkInStation";
 import { gateCheckInForStatus, parseCheckInPayload } from "@/lib/checkIn";
 import { getCheckInDetails, getRegistrationDetails } from "@/lib/checkInDetails";
 import { commitCheckInProjection, commitUndoCheckInProjection } from "@/lib/checkInMutations";
@@ -50,7 +50,11 @@ export async function POST(request: Request) {
     if (!allowed) return failure("Too many attempts. Please try again shortly.", 429);
     if (!input.pin || !(await verifyStationPin(input.pin, event.checkInStationPinHash))) return failure("Unable to open this check-in station.", 401);
     const proof = createCheckInStationProof(event.id, event.checkInStationSecretVersion, event.startDateTime, event.endDateTime);
-    if (!proof) return failure("This check-in station has closed.", 401);
+    if (!proof) {
+      // Opening hours: from a day before the start until after the end.
+      const early = Date.now() < stationOpensAt(event.startDateTime).getTime();
+      return failure(early ? "This check-in station is not open yet. It opens 24 hours before the event starts." : "This check-in station has closed.", 401);
+    }
     const response = NextResponse.json({ ok: true });
     // The station UI calls /api/check-in/station, so this must be available to
     // both the public page and its protected API. The signed proof itself is

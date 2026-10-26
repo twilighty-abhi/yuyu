@@ -58,6 +58,14 @@ describe("normalizeSections", () => {
     expect(result.map((section) => section.sortOrder)).toEqual(SECTION_TYPES.map((_, index) => index));
     expect(normalizeSections(null).map((section) => section.type)).toEqual([...SECTION_TYPES]);
   });
+
+  it("treats a page with no saved rows, or only a Crew row, as the defaults (the public page uses this too)", () => {
+    const visible = (sections: ReturnType<typeof normalizeSections>) => sections.filter((section) => section.isVisible).map((section) => section.type).sort();
+    const defaults = SECTION_TYPES.filter((type) => type !== "CREW").sort();
+    expect(visible(normalizeSections([]))).toEqual(defaults);
+    expect(visible(normalizeSections(undefined))).toEqual(defaults);
+    expect(visible(normalizeSections([{ type: "CREW", isVisible: true, sortOrder: 9 }]))).toEqual([...defaults, "CREW"].sort());
+  });
 });
 
 describe("accent input", () => {

@@ -25,6 +25,13 @@ describe("database backup command safety", () => {
     expect(backup.isUnsafeRestoreDatabase("postgresql://user:secret@localhost/yuyu?sslmode=require")).toBe(true);
     expect(backup.isUnsafeRestoreDatabase("postgresql://user:secret@db.example/yuyu_test?sslmode=require")).toBe(true);
     expect(backup.isUnsafeRestoreDatabase("postgresql://user:secret@db.example/yuyu?sslmode=require")).toBe(false);
+    // Every spelling of loopback is refused by default...
+    for (const host of ["127.0.0.1", "127.0.0.2", "[::1]", "localhost.", "LOCALHOST"]) {
+      expect(backup.isUnsafeRestoreDatabase(`postgresql://user:secret@${host}:5432/yuyu?sslmode=require`), host).toBe(true);
+    }
+    // ...and allowed only as an explicit tunnel to the real server, never for a dev/test database.
+    expect(backup.isUnsafeRestoreDatabase("postgresql://user:secret@127.0.0.1:5432/yuyu?sslmode=require", { viaLocalTunnel: true })).toBe(false);
+    expect(backup.isUnsafeRestoreDatabase("postgresql://user:secret@127.0.0.1:5432/yuyu_dev?sslmode=require", { viaLocalTunnel: true })).toBe(true);
   });
 
   it("uses an owner-only temporary password file instead of forwarding DATABASE_URL", async () => {

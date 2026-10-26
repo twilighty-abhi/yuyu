@@ -476,6 +476,56 @@ function broadcastVariablesFor(event: BroadcastEvent, recipient: { name?: string
 
 function asCollaboratorInvitePayload(value: Prisma.JsonValue): CollaboratorInvitePayload | null { if (!value || typeof value !== "object" || Array.isArray(value)) return null; const p = value as Record<string, unknown>; return isEmail(p.to) && isBoundedString(p.eventTitle, 200) && isSafeMessageUrl(p.inviteUrl) && (p.expiresAt === undefined || isIsoDate(p.expiresAt)) ? p as CollaboratorInvitePayload : null; }
 
+/**
+ * Kinds an organiser sends to a whole audience at once (thousands of rows in
+ * one click). They wait behind every other kind, so a large send never delays
+ * a password reset, verification, ticket, or team email queued after it.
+ */
+export const BULK_OUTBOX_KINDS: readonly string[] = ["event-broadcast", "attendance-check", "results-published", "event-invite"];
+
+/** Due messages, oldest first: transactional kinds before bulk ones. */
+async function dueMessages(take: number) {
+  const due = { status: OutboxStatus.PENDING, availableAt: { lte: new Date() } };
+  const urgent = await prisma.outboxMessage.findMany({
+    where: { ...due, kind: { notIn: [...BULK_OUTBOX_KINDS] } },
+    orderBy: { createdAt: "asc" },
+    take,
+  });
+  if (urgent.length >= take) return urgent;
+  const bulk = await prisma.outboxMessage.findMany({
+    where: { ...due, kind: { in: [...BULK_OUTBOX_KINDS] } },
+    orderBy: { createdAt: "asc" },
+    take: take - urgent.length,
+  });
+  const seen = new Set(urgent.map((message) => message.id));
+  return [...urgent, ...bulk.filter((message) => !seen.has(message.id))];
+}
+
+/**
+ * Kinds added after the 1.0 release (teams, judging, attendance confirmation).
+ * While two releases overlap (a rolling update, or an image rollback), the
+ * older worker can claim one of these, does not know its kind, and marks it
+ * FAILED with `PermanentOutboxError` after its first attempt, so the email
+ * would never be sent. This release returns such rows to the queue once:
+ * the requeue changes `lastError`, and a second failure leaves `attempts` at
+ * 2, so a genuinely undeliverable message is never retried in a loop.
+ */
+export const OUTBOX_KINDS_ADDED_AFTER_1_0: readonly string[] = ["team-created", "team-member-added", "submission-received", "submission-link", "results-published", "attendance-check"];
+const OLDER_RELEASE_REQUEUE_WINDOW_MS = 7 * 86_400_000;
+
+async function requeueKindsRejectedByOlderRelease() {
+  await prisma.outboxMessage.updateMany({
+    where: {
+      status: OutboxStatus.FAILED,
+      kind: { in: [...OUTBOX_KINDS_ADDED_AFTER_1_0] },
+      attempts: 1,
+      lastError: "PermanentOutboxError",
+      createdAt: { gte: new Date(Date.now() - OLDER_RELEASE_REQUEUE_WINDOW_MS) },
+    },
+    data: { status: OutboxStatus.PENDING, availableAt: new Date(), lockedAt: null, lastError: "Requeued: an older release could not send this kind" },
+  });
+}
+
 /** Deliver a small batch. Run this from a protected scheduler, never a request path. */
 export async function deliverOutboxBatch(limit = 20) {
   // A worker may be interrupted after claiming a message. Return a stale claim
@@ -487,12 +537,9 @@ export async function deliverOutboxBatch(limit = 20) {
     },
     data: { status: OutboxStatus.PENDING, lockedAt: null },
   });
+  await requeueKindsRejectedByOlderRelease();
 
-  const messages = await prisma.outboxMessage.findMany({
-    where: { status: OutboxStatus.PENDING, availableAt: { lte: new Date() } },
-    orderBy: { createdAt: "asc" },
-    take: Math.min(Math.max(limit, 1), 100),
-  });
+  const messages = await dueMessages(Math.min(Math.max(limit, 1), 100));
 
   let sent = 0;
   let failed = 0;

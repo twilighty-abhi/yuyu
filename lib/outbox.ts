@@ -528,6 +528,17 @@ async function requeueKindsRejectedByOlderRelease() {
 
 /** Deliver a small batch. Run this from a protected scheduler, never a request path. */
 export async function deliverOutboxBatch(limit = 20) {
+  const { sent, failed } = await deliverOutboxBatchWithCount(limit);
+  return { sent, failed };
+}
+
+/**
+ * As deliverOutboxBatch, plus how many due messages the batch picked up.
+ * Messages dropped on purpose (a recipient who no longer matches, a link that
+ * no longer works) count as neither sent nor failed, so only `due` tells the
+ * drain loop whether the queue is empty.
+ */
+export async function deliverOutboxBatchWithCount(limit = 20) {
   // A worker may be interrupted after claiming a message. Return a stale claim
   // to the retry queue before processing new work so messages cannot be lost.
   await prisma.outboxMessage.updateMany({
@@ -904,5 +915,5 @@ export async function deliverOutboxBatch(limit = 20) {
       failed += 1;
     }
   }
-  return { sent, failed };
+  return { sent, failed, due: messages.length };
 }

@@ -257,7 +257,10 @@ everything written since the backup.
    The host must not be `localhost`, `127.0.0.1` or `::1`; through a local
    tunnel, address it as `localhost.` (with the trailing dot). The command
    then runs `db:status` and `db:verify`; run `npm run db:status` and
-   `npm run db:verify` again if you want to see them yourself.
+   `npm run db:verify` again if you want to see them yourself. Do not use
+   the new release's `db:restore` for this backup: the data restores, but its
+   follow-up `db:status` sees 13 unapplied migrations and reports "Restore
+   failed."
 4. Point the application at the restored database (or rename the databases
    while nothing is connected), and start the `bf7a04d` image.
 

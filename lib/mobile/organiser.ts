@@ -6,9 +6,10 @@ import { BROADCAST_PLACEHOLDERS, BROADCAST_STARTER_TEMPLATES } from "@/lib/broad
 import { getRegistrationDetails } from "@/lib/checkInDetails";
 import { registrationWindowState } from "@/lib/core/registrationWindow";
 import { prisma } from "@/lib/db";
+import { effectiveEventProgram } from "@/lib/eventProgram";
 import { BROADCAST_DESIGNS, DEFAULT_BROADCAST_DESIGN, isBroadcastDesign } from "@/lib/email/broadcastDesigns";
 import { getMembership, isOrgAdmin } from "@/lib/permissions";
-import { attendeeDisplayName, eventSummarySelect, guestRsvpSelect, toEventSummary, toGuest } from "@/lib/mobile/dto";
+import { absoluteUrl, attendeeDisplayName, eventSummarySelect, guestRsvpSelect, toEventSummary, toGuest } from "@/lib/mobile/dto";
 import type { EventCountsDto, EventPermissionsDto } from "@/lib/mobile/schemas";
 import { canSeeGuests, eventPermissionsFor } from "@/lib/mobile/permissions";
 import { hasNonJudgePermission } from "@/lib/judgingPermissions";
@@ -286,25 +287,45 @@ export async function loadBroadcastsMeta(ctx: MobileEventContext) {
 }
 
 /** The organiser programme: every session (any visibility) with its stored live delay, grouped by track. */
-export async function loadOrganiserSchedule(ctx: MobileEventContext) {
+export async function loadOrganiserSchedule(ctx: MobileEventContext, baseUrl: string) {
   const [tracks, sessions] = await Promise.all([
     prisma.eventScheduleTrack.findMany({ where: { eventId: ctx.event.id }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, name: true } }),
     prisma.eventSession.findMany({
       where: { eventId: ctx.event.id },
       orderBy: [{ startDateTime: "asc" }, { sortOrder: "asc" }],
-      select: { id: true, title: true, startDateTime: true, endDateTime: true, delayMinutes: true, trackId: true },
+      select: {
+        id: true, title: true, type: true, visibility: true, startDateTime: true, endDateTime: true, sortOrder: true, delayMinutes: true, trackId: true,
+        // Every linked speaker whatever their visibility: organisers plan with drafts too.
+        speakers: {
+          orderBy: { sortOrder: "asc" },
+          select: { speaker: { select: { id: true, name: true, headline: true, organisation: true, photoUrl: true } } },
+        },
+      },
     }),
   ]);
+  const program = effectiveEventProgram(sessions);
   return scheduleDtoSchema.parse({
+    generatedAt: new Date().toISOString(),
     tracks: tracks.map((track) => ({
       id: track.id,
       name: track.name,
-      sessions: sessions.filter((session) => session.trackId === track.id).map((session) => ({
+      sessions: program.filter((session) => session.trackId === track.id).map((session) => ({
         id: session.id,
         title: session.title,
+        type: session.type,
+        visibility: session.visibility,
         startDateTime: session.startDateTime.toISOString(),
         endDateTime: session.endDateTime.toISOString(),
         delayMinutes: session.delayMinutes,
+        effectiveStartDateTime: session.effectiveStartDateTime.toISOString(),
+        effectiveEndDateTime: session.effectiveEndDateTime.toISOString(),
+        speakers: session.speakers.map(({ speaker }) => ({
+          id: speaker.id,
+          name: speaker.name,
+          headline: speaker.headline || null,
+          organisation: speaker.organisation || null,
+          photoUrl: absoluteUrl(speaker.photoUrl, baseUrl),
+        })),
       })),
     })),
   });

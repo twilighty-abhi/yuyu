@@ -193,7 +193,11 @@ export async function saveEventPage(input: unknown): Promise<ActionResult> {
             sortOrder: z.number().int().min(0).max(20),
           }),
         )
-        .length(9),
+        // Every section type once. A form opened before CREW existed still
+        // sends the other nine, which leaves the saved CREW row untouched.
+        .min(Object.values(EventPageSectionType).length - 1)
+        .max(Object.values(EventPageSectionType).length)
+        .refine((sections) => new Set(sections.map((section) => section.type)).size === sections.length),
     })
     .strict();
   const parsed = schema.safeParse(input);

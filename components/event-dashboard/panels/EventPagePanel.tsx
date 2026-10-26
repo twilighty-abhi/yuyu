@@ -1,3 +1,4 @@
+import { prisma } from "@/lib/db";
 import { toEventClientDto } from "@/lib/eventDto";
 import type { EventDashboardContext } from "@/lib/eventDashboard/context";
 import { loadRegistrationFields } from "@/lib/eventDashboard/data";
@@ -13,9 +14,11 @@ import { NoPermission } from "./shared";
 
 export async function EventPagePanel({ ctx }: { ctx: EventDashboardContext }) {
   const { event, permissions, organisation, now } = ctx;
-  const [fields, registrations] = await Promise.all([
+  const [fields, registrations, crewShown] = await Promise.all([
     loadRegistrationFields(event.id),
     permissions.canEditEventDetails ? loadRegistrationLock(event.id) : Promise.resolve(undefined),
+    // For the Crew section note only (docs/CREW.md): how many profiles the page would show.
+    permissions.canEditPageContent ? prisma.eventCrewMember.count({ where: { eventId: event.id, showOnPage: true } }) : Promise.resolve(0),
   ]);
   const website = {
     page: event.page,
@@ -43,6 +46,7 @@ export async function EventPagePanel({ ctx }: { ctx: EventDashboardContext }) {
     sessionCount: counts.sessionCount,
     sessionLines,
     scheduleHref,
+    crewShown,
   };
   const programme = <ProgrammeCard summary={programmeSummary(counts)} scheduleHref={scheduleHref} />;
   return (

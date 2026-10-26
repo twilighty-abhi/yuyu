@@ -201,6 +201,7 @@ const RESERVED_SLUGS = new Set([
   "ticket",
   "submit",
   "team",
+  "crew",
   "join",
   "new",
   "org",

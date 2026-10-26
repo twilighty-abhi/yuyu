@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { ContentVisibility, EventPrivacyType } from "@prisma/client";
+import { ContentVisibility, EventPageSectionType, EventPrivacyType, RegistrationMode, RsvpStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import {
   isEventPublished,
@@ -15,6 +15,7 @@ import { isRegistrationClosed } from "@/lib/registrationCutoff";
 import { toFieldDefinition } from "@/lib/registrationFields";
 import { publicTeamRegistrationConfig } from "@/lib/publicTeamConfig";
 import { isProjectGalleryVisible } from "@/lib/core/judging";
+import { listPublicCrew } from "@/lib/core/crew";
 import { projectGalleryPath, resultsPath } from "@/lib/submissionToken";
 
 type Props = { params: Promise<{ orgSlug: string; eventSlug: string }> };
@@ -139,6 +140,16 @@ export default async function EventPage({ params }: Props) {
     }),
     countConfirmedForEvent(event.id, event.registrationMode),
   ]);
+  // Crew (docs/CREW.md): load the cards only when the saved CREW section is on
+  // (pages without saved sections keep it off), and count crew tickets as
+  // "going" only where the count is shown and the wording is per person.
+  const crewSectionOn = page?.sections.some((section) => section.type === EventPageSectionType.CREW && section.isVisible) ?? false;
+  const [crew, crewCount] = await Promise.all([
+    crewSectionOn ? listPublicCrew(event.id) : Promise.resolve([]),
+    event.showRegistrationCount && event.registrationMode !== RegistrationMode.TEAM
+      ? prisma.rSVP.count({ where: { eventId: event.id, isCrew: true, status: RsvpStatus.CONFIRMED } })
+      : Promise.resolve(null),
+  ]);
   const defaults = [
     "HERO",
     "ABOUT",
@@ -209,8 +220,10 @@ export default async function EventPage({ params }: Props) {
         description: resource.description,
         href: resource.externalUrl!,
       }))}
+      crew={crew}
       registrationFields={(form?.fields ?? []).map(toFieldDefinition)}
       confirmedCount={event.showRegistrationCount ? confirmed : null}
+      crewCount={crewCount}
       registrationOpen={
         event.status === "PUBLISHED" &&
         event.endDateTime > new Date() &&

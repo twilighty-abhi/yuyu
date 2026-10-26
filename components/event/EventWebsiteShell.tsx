@@ -49,8 +49,12 @@ type Props = {
   venue: { location: string; mapLinkUrl: string | null } | null;
   faqs: Array<{ id: string; question: string; answerHtml: string }>;
   resources: Array<{ id: string; title: string; description: string; href: string }>;
+  /** Crew shown on the page (docs/CREW.md): only public profile fields, never email or food. */
+  crew?: Array<{ id: string; name: string; role: string; bio: string; photoUrl: string | null; linkedinUrl: string | null }>;
   registrationFields: RegistrationFieldDefinition[];
   confirmedCount: number | null;
+  /** Crew tickets, counted as "going" but never against capacity; null when counts are hidden. */
+  crewCount?: number | null;
   registrationOpen: boolean;
   /** At capacity: new registrations join the waitlist. Derived server-side. */
   registrationFull: boolean;
@@ -72,6 +76,7 @@ const SECTION_LABELS: Record<string, string> = {
   VENUE: "Venue",
   FAQ: "FAQ",
   RESOURCES: "Resources",
+  CREW: "Crew",
 };
 
 const TIER_LABELS: Record<string, string> = { PLATINUM: "Platinum", GOLD: "Gold", SILVER: "Silver", PARTNER: "Partner", COMMUNITY_PARTNER: "Community" };
@@ -97,11 +102,21 @@ function duration(start: string, end: string) {
   return Number.isInteger(hours) ? `${hours} hr` : `${Math.floor(hours)} hr ${minutes % 60} min`;
 }
 
+/** LinkedIn's mark (lucide ships no brand icons). Decorative: the link carries the label. */
+function LinkedInMark({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden focusable="false" className={className} fill="currentColor">
+      <path d="M20.45 20.45h-3.56v-5.57c0-1.33-.02-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.42v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13ZM7.12 20.45H3.56V9h3.56v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.73V1.73C24 .77 23.2 0 22.22 0Z" />
+    </svg>
+  );
+}
+
 function Rich({ html }: { html: string }) {
   return html ? <div className="yy-prose" dangerouslySetInnerHTML={{ __html: html }} /> : null;
 }
 
 export function EventWebsiteShell(p: Props) {
+  const crew = p.crew ?? [];
   const shown = new Set(p.page.sections.filter((x) => x.isVisible).map((x) => x.type));
   const sectionContent: Array<[string, boolean]> = [
     ["ABOUT", true],
@@ -112,9 +127,10 @@ export function EventWebsiteShell(p: Props) {
     ["VENUE", Boolean(p.venue && !p.event.isOnline)],
     ["FAQ", p.faqs.length > 0],
     ["RESOURCES", p.resources.length > 0],
+    ["CREW", crew.length > 0],
   ];
   const rendered = new Set(sectionContent.filter(([type, hasContent]) => shown.has(type) && hasContent).map(([type]) => type));
-  const navItems = ["ABOUT", "SCHEDULE", "SPEAKERS", "SPONSORS", "VENUE", "FAQ", "RESOURCES"]
+  const navItems = ["ABOUT", "SCHEDULE", "SPEAKERS", "SPONSORS", "VENUE", "FAQ", "RESOURCES", "CREW"]
     .filter((type) => rendered.has(type))
     .map((type) => ({ id: type.toLowerCase(), label: SECTION_LABELS[type]! }));
 
@@ -126,6 +142,7 @@ export function EventWebsiteShell(p: Props) {
   const countLabel = [
     p.sessions.length > 0 ? `${p.sessions.length} ${p.sessions.length === 1 ? "session" : "sessions"}` : null,
     p.speakers.length > 0 ? `${p.speakers.length} ${p.speakers.length === 1 ? "speaker" : "speakers"}` : null,
+    rendered.has("CREW") ? `${crew.length} crew` : null,
   ].filter(Boolean).join(" · ");
 
   return (
@@ -182,6 +199,7 @@ export function EventWebsiteShell(p: Props) {
               organisation={{ name: p.organisation.name, slug: p.orgSlug, logoUrl: p.organisation.logoUrl }}
               registrationFields={p.registrationFields}
               confirmedCount={p.confirmedCount}
+              crewCount={p.crewCount ?? null}
               capacity={p.event.capacity}
               state={{ cancelled: p.event.status === "CANCELLED", open: p.registrationOpen, full: p.registrationFull, approvalRequired: p.approvalRequired }}
               accentColor={p.page.accentColor}
@@ -383,6 +401,38 @@ export function EventWebsiteShell(p: Props) {
                       </span>
                       <ArrowUpRight aria-hidden className="mt-0.5 size-4 shrink-0 text-ink-muted" />
                     </a>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+
+          {rendered.has("CREW") ? (
+            <section id="crew" aria-labelledby="crew-title" className="scroll-mt-6">
+              <h2 id="crew-title" className="text-h2 text-ink">Crew</h2>
+              <p className="mb-4 mt-1 text-body text-ink-secondary">The people running {p.event.title}</p>
+              <ul className="grid gap-3 sm:grid-cols-2">
+                {crew.map((member) => (
+                  <li key={member.id} className="flex items-start gap-3 rounded-lg border border-line bg-canvas p-3.5">
+                    <Avatar name={member.name} src={member.photoUrl} size="lg" tone="accent" />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="min-w-0 break-words text-[15px] font-bold text-ink">{member.name}</p>
+                        {member.linkedinUrl ? (
+                          <a
+                            href={member.linkedinUrl}
+                            target="_blank"
+                            rel="noopener noreferrer nofollow ugc"
+                            aria-label={`${member.name} on LinkedIn`}
+                            className="-m-1.5 inline-flex size-8 shrink-0 items-center justify-center rounded-md text-ink-muted transition-colors hover:bg-subtle hover:text-ink"
+                          >
+                            <LinkedInMark className="size-4" />
+                          </a>
+                        ) : null}
+                      </div>
+                      {member.role ? <p className="text-sm text-ink-muted">{member.role}</p> : null}
+                      {member.bio ? <p className="mt-1.5 line-clamp-3 whitespace-pre-line text-sm text-ink-secondary">{member.bio}</p> : null}
+                    </div>
                   </li>
                 ))}
               </ul>

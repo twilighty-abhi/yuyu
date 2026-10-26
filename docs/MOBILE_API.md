@@ -440,8 +440,16 @@ send call client-side.
 
 ### Day-of controls
 
-- `GET …/schedule` (requires `schedule`) → `{ "tracks": [{ "id|null", "name", "sessions": [{ "id", "title", "startDateTime", "endDateTime", "delayMinutes" }] }] }`.
-  Planned times and every session's stored delay (any visibility).
+- `GET …/schedule` (any organiser of the event, including a `CHECK_IN`-only
+  collaborator) → `{ "generatedAt", "tracks": [{ "id|null", "name", "sessions": [ScheduleSession] }] }`.
+  `ScheduleSession = { "id", "title", "type", "visibility": "DRAFT|PUBLISHED|HIDDEN", "startDateTime", "endDateTime", "delayMinutes", "effectiveStartDateTime", "effectiveEndDateTime", "speakers": [{ "id", "name", "headline|null", "organisation|null", "photoUrl|null" }] }`.
+  Every session whatever its visibility, with planned times, its stored delay
+  and the effective times after the delays of earlier sessions in the same
+  track (`effectiveEventProgram`, as on the public page). Speakers are listed
+  in session order whatever their visibility, without bios or links. The app
+  keeps the last copy for offline use; `generatedAt` says how fresh it is.
+  Before this change the route required `schedule` and returned only the
+  planned fields; older apps ignore the new fields.
 - `POST …/schedule/sessions/:sessionId/delay` `{ "delayMinutes": 0..1440 }` → `null`
   (as `setEventSessionDelay`; requires `PUBLISH_AND_SCHEDULE` or organisation admin).
 - `POST …/feedback/state` `{ "open": bool }` → `{ "open" }`. Saves through the

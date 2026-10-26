@@ -173,7 +173,9 @@ co-organise on `/dashboard/:orgSlug`.
 ## Mobile API
 
 `lib/mobile/permissions.ts` derives `EventPermissions` for `/api/mobile/v1`:
-`checkIn` and `schedule` match the web (`CHECK_IN`, `PUBLISH_AND_SCHEDULE`);
+`checkIn` and `schedule` match the web (`CHECK_IN`, `PUBLISH_AND_SCHEDULE`;
+reading the programme is open to every organiser of the event, while setting
+a live delay needs `schedule`);
 `sendEmails`, `manageFeedback` and `manageRegistrationWindow` are admin-only on
 both. `manageRegistrations` is still admin-only in the mobile contract, while
 the web guest list and the shared RSVP cores now also accept the

@@ -33,6 +33,7 @@ import { POST as checkIn } from "@/app/api/mobile/v1/orgs/[orgSlug]/events/[even
 import { POST as sendBroadcast } from "@/app/api/mobile/v1/orgs/[orgSlug]/events/[eventId]/broadcasts/route";
 import { GET as broadcastsMeta } from "@/app/api/mobile/v1/orgs/[orgSlug]/events/[eventId]/broadcasts/meta/route";
 import { GET as publicEvent } from "@/app/api/mobile/v1/public/events/[orgSlug]/[eventSlug]/route";
+import { GET as schedule } from "@/app/api/mobile/v1/orgs/[orgSlug]/events/[eventId]/schedule/route";
 import { POST as registrationState } from "@/app/api/mobile/v1/orgs/[orgSlug]/events/[eventId]/registration/state/route";
 import { DELETE as deleteGuest } from "@/app/api/mobile/v1/orgs/[orgSlug]/events/[eventId]/guests/[rsvpId]/route";
 import { POST as restoreGuest } from "@/app/api/mobile/v1/orgs/[orgSlug]/events/[eventId]/guests/restore/route";
@@ -167,6 +168,49 @@ describe.sequential("mobile API integration", () => {
     expect((await approve(post("/x", {}, owner.accessToken), params({ orgSlug: slugs.orgA, eventId: ids.eventA, rsvpId: pending.id }))).status).toBe(404);
     expect((await checkIn(post("/x", { rsvpId: pending.id }, owner.accessToken), params({ orgSlug: slugs.orgB, eventId: ids.eventB }))).status).toBe(404);
     expect((await prisma.rSVP.findUniqueOrThrow({ where: { id: pending.id } })).status).toBe(RsvpStatus.PENDING_APPROVAL);
+  });
+
+  it("shows every organiser the programme with speakers and effective times, never another organisation's", async () => {
+    const start = new Date(Date.now() + 2 * 60 * 60_000);
+    const at = (minutes: number) => new Date(start.getTime() + minutes * 60_000);
+    const track = await prisma.eventScheduleTrack.create({ data: { eventId: ids.eventA, name: "Main stage" } });
+    const speaker = await prisma.eventSpeaker.create({ data: { eventId: ids.eventA, name: "Ada Lovelace", slug: `ada-${suffix}`, headline: "Founder", photoUrl: "/api/uploads/speakers/ada.webp" } });
+    const first = await prisma.eventSession.create({ data: {
+      eventId: ids.eventA, trackId: track.id, title: "Keynote", slug: `keynote-${suffix}`, type: "Keynote", visibility: "PUBLISHED",
+      startDateTime: at(0), endDateTime: at(45), delayMinutes: 10,
+      speakers: { create: { speakerId: speaker.id } },
+    } });
+    const second = await prisma.eventSession.create({ data: {
+      eventId: ids.eventA, trackId: track.id, title: "Draft panel", slug: `panel-${suffix}`, startDateTime: at(60), endDateTime: at(90),
+    } });
+    try {
+      // A CHECK_IN-only collaborator has no `schedule` permission but still reads the programme.
+      const collaborator = await signIn("collab");
+      const response = await schedule(get("/x", collaborator.accessToken), params({ orgSlug: slugs.orgA, eventId: ids.eventA }));
+      expect(response.status).toBe(200);
+      const sessions = (await response.json()).data.tracks.find((entry: { id: string }) => entry.id === track.id).sessions;
+      expect(sessions).toEqual([
+        expect.objectContaining({
+          id: first.id, type: "Keynote", visibility: "PUBLISHED", delayMinutes: 10,
+          effectiveStartDateTime: at(0).toISOString(),
+          speakers: [{ id: speaker.id, name: "Ada Lovelace", headline: "Founder", organisation: null, photoUrl: "https://yuyu.test/api/uploads/speakers/ada.webp" }],
+        }),
+        expect.objectContaining({
+          id: second.id, visibility: "DRAFT", startDateTime: at(60).toISOString(),
+          effectiveStartDateTime: at(70).toISOString(), effectiveEndDateTime: at(100).toISOString(), speakers: [],
+        }),
+      ]);
+
+      const owner = await signIn("owner");
+      expect((await schedule(get("/x", owner.accessToken), params({ orgSlug: slugs.orgB, eventId: ids.eventB }))).status).toBe(404);
+      expect((await schedule(get("/x", owner.accessToken), params({ orgSlug: slugs.orgA, eventId: ids.eventB }))).status).toBe(404);
+      const outsider = await signIn("other");
+      expect((await schedule(get("/x", outsider.accessToken), params({ orgSlug: slugs.orgA, eventId: ids.eventA }))).status).toBe(404);
+    } finally {
+      await prisma.eventSession.deleteMany({ where: { id: { in: [first.id, second.id] } } });
+      await prisma.eventSpeaker.delete({ where: { id: speaker.id } });
+      await prisma.eventScheduleTrack.delete({ where: { id: track.id } });
+    }
   });
 
   it("lets a CHECK_IN collaborator check in (through commitCheckInProjection) but not approve or email", async () => {

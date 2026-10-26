@@ -14,6 +14,11 @@ import { countConfirmedForCapacity, countConfirmedUnits } from "@/lib/teamUnits"
 import { countConfirmedForEvent } from "@/lib/rsvpCapacity";
 import { flushWebhookEmits } from "@/lib/webhooks/emit";
 import type { TeamRegistrationIntent } from "@/lib/validators";
+import { EventPermission } from "@prisma/client";
+import { joinTeamWithExistingRsvp, organiserMoveMember, resolveOrganiserEvent } from "@/lib/core/teams";
+import { resolveEntrantForUser } from "@/lib/core/judging";
+import { listUnsubmittedEntrants } from "@/lib/core/judgingEntrants";
+import { checkSlugAvailability } from "@/app/actions/org";
 import {
   addCrewMemberAsOrganiser,
   getCrewJoinLink,
@@ -362,5 +367,72 @@ describe.sequential("event crew", () => {
       expect(JSON.stringify(card)).not.toContain(shown.email);
       expect(JSON.stringify(card)).not.toContain(shown.rsvp.checkInToken);
     }
+  });
+
+  it("keeps crew tickets out of teams: no joining by link and no organiser move", async () => {
+    const event = await createEvent({ registrationMode: RegistrationMode.TEAM });
+    const leader = await register(event, "leader", { mode: "create", name: `Team ${suffix}` });
+    const team = await prisma.team.findUniqueOrThrow({ where: { id: leader.rsvp.teamId! } });
+    const crew = await addCrew(event);
+    const holder = { rsvpId: crew.rsvp.id, eventId: event.id, organisationId, userId: null, teamId: null };
+    const joined = await joinTeamWithExistingRsvp(holder, team.joinToken);
+    expect(joined.ok).toBe(false);
+    const ctx = { userId: organiserId, organisationId, orgSlug, eventId: event.id, eventSlug: event.slug };
+    const moved = await organiserMoveMember(ctx, { rsvpId: crew.rsvp.id, targetTeamId: team.id });
+    expect(moved.ok).toBe(false);
+    const after = await prisma.rSVP.findUniqueOrThrow({ where: { id: crew.rsvp.id } });
+    expect(after.teamId).toBeNull();
+    expect(after.isCrew).toBe(true);
+  });
+
+  it("never treats crew as hackathon entrants", async () => {
+    const event = await createEvent();
+    await prisma.event.update({ where: { id: event.id }, data: { submissionsEnabled: true } });
+    const user = await prisma.user.create({ data: { name: "Account crew", email: email("account-crew") } });
+    try {
+      // A signed-in attendee who is then made crew by an organiser.
+      const result = await submitRsvpCore({ orgSlug, eventSlug: event.slug, name: "Account crew", answers: {} }, { userId: user.id });
+      expect(result.ok).toBe(true);
+      expect(await resolveEntrantForUser(user.id, event.id)).not.toBeNull();
+      await addCrew(event, { email: user.email });
+      expect(await resolveEntrantForUser(user.id, event.id)).toBeNull();
+      const attendee = await register(event, "entrant");
+      const ctx = { userId: organiserId, organisationId, orgSlug, eventId: event.id, eventSlug: event.slug };
+      const page = await listUnsubmittedEntrants(ctx);
+      const ids = page.entrants.map((entrant) => entrant.id);
+      expect(ids).toContain(attendee.rsvp.id);
+      const crewRsvp = await prisma.rSVP.findFirstOrThrow({ where: { eventId: event.id, userId: user.id } });
+      expect(ids).not.toContain(crewRsvp.id);
+    } finally {
+      await prisma.rSVP.deleteMany({ where: { userId: user.id } });
+      await prisma.user.delete({ where: { id: user.id } });
+    }
+  });
+
+  it("lets only owners, admins and MANAGE_REGISTRATIONS co-organisers manage the crew", async () => {
+    const event = await createEvent();
+    const [member, checkIn, registrations] = await Promise.all(
+      ["member", "check-in", "registrations"].map((label) => prisma.user.create({ data: { name: label, email: email(label) } })),
+    );
+    try {
+      await prisma.membership.createMany({ data: [member, checkIn, registrations].map((user) => ({ userId: user!.id, organisationId, role: MembershipRole.MEMBER })) });
+      await prisma.eventCollaborator.createMany({ data: [
+        { eventId: event.id, userId: checkIn!.id, permissions: [EventPermission.CHECK_IN] },
+        { eventId: event.id, userId: registrations!.id, permissions: [EventPermission.MANAGE_REGISTRATIONS] },
+      ] });
+      expect(await resolveOrganiserEvent(organiserId, orgSlug, event.id)).not.toBeNull();
+      expect(await resolveOrganiserEvent(registrations!.id, orgSlug, event.id)).not.toBeNull();
+      expect(await resolveOrganiserEvent(checkIn!.id, orgSlug, event.id)).toBeNull();
+      expect(await resolveOrganiserEvent(member!.id, orgSlug, event.id)).toBeNull();
+      // Another organisation's admin, even with the right event id.
+      expect(await resolveOrganiserEvent(otherOrganiserId, orgSlug, event.id)).toBeNull();
+    } finally {
+      await prisma.user.deleteMany({ where: { id: { in: [member, checkIn, registrations].map((user) => user!.id) } } });
+    }
+  });
+
+  it("reserves the crew organisation slug for the sign-up route", async () => {
+    expect(await checkSlugAvailability("crew")).toBe(false);
+    expect(await checkSlugAvailability("CREW")).toBe(false);
   });
 });

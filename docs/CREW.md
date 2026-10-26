@@ -131,3 +131,5 @@ shows food preferences grouped for catering.
 Cores: `lib/core/crew.ts`. Server Actions: `app/actions/crew.ts`. Unit
 suite `tests/unit/crew.test.ts` (schemas, tokens, food summary); PostgreSQL
 suite `tests/integration/crew.db.test.ts`.
+The full list of test conditions, with their coverage, is
+[Event crew: test conditions](CREW_TEST_CONDITIONS.md).

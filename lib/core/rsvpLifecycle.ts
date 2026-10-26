@@ -126,7 +126,7 @@ export async function approveRsvpForUser(actorUserId: string | null, input: unkn
   if (!("rsvp" in ctx)) return { ok: false, error: "Invalid state." };
 
   const { org, rsvp } = ctx;
-  if (rsvp.teamId) return { ok: false, error: TEAM_MEMBER_TRANSITION_ERROR };
+  if (rsvp.teamId) return { ok: false, error: TEAM_MEMBER_TRANSITION_ERROR, code: "TEAM_MEMBER" };
   if (rsvp.status !== RsvpStatus.PENDING_APPROVAL) {
     return { ok: false, error: "Only pending requests can be approved." };
   }
@@ -220,7 +220,7 @@ export async function reacceptRsvpForUser(
 
   const { org, rsvp } = ctx;
   // A declined team stays declined as a whole; its members are not re-accepted one by one.
-  if (rsvp.teamId) return { ok: false, error: "This registration belongs to a declined team. Team members cannot be re-accepted one by one." };
+  if (rsvp.teamId) return { ok: false, error: "This registration belongs to a declined team. Team members cannot be re-accepted one by one.", code: "TEAM_MEMBER" };
   if (rsvp.status !== RsvpStatus.REJECTED) {
     return { ok: false, error: "Only declined registrations can be re-accepted." };
   }
@@ -290,7 +290,7 @@ export async function rejectRsvpForUser(actorUserId: string | null, input: unkno
   if (!("rsvp" in ctx)) return { ok: false, error: "Invalid state." };
 
   const { org, rsvp } = ctx;
-  if (rsvp.teamId) return { ok: false, error: TEAM_MEMBER_TRANSITION_ERROR };
+  if (rsvp.teamId) return { ok: false, error: TEAM_MEMBER_TRANSITION_ERROR, code: "TEAM_MEMBER" };
   if (
     rsvp.status !== RsvpStatus.PENDING_APPROVAL &&
     rsvp.status !== RsvpStatus.WAITLISTED
@@ -365,7 +365,7 @@ export async function promoteFromWaitlistForUser(actorUserId: string | null, inp
   if (!("rsvp" in ctx)) return { ok: false, error: "Invalid state." };
 
   const { org, rsvp } = ctx;
-  if (rsvp.teamId) return { ok: false, error: TEAM_MEMBER_TRANSITION_ERROR };
+  if (rsvp.teamId) return { ok: false, error: TEAM_MEMBER_TRANSITION_ERROR, code: "TEAM_MEMBER" };
   if (rsvp.status !== RsvpStatus.WAITLISTED) {
     return { ok: false, error: "Only waitlisted attendees can be promoted." };
   }

@@ -1,4 +1,5 @@
 import { EventPermission } from "@prisma/client";
+import { judgingPermissionsFor } from "@/lib/judgingPermissions";
 import type { EventPermissionsDto } from "@/lib/mobile/schemas";
 
 /*
@@ -9,7 +10,7 @@ import type { EventPermissionsDto } from "@/lib/mobile/schemas";
  * (docs/PERMISSIONS.md#mobile-api).
  */
 
-export function eventPermissionsFor(isAdmin: boolean, grant: readonly EventPermission[]): EventPermissionsDto {
+export function eventPermissionsFor(isAdmin: boolean, grant: readonly EventPermission[], options: { submissionsEnabled?: boolean } = {}): EventPermissionsDto {
   const has = (permission: EventPermission) => isAdmin || grant.includes(permission);
   return {
     checkIn: has(EventPermission.CHECK_IN),
@@ -20,6 +21,9 @@ export function eventPermissionsFor(isAdmin: boolean, grant: readonly EventPermi
     schedule: has(EventPermission.PUBLISH_AND_SCHEDULE),
     manageFeedback: isAdmin,
     manageRegistrationWindow: isAdmin,
+    // The judging workspace (resolveJudgeContext): OWNER/ADMIN or the JUDGE grant,
+    // and only once the event takes submissions.
+    judge: Boolean(options.submissionsEnabled) && judgingPermissionsFor(isAdmin, false, grant).canJudge,
   };
 }
 

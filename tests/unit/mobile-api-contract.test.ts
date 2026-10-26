@@ -91,6 +91,15 @@ const fixtures: Array<[file: string, component: string, zod: z.ZodType]> = [
   ["org-event-detail.json", "OrgEventDetailResponse", dto.successEnvelope(dto.orgEventDetailDtoSchema)],
   ["registration-state.json", "RegistrationStateResponse", dto.successEnvelope(dto.registrationStateDtoSchema)],
   ["error.json", "ErrorEnvelope", dto.errorEnvelopeSchema],
+  ["error-team-member.json", "ErrorEnvelope", dto.errorEnvelopeSchema],
+  ["my-team.json", "MyTeamResponse", dto.successEnvelope(dto.myTeamResultDtoSchema)],
+  ["teams.json", "TeamListResponse", dto.successEnvelope(dto.teamListDtoSchema)],
+  ["team.json", "TeamResponse", dto.successEnvelope(dto.organiserTeamSchema)],
+  ["judge-submissions.json", "JudgeSubmissionListResponse", dto.successEnvelope(dto.judgeSubmissionListDtoSchema)],
+  ["judging-criteria.json", "JudgingCriteriaResponse", dto.successEnvelope(dto.judgingCriteriaDtoSchema)],
+  ["judge-submission.json", "JudgeSubmissionDetailResponse", dto.successEnvelope(dto.judgeSubmissionDetailDtoSchema)],
+  ["judge-next.json", "JudgeNextResponse", dto.successEnvelope(dto.judgeNextDtoSchema)],
+  ["judge-scores-saved.json", "JudgeScoresSavedResponse", dto.successEnvelope(dto.judgeScoresSavedDtoSchema)],
 ];
 
 describe("mobile API contract", () => {
@@ -165,7 +174,24 @@ describe("mobile API contract", () => {
     ["BroadcastsMeta", dto.broadcastsMetaDtoSchema],
     ["Schedule", dto.scheduleDtoSchema],
     ["RegistrationState", dto.registrationStateDtoSchema],
+    ["JudgingEvent", dto.judgingEventSchema],
+    ["MyTeam", dto.myTeamSchema],
+    ["MyTeamResult", dto.myTeamResultDtoSchema],
+    ["OrganiserTeam", dto.organiserTeamSchema],
+    ["TeamList", dto.teamListDtoSchema],
+    ["JudgingCriterion", dto.judgingCriterionSchema],
+    ["JudgeSubmission", dto.judgeSubmissionSchema],
+    ["JudgeSubmissionList", dto.judgeSubmissionListDtoSchema],
+    ["JudgingCriteria", dto.judgingCriteriaDtoSchema],
+    ["JudgeSubmissionDetail", dto.judgeSubmissionDetailDtoSchema],
+    ["JudgeNext", dto.judgeNextDtoSchema],
+    ["JudgeScoresSaved", dto.judgeScoresSavedDtoSchema],
   ];
+
+  it("documents every mobile error code", () => {
+    const envelope = spec.components.schemas.ErrorEnvelope as { properties: { error: { properties: { code: { enum: string[] } } } } };
+    expect([...envelope.properties.error.properties.code.enum].sort()).toEqual([...dto.mobileErrorCodeSchema.options].sort());
+  });
 
   it.each(parity)("OpenAPI %s has the same fields as the Zod schema", (component, zod) => {
     const schema = flatten({ $ref: `#/components/schemas/${component}` });

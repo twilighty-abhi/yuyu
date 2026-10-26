@@ -1,0 +1,27 @@
+{
+  "ok": true,
+  "data": {
+    "judgingStatus": "OPEN",
+    "submissions": [
+      {
+        "id": "clsub00000000000000000001",
+        "title": "Bus Buddy",
+        "summary": "Live bus arrivals for screen-reader users.",
+        "links": { "repo": "https://github.example/byte-club/bus-buddy", "demo": "https://bus-buddy.example/", "video": null },
+        "entrantName": "Byte Club",
+        "teamName": "Byte Club",
+        "myReview": { "status": "DRAFT", "scoredCriteria": 2 }
+      },
+      {
+        "id": "clsub00000000000000000002",
+        "title": "Allotment Swap",
+        "summary": "Share surplus vegetables with neighbours.",
+        "links": { "repo": null, "demo": null, "video": "https://video.example/allotment" },
+        "entrantName": "Margaret H.",
+        "myReview": { "status": "NONE", "scoredCriteria": 0 }
+      }
+    ],
+    "nextCursor": "1904640400000.clsub00000000000000000002",
+    "counts": { "all": 12, "todo": 9, "inProgress": 1, "reviewed": 3 }
+  }
+}

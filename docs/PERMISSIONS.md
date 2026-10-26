@@ -169,6 +169,13 @@ the web guest list and the shared RSVP cores now also accept the
 that calls a guest action for a collaborator with that grant gets the same
 result as the web. Aligning the flag is a mobile contract change and is left
 for a mobile release. Mobile collaborations list standalone-event grants only.
+`judge` mirrors `canJudge` (OWNER/ADMIN or `JUDGE`) on events with submissions
+switched on; the mobile judging routes resolve judges with the web's
+`resolveJudgeContext`, and a `JUDGE`-only collaborator reaches nothing else
+(organiser routes answer `NOT_FOUND`). The mobile Teams view and whole-team
+actions use the web's `canManageRegistrationsFor` (so the
+`MANAGE_REGISTRATIONS` grant works there, unlike the `manageRegistrations`
+flag).
 
 ## Known gaps
 

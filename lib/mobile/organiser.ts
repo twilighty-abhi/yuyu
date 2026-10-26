@@ -51,20 +51,21 @@ export async function resolveEventContext(userId: string, orgSlug: string, event
   if (!eventId || eventId.length > 128) return null;
   const access = await resolveOrgAccess(userId, orgSlug);
   if (!access) return null;
-  const event = await prisma.event.findFirst({ where: { id: eventId, organisationId: access.organisation.id }, select: { id: true, slug: true } });
+  const event = await prisma.event.findFirst({ where: { id: eventId, organisationId: access.organisation.id }, select: { id: true, slug: true, submissionsEnabled: true } });
   if (!event) return null;
   const isAdmin = Boolean(access.membership && isOrgAdmin(access.membership.role));
   const grant = isAdmin
     ? null
     : await prisma.eventCollaborator.findFirst({ where: { eventId: event.id, userId }, select: { permissions: true } });
-  // A JUDGE-only grant opens the web judging workspace and nothing else; the
-  // mobile organiser API has no judging surface (docs/HACKATHON.md).
+  // A JUDGE-only grant opens the judging workspace and nothing else: the
+  // organiser routes treat it as no access, and the judging routes resolve
+  // judges separately (lib/mobile/judging.ts, docs/HACKATHON.md).
   if (!access.membership && !(grant && hasNonJudgePermission(grant.permissions))) return null;
   return {
     organisation: access.organisation,
     membership: access.membership,
-    event,
-    permissions: eventPermissionsFor(isAdmin, grant?.permissions ?? []),
+    event: { id: event.id, slug: event.slug },
+    permissions: eventPermissionsFor(isAdmin, grant?.permissions ?? [], { submissionsEnabled: event.submissionsEnabled }),
   };
 }
 
@@ -102,14 +103,16 @@ export async function listOrgEvents(userId: string, orgSlug: string, filter: "up
   const access = await resolveOrgAccess(userId, orgSlug);
   if (!access) return null;
   const isAdmin = Boolean(access.membership && isOrgAdmin(access.membership.role));
-  const grants = isAdmin
+  const allGrants = isAdmin
     ? []
     : await prisma.eventCollaborator.findMany({
         where: { userId, eventId: { not: null }, event: { organisationId: access.organisation.id } },
         select: { eventId: true, permissions: true },
-      }).then((rows) => rows.filter((row) => hasNonJudgePermission(row.permissions)));
-  if (!access.membership && grants.length === 0) return null;
-  const grantByEvent = new Map(grants.map((grant) => [grant.eventId!, grant.permissions]));
+      });
+  // A JUDGE-only grant does not list the event here (judges find it in GET /me `judging`).
+  const visibleGrantEventIds = allGrants.filter((row) => hasNonJudgePermission(row.permissions)).map((row) => row.eventId!);
+  if (!access.membership && visibleGrantEventIds.length === 0) return null;
+  const grantByEvent = new Map(allGrants.map((grant) => [grant.eventId!, grant.permissions]));
 
   const timeWhere: Prisma.EventWhereInput = filter === "upcoming" ? { endDateTime: { gte: now } } : filter === "past" ? { endDateTime: { lt: now } } : {};
   const events = await prisma.event.findMany({
@@ -117,13 +120,13 @@ export async function listOrgEvents(userId: string, orgSlug: string, filter: "up
       organisationId: access.organisation.id,
       ...timeWhere,
       // Members see every organisation event, collaborators only their own.
-      ...(access.membership ? {} : { id: { in: [...grantByEvent.keys()] } }),
+      ...(access.membership ? {} : { id: { in: visibleGrantEventIds } }),
     },
-    select: { ...eventSummarySelect, capacity: true },
+    select: { ...eventSummarySelect, capacity: true, submissionsEnabled: true },
     orderBy: filter === "upcoming" ? [{ startDateTime: "asc" }, { id: "asc" }] : [{ startDateTime: "desc" }, { id: "desc" }],
     take: ORG_EVENTS_LIMIT,
   });
-  const permissionsByEvent = new Map(events.map((event) => [event.id, eventPermissionsFor(isAdmin, grantByEvent.get(event.id) ?? [])]));
+  const permissionsByEvent = new Map(events.map((event) => [event.id, eventPermissionsFor(isAdmin, grantByEvent.get(event.id) ?? [], { submissionsEnabled: event.submissionsEnabled })]));
   const counts = await loadCounts(events.filter((event) => canSeeGuests(permissionsByEvent.get(event.id)!)).map((event) => event.id));
   return orgEventsDtoSchema.parse({
     events: events.map((event) => {

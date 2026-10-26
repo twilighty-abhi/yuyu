@@ -58,9 +58,16 @@ describe("mobile DTOs", () => {
 
   it("derives permissions like the event dashboard", () => {
     const checkInOnly = eventPermissionsFor(false, ["CHECK_IN"]);
-    expect(checkInOnly).toEqual({ checkIn: true, manageRegistrations: false, sendEmails: false, schedule: false, manageFeedback: false, manageRegistrationWindow: false });
+    expect(checkInOnly).toEqual({ checkIn: true, manageRegistrations: false, sendEmails: false, schedule: false, manageFeedback: false, manageRegistrationWindow: false, judge: false });
     expect(canSeeGuests(checkInOnly)).toBe(true);
     expect(canSeeGuests(eventPermissionsFor(false, ["EDIT_DETAILS"]))).toBe(false);
-    expect(eventPermissionsFor(true, [])).toEqual({ checkIn: true, manageRegistrations: true, sendEmails: true, schedule: true, manageFeedback: true, manageRegistrationWindow: true });
+    expect(eventPermissionsFor(true, [])).toEqual({ checkIn: true, manageRegistrations: true, sendEmails: true, schedule: true, manageFeedback: true, manageRegistrationWindow: true, judge: false });
+    // Judging: OWNER/ADMIN or the JUDGE grant, only once the event takes submissions.
+    expect(eventPermissionsFor(true, [], { submissionsEnabled: true }).judge).toBe(true);
+    expect(eventPermissionsFor(false, ["JUDGE"], { submissionsEnabled: true }).judge).toBe(true);
+    expect(eventPermissionsFor(false, ["JUDGE"]).judge).toBe(false);
+    expect(eventPermissionsFor(false, ["CHECK_IN", "MANAGE_REGISTRATIONS"], { submissionsEnabled: true }).judge).toBe(false);
+    // JUDGE never satisfies any other flag.
+    expect(eventPermissionsFor(false, ["JUDGE"], { submissionsEnabled: true })).toEqual({ checkIn: false, manageRegistrations: false, sendEmails: false, schedule: false, manageFeedback: false, manageRegistrationWindow: false, judge: true });
   });
 });

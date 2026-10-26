@@ -1,6 +1,16 @@
-import type { RegistrationFieldType, RsvpStatus } from "@prisma/client";
+import type { RegistrationFieldType, RegistrationMode, RsvpStatus } from "@prisma/client";
 import { parseFieldSettings, settingsForType } from "@/lib/registrationFields";
-import type { EventSummaryDto, GuestDto, RegistrationFieldDto, UserDto } from "@/lib/mobile/schemas";
+import { personDisplayName, type JudgeSubmissionDto } from "@/lib/judgingDto";
+import type { OrganiserTeamDto } from "@/lib/core/teams";
+import type {
+  EventSummaryDto,
+  GuestDto,
+  JudgeSubmissionMobileDto,
+  MyTeamDto,
+  OrganiserTeamMobileDto,
+  RegistrationFieldDto,
+  UserDto,
+} from "@/lib/mobile/schemas";
 
 /*
  * Pure mappers from explicit Prisma selections to mobile DTOs. Never spread a
@@ -61,6 +71,7 @@ export const eventSummarySelect = {
   mapLinkUrl: true,
   isOnline: true,
   status: true,
+  registrationMode: true,
   page: { select: { accentColor: true } },
   organisation: { select: { slug: true, name: true, logoUrl: true } },
 } as const;
@@ -77,6 +88,7 @@ export type EventSummaryRecord = {
   mapLinkUrl: string | null;
   isOnline: boolean;
   status: EventSummaryDto["status"];
+  registrationMode: RegistrationMode;
   page: { accentColor: string | null } | null;
   organisation: { slug: string; name: string; logoUrl: string | null };
 };
@@ -95,6 +107,7 @@ export function toEventSummary(event: EventSummaryRecord, baseUrl: string): Even
     isOnline: event.isOnline,
     accentColor: event.page?.accentColor ?? null,
     status: event.status,
+    registrationMode: event.registrationMode,
     organisation: {
       slug: event.organisation.slug,
       name: event.organisation.name,
@@ -121,6 +134,7 @@ export const guestRsvpSelect = {
   guestName: true,
   guestEmail: true,
   user: { select: { name: true, email: true } },
+  team: { select: { name: true } },
 } as const;
 
 export function toGuest(rsvp: {
@@ -132,6 +146,7 @@ export function toGuest(rsvp: {
   guestName: string | null;
   guestEmail: string | null;
   user: { name: string | null; email: string | null } | null;
+  team?: { name: string } | null;
 }): GuestDto {
   return {
     rsvpId: rsvp.id,
@@ -141,6 +156,73 @@ export function toGuest(rsvp: {
     checkedInAt: rsvp.checkedInAt?.toISOString() ?? null,
     registeredAt: rsvp.createdAt.toISOString(),
     isGuest: rsvp.userId == null,
+    ...(rsvp.team ? { teamName: rsvp.team.name } : {}),
+  };
+}
+
+/**
+ * The caller's own team for the attendee app: team name, size and members'
+ * display names (first name and last initial, the seeker-list rule). Never
+ * emails, answers, ticket tokens, or team links.
+ */
+export function toMyTeam(team: {
+  id: string;
+  name: string;
+  leaderRsvpId: string | null;
+  maxSize: number | null;
+  members: Array<{ id: string; guestName: string | null; user: { name: string | null } | null }>;
+}, myRsvpId: string): MyTeamDto {
+  return {
+    id: team.id,
+    name: team.name,
+    role: team.leaderRsvpId === myRsvpId ? "LEADER" : "MEMBER",
+    size: team.members.length,
+    maxSize: team.maxSize,
+    members: team.members.map((member) => ({
+      displayName: personDisplayName(member.user?.name?.trim() || member.guestName?.trim() || null),
+      isLeader: member.id === team.leaderRsvpId,
+    })),
+  };
+}
+
+/** One team in the organiser Teams list: names and check-in state; no emails (use the guest detail for contact). */
+export function toOrganiserTeam(team: OrganiserTeamDto): OrganiserTeamMobileDto {
+  const leader = team.members.find((member) => member.isLeader);
+  return {
+    id: team.id,
+    name: team.name,
+    status: team.status,
+    size: team.size,
+    minSize: team.minSize,
+    maxSize: team.maxSize,
+    incomplete: team.incomplete,
+    lookingForMembers: team.lookingForMembers,
+    leaderDisplayName: leader?.name ?? null,
+    members: team.members.map((member) => ({ rsvpId: member.rsvpId, displayName: member.name, isLeader: member.isLeader, checkedIn: member.checkedIn })),
+  };
+}
+
+export type MyReviewStatus = "NONE" | "DRAFT" | "SUBMITTED";
+
+/** SUBMITTED once the review is submitted; DRAFT once any score or comment is saved; otherwise NONE. */
+export function myReviewStatus(mine: { reviewSubmitted: boolean; scoredCriteria: number; hasReviewRow: boolean }): MyReviewStatus {
+  if (mine.reviewSubmitted) return "SUBMITTED";
+  return mine.scoredCriteria > 0 || mine.hasReviewRow ? "DRAFT" : "NONE";
+}
+
+/** A project for a judge: content and display names only (lib/judgingDto.ts already excludes emails, answers, status reasons and other judges). */
+export function toJudgeSubmission(row: JudgeSubmissionDto, hasReviewRow: boolean): JudgeSubmissionMobileDto {
+  return {
+    id: row.id,
+    title: row.title,
+    summary: row.summary,
+    links: { repo: row.repoUrl, demo: row.demoUrl, video: row.videoUrl },
+    entrantName: row.entrantName,
+    ...(row.isTeam ? { teamName: row.entrantName } : {}),
+    myReview: {
+      status: myReviewStatus({ reviewSubmitted: row.reviewSubmitted, scoredCriteria: row.scoredCriteria, hasReviewRow }),
+      scoredCriteria: row.scoredCriteria,
+    },
   };
 }
 

@@ -22,9 +22,22 @@
           "isOnline": false,
           "accentColor": "#2F6FEB",
           "status": "PUBLISHED",
+          "registrationMode": "TEAM",
           "organisation": { "slug": "civic-tech", "name": "Civic Tech Meetup", "logoUrl": null }
         },
-        "instanceId": null
+        "instanceId": null,
+        "team": {
+          "id": "clteam0000000000000000001",
+          "name": "Byte Club",
+          "role": "LEADER",
+          "size": 3,
+          "maxSize": 4,
+          "members": [
+            { "displayName": "Ada L.", "isLeader": true },
+            { "displayName": "Grace H.", "isLeader": false },
+            { "displayName": "Linus", "isLeader": false }
+          ]
+        }
       },
       {
         "rsvpId": "clrsvp000000000000000002",
@@ -46,6 +59,7 @@
           "isOnline": false,
           "accentColor": null,
           "status": "PUBLISHED",
+          "registrationMode": "INDIVIDUAL",
           "organisation": { "slug": "civic-tech", "name": "Civic Tech Meetup", "logoUrl": null }
         },
         "instanceId": "clinstance000000000000001"

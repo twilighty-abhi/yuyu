@@ -13,7 +13,11 @@ Builds on [team registration](TEAMS.md). This page is the design contract;
 - Only `CONFIRMED` entrants can submit. A declined (`REJECTED`) team or
   registration is final: its project can't be saved, submitted or withdrawn,
   matching the team-side refusals, and the entrant page says it was declined.
-- Mobile and machine APIs are out of scope; no DTO changes.
+- The mobile API exposes the judge workspace only (list, score next, rubric,
+  project, save scores, submit review; [Mobile API](MOBILE_API.md#judging-judges))
+  through the same cores and `resolveJudgeContext`. Judging management
+  (settings, rubric, assignments, awards, results) and the machine API stay
+  out of scope.
 
 ## Event settings (organiser, new **Judging** dashboard tab)
 

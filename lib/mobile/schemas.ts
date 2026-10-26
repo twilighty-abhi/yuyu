@@ -18,11 +18,20 @@ export const membershipRoleSchema = z.enum(["OWNER", "ADMIN", "MEMBER"]);
 export const eventPermissionSchema = z.enum(["EDIT_DETAILS", "MANAGE_REGISTRATIONS", "MANAGE_INVITATIONS", "CHECK_IN", "PUBLISH_AND_SCHEDULE"]);
 export const fieldTypeSchema = z.enum(["TEXT", "TEXTAREA", "EMAIL", "PHONE", "SELECT", "MULTI_SELECT", "RADIO", "CHECKBOX", "NUMBER", "DATE"]);
 export const attendanceSchema = z.enum(["ANY", "CHECKED_IN", "NOT_CHECKED_IN"]);
+export const registrationModeSchema = z.enum(["INDIVIDUAL", "TEAM"]);
+export const judgingStatusSchema = z.enum(["NOT_STARTED", "OPEN", "CLOSED"]);
+
+/** Every error code a mobile response can carry (lib/mobile/http.ts). */
+export const mobileErrorCodeSchema = z.enum([
+  "INVALID_REQUEST", "UNAUTHENTICATED", "MFA_REQUIRED", "EMAIL_VERIFICATION_REQUIRED", "FORBIDDEN", "NOT_FOUND", "CONFLICT",
+  "NEEDS_FORCE", "RATE_LIMITED", "TEAM_REQUIRED", "TEAM_MEMBER", "TEAM_INCOMPLETE", "CAPACITY_FULL", "JUDGING_CLOSED",
+  "INCOMPLETE_SCORES", "NOT_VISIBLE", "INTERNAL_ERROR",
+]);
 
 export const errorEnvelopeSchema = z.object({
   ok: z.literal(false),
   error: z.object({
-    code: z.enum(["INVALID_REQUEST", "UNAUTHENTICATED", "MFA_REQUIRED", "EMAIL_VERIFICATION_REQUIRED", "FORBIDDEN", "NOT_FOUND", "CONFLICT", "NEEDS_FORCE", "RATE_LIMITED", "TEAM_REQUIRED", "INTERNAL_ERROR"]),
+    code: mobileErrorCodeSchema,
     message: z.string(),
     fieldErrors: z.record(z.string(), z.array(z.string())).optional(),
   }).strict(),
@@ -73,10 +82,22 @@ export const collaborationSchema = z.object({
   permissions: z.array(eventPermissionSchema),
 }).strict();
 
+/** An event the caller can judge through a JUDGE grant (organisation admins use `myPermissions.judge` on the org event list instead). */
+export const judgingEventSchema = z.object({
+  organisation: z.object({ slug: z.string(), name: z.string() }).strict(),
+  eventId: z.string(),
+  eventTitle: z.string(),
+  startDateTime: iso,
+  endDateTime: iso,
+  timezone: z.string(),
+  judgingStatus: judgingStatusSchema,
+}).strict();
+
 export const meDtoSchema = z.object({
   user: userDtoSchema,
   organisations: z.array(orgSummarySchema),
   collaborations: z.array(collaborationSchema),
+  judging: z.array(judgingEventSchema),
 }).strict();
 
 /* ---------- Events ---------- */
@@ -94,6 +115,8 @@ export const eventSummarySchema = z.object({
   isOnline: z.boolean(),
   accentColor: z.string().nullable(),
   status: eventStatusSchema,
+  /** TEAM: capacity counts teams plus solo registrants ("teams & solo places"). */
+  registrationMode: registrationModeSchema,
   organisation: z.object({ slug: z.string(), name: z.string(), logoUrl: url.nullable() }).strict(),
 }).strict();
 
@@ -101,6 +124,19 @@ export const eventListDtoSchema = z.object({
   events: z.array(eventSummarySchema),
   nextCursor: z.string().nullable(),
 }).strict();
+
+/** The caller's own team: names only ("Ada L."), never emails, answers, tokens or links. */
+export const myTeamSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  /** The caller's role in the team. */
+  role: z.enum(["LEADER", "MEMBER"]),
+  size: z.number().int(),
+  maxSize: z.number().int().nullable(),
+  members: z.array(z.object({ displayName: z.string(), isLeader: z.boolean() }).strict()),
+}).strict();
+
+export const myTeamResultDtoSchema = z.object({ team: myTeamSchema.nullable() }).strict();
 
 export const registrationDtoSchema = z.object({
   rsvpId: z.string(),
@@ -111,6 +147,8 @@ export const registrationDtoSchema = z.object({
   ticketToken: z.string().nullable(),
   event: eventSummarySchema,
   instanceId: z.string().nullable(),
+  /** Present only for a registration in a team. */
+  team: myTeamSchema.optional(),
 }).strict();
 
 export const registrationsDtoSchema = z.object({
@@ -206,6 +244,8 @@ export const eventPermissionsSchema = z.object({
   schedule: z.boolean(),
   manageFeedback: z.boolean(),
   manageRegistrationWindow: z.boolean(),
+  /** Can open the judging workspace: OWNER/ADMIN or the JUDGE grant, on an event with submissions switched on. */
+  judge: z.boolean(),
 }).strict();
 
 export const eventCountsSchema = z.object({
@@ -248,6 +288,8 @@ export const guestSchema = z.object({
   checkedInAt: iso.nullable(),
   registeredAt: iso,
   isGuest: z.boolean(),
+  /** TEAM events: the guest's team; absent for solo registrants and individual events. */
+  teamName: z.string().optional(),
 }).strict();
 
 const detailSchema = z.object({ label: z.string(), value: z.string() }).strict();
@@ -265,6 +307,8 @@ export const checkInResultSchema = z.object({
   checkedInAt: iso.nullable(),
   checkInDetails: z.array(detailSchema),
   registrationDetails: z.array(detailSchema),
+  /** TEAM events: the attendee's team; absent for solo registrants. */
+  teamName: z.string().optional(),
 }).strict();
 
 export const checkInPreviewSchema = checkInResultSchema.extend({
@@ -347,9 +391,109 @@ export const registrationStateDtoSchema = z.object({
   registrationManuallyClosed: z.boolean(),
 }).strict();
 
+/* ---------- Teams (organiser) ---------- */
+
+export const organiserTeamSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  status: rsvpStatusSchema,
+  size: z.number().int(),
+  minSize: z.number().int().nullable(),
+  maxSize: z.number().int().nullable(),
+  /** Below the event's minimum team size; such a team cannot be approved. */
+  incomplete: z.boolean(),
+  lookingForMembers: z.boolean(),
+  leaderDisplayName: z.string().nullable(),
+  members: z.array(z.object({ rsvpId: z.string(), displayName: z.string(), isLeader: z.boolean(), checkedIn: z.boolean() }).strict()),
+}).strict();
+
+export const teamFilterCountsSchema = z.object({
+  ALL: z.number().int(),
+  CONFIRMED: z.number().int(),
+  WAITLISTED: z.number().int(),
+  PENDING_APPROVAL: z.number().int(),
+  REJECTED: z.number().int(),
+  INCOMPLETE: z.number().int(),
+  LOOKING: z.number().int(),
+}).strict();
+
+export const teamListDtoSchema = z.object({
+  teams: z.array(organiserTeamSchema),
+  nextCursor: z.string().nullable(),
+  counts: teamFilterCountsSchema,
+}).strict();
+
+/* ---------- Judging (judge workspace) ---------- */
+
+export const judgingCriterionSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string(),
+  weight: z.number().int(),
+  maxScore: z.number().int(),
+}).strict();
+
+export const myReviewStatusSchema = z.enum(["NONE", "DRAFT", "SUBMITTED"]);
+
+/** A project as a judge sees it: content and the entrant's display name only. */
+export const judgeSubmissionSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  summary: z.string(),
+  links: z.object({ repo: url.nullable(), demo: url.nullable(), video: url.nullable() }).strict(),
+  /** Team name, or a solo entrant's first name and last initial. */
+  entrantName: z.string(),
+  /** Present only for a team entrant. */
+  teamName: z.string().optional(),
+  myReview: z.object({ status: myReviewStatusSchema, scoredCriteria: z.number().int() }).strict(),
+}).strict();
+
+export const judgeCountsSchema = z.object({
+  all: z.number().int(),
+  todo: z.number().int(),
+  inProgress: z.number().int(),
+  reviewed: z.number().int(),
+}).strict();
+
+export const judgeSubmissionListDtoSchema = z.object({
+  judgingStatus: judgingStatusSchema,
+  submissions: z.array(judgeSubmissionSchema),
+  nextCursor: z.string().nullable(),
+  counts: judgeCountsSchema,
+}).strict();
+
+export const judgingCriteriaDtoSchema = z.object({
+  judgingStatus: judgingStatusSchema,
+  criteria: z.array(judgingCriterionSchema),
+}).strict();
+
+export const judgeSubmissionDetailDtoSchema = z.object({
+  judgingStatus: judgingStatusSchema,
+  criteria: z.array(judgingCriterionSchema),
+  submission: judgeSubmissionSchema,
+  myScores: z.array(z.object({ criterionId: z.string(), score: z.number().int() }).strict()),
+  /** This judge's own private comment (null before one is saved). */
+  myComment: z.string().nullable(),
+  mySubmittedAt: iso.nullable(),
+}).strict();
+
+export const judgeNextDtoSchema = z.object({
+  next: judgeSubmissionDetailDtoSchema.nullable(),
+  remaining: z.number().int(),
+}).strict();
+
+export const judgeScoresSavedDtoSchema = z.object({
+  scored: z.number().int(),
+  total: z.number().int(),
+  myReview: z.object({ status: myReviewStatusSchema, scoredCriteria: z.number().int() }).strict(),
+}).strict();
+
 export type UserDto = z.infer<typeof userDtoSchema>;
 export type EventSummaryDto = z.infer<typeof eventSummarySchema>;
 export type GuestDto = z.infer<typeof guestSchema>;
 export type EventPermissionsDto = z.infer<typeof eventPermissionsSchema>;
 export type EventCountsDto = z.infer<typeof eventCountsSchema>;
 export type RegistrationFieldDto = z.infer<typeof registrationFieldSchema>;
+export type MyTeamDto = z.infer<typeof myTeamSchema>;
+export type OrganiserTeamMobileDto = z.infer<typeof organiserTeamSchema>;
+export type JudgeSubmissionMobileDto = z.infer<typeof judgeSubmissionSchema>;

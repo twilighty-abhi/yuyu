@@ -1,0 +1,18 @@
+{
+  "ok": true,
+  "data": {
+    "id": "clteam0000000000000000003",
+    "name": "Night Owls",
+    "status": "CONFIRMED",
+    "size": 2,
+    "minSize": 2,
+    "maxSize": 4,
+    "incomplete": false,
+    "lookingForMembers": false,
+    "leaderDisplayName": "Katherine Johnson",
+    "members": [
+      { "rsvpId": "clrsvp000000000000000025", "displayName": "Katherine Johnson", "isLeader": true, "checkedIn": false },
+      { "rsvpId": "clrsvp000000000000000026", "displayName": "Dorothy Vaughan", "isLeader": false, "checkedIn": false }
+    ]
+  }
+}

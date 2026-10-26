@@ -14,6 +14,7 @@
       "isOnline": false,
       "accentColor": "#2F6FEB",
       "status": "PUBLISHED",
+      "registrationMode": "INDIVIDUAL",
       "organisation": { "slug": "civic-tech", "name": "Civic Tech Meetup", "logoUrl": null },
       "description": "Build something useful for your neighbourhood.",
       "tags": ["civic", "hackathon"],

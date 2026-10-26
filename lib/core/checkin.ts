@@ -37,7 +37,7 @@ export type CheckInResultData = {
   checkInQrToken: string;
   checkInDetails: CheckInDetail[];
   registrationDetails: RegistrationDetail[];
-  /** TEAM events: the attendee's team name, shown at the desk and on badges. Not part of any API DTO. */
+  /** TEAM events: the attendee's team name, shown at the desk, on badges and in the mobile `CheckInResult.teamName`. */
   teamName?: string | null;
 };
 
@@ -361,7 +361,7 @@ export type LookupRow = {
   /** Registration time and account/guest flag, used by the mobile API's guest DTO. */
   registeredAt?: string;
   isGuest?: boolean;
-  /** TEAM events: the attendee's team name (web desk only; the mobile DTO omits it). */
+  /** TEAM events: the attendee's team name (web desk and the mobile `Guest.teamName`). */
   teamName?: string | null;
 };
 

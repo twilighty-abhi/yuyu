@@ -281,9 +281,18 @@ belong to the event, exactly like the single-RSVP undo.
 
 ## Mobile and machine APIs
 
-Out of scope for this version beyond safety: `POST /api/mobile/v1/rsvp` on a
-`TEAM` event registers solo when `soloPolicy` allows it, and otherwise returns
-a deliberate error code (`TEAM_REQUIRED`). No API DTO gains team fields yet.
+The mobile API ([Mobile API](MOBILE_API.md)) reads teams and runs the
+organiser's whole-team decisions; creating, joining and managing a team stay
+on the website. `POST /api/mobile/v1/rsvp` on a `TEAM` event registers solo
+when `soloPolicy` allows it, and otherwise returns a deliberate error code
+(`TEAM_REQUIRED`). Event DTOs carry `registrationMode`; an attendee's
+registrations carry their own team (display names only, never emails or team
+links); guest, lookup, roster and check-in rows carry `teamName`; the
+organiser Teams list and approve/reject/promote reuse
+`listEventTeamsForOrganiser` and `transitionTeamStatus` (through
+`lib/core/teamOrganiser.ts`, shared with the dashboard actions) with the same
+`canManageRegistrationsFor` check, and individual transitions on a team member
+return `TEAM_MEMBER`. The machine API (`/api/v1`) has no team fields yet.
 
 ## Tests
 

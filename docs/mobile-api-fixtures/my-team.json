@@ -1,0 +1,16 @@
+{
+  "ok": true,
+  "data": {
+    "team": {
+      "id": "clteam0000000000000000001",
+      "name": "Byte Club",
+      "role": "MEMBER",
+      "size": 2,
+      "maxSize": 4,
+      "members": [
+        { "displayName": "Ada L.", "isLeader": true },
+        { "displayName": "Grace H.", "isLeader": false }
+      ]
+    }
+  }
+}

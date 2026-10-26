@@ -21,8 +21,26 @@ export type ActionResult<T = void> =
       /** e.g. check-in requires staff override for this RSVP status */
       needsForce?: boolean;
       /** Machine-readable reason for API clients; e.g. a TEAMS_ONLY event refusing a solo registration. */
-      code?: "TEAM_REQUIRED";
+      code?: ActionErrorCode;
     };
+
+/**
+ * Machine-readable refusal reasons the mobile API passes through as error
+ * codes (docs/MOBILE_API.md). The web shows only `error`.
+ * - TEAM_REQUIRED: a TEAMS_ONLY event refusing a solo registration.
+ * - TEAM_MEMBER: an individual approve/reject/promote/re-accept on an RSVP that belongs to a team.
+ * - TEAM_INCOMPLETE: approving a team below the event's minimum team size.
+ * - CAPACITY_FULL: approving or promoting a team with no free unit.
+ * - JUDGING_CLOSED, INCOMPLETE_SCORES, NOT_VISIBLE: judge-side refusals (JudgingRefusalCode in lib/core/judging.ts).
+ */
+export type ActionErrorCode =
+  | "TEAM_REQUIRED"
+  | "TEAM_MEMBER"
+  | "TEAM_INCOMPLETE"
+  | "CAPACITY_FULL"
+  | "JUDGING_CLOSED"
+  | "INCOMPLETE_SCORES"
+  | "NOT_VISIBLE";
 
 export async function createOrganisation(
   input: unknown,

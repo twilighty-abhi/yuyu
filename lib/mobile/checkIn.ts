@@ -13,6 +13,7 @@ export function toCheckInResult(data: CheckInResultData) {
     checkedInAt: data.checkedInAt,
     checkInDetails: data.checkInDetails,
     registrationDetails: data.registrationDetails.map(({ label, value }) => ({ label, value })),
+    ...(data.teamName ? { teamName: data.teamName } : {}),
   });
 }
 
@@ -29,5 +30,6 @@ export function lookupRowToGuest(row: LookupRow) {
     checkedInAt: row.checkedInAt,
     registeredAt: row.registeredAt,
     isGuest: row.isGuest ?? false,
+    ...(row.teamName ? { teamName: row.teamName } : {}),
   });
 }

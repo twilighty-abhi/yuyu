@@ -327,6 +327,7 @@ describe.sequential("team registration integration", () => {
     await expect(transitionTeamStatus(ctx, team.id, "approve")).resolves.toEqual({
       ok: false,
       error: "This team is incomplete (2 of at least 3 members), so it can't be approved yet.",
+      code: "TEAM_INCOMPLETE",
     });
     await expectTeamInvariants(event);
 

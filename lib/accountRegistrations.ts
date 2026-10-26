@@ -101,6 +101,8 @@ const eventSelect = {
   isOnline: true,
   status: true,
   privacyType: true,
+  // Mobile EventSummary: how capacity is counted (lib/mobile).
+  registrationMode: true,
   // Hackathon events (docs/HACKATHON.md): whether to link the entrant's project page.
   submissionsEnabled: true,
   // Mobile registration cards (lib/mobile); never rendered by the web rows.

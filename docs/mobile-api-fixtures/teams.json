@@ -1,0 +1,39 @@
+{
+  "ok": true,
+  "data": {
+    "teams": [
+      {
+        "id": "clteam0000000000000000001",
+        "name": "Byte Club",
+        "status": "CONFIRMED",
+        "size": 3,
+        "minSize": 2,
+        "maxSize": 4,
+        "incomplete": false,
+        "lookingForMembers": true,
+        "leaderDisplayName": "Ada Lovelace",
+        "members": [
+          { "rsvpId": "clrsvp000000000000000021", "displayName": "Ada Lovelace", "isLeader": true, "checkedIn": true },
+          { "rsvpId": "clrsvp000000000000000022", "displayName": "Grace Hopper", "isLeader": false, "checkedIn": false },
+          { "rsvpId": "clrsvp000000000000000023", "displayName": "Linus", "isLeader": false, "checkedIn": false }
+        ]
+      },
+      {
+        "id": "clteam0000000000000000002",
+        "name": "Solo Stars",
+        "status": "PENDING_APPROVAL",
+        "size": 1,
+        "minSize": 2,
+        "maxSize": 4,
+        "incomplete": true,
+        "lookingForMembers": false,
+        "leaderDisplayName": "Margaret Hamilton",
+        "members": [
+          { "rsvpId": "clrsvp000000000000000024", "displayName": "Margaret Hamilton", "isLeader": true, "checkedIn": false }
+        ]
+      }
+    ],
+    "nextCursor": "1904633200000.clteam0000000000000000002",
+    "counts": { "ALL": 7, "CONFIRMED": 4, "WAITLISTED": 1, "PENDING_APPROVAL": 2, "REJECTED": 0, "INCOMPLETE": 1, "LOOKING": 2 }
+  }
+}

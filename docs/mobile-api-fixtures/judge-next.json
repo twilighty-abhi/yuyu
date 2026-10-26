@@ -1,0 +1,25 @@
+{
+  "ok": true,
+  "data": {
+    "next": {
+      "judgingStatus": "OPEN",
+      "criteria": [
+        { "id": "clcrit0000000000000000001", "name": "Impact", "description": "Who does it help, and how much?", "weight": 3, "maxScore": 10 },
+        { "id": "clcrit0000000000000000002", "name": "Execution", "description": "Does it work?", "weight": 2, "maxScore": 5 }
+      ],
+      "submission": {
+        "id": "clsub00000000000000000001",
+        "title": "Bus Buddy",
+        "summary": "Live bus arrivals for screen-reader users.",
+        "links": { "repo": "https://github.example/byte-club/bus-buddy", "demo": "https://bus-buddy.example/", "video": null },
+        "entrantName": "Byte Club",
+        "teamName": "Byte Club",
+        "myReview": { "status": "DRAFT", "scoredCriteria": 1 }
+      },
+      "myScores": [ { "criterionId": "clcrit0000000000000000001", "score": 8 } ],
+      "myComment": "Strong accessibility story.",
+      "mySubmittedAt": null
+    },
+    "remaining": 9
+  }
+}

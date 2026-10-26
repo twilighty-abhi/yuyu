@@ -18,6 +18,7 @@ export const GET = eventRoute("GET /api/mobile/v1/orgs/:orgSlug/events/:eventId/
       checkedInAt: row.checkedInAt,
       registeredAt: row.registeredAt,
       isGuest: row.isGuest ?? false,
+      ...(row.teamName ? { teamName: row.teamName } : {}),
       ticketToken: row.ticketToken,
       checkInDetails: row.checkInDetails,
       registrationDetails: row.registrationDetails.map(({ label, value }) => ({ label, value })),

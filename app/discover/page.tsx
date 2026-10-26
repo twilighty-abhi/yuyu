@@ -2,6 +2,7 @@ import Link from "next/link";
 import { CalendarRange, ChevronLeft, ChevronRight, Search, X } from "lucide-react";
 import { EventPrivacyType, EventStatus, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { sqlUtcTimestamp, SQL_UTC_NOW } from "@/lib/sqlTimestamp";
 import { auth } from "@/lib/auth";
 import type { Metadata } from "next";
 import { DiscoverEventCard } from "@/components/discover/DiscoverEventCard";
@@ -133,18 +134,18 @@ export default async function DiscoverPage({
     Prisma.sql`e."status" = ${EventStatus.PUBLISHED}::"EventStatus"`,
     Prisma.sql`(e."privacyType" = ${EventPrivacyType.PUBLIC}::"EventPrivacyType" OR (e."privacyType" = ${EventPrivacyType.APPROVAL_REQUIRED}::"EventPrivacyType" AND e."listedPublicly" = TRUE))`,
     Prisma.sql`EXISTS (SELECT 1 FROM "EventPage" ep WHERE ep."eventId" = e."id" AND ep."isPublished" = TRUE)`,
-    Prisma.sql`e."endDateTime" >= NOW()`,
+    Prisma.sql`e."endDateTime" >= ${SQL_UTC_NOW}`,
     ...(q ? [Prisma.sql`(e."title" ILIKE ${searchPattern} OR e."description" ILIKE ${searchPattern})`] : []),
-    ...(validFrom ? [Prisma.sql`e."startDateTime" >= ${validFrom}`] : []),
-    ...(validToExclusive ? [Prisma.sql`e."startDateTime" < ${validToExclusive}`] : []),
+    ...(validFrom ? [Prisma.sql`e."startDateTime" >= ${sqlUtcTimestamp(validFrom)}`] : []),
+    ...(validToExclusive ? [Prisma.sql`e."startDateTime" < ${sqlUtcTimestamp(validToExclusive)}`] : []),
   ];
   const instanceFilters = [
     Prisma.sql`s."status" = ${EventStatus.PUBLISHED}::"EventStatus"`,
     Prisma.sql`s."privacyType" = ${EventPrivacyType.PUBLIC}::"EventPrivacyType"`,
-    Prisma.sql`i."endDateTime" >= NOW()`,
+    Prisma.sql`i."endDateTime" >= ${SQL_UTC_NOW}`,
     ...(q ? [Prisma.sql`(s."title" ILIKE ${searchPattern} OR s."description" ILIKE ${searchPattern})`] : []),
-    ...(validFrom ? [Prisma.sql`i."startDateTime" >= ${validFrom}`] : []),
-    ...(validToExclusive ? [Prisma.sql`i."startDateTime" < ${validToExclusive}`] : []),
+    ...(validFrom ? [Prisma.sql`i."startDateTime" >= ${sqlUtcTimestamp(validFrom)}`] : []),
+    ...(validToExclusive ? [Prisma.sql`i."startDateTime" < ${sqlUtcTimestamp(validToExclusive)}`] : []),
   ];
   const ordering = sort === "popular"
     ? Prisma.sql`"popularity" DESC, "startDateTime" ASC, "id" ASC`

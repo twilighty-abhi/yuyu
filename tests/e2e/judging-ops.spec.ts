@@ -150,7 +150,7 @@ test("Progress flags outlier scores and stale reviews", async ({ browser }) => {
   }
   // Project 2: Avery saved a score two days ago and never submitted.
   await prisma.judgeScore.create({ data: { submissionId: projectIds[2]!, judgeUserId: avery.id, criterionId, score: 6 } });
-  await prisma.$executeRaw`UPDATE "JudgeScore" SET "updatedAt" = now() - interval '2 days' WHERE "submissionId" = ${projectIds[2]!}`;
+  await prisma.$executeRaw`UPDATE "JudgeScore" SET "updatedAt" = (now() AT TIME ZONE 'UTC') - interval '2 days' WHERE "submissionId" = ${projectIds[2]!}`;
 
   const { context, page } = await newPage(browser);
   await signIn(page, ownerEmail);
@@ -164,6 +164,11 @@ test("Progress flags outlier scores and stale reviews", async ({ browser }) => {
   await expect(stale).toContainText(`Ops Project 2 ${suffix}`);
   await expect(stale).toContainText("Avery Judge");
   await expect(section(page, "Projects below target")).toContainText("Showing 1–5 of 5 projects");
+  // At phone width the tables scroll inside their own boxes; the outlier
+  // chip's screen-reader text used to stick out and widen the whole page.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(outliers).toContainText("+40 points");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await context.close();
 });
 

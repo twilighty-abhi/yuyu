@@ -134,7 +134,7 @@ export async function submitFeedback(input: unknown): Promise<ActionResult<{ cer
           },
           select: { id: true },
         });
-        if (!rsvp) return { ok: false, error: "Certificate verification failed." };
+        if (!rsvp) return { ok: false, error: "We couldn't find a confirmed registration for that email. Use the email you registered with to send feedback and get your certificate." };
         rsvpId = rsvp.id;
       }
       const certificateToken = form.certificateEnabled ? crypto.randomBytes(32).toString("hex") : null;

@@ -3,6 +3,7 @@ import "server-only";
 import { revalidatePath } from "next/cache";
 import { AttendanceResponse, EventStatus, Prisma, RsvpStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { sqlUtcTimestamp } from "@/lib/sqlTimestamp";
 import { canManageEvents, getMembership } from "@/lib/permissions";
 import { attendanceCheckRefSchema, attendanceCheckSettingsSchema, attendanceReplySchema } from "@/lib/validators";
 import type { ActionResult } from "@/app/actions/org";
@@ -262,9 +263,9 @@ export async function remindAttendanceChecksForUser(actorUserId: string | null, 
       // One statement rotates every due link; the guard re-checks "no reply, still due".
       const rotated = await tx.$queryRaw<Array<{ rsvpId: string }>>`
         UPDATE "AttendanceCheck" AS a
-        SET "tokenHash" = v."hash", "sentAt" = ${now}, "updatedAt" = ${now}
+        SET "tokenHash" = v."hash", "sentAt" = ${sqlUtcTimestamp(now)}, "updatedAt" = ${sqlUtcTimestamp(now)}
         FROM unnest(${planned.map((row) => row.id)}::text[], ${planned.map((row) => row.token.hash)}::text[]) AS v("id", "hash")
-        WHERE a."id" = v."id" AND a."response" IS NULL AND a."sentAt" <= ${threshold}
+        WHERE a."id" = v."id" AND a."response" IS NULL AND a."sentAt" <= ${sqlUtcTimestamp(threshold)}
         RETURNING a."rsvpId"`;
       const rotatedIds = new Set(rotated.map((row) => row.rsvpId));
       const payloads: AttendanceCheckPayload[] = planned

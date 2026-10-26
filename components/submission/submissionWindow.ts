@@ -28,3 +28,10 @@ export function windowText(view: { phase: SubmissionWindowPhase; opensLabel: str
       return "Submissions open once the organisers publish the event.";
   }
 }
+
+/** The first-submit confirmation. Receipts are opt-in per event, so the email is mentioned only when one was queued. */
+export function submittedMessage(receiptQueued: boolean): string {
+  return receiptQueued
+    ? "Project submitted. We've emailed a confirmation. You can keep editing until submissions close."
+    : "Project submitted. You can keep editing until submissions close.";
+}

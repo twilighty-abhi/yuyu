@@ -13,7 +13,7 @@ import {
   withdrawSubmissionAction,
   type SubmissionRef,
 } from "@/app/actions/submissions";
-import { windowText, type SubmissionWindowPhase } from "./submissionWindow";
+import { submittedMessage, windowText, type SubmissionWindowPhase } from "./submissionWindow";
 
 export type { SubmissionWindowPhase };
 
@@ -112,11 +112,12 @@ export function SubmissionEditor({ submissionRef, view, variant }: { submissionR
         setFeedback({ tone: "danger", message: res.fieldErrors ? "Check the highlighted fields." : res.error });
         return;
       }
+      const receiptQueued = mode === "submit" && Boolean(res.data && "receiptQueued" in res.data && res.data.receiptQueued);
       setFeedback({
         tone: "success",
         message:
           mode === "submit" && !submitted
-            ? "Project submitted. We've emailed a confirmation. You can keep editing until submissions close."
+            ? submittedMessage(receiptQueued)
             : submitted
               ? "Changes saved. Your project is still submitted."
               : "Draft saved. Submit it before submissions close so it can be judged.",

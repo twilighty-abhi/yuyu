@@ -1,5 +1,17 @@
 replicaCount: 1
 
+# Pod replacement on upgrade. The default rolling update keeps the site up but
+# runs the old and new release side by side for a moment. For an upgrade whose
+# notes say the old release must not run against the new schema (see
+# docs/production-operations.md, "Upgrading past 1.0"), set
+# `updateStrategy: {type: Recreate, rollingUpdate: null}` for that one release
+# (Helm merges maps, so clear rollingUpdate): a short outage, but no overlap.
+updateStrategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxUnavailable: 0
+    maxSurge: 1
+
 image:
   repository: ghcr.io/your-org/yuyu
   tag: ""

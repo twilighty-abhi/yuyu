@@ -328,7 +328,7 @@ describe.sequential("judging operations", () => {
     await score(event, p2.id, users.j2, 5, true);
     // p3: saved two days ago, never submitted.
     await score(event, p3.id, users.j2, 6, false);
-    await prisma.$executeRaw`UPDATE "JudgeScore" SET "updatedAt" = now() - interval '2 days' WHERE "submissionId" = ${p3.id}`;
+    await prisma.$executeRaw`UPDATE "JudgeScore" SET "updatedAt" = (now() AT TIME ZONE 'UTC') - interval '2 days' WHERE "submissionId" = ${p3.id}`;
     // A review on the judge's own entrant never counts.
     await score(event, own.id, users.j4, 10, true);
 

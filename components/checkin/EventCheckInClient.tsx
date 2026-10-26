@@ -837,7 +837,7 @@ export function EventCheckInClient(props: {
                       </div>
                     </div>
                     {row.checkedInAt ? (
-                      <Button size="sm" variant="quiet" onClick={() => onUndo(row.rsvpId)} disabled={pending || !isOnline}>Undo</Button>
+                      <Button size="sm" variant="quiet" onClick={() => onUndo(row.rsvpId)} disabled={pending || !isOnline} aria-label={`Undo check-in for ${row.displayName}`}>Undo</Button>
                     ) : (
                       <Button size="sm" variant="primary" onClick={() => checkInRow(row, override)} disabled={pending}>Check in</Button>
                     )}
@@ -880,7 +880,7 @@ export function EventCheckInClient(props: {
             ) : null}
           </DialogBody>
           <DialogFooter>
-            {!stationMode ? <Button variant="secondary" onClick={closeScan}>Cancel</Button> : null}
+            <Button variant="secondary" onClick={closeScan}>Cancel</Button>
             <Button
               ref={(el) => {
                 confirmRef.current = el;
@@ -989,7 +989,7 @@ export function EventCheckInClient(props: {
                       <TD className="text-ink-secondary">{r.email ?? "—"}</TD>
                       <TD className="text-ink-secondary"><CheckInTimestamp value={r.checkedInAt} /></TD>
                       <TD className="text-right">
-                        <Button size="sm" variant="quiet" onClick={() => onUndo(r.rsvpId)} disabled={pending || !isOnline}>Undo</Button>
+                        <Button size="sm" variant="quiet" onClick={() => onUndo(r.rsvpId)} disabled={pending || !isOnline} aria-label={`Undo check-in for ${r.displayName}`}>Undo</Button>
                       </TD>
                     </TR>
                   ))}

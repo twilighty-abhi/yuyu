@@ -559,6 +559,7 @@ export function TeamManager(props: TeamManagerProps) {
                       onClick={() => invite(seeker)}
                     >
                       {invited.has(seeker.id) ? "Invited" : "Invite"}
+                      <span className="sr-only"> {seeker.displayName}</span>
                     </Button>
                   </li>
                 ))}

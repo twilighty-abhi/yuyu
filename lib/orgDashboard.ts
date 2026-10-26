@@ -2,6 +2,7 @@ import "server-only";
 
 import type { EventPrivacyType, MembershipRole, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { cachedDateTimeFormat } from "@/lib/format/intlCache";
 import {
   countsFor,
   eventSelect,
@@ -81,7 +82,7 @@ export function roleLabel(role: MembershipRole) {
 
 /** "2026-10-15" for an instant in a timezone. */
 function localDay(date: Date, timeZone: string) {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: safeTimeZone(timeZone), year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
+  return cachedDateTimeFormat("en-CA", { timeZone: safeTimeZone(timeZone), year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
 }
 
 function initialsOf(name: string | null | undefined) {

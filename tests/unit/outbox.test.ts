@@ -298,4 +298,38 @@ describe("event broadcast delivery", () => {
       where: expect.objectContaining({ eventId: "event_1", status: RsvpStatus.CONFIRMED }),
     }));
   });
+
+  it("claims transactional email before a bulk backlog queued earlier", async () => {
+    const bulk = Array.from({ length: 3 }, (_, index) => message({ id: `bulk_${index}`, kind: "attendance-check", createdAt: new Date("2030-01-01T00:00:00Z") }));
+    const urgent = message({ id: "reset_1", kind: "password-reset", createdAt: new Date("2030-01-02T00:00:00Z") });
+    mocks.findMany.mockImplementation(async ({ where, take }: { where: { kind: { in?: string[]; notIn?: string[] } }; take: number }) =>
+      (where.kind.notIn ? [urgent] : bulk).slice(0, take),
+    );
+    mocks.updateMany.mockResolvedValue({ count: 0 });
+    await deliverOutboxBatch(2);
+    const [first, second] = mocks.findMany.mock.calls.map(([args]) => args);
+    expect(first.where.kind.notIn).toEqual(expect.arrayContaining(["attendance-check", "event-broadcast", "results-published"]));
+    expect(first.where.kind.notIn).not.toContain("password-reset");
+    expect(second.take).toBe(1);
+    const claimed = mocks.updateMany.mock.calls.slice(2).map(([args]) => args.where.id);
+    expect(claimed).toEqual(["reset_1", "bulk_0"]);
+  });
+
+  it("does not query the bulk lane when transactional mail fills the batch", async () => {
+    mocks.findMany.mockResolvedValueOnce([message({ id: "a", kind: "rsvp-confirmation" }), message({ id: "b", kind: "email-verification" })]);
+    mocks.updateMany.mockResolvedValue({ count: 0 });
+    await deliverOutboxBatch(2);
+    expect(mocks.findMany).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns new-kind emails an older release failed as unknown to the queue, once", async () => {
+    mocks.findMany.mockResolvedValue([]);
+    await deliverOutboxBatch();
+    const requeue = mocks.updateMany.mock.calls.map(([args]) => args).find((args) => args.where.status === OutboxStatus.FAILED);
+    expect(requeue?.where).toMatchObject({ attempts: 1, lastError: "PermanentOutboxError" });
+    expect(requeue?.where.kind.in).toEqual(expect.arrayContaining(["team-created", "team-member-added", "submission-received", "submission-link", "results-published", "attendance-check"]));
+    expect(requeue?.where.kind.in).not.toContain("rsvp-confirmation");
+    expect(requeue?.data).toMatchObject({ status: OutboxStatus.PENDING, lockedAt: null });
+    expect(requeue?.data.lastError).not.toBe("PermanentOutboxError");
+  });
 });

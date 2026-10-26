@@ -14,6 +14,7 @@ import { ArrowUpRight } from "lucide-react";
 import { Card, PageHeader } from "@/components/ui/display";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { formatDayTime } from "@/lib/format/datetime";
+import { cachedDateTimeFormat } from "@/lib/format/intlCache";
 import { listAttendeesPage } from "@/lib/eventDashboard/attendees";
 import type { Metadata } from "next";
 
@@ -22,7 +23,7 @@ export const metadata: Metadata = { title: "Manage event series", robots: { inde
 type Props = { params: Promise<{ orgSlug: string; seriesId: string }> };
 
 function eventDateInput(date: Date, timeZone: string) {
-  const parts = new Intl.DateTimeFormat("en", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
+  const parts = cachedDateTimeFormat("en", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
   const value = (type: string) => parts.find((part) => part.type === type)?.value;
   return `${value("year")}-${value("month")}-${value("day")}`;
 }

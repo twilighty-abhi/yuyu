@@ -17,12 +17,17 @@ export default async function VenueCheckInStationPage({ params }: Props) {
   // A disabled/missing station deliberately looks identical to an unknown URL.
   if (!event?.checkInStationPinHash) notFound();
   const proof = (await cookies()).get(CHECK_IN_STATION_COOKIE)?.value;
-  if (!hasValidCheckInStationProof(proof, event.id, event.checkInStationSecretVersion, event.startDateTime, event.endDateTime)) return <CheckInStationUnlock organisationSlug={orgSlug} eventSlug={eventSlug} />;
+  if (!hasValidCheckInStationProof(proof, event.id, event.checkInStationSecretVersion, event.startDateTime, event.endDateTime)) return <StationFrame><CheckInStationUnlock organisationSlug={orgSlug} eventSlug={eventSlug} /></StationFrame>;
   const [confirmed, checkedIn, recent, form] = await Promise.all([
     prisma.rSVP.count({ where: { eventId: event.id, status: "CONFIRMED" } }),
     prisma.rSVP.count({ where: { eventId: event.id, checkedInAt: { not: null } } }),
     listRecentCheckIns(event.id),
     prisma.eventRegistrationForm.findUnique({ where: { eventId: event.id }, select: { fields: { select: { key: true, label: true }, orderBy: { sortOrder: "asc" } } } }),
   ]);
-  return <EventCheckInClient stationMode eventSlug={event.slug} organisationSlug={event.organisation.slug} organisationName={event.organisation.name} organisationLogoUrl={event.organisation.logoUrl} eventId={event.id} eventTitle={event.title} registrationFields={form?.fields ?? []} teamEvent={event.registrationMode === "TEAM"} stats={{ confirmed, checkedIn }} recent={recent.rows} recentNextCursor={recent.nextCursor} attendeeExportHref={null} />;
+  return <StationFrame><EventCheckInClient stationMode eventSlug={event.slug} organisationSlug={event.organisation.slug} organisationName={event.organisation.name} organisationLogoUrl={event.organisation.logoUrl} eventId={event.id} eventTitle={event.title} registrationFields={form?.fields ?? []} teamEvent={event.registrationMode === "TEAM"} stats={{ confirmed, checkedIn }} recent={recent.rows} recentNextCursor={recent.nextCursor} attendeeExportHref={null} /></StationFrame>;
+}
+
+/** The kiosk has no site chrome (components/chrome/OrganiserChrome.tsx), so the page brings its own gutter. */
+function StationFrame({ children }: { children: React.ReactNode }) {
+  return <div className="mx-auto w-full max-w-[1160px] px-4 py-6 sm:px-6 sm:py-8">{children}</div>;
 }

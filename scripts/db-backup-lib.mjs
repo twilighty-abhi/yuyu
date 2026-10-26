@@ -39,7 +39,7 @@ export function parseOptions(argv) {
     if (!argument.startsWith("--")) fail("Invalid command option.");
     const key = argument.slice(2);
     if (!key || key in options) fail("Invalid command option.");
-    if (key === "production" || key === "s3-force-path-style") {
+    if (key === "production" || key === "s3-force-path-style" || key === "via-local-tunnel") {
       options[key] = true;
       continue;
     }
@@ -96,9 +96,22 @@ export async function createDatabaseEnvironment(database) {
   return { environment, dispose: async () => { await rm(passfile, { force: true }).catch(() => undefined); } };
 }
 
-export function isUnsafeRestoreDatabase(databaseUrl) {
+/** A loopback host, including `[::1]` (how URL spells IPv6) and a trailing-dot `localhost.`. */
+export function isLoopbackDatabaseHost(databaseUrl) {
+  const host = new URL(databaseUrl).hostname.toLowerCase().replace(/\.$/, "");
+  return host === "localhost" || host === "[::1]" || host === "::1" || /^127(\.\d{1,3}){3}$/.test(host);
+}
+
+/**
+ * Restore refuses development and test databases, and loopback hosts unless
+ * the operator says the loopback address is a tunnel to the real server
+ * (`--via-local-tunnel`: cloud-sql-proxy, an SSH port-forward to managed
+ * PostgreSQL). The database-name check applies either way.
+ */
+export function isUnsafeRestoreDatabase(databaseUrl, options = {}) {
   const url = new URL(databaseUrl);
-  return ["localhost", "127.0.0.1", "::1"].includes(url.hostname) || /(^|[_-])(dev|test)([_-]|$)/i.test(decodeURIComponent(url.pathname.slice(1)));
+  if (isLoopbackDatabaseHost(databaseUrl) && options.viaLocalTunnel !== true) return true;
+  return /(^|[_-])(dev|test)([_-]|$)/i.test(decodeURIComponent(url.pathname.slice(1)));
 }
 
 async function run(command, argumentsList, environment = process.env) {

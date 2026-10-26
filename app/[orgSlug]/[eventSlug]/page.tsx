@@ -17,6 +17,7 @@ import { publicTeamRegistrationConfig } from "@/lib/publicTeamConfig";
 import { isProjectGalleryVisible } from "@/lib/core/judging";
 import { listPublicCrew } from "@/lib/core/crew";
 import { projectGalleryPath, resultsPath } from "@/lib/submissionToken";
+import { normalizeSections } from "@/components/event-dashboard/event-page/summary";
 
 type Props = { params: Promise<{ orgSlug: string; eventSlug: string }> };
 
@@ -150,17 +151,6 @@ export default async function EventPage({ params }: Props) {
       ? prisma.rSVP.count({ where: { eventId: event.id, isCrew: true, status: RsvpStatus.CONFIRMED } })
       : Promise.resolve(null),
   ]);
-  const defaults = [
-    "HERO",
-    "ABOUT",
-    "HIGHLIGHTS",
-    "SCHEDULE",
-    "SPEAKERS",
-    "SPONSORS",
-    "VENUE",
-    "FAQ",
-    "RESOURCES",
-  ].map((type) => ({ type, isVisible: true }));
   return (
     <EventWebsiteShell
       orgSlug={org.slug}
@@ -185,7 +175,9 @@ export default async function EventPage({ params }: Props) {
         aboutHtml: page?.aboutHtml
           ? sanitizeRichText(page.aboutHtml)
           : plainTextToSafeHtml(event.description),
-        sections: page?.sections ?? defaults,
+        // The same rule as Event page → Sections in the dashboard: a section
+        // with no saved row (a new event has none) is on, except Crew.
+        sections: normalizeSections(page?.sections),
       }}
       highlights={highlights}
       sessions={effectiveEventProgram(sessions).map((session) => ({

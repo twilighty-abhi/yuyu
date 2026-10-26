@@ -4,7 +4,7 @@ import { cn } from "@/lib/cn";
 /** Rounded, bordered table that scrolls inside its own box on small screens (docs/DESIGN.md §4.8). */
 export function Table({ className, children, label, ...props }: HTMLAttributes<HTMLTableElement> & { label?: string }) {
   return (
-    <div className="w-full overflow-x-auto rounded-lg border border-line bg-canvas" role="region" aria-label={label} tabIndex={label ? 0 : undefined}>
+    <div className="relative w-full overflow-x-auto rounded-lg border border-line bg-canvas" role="region" aria-label={label} tabIndex={label ? 0 : undefined}>
       <table className={cn("w-full border-collapse text-left text-body-ui", className)} {...props}>
         {children}
       </table>

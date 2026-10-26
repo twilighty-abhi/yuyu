@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   checkInEventCreate: vi.fn(),
   transaction: vi.fn(),
   rateLimit: vi.fn(),
+  createProof: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({ prisma: {
@@ -23,7 +24,8 @@ vi.mock("@/lib/rateLimit", () => ({
 }));
 vi.mock("@/lib/checkInStation", () => ({
   CHECK_IN_STATION_COOKIE: "station-proof",
-  createCheckInStationProof: () => "proof",
+  createCheckInStationProof: mocks.createProof,
+  stationOpensAt: (start: Date) => new Date(start.getTime() - 24 * 60 * 60 * 1000),
   hasValidCheckInStationProof: () => true,
   stationExpiresAt: () => new Date("2035-01-01T13:00:00.000Z"),
   verifyStationPin: vi.fn().mockResolvedValue(true),
@@ -70,6 +72,7 @@ beforeEach(() => {
   mocks.eventFind.mockResolvedValue(event);
   mocks.rsvpFindFirst.mockResolvedValue(rsvp);
   mocks.rateLimit.mockResolvedValue(true);
+  mocks.createProof.mockReturnValue("proof");
   mocks.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback({
     rSVP: { updateMany: mocks.updateMany, findUnique: mocks.rsvpFindUnique },
     checkInEvent: { create: mocks.checkInEventCreate },
@@ -77,6 +80,17 @@ beforeEach(() => {
 });
 
 describe("venue check-in station route", () => {
+  it("says a station is not open yet before its window, and closed after it", async () => {
+    mocks.createProof.mockReturnValue(null);
+    // The fixture event starts in 2035: unlocking now is too early.
+    const early = await POST(request("unlock", { pin: "12345678" }));
+    expect(early.status).toBe(401);
+    expect((await early.json()).error).toBe("This check-in station is not open yet. It opens 24 hours before the event starts.");
+    mocks.eventFind.mockResolvedValue({ ...event, startDateTime: new Date("2020-01-01T10:00:00.000Z"), endDateTime: new Date("2020-01-01T12:00:00.000Z") });
+    const late = await POST(request("unlock", { pin: "12345678" }));
+    expect((await late.json()).error).toBe("This check-in station has closed.");
+  });
+
   it("rejects action-specific payloads before querying attendee data", async () => {
     const response = await POST(request("lookup"));
     expect(response.status).toBe(400);

@@ -4,6 +4,7 @@ import { useId, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowDown, ArrowUp, ExternalLink, Pencil, Plus, Trash2, Utensils } from "lucide-react";
 import { deleteCrewMember, reorderCrewMember, setCrewMemberShown } from "@/app/actions/crew";
+import { showCrewSection } from "@/app/actions/event-website";
 import { ConfirmationDialog } from "@/components/feedback/ConfirmationDialog";
 import { useToast } from "@/components/feedback/ToastProvider";
 import { Button, IconButton } from "@/components/ui/button";
@@ -33,6 +34,8 @@ export function GuestsCrew({ organisationSlug, eventId, origin, crew }: { organi
   const { members, food } = crew;
   const joinUrl = crew.joinPath ? `${origin}${crew.joinPath}` : null;
   const awaitingReview = members.filter((member) => member.joinedViaLink && !member.showOnPage).length;
+  // Members can be switched on while the page's Crew section is still off; say so where it is easy to miss.
+  const shownWhileSectionOff = !crew.sectionOn && members.some((member) => member.showOnPage);
 
   function run(id: string, action: () => Promise<Result>, success?: string) {
     setBusyId(id);
@@ -61,6 +64,31 @@ export function GuestsCrew({ organisationSlug, eventId, origin, crew }: { organi
           Add crew member
         </Button>
       </div>
+
+      {shownWhileSectionOff ? (
+        <Callout
+          tone="warning"
+          role="status"
+          title="The Crew section is off on your event page"
+          action={
+            crew.canEditPage ? (
+              <Button
+                variant="primary"
+                size="sm"
+                loading={busyId === "section"}
+                disabled={pending}
+                onClick={() => run("section", () => showCrewSection(scope), "The Crew section is on. Crew shown on the event page now appear there.")}
+              >
+                Turn on Crew section
+              </Button>
+            ) : undefined
+          }
+        >
+          {crew.canEditPage
+            ? "Crew set to show on the event page won't appear until the section is on."
+            : "Crew set to show on the event page won't appear until someone who can edit the event page turns the section on in Event page → Sections."}
+        </Callout>
+      ) : null}
 
       {awaitingReview > 0 ? (
         <Callout tone="info" role="status">
@@ -116,7 +144,10 @@ export function GuestsCrew({ organisationSlug, eventId, origin, crew }: { organi
       </div>
 
       <p className="text-caption text-ink-muted">
-        To show the crew on your public event page, switch on the Crew section in Event page → Sections. Only members with &ldquo;Show on event page&rdquo; on appear there, without their email or food preference.
+        {crew.sectionOn
+          ? "The Crew section is on in Event page → Sections."
+          : "The Crew section is off in Event page → Sections."}{" "}
+        Only members with &ldquo;Show on event page&rdquo; on appear there, without their email or food preference.
       </p>
 
       <ConfirmationDialog

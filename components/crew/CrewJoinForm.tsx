@@ -66,8 +66,10 @@ export function CrewJoinForm({ token, foodSuggestions }: Props) {
 
   if (done) {
     return (
+      // One message for every sign-up, so the link never reveals who is registered (docs/CREW.md).
       <Callout tone="success" role="status">
-        You’re on the crew — your ticket is on its way to your email. The organisers will review your profile before it appears on the event page.
+        <p>Thanks, your crew sign-up is in. New crew members get their crew ticket by email, and the organisers review profiles before they appear on the event page.</p>
+        <p className="mt-2">Already registered for this event with this email? Your registration stays as it is: ask the organisers to add you to the crew.</p>
       </Callout>
     );
   }

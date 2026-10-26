@@ -9,6 +9,8 @@ import {
   type OrganiserCrewContext,
   type OrganiserCrewMember,
 } from "@/lib/core/crew";
+import { EventPageSectionType } from "@prisma/client";
+import { prisma } from "@/lib/db";
 import type { EventDashboardContext } from "@/lib/eventDashboard/context";
 
 /*
@@ -25,6 +27,10 @@ export type DashboardCrew = {
   joinPath: string | null;
   /** Offered in the food preference field; any short text is accepted. */
   foodSuggestions: string[];
+  /** Whether the public Crew section (Event page → Sections) is switched on. */
+  sectionOn: boolean;
+  /** Whether this person may switch it on (`EDIT_DETAILS`, the page editor's rule). */
+  canEditPage: boolean;
 };
 
 function crewContext(ctx: EventDashboardContext): OrganiserCrewContext {
@@ -33,11 +39,17 @@ function crewContext(ctx: EventDashboardContext): OrganiserCrewContext {
 
 export const loadEventCrew = cache(async (ctx: EventDashboardContext): Promise<DashboardCrew> => {
   const crew = crewContext(ctx);
-  const [list, link] = await Promise.all([listCrewForOrganiser(crew), getCrewJoinLink(crew)]);
+  const [list, link, section] = await Promise.all([
+    listCrewForOrganiser(crew),
+    getCrewJoinLink(crew),
+    prisma.eventPageSection.findFirst({ where: { type: EventPageSectionType.CREW, page: { eventId: ctx.event.id } }, select: { isVisible: true } }),
+  ]);
   return {
     members: list.members,
     food: list.food,
     joinPath: link ? crewJoinPath(link.token) : null,
     foodSuggestions: [...FOOD_PREFERENCE_SUGGESTIONS],
+    sectionOn: section?.isVisible ?? false,
+    canEditPage: ctx.permissions.canEditPageContent,
   };
 });

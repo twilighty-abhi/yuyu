@@ -110,6 +110,10 @@ whole upgrade takes well under a second. Before running the migration job:
 
 ### Upgrading past 1.0 (teams, judging, attendance confirmation, crew)
 
+The step-by-step runbook for the 2026-10-27 production release (from
+`bf7a04d`), with rehearsal timings and post-deploy checks, is in
+[Production release → Upgrading from production `bf7a04d`](PRODUCTION_RELEASE.md#upgrading-from-production-bf7a04d).
+
 These notes apply when the running release predates the migrations above
 (for example 1.0.0) and the new one includes them.
 

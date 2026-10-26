@@ -38,7 +38,8 @@ At minimum, validate targeted changes with lint, TypeScript, and the relevant
 test suite. For authorization, mutation, public-route, operational, API, or
 deployment changes, follow the stronger checks listed in `AGENTS.md` and
 `docs/TESTING.md`. Other sessions may edit the tree in parallel: commit with
-explicit paths only, and commit the user manual only when asked.
+explicit paths only. The user guide is the in-app help centre at `/help`,
+written as MDX in `content/help/` (the old PDF user manual is gone).
 
 Every new feature goes on its own branch (`feat/<short-name>`, or
 `fix/<short-name>` for a bug fix) created from `main`, gets a GitHub pull

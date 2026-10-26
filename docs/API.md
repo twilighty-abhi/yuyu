@@ -52,7 +52,7 @@ Requires `events:read`. Missing and cross-organisation IDs both return the same 
 GET /api/v1/events/:eventId/participants?limit=50&cursor=<cursor>&attendance=checked_in&include=attendance
 ```
 
-Requires `participants:read`. Only confirmed standalone-event RSVPs are returned. `attendance` accepts `all` (the default), `checked_in`, or `not_checked_in`. Filtering by attendance reveals who has checked in, so `checked_in` and `not_checked_in` also require `participants:attendance:read`; without it the request is refused with `403 INSUFFICIENT_SCOPE`. `include=attendance` returns the nullable `checkedInAt` timestamp and requires the same scope.
+Requires `participants:read`. Only confirmed standalone-event RSVPs are returned, including event crew tickets ([Event crew](CREW.md)), which are confirmed registrations; team membership is not exposed. `attendance` accepts `all` (the default), `checked_in`, or `not_checked_in`. Filtering by attendance reveals who has checked in, so `checked_in` and `not_checked_in` also require `participants:attendance:read`; without it the request is refused with `403 INSUFFICIENT_SCOPE`. `include=attendance` returns the nullable `checkedInAt` timestamp and requires the same scope.
 
 ```json
 {

@@ -41,8 +41,13 @@ advertising trackers.
 - Event emails with five designs, a review step, and a five-second undo before a broadcast sends
 - Feedback forms, response reporting with CSV export, certificates built from text and image layers on your own artwork, and a post-event PDF report
 - An account area with your registrations and certificates, your organisations (including leaving one), security settings, and a personal data export
-- Recurring event series, organisation roles, event collaborators, and tenant-bound API clients
-- A mobile API (`/api/mobile/v1`) for the Yuyu Android and iOS apps: sign-in, your tickets, discovery and registration, and organiser day-of work such as check-in and guest approval
+- Team registration for hackathons and competitions (teams count as one place, join links, a team page, and *looking for a team* matching), with project submissions, rubric judging by invited judges, automatic judge assignment, awards, a public results page and a searchable project gallery
+- An event crew list with crew tickets that never take a guest's place, a crew sign-up link, food preferences for catering, and an optional Crew section on the event page
+- A manual "Are you still coming?" attendance confirmation before the event, with reminders and an optional switch that frees the place when a guest says No
+- Custom check-in lists beyond venue entry (swag, meals, workshops), saved views and filtered CSV exports on long organiser lists, and server-side paging that keeps events with thousands of registrations fast
+- Recurring event series, organisation roles, event collaborators (including judges), tenant-bound API clients, and signed organisation webhooks
+- An in-app help centre at `/help` with search, screenshots and Help links from dashboard screens
+- A mobile API (`/api/mobile/v1`) for the Yuyu Android and iOS apps: sign-in, your tickets and team, discovery and registration, organiser day-of work such as check-in, guest and team approval and the live programme, and a judge's scoring workspace
 - A separate super-admin area with MFA step-up, instance settings that apply on every replica without a restart (SMTP with a test email, Google SSO, backup posture), and read-only insights on activity, email, and security
 - An optional operational alerts webhook (Mattermost or Slack-compatible) for server errors, sign-in and email failures, browser crashes, and restarts, with redacted text
 - Security-conscious operations: private object storage, CSP nonces, rate limiting, audit events, outbox email, and readiness checks
@@ -100,6 +105,7 @@ buffer the live ticket stream at `/api/ticket/:token/events`.
 The project handbook lives in [`docs/`](docs/README.md):
 
 - [Features](docs/FEATURES.md)
+- [Team registration](docs/TEAMS.md), [hackathon judging](docs/HACKATHON.md) and [event crew](docs/CREW.md)
 - [Design system and brand](docs/DESIGN.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Local development](docs/DEVELOPMENT.md)
@@ -107,16 +113,22 @@ The project handbook lives in [`docs/`](docs/README.md):
 - [Routes and HTTP endpoints](docs/ROUTES.md)
 - [Machine API v1](docs/API.md)
 - [Mobile API v1](docs/MOBILE_API.md)
+- [Organisation webhooks](docs/WEBHOOKS.md)
 - [Security model](docs/SECURITY.md)
+- [Permissions matrix](docs/PERMISSIONS.md)
 - [Testing and quality gates](docs/TESTING.md)
-- [Production release checklist](docs/PRODUCTION_RELEASE.md)
+- [Large-event performance](docs/PERFORMANCE.md)
+- [Production release checklist](docs/PRODUCTION_RELEASE.md) (including [upgrading from production `bf7a04d`](docs/PRODUCTION_RELEASE.md#upgrading-from-production-bf7a04d))
 - [Production operations](docs/production-operations.md)
 - [Production Docker deployment](docs/DEPLOYMENT_DOCKER.md)
 - [Isolated staging deployment](docs/DEPLOYMENT_STAGING.md)
 - [Docker Hub publishing](docs/DOCKERHUB_ACTIONS.md)
 - [Future work](docs/FUTURE_PHASES.md)
 - [Changelog](CHANGELOG.md)
-- [User manual](docs/manual/user-manual.html) ([PDF](docs/Yuyu-User-Manual.pdf))
+
+The user guide for organisers, guests, door staff and instance administrators
+is the in-app help centre at `/help`, built from the MDX articles in
+[`content/help/`](content/help/README.md). It replaces the old PDF user manual.
 
 ## Common commands
 
@@ -131,6 +143,7 @@ npm run test:e2e:production  # browser tests against standalone output
 npm run test:coverage        # repository-wide coverage report
 npm run build                # production build
 npm run brand:generate       # rebuild favicon, app icons, social card and email lockup from public/brand SVGs
+npm run help:screenshots     # recapture help-centre screenshots (disposable local database only; see content/help/README.md)
 ```
 
 Operator commands:

@@ -11,9 +11,17 @@
 - Authenticator-app MFA for credential accounts, including recovery codes.
 - Account pages at `/account`, `/account/registrations`, `/account/organisations`, and `/account/security`. The personal data export (`GET /api/exports/account`) returns only the signed-in user's own allow-listed data as JSON, is limited to five downloads per hour, and is audited as `ACCOUNT_DATA_EXPORTED`. Leaving an organisation removes only your own membership, is refused for the sole owner, and is audited as `ORGANISATION_MEMBER_LEFT`.
 - JWT session-version invalidation after sensitive account operations.
-- A user-authenticated mobile API (`/api/mobile/v1`) for the Yuyu mobile apps (Android and iOS): email/password and Google sign-in with rotating refresh tokens, your registrations and tickets, public discovery and registration, and organiser day-of work (guest approval, check-in with offline roster and sync, attendee emails, live programme delays, feedback open/close, closing sign-ups). Mobile sessions end with "sign out everywhere" and password or MFA changes. Android App Links and iOS Universal Links association files are served under `/.well-known/` when configured. See [Mobile API](MOBILE_API.md).
+- A user-authenticated mobile API (`/api/mobile/v1`) for the Yuyu mobile apps (Android and iOS): email/password and Google sign-in with rotating refresh tokens, your registrations and tickets, public discovery and registration, organiser day-of work (guest and whole-team approval, check-in with offline roster and sync, attendee emails, the programme with speakers and live delays, feedback open/close, closing sign-ups), and a judge's scoring workspace. Mobile sessions end with "sign out everywhere" and password or MFA changes. Android App Links and iOS Universal Links association files are served under `/.well-known/` when configured. See [Mobile API](MOBILE_API.md).
 
 Google OAuth users rely on the Google account's MFA policy; the application TOTP prompt applies to password authentication.
+
+## Help centre
+
+- An in-app guide at `/help` for guests, organisers, door staff, developers and the instance administrator: 68 articles in 14 sections, from getting started and registering to judging, check-in and troubleshooting, with screenshots and an "On this page" outline. It replaces the PDF user manual.
+- Search across every article the viewer may read, jumping to the matching section.
+- Dashboard screens have **Help** links to the matching article.
+- Most sections are public. *Connecting other tools* (machine API and webhooks) is shown only to owners and admins of any organisation, and *Instance administration* only to the super-admin; for anyone else those pages are a real 404, and the search index leaves them out.
+- Articles are MDX files in `content/help/`, listed in `content/help/manifest.ts`; `content/help/README.md` is the writing and screenshot guide.
 
 ## Organisations and permissions
 
@@ -102,7 +110,7 @@ One-off events can register people in teams (hackathons, game jams, competitions
 - Organisers approve, reject and promote **whole teams** from the Guests tab's Teams view; an individual action on a team member is refused. Teams below the minimum size are marked *Incomplete* and cannot be approved. Organisers can also rename teams, move a member to another team, and delete a team with undo. A freed unit promotes the oldest waitlisted unit (team or solo) unless the event needs approval.
 - Each member gets the usual status emails, naming the team. The attendee CSV, check-in desk, badges (`{{team}}`), personal data export and post-event report include team details.
 - Every team and guest list is paged on the server, so events with hundreds of teams and thousands of registrations stay fast: the organiser Teams and People views and the check-in desk load in steps with **Load more**, the Move to team picker and the team and ticket pages' matching lists in steps of 20 with search, Invites in numbered pages, and **Export emails** downloads every guest matching the current filters. Guests · People, Guests · Teams, Judging → Submissions and Judging → Results each have **Export CSV** for exactly the filters and search showing, streamed from the server in bounded batches. Feedback responses page on the server, 25 at a time.
-- The mobile and machine APIs do not expose teams yet. `POST /api/mobile/v1/rsvp` registers solo where allowed and returns `TEAM_REQUIRED` on a teams-only event.
+- In the mobile API, organisers list teams and approve, reject or promote whole teams, attendees see their own team, and guest and check-in rows carry the team name. Creating, joining and managing teams stays on the website: `POST /api/mobile/v1/rsvp` registers solo where allowed and returns `TEAM_REQUIRED` on a teams-only event. The machine API has no team fields.
 
 ## Event crew
 
@@ -113,6 +121,7 @@ One-off events can list their organising team. The design contract is [Event cre
 - A crew sign-up link (`/crew/:token`) lets crew add themselves; they start hidden from the event page until an organiser reviews them. Organisers can create, rotate, and disable the link.
 - An optional **Crew** section on the event page (off by default, in **Event page → Sections**) shows visible members' cards, never emails or food preferences.
 - Crew tickets cannot be cancelled by their holder or edited and removed from Guests · People, and crew never join teams.
+- Crew are never asked to confirm attendance and never enter hackathon projects. The mobile and machine APIs show crew tickets as ordinary confirmed registrations (the mobile `capacityUsed` still leaves them out); crew management is web-only.
 
 ## Hackathon submissions, judging, and results
 
@@ -133,7 +142,7 @@ One-off events in either registration mode can take project submissions, have th
 - Judging lists are paged on the server: judges score from a list of 25 at a time with **To score**, **In progress** and **Reviewed** filters and search; organisers page Submissions (50 at a time, with status filter and search) and Results (numbered pages of 50, with ranks always computed over every project); the public project gallery shows 24 projects per page with search (project title, team or entrant name), an **Award winners** filter and **Newest** / **A–Z** / **Awards first** orders (the filter and awards order once results are published), award badges on winning projects, and shareable URLs that work without JavaScript; the results page gains the same search once it lists more than 10 winners.
 - The results page, the project gallery (`/:orgSlug/:eventSlug/projects`), and submission pages follow exactly the event page's visibility, publication, and invite rules, and are a real 404 otherwise.
 - The personal data export includes the projects of the user's registrations, without scores, comments, or disqualification reasons.
-- The mobile and machine APIs do not expose submissions, judging, or results.
+- The mobile API offers the judge's scoring workspace (the project list with filters and search, **Score next project**, the rubric, saving scores and submitting a review) under the same visibility and conflict-of-interest rules; entrant submissions, judging management and results stay on the website. The machine API does not expose submissions, judging or results.
 
 ## Saved views
 

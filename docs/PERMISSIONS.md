@@ -193,6 +193,16 @@ actions use the web's `canManageRegistrationsFor` (so the
 `MANAGE_REGISTRATIONS` grant works there, unlike the `manageRegistrations`
 flag).
 
+## Help centre
+
+The guide at `/help` ([Features](FEATURES.md#help-centre)) is not a
+dashboard, but two of its sections follow roles: *Connecting other tools*
+(machine API and webhooks) needs an owner or admin role in any organisation,
+and *Instance administration* is for the super-admin only
+(`lib/help/access.ts`). Every other section is public. Collaborator grants
+add nothing here. A section the viewer may not read is a real 404, is left
+out of navigation, and is left out of the search index.
+
 ## Known gaps
 
 - `EDIT_DETAILS` does not cover the Details form. `updateEvent` writes

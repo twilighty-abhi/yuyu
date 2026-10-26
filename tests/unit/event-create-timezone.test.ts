@@ -50,6 +50,13 @@ describe("create forms read wall-clock times in the chosen timezone", () => {
     });
   }
 
+  it("keeps live and past events editable while new events must start in the future", () => {
+    process.env.TZ = "UTC";
+    const past = { ...event, startDateTime: "2020-01-01T10:00", endDateTime: "2020-01-01T12:00" };
+    expect(createEventSchema.safeParse(past).success).toBe(false);
+    expect(updateEventSchema.safeParse({ ...past, eventId: "evt_1", status: "PUBLISHED", privacyType: "PUBLIC" }).success).toBe(true);
+  });
+
   it("reads the registration cutoff in the event timezone too", () => {
     process.env.TZ = "UTC";
     const parsed = createEventSchema.parse({ ...event, registrationClosesAt: "2030-12-01T18:00" });

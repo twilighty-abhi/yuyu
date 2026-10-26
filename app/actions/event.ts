@@ -278,6 +278,15 @@ export async function updateEvent(input: unknown): Promise<ActionResult> {
     where: { id: data.eventId, organisationId: org.id },
   });
   if (!event) return { ok: false, error: "Event not found." };
+  // The form submits whole minutes. An unchanged time keeps the stored value
+  // (seconds included); a changed start must not be in the past.
+  const sameMinute = (a: Date, b: Date) => Math.floor(a.getTime() / 60_000) === Math.floor(b.getTime() / 60_000);
+  const startDateTime = sameMinute(data.startDateTime, event.startDateTime) ? event.startDateTime : data.startDateTime;
+  const endDateTime = sameMinute(data.endDateTime, event.endDateTime) ? event.endDateTime : data.endDateTime;
+  if (startDateTime !== event.startDateTime && startDateTime < new Date()) {
+    return { ok: false, error: "Start time must be now or in the future." };
+  }
+  if (endDateTime <= startDateTime) return { ok: false, error: "End must be after start." };
   const aboutHtml =
     data.pageAboutHtml !== undefined
       ? sanitizeRichText(data.pageAboutHtml)
@@ -337,8 +346,8 @@ export async function updateEvent(input: unknown): Promise<ActionResult> {
           tags: data.tags ?? [],
           showRegistrationCount: data.showRegistrationCount ?? true,
           coverImageUrl: data.coverImageUrl || null,
-          startDateTime: data.startDateTime,
-          endDateTime: data.endDateTime,
+          startDateTime: startDateTime,
+          endDateTime: endDateTime,
           timezone: data.timezone,
           location: data.location ?? "",
           mapLinkUrl: data.mapLinkUrl || null,

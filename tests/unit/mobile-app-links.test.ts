@@ -39,6 +39,9 @@ describe("mobile app-link association files", () => {
       "/dashboard/civic-tech", "/dashboard/civic-tech/event/x", "/account/registrations", "/super-admin/users",
       "/api/mobile/v1/me", "/login", "/reset-password", "/verify-email", "/join/token", "/embed/civic-tech/spring",
       "/Ab3dEf9", "/civictk", "/", "/discover",
+      "/team/tok", "/submit/tok", "/attend/tok", "/crew/tok", "/help", "/help/organisers/teams",
+      "/civic-tech/spring-hack-night/team/tok", "/civic-tech/spring-hack-night/projects",
+      "/civic-tech/spring-hack-night/projects/p1", "/civic-tech/spring-hack-night/results",
     ]) {
       expect(claims(components, path), path).toBe(false);
     }

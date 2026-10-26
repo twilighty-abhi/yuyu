@@ -275,7 +275,8 @@ export async function resolveEntrantByTeamManageToken(rawToken: string): Promise
  */
 export async function resolveEntrantForUser(userId: string, eventId: string): Promise<EntrantAuth | null> {
   if (!isId(userId) || !isId(eventId)) return null;
-  const rsvp = await prisma.rSVP.findFirst({ where: { eventId, userId }, select: { id: true, teamId: true } });
+  // Crew tickets (docs/CREW.md) run the event; they never enter a project.
+  const rsvp = await prisma.rSVP.findFirst({ where: { eventId, userId, isCrew: false }, select: { id: true, teamId: true } });
   if (!rsvp) return null;
   return rsvp.teamId
     ? { kind: "team-member", eventId, teamId: rsvp.teamId, userId }
@@ -338,6 +339,7 @@ async function lockedEntrant(tx: Prisma.TransactionClient, auth: EntrantAuth): P
       id: auth.rsvpId,
       eventId: auth.eventId,
       teamId: null,
+      isCrew: false,
       ...(auth.kind === "solo-owner" ? { userId: auth.userId } : { submissionLink: { is: { tokenHash: auth.tokenHash } } }),
     },
     select: { id: true, status: true, ...personSelect },
@@ -524,7 +526,7 @@ export async function requestSubmissionLink(holder: { rsvpId: string; eventId: s
       const event = await lockEventShared(tx, holder.eventId);
       if (!event?.submissionsEnabled || event.status !== EventStatus.PUBLISHED) return fail("This event is not taking project submissions.");
       const rsvp = await tx.rSVP.findFirst({
-        where: { id: holder.rsvpId, eventId: event.id },
+        where: { id: holder.rsvpId, eventId: event.id, isCrew: false },
         select: { id: true, teamId: true, status: true, ...personSelect, submissionLink: { select: { createdAt: true } } },
       });
       if (!rsvp) return fail(NOT_FOUND);

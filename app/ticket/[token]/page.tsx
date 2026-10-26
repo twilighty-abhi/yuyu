@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { DotFace } from "@/components/brand/DotFace";
-import { ArrowLeft, ArrowUpRight, CalendarPlus, Check } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, CalendarPlus, Check, Users } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { TicketQrPanel } from "@/components/ticket/TicketQrPanel";
 import { CancelRsvpButton } from "@/components/ticket/CancelRsvpButton";
@@ -185,6 +185,9 @@ export default async function TicketPage({ params }: Props) {
   const isCheckedIn = Boolean(rsvp.checkedInAt);
 
   const confirmed = rsvp.status === "CONFIRMED";
+  // Crew tickets (docs/CREW.md) are issued and removed by the organisers: no
+  // self-cancel (the server refuses it too) and no team joining.
+  const isCrew = rsvp.isCrew;
   const name = displayName(rsvp);
   const eventPageHref = eventSlug ? `/${orgSlug}/${eventSlug}` : `/${orgSlug}`;
 
@@ -193,10 +196,11 @@ export default async function TicketPage({ params }: Props) {
   // never grants team management. Like cancellation, an account-owned
   // registration needs that account signed in before anything can change,
   // and the private seeker lists are only shown to someone who can act.
-  const teamEvent = rsvp.event?.registrationMode === RegistrationMode.TEAM && rsvp.eventId ? rsvp.event : null;
+  const teamEvent = rsvp.event?.registrationMode === RegistrationMode.TEAM && rsvp.eventId && !isCrew ? rsvp.event : null;
   // Same publication rule as the submission pages themselves (loadEntrantSubmission).
+  // Crew tickets (docs/CREW.md) never enter a project.
   const submissionsEvent =
-    rsvp.event?.submissionsEnabled && rsvp.event.status === "PUBLISHED" && rsvp.event.page?.isPublished && rsvp.eventId
+    !isCrew && rsvp.event?.submissionsEnabled && rsvp.event.status === "PUBLISHED" && rsvp.event.page?.isPublished && rsvp.eventId
       ? rsvp.event
       : null;
   const session = teamEvent || submissionsEvent ? await auth() : null;
@@ -274,6 +278,7 @@ export default async function TicketPage({ params }: Props) {
             : { kind: "not-confirmed" };
     submissionSection = <TicketSubmissionCard ticketToken={rsvp.checkInToken} mode={mode} />;
   } else if (
+    !isCrew &&
     rsvp.event?.submissionsEnabled &&
     (rsvp.event.status === "DRAFT" || rsvp.event.status === "HIDDEN") &&
     rsvp.status !== "REJECTED"
@@ -343,6 +348,7 @@ export default async function TicketPage({ params }: Props) {
           </Link>
           <div className="flex flex-wrap justify-end gap-1.5">
             {isCheckedIn ? <Chip tone="success" icon={<Check />}>Checked in</Chip> : <LiveCheckedInChip />}
+            {isCrew ? <Chip tone="ink" icon={<Users />}>Crew</Chip> : null}
             <Chip tone={status.tone} icon={confirmed ? <Check /> : undefined}>{status.label}</Chip>
           </div>
         </div>
@@ -385,7 +391,7 @@ export default async function TicketPage({ params }: Props) {
 
         {submissionSection}
 
-        {!isCheckedIn && rsvp.status !== "REJECTED" && !rsvp.teamId ? (
+        {!isCheckedIn && rsvp.status !== "REJECTED" && !rsvp.teamId && !isCrew ? (
           <HideAfterLiveCheckIn>
             <CancelRsvpButton checkInToken={rsvp.checkInToken} eventPageHref={eventPageHref} />
           </HideAfterLiveCheckIn>

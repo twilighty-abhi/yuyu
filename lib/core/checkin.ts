@@ -40,6 +40,8 @@ export type CheckInResultData = {
   registrationDetails: RegistrationDetail[];
   /** TEAM events: the attendee's team name, shown at the desk, on badges and in the mobile `CheckInResult.teamName`. */
   teamName?: string | null;
+  /** An event crew ticket (docs/CREW.md): shown as a Crew badge at the desk. */
+  isCrew?: boolean;
   /** Attendance confirmation reply, shown as a badge at the desk; null when the guest was never asked. Web desk only. */
   attendance?: AttendanceState | null;
 };
@@ -141,6 +143,7 @@ async function resolveRsvpForToken(
     include: {
       user: { select: { name: true, email: true } },
       team: { select: { name: true } },
+      crewMember: { select: { foodPreference: true } },
       attendanceCheck: { select: { response: true } },
       answers: { include: { field: { select: { key: true, label: true } } } },
       event: { select: { id: true, organisationId: true, slug: true } },
@@ -200,9 +203,10 @@ export async function previewCheckInByTokenForUser(
       alreadyCheckedIn: Boolean(rsvp.checkedInAt),
       checkedInAt: rsvp.checkedInAt?.toISOString() ?? null,
       checkInQrToken: rsvp.checkInToken,
-      checkInDetails: getCheckInDetails(rsvp.answers),
+      checkInDetails: getCheckInDetails(rsvp.answers, rsvp.crewMember),
       registrationDetails: getRegistrationDetails(rsvp.answers),
       teamName: rsvp.team?.name ?? null,
+      isCrew: rsvp.isCrew,
       attendance: deskAttendanceState(rsvp.attendanceCheck),
       gate,
     },
@@ -254,9 +258,10 @@ export async function checkInByTokenForUser(
         alreadyCheckedIn: true,
         checkedInAt: rsvp.checkedInAt.toISOString(),
         checkInQrToken: rsvp.checkInToken,
-        checkInDetails: getCheckInDetails(rsvp.answers),
+        checkInDetails: getCheckInDetails(rsvp.answers, rsvp.crewMember),
         registrationDetails: getRegistrationDetails(rsvp.answers),
         teamName: rsvp.team?.name ?? null,
+        isCrew: rsvp.isCrew,
         attendance: deskAttendanceState(rsvp.attendanceCheck),
       },
     };
@@ -286,9 +291,10 @@ export async function checkInByTokenForUser(
         alreadyCheckedIn: true,
         checkedInAt: committed.checkedInAt.toISOString(),
         checkInQrToken: rsvp.checkInToken,
-        checkInDetails: getCheckInDetails(rsvp.answers),
+        checkInDetails: getCheckInDetails(rsvp.answers, rsvp.crewMember),
         registrationDetails: getRegistrationDetails(rsvp.answers),
         teamName: rsvp.team?.name ?? null,
+        isCrew: rsvp.isCrew,
         attendance: deskAttendanceState(rsvp.attendanceCheck),
       },
     };
@@ -310,9 +316,10 @@ export async function checkInByTokenForUser(
       alreadyCheckedIn: false,
       checkedInAt: now.toISOString(),
       checkInQrToken: rsvp.checkInToken,
-      checkInDetails: getCheckInDetails(rsvp.answers),
+      checkInDetails: getCheckInDetails(rsvp.answers, rsvp.crewMember),
       registrationDetails: getRegistrationDetails(rsvp.answers),
       teamName: rsvp.team?.name ?? null,
+      isCrew: rsvp.isCrew,
       attendance: deskAttendanceState(rsvp.attendanceCheck),
     },
   };
@@ -614,6 +621,7 @@ export async function previewCheckInByRsvpIdForUser(
     include: {
       user: { select: { name: true, email: true } },
       team: { select: { name: true } },
+      crewMember: { select: { foodPreference: true } },
       attendanceCheck: { select: { response: true } },
       answers: { include: { field: { select: { key: true, label: true } } } },
     },
@@ -630,9 +638,10 @@ export async function previewCheckInByRsvpIdForUser(
       alreadyCheckedIn: Boolean(rsvp.checkedInAt),
       checkedInAt: rsvp.checkedInAt?.toISOString() ?? null,
       checkInQrToken: rsvp.checkInToken,
-      checkInDetails: getCheckInDetails(rsvp.answers),
+      checkInDetails: getCheckInDetails(rsvp.answers, rsvp.crewMember),
       registrationDetails: getRegistrationDetails(rsvp.answers),
       teamName: rsvp.team?.name ?? null,
+      isCrew: rsvp.isCrew,
       attendance: deskAttendanceState(rsvp.attendanceCheck),
       gate: gateCheckInForStatus(rsvp.status, Boolean(force)),
     },
@@ -663,6 +672,7 @@ export async function checkInByRsvpIdForUser(
     include: {
       user: { select: { name: true, email: true } },
       team: { select: { name: true } },
+      crewMember: { select: { foodPreference: true } },
       attendanceCheck: { select: { response: true } },
       answers: { include: { field: { select: { key: true, label: true } } } },
       event: { select: { slug: true } },
@@ -694,9 +704,10 @@ export async function checkInByRsvpIdForUser(
         alreadyCheckedIn: true,
         checkedInAt: rsvp.checkedInAt.toISOString(),
         checkInQrToken: rsvp.checkInToken,
-        checkInDetails: getCheckInDetails(rsvp.answers),
+        checkInDetails: getCheckInDetails(rsvp.answers, rsvp.crewMember),
         registrationDetails: getRegistrationDetails(rsvp.answers),
         teamName: rsvp.team?.name ?? null,
+        isCrew: rsvp.isCrew,
         attendance: deskAttendanceState(rsvp.attendanceCheck),
       },
     };
@@ -726,9 +737,10 @@ export async function checkInByRsvpIdForUser(
         alreadyCheckedIn: true,
         checkedInAt: committed.checkedInAt.toISOString(),
         checkInQrToken: rsvp.checkInToken,
-        checkInDetails: getCheckInDetails(rsvp.answers),
+        checkInDetails: getCheckInDetails(rsvp.answers, rsvp.crewMember),
         registrationDetails: getRegistrationDetails(rsvp.answers),
         teamName: rsvp.team?.name ?? null,
+        isCrew: rsvp.isCrew,
         attendance: deskAttendanceState(rsvp.attendanceCheck),
       },
     };
@@ -750,9 +762,10 @@ export async function checkInByRsvpIdForUser(
       alreadyCheckedIn: false,
       checkedInAt: now.toISOString(),
       checkInQrToken: rsvp.checkInToken,
-      checkInDetails: getCheckInDetails(rsvp.answers),
+      checkInDetails: getCheckInDetails(rsvp.answers, rsvp.crewMember),
       registrationDetails: getRegistrationDetails(rsvp.answers),
       teamName: rsvp.team?.name ?? null,
+      isCrew: rsvp.isCrew,
       attendance: deskAttendanceState(rsvp.attendanceCheck),
     },
   };

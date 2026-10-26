@@ -359,6 +359,7 @@ async function getCurrentRsvp(checkInToken: string) {
     where: { checkInToken },
     select: {
       status: true,
+      isCrew: true,
       guestName: true,
       user: { select: { name: true } },
       event: { select: { startDateTime: true, endDateTime: true, timezone: true, location: true } },
@@ -514,7 +515,8 @@ export async function deliverOutboxBatch(limit = 20) {
           await prisma.outboxMessage.deleteMany({ where: { id: message.id, status: OutboxStatus.PROCESSING, lockedAt: claimTime } });
           continue;
         }
-        await sendRSVPConfirmation({ ...payload, recipientName: attendeeName(rsvp), calendarEvent: calendarEvent(rsvp), messageId: stableMessageId });
+        // Read from the row, not the payload: a ticket turned into (or out of) a crew ticket after queueing is worded as it is now.
+        await sendRSVPConfirmation({ ...payload, recipientName: attendeeName(rsvp), calendarEvent: calendarEvent(rsvp), crew: rsvp?.isCrew === true, messageId: stableMessageId });
       } else if (message.kind === "rsvp-status") {
         const payload = asRsvpStatusPayload(message.payload);
         if (!payload) throw new PermanentOutboxError();

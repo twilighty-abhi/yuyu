@@ -69,7 +69,7 @@ function unsubmittedEntrantsSql(eventId: string): Prisma.Sql {
     FROM "RSVP" r
     LEFT JOIN "User" u ON u."id" = r."userId"
     LEFT JOIN "Submission" s ON s."rsvpId" = r."id"
-    WHERE r."eventId" = ${eventId} AND r."teamId" IS NULL AND r."status" = ${RsvpStatus.CONFIRMED}::"RsvpStatus"
+    WHERE r."eventId" = ${eventId} AND r."teamId" IS NULL AND NOT r."isCrew" AND r."status" = ${RsvpStatus.CONFIRMED}::"RsvpStatus"
       AND (s."id" IS NULL OR s."status" <> ${SubmissionStatus.SUBMITTED}::"SubmissionStatus")
   ) e`;
 }

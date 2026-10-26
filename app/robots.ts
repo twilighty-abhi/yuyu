@@ -2,7 +2,7 @@ import type { MetadataRoute } from "next";
 
 export default function robots(): MetadataRoute.Robots {
   return {
-    rules: { userAgent: "*", allow: "/", disallow: ["/dashboard/", "/super-admin/", "/ticket/", "/team/", "/*/*/team/", "/submit/", "/attend/", "/join/"] },
+    rules: { userAgent: "*", allow: "/", disallow: ["/dashboard/", "/super-admin/", "/ticket/", "/team/", "/*/*/team/", "/submit/", "/attend/", "/join/", "/crew/"] },
     sitemap: "/sitemap.xml",
   };
 }

@@ -51,6 +51,8 @@ export function toAttendeeRow(rsvp: AttendeeRecord, origin: string, options: { a
     guestName: rsvp.guestName,
     user: rsvp.user ? { id: rsvp.user.id, name: rsvp.user.name, email: rsvp.user.email } : null,
     checkedInAt: rsvp.checkedInAt?.toISOString() ?? null,
+    /** An event crew ticket: managed in Guests → Crew, never edited or removed here. */
+    isCrew: rsvp.isCrew,
     /** Custom check-in lists this guest is in (never changes entry check-in). */
     listCheckIns: rsvp.checkInListRecords.map((record) => ({
       listName: record.list.archived ? `${record.list.name} (archived)` : record.list.name,

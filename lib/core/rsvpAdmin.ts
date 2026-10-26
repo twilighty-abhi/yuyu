@@ -57,6 +57,9 @@ export async function addManualRsvpForUser(
   return { ok: true, data: { count: result.data.count, status: result.data.status, rsvpId: result.data.rsvpId } };
 }
 
+/** Crew tickets are added, edited and removed with their crew record only. */
+const CREW_REGISTRATION_ERROR = "This person is on the event crew. Manage them from Guests → Crew.";
+
 export async function updateRsvpRegistrationForUser(actorUserId: string | null, input: unknown): Promise<ActionResult> {
   if (!actorUserId) return { ok: false, error: "You must be signed in." };
   const session = { user: { id: actorUserId } };
@@ -83,6 +86,8 @@ export async function updateRsvpRegistrationForUser(actorUserId: string | null, 
     },
   });
   if (!rsvp) return { ok: false, error: "RSVP not found." };
+  // Crew name and email live on the crew record (docs/CREW.md).
+  if (rsvp.isCrew) return { ok: false, error: CREW_REGISTRATION_ERROR };
 
   const formFields = rsvp.event?.registrationForm?.fields ?? [];
   const validated = validateAndNormalizeAnswers({
@@ -204,6 +209,7 @@ export async function deleteRsvpForUser(actorUserId: string | null, input: unkno
     },
   });
   if (!rsvp) return { ok: false, error: "RSVP not found." };
+  if (rsvp.isCrew) return { ok: false, error: CREW_REGISTRATION_ERROR };
   const teamEvent = rsvp.eventId && rsvp.event?.registrationMode === RegistrationMode.TEAM ? rsvp.eventId : null;
 
   const snapshot: Record<string, unknown> & { teamId?: string | null; submission?: SubmissionSnapshot | null } = {

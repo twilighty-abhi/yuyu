@@ -22,7 +22,7 @@
 | `app/` | Pages, layouts, Server Actions, and route handlers |
 | `components/` | Client and server UI components grouped by product area |
 | `lib/` | Authentication, authorization, validation, RSVP logic, storage, email, rate limiting, and shared services |
-| `lib/core/` | Mutation cores (check-in, RSVP lifecycle/admin/cancel, team registration, hackathon judging, broadcasts, attendance confirmation, programme delays, feedback settings, registration window, account profile and security) shared by Server Actions and `/api/mobile/v1` |
+| `lib/core/` | Mutation cores (check-in, RSVP lifecycle/admin/cancel, team registration, event crew, hackathon judging, broadcasts, attendance confirmation, programme delays, feedback settings, registration window, account profile and security) shared by Server Actions and `/api/mobile/v1` |
 | `lib/mobile/` | Mobile API tokens, sessions, permissions, Zod schemas, and DTOs |
 | `prisma/` | Data model and ordered production migrations |
 | `scripts/` | Environment, schema, asset migration, and standalone-build helpers |
@@ -87,6 +87,10 @@ The super-admin boundary is separate: access requires an authenticated email mat
 ### Team registration and capacity units
 
 On a `TEAM` event `Event.capacity` counts units: each team and each solo RSVP is one unit. Every path that changes capacity (`reserveRsvp` in `lib/rsvpCore.ts`, `lib/rsvpCapacity.ts`, cancellation, organiser delete and restore, the capacity check in `updateEvent`) and every team mutation in `lib/core/teams.ts` takes the same `SELECT ... FOR UPDATE` lock on the `Event` row first, then counts with `countConfirmedUnits` (`lib/teamUnits.ts`). `INDIVIDUAL` events keep the plain confirmed-RSVP query. Team status changes update the `Team` row with a conditional `updateMany` guarded by the expected status and move every member RSVP in the same transaction, so each member's status always equals the team's. A team id from the browser is always re-read with its `eventId`, and leader authority (a management-token hash or the signed-in leader) is re-checked under the lock. Server Actions in `app/actions/teams.ts` and `app/actions/team-admin.ts` authenticate, rate limit, audit, and revalidate around these cores. The `team-created` and `team-member-added` outbox kinds carry capabilities and are deleted after delivery.
+
+### Event crew
+
+`lib/core/crew.ts` owns the crew ([Event crew](CREW.md)); `app/actions/crew.ts` authenticates, rate limits, audits, and revalidates around it. Each crew member owns one `CONFIRMED` RSVP with `isCrew` (database CHECK `RSVP_crew_shape`: event-bound, no team, confirmed). Adding a member takes the same `Event` row lock as capacity changes, so converting a solo registration cannot interleave with a registration. Every capacity count spreads `takesCapacity` (`lib/teamUnits.ts`) into its query, so crew are confirmed but never use a place.
 
 ### Hackathon judging
 

@@ -1,7 +1,7 @@
 import { EventStatus, Prisma, RegistrationMode, RsvpStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { enqueueRsvpConfirmation, enqueueRsvpStatusNotification } from "@/lib/outbox";
-import { countConfirmedForCapacity, countConfirmedUnits } from "@/lib/teamUnits";
+import { countConfirmedForCapacity, countConfirmedUnits, takesCapacity } from "@/lib/teamUnits";
 import { emitWebhookEvent } from "@/lib/webhooks/emit";
 
 export { countConfirmedUnits };
@@ -50,7 +50,7 @@ export async function hasCapacityToRestoreConfirmedRsvp(
     capacity = instance.series.capacity;
   }
   if (capacity == null) return true;
-  const confirmed = await tx.rSVP.count({ where: { ...target, status: RsvpStatus.CONFIRMED } });
+  const confirmed = await tx.rSVP.count({ where: { ...target, status: RsvpStatus.CONFIRMED, ...takesCapacity } });
   return confirmed < capacity;
 }
 
@@ -103,7 +103,7 @@ export async function confirmRsvpWithinCapacity(params: {
     // team members change status with their whole team (lib/core/teams.ts).
     const confirmed = teamMode
       ? await countConfirmedUnits(tx, params.eventId!)
-      : await tx.rSVP.count({ where: { ...target, status: RsvpStatus.CONFIRMED } });
+      : await tx.rSVP.count({ where: { ...target, status: RsvpStatus.CONFIRMED, ...takesCapacity } });
     if (capacity != null && confirmed >= capacity) {
       if (params.whenFull !== "waitlist") return "full";
       const waitlisted = await tx.rSVP.updateMany({

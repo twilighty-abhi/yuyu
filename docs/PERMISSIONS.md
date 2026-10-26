@@ -62,6 +62,7 @@ would be allowed. `tests/unit/event-capabilities.test.ts` pins this table.
 | Guests · People: approve, decline, give spot, add, edit, remove, undo remove | `lib/core/rsvpLifecycle.ts`, `lib/core/rsvpAdmin.ts`: `canManageRegistrationsFor` | Yes | — | — | Yes | — | — | — | — | Yes |
 | Guests · People: undo check-in | `lib/core/checkin.ts`: `CHECK_IN` | Yes | — | — | — | — | — | — | — | Yes |
 | Guests · Teams (TEAM events): list, approve, decline, give spot, rename, move member, delete and undo | `app/actions/team-admin.ts` via `resolveOrganiserEvent` (`lib/core/teams.ts`): `canManageRegistrationsFor` | Yes | — | — | Yes | — | — | — | — | Yes |
+| Guests · Crew ([Event crew](CREW.md)): list and food summary, add, edit, show/hide, reorder, remove, photo upload, sign-up link create/rotate/disable | `app/actions/crew.ts` via `resolveOrganiserEvent` (`lib/core/teams.ts`): `canManageRegistrationsFor` | Yes | — | — | Yes | — | — | — | — | Yes |
 | Guests · People: Export CSV / Export emails (current filters) | `GET /api/exports/events/:id/attendees`, `…/attendee-emails`: admin or `MANAGE_REGISTRATIONS` | Yes | — | — | Yes | — | — | — | — | Yes |
 | Guests · Teams: Export CSV (current filters) | `GET /api/exports/events/:id/teams` via `resolveOrganiserEvent`: admin or `MANAGE_REGISTRATIONS` | Yes | — | — | Yes | — | — | — | — | Yes |
 | Guests · Invites | `app/actions/invites.ts`: `MANAGE_INVITATIONS` | Yes | — | — | — | Yes | — | — | — | Yes |

@@ -57,8 +57,15 @@ export function getRegistrationDetails(answers: RegistrationAnswer[]): Registrat
   return Array.from(valuesByField.values());
 }
 
-export function getCheckInDetails(answers: RegistrationAnswer[]): CheckInDetail[] {
-  return getRegistrationDetails(answers)
+/** A crew ticket's own details (docs/CREW.md): pass `rsvp.crewMember` from a query that selects `foodPreference`. */
+export type CrewDoorInfo = { foodPreference: string } | null | undefined;
+
+export function getCheckInDetails(answers: RegistrationAnswer[], crew?: CrewDoorInfo): CheckInDetail[] {
+  const details = getRegistrationDetails(answers)
     .filter((detail) => isDoorDetailField(detail))
     .map(({ label, value }) => ({ label, value }));
+  // Crew give their food preference on the crew form, not as a registration answer.
+  const crewFood = crew?.foodPreference.trim();
+  if (crewFood) details.push({ label: "Crew food preference", value: crewFood });
+  return details;
 }

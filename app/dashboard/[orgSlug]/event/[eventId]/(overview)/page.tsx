@@ -56,21 +56,28 @@ export default async function EventManagePage({ params }: Props) {
   // Live numbers in the header are registration data (admins and MANAGE_REGISTRATIONS).
   const teamMode = event.registrationMode === "TEAM";
   const [counts, capacityUsed] = permissions.canManageRegistrations
-    ? await Promise.all([loadRsvpStatusCounts(event.id), teamMode ? loadCapacityUsed(event.id, event.registrationMode) : null])
+    ? await Promise.all([loadRsvpStatusCounts(event.id), loadCapacityUsed(event.id, event.registrationMode)])
     : [null, null];
+  // Crew (docs/CREW.md) are going but take no place, so they are named beside the places.
+  const crewNote = counts?.crew ? `${counts.crew} crew` : null;
   // TEAM events: capacity counts units (teams plus solo registrants), people are shown beside it.
   const placesStat: EventHeaderStat | null =
     counts && teamMode && capacityUsed != null
       ? {
           label: "Places taken",
           value: event.capacity ? `${capacityUsed} / ${event.capacity}` : capacityUsed,
-          detail: `${teamUnitNoun(event.soloPolicy, event.capacity ?? capacityUsed)} · ${peopleCount(counts.confirmed)} going`,
+          detail: [teamUnitNoun(event.soloPolicy, event.capacity ?? capacityUsed), `${peopleCount(counts.confirmed)} going`, crewNote].filter(Boolean).join(" · "),
           meter: event.capacity ? { filled: capacityUsed, total: event.capacity, tone: "accent" } : undefined,
         }
       : null;
   const stats: EventHeaderStat[] | undefined = counts
     ? [
-        placesStat ?? { label: "Going", value: event.capacity ? `${counts.confirmed} / ${event.capacity}` : counts.confirmed, meter: event.capacity ? { filled: counts.confirmed, total: event.capacity, tone: "accent" } : undefined },
+        placesStat ?? {
+          label: "Going",
+          value: event.capacity && capacityUsed != null ? `${capacityUsed} / ${event.capacity}` : counts.confirmed,
+          detail: crewNote ? (event.capacity ? `+ ${crewNote} · ${counts.confirmed} going` : `incl. ${crewNote}`) : undefined,
+          meter: event.capacity && capacityUsed != null ? { filled: capacityUsed, total: event.capacity, tone: "accent" } : undefined,
+        },
         { label: "Waitlist", value: counts.waitlisted },
         { label: "To approve", value: counts.pendingApproval },
         { label: "Checked in", value: counts.checkedIn, meter: counts.confirmed ? { filled: counts.checkedIn, total: counts.confirmed, tone: "success" } : undefined },

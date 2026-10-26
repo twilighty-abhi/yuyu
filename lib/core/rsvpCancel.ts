@@ -84,6 +84,8 @@ export async function cancelRsvpForUser(
   if (!isOwner) {
     return { ok: false, error: "You can only cancel your own registration." };
   }
+  // A crew ticket belongs to the crew list (docs/CREW.md), which organisers manage.
+  if (rsvp.isCrew) return { ok: false, error: "You're on this event's crew. Ask an organiser to remove you from the crew." };
 
   const cancellation = await prisma.$transaction(async (tx) => {
     if (rsvp.eventId) {

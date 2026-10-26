@@ -53,8 +53,10 @@ describe("entrant display names", () => {
 describe("public DTOs", () => {
   it("gallery items carry project content and display names only", () => {
     for (const team of [true, false]) {
-      const dto = publicGalleryItemDto(leakyRow(team));
-      expect(Object.keys(dto).sort()).toEqual(["demoUrl", "entrantName", "id", "isTeam", "repoUrl", "summary", "title", "videoUrl"]);
+      const dto = publicGalleryItemDto(leakyRow(team), [{ name: "Overall", place: 1, score: 99, awardId: "a1" } as { name: string; place: number }]);
+      expect(Object.keys(dto).sort()).toEqual(["awards", "demoUrl", "entrantName", "id", "isTeam", "repoUrl", "summary", "title", "videoUrl"]);
+      // Award badges carry the name and place only, whatever the row had.
+      expect(dto.awards).toEqual([{ name: "Overall", place: 1 }]);
       expect(keysDeep(dto).filter((key) => FORBIDDEN.test(key))).toEqual([]);
       const serialized = JSON.stringify(dto);
       for (const secret of ["ada@example.test", "ticket-secret", "join-secret", "hash", "secret organiser note", "private", "Lovelace"]) {

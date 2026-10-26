@@ -22,6 +22,8 @@ import {
   encodeSubmissionCursor,
   JUDGE_SUBMISSIONS_PAGE_SIZE,
   judgeSubmissionsQuerySchema,
+  parseGalleryFilterParam,
+  parseGallerySortParam,
   parseSearchParam,
   PROJECT_GALLERY_PAGE_SIZE,
   totalPagesFor,
@@ -52,6 +54,7 @@ import {
 } from "@/lib/judgingOrganiserPaging";
 import type { JudgeContext, JudgingOrganiserContext } from "@/lib/judgingAccess";
 import { listUnsubmittedEntrants } from "@/lib/core/judgingEntrants";
+import { galleryFromSql, galleryOrderSql, galleryWhereSql, projectSearchSql } from "@/lib/galleryQuery";
 import { safeTimeZone, zonedIsoWithOffset } from "@/lib/timeZone";
 import {
   entrantDisplayName,
@@ -67,6 +70,7 @@ import {
   type JudgeWorkspaceDto,
   type JudgingCriterionDto,
   type OrganiserSubmissionDto,
+  type PublicAwardBadgeDto,
   type PublicGalleryDto,
   type PublicResultsDto,
 } from "@/lib/judgingDto";
@@ -1109,25 +1113,6 @@ function judgeFilterSql(filter: JudgeSubmissionFilter, judgeUserId: string): Pri
   return null;
 }
 
-/**
- * Search on what the viewer is shown: the project title, the team name, or a
- * solo entrant's first name (the display name is "Ada L.", so the surname is
- * never matched and a search cannot reveal it). Wildcards match literally.
- */
-function projectSearchSql(query: string): Prisma.Sql | null {
-  if (!query) return null;
-  const pattern = `%${escapeLikePattern(query)}%`;
-  return Prisma.sql`(
-    s."title" ILIKE ${pattern}
-    OR EXISTS (SELECT 1 FROM "Team" t WHERE t."id" = s."teamId" AND t."name" ILIKE ${pattern})
-    OR (s."teamId" IS NULL AND EXISTS (
-      SELECT 1 FROM "RSVP" r LEFT JOIN "User" u ON u."id" = r."userId"
-      WHERE r."id" = s."rsvpId"
-        AND (regexp_split_to_array(btrim(COALESCE(NULLIF(btrim(u."name"), ''), r."guestName", '')), '[[:space:]]+'))[1] ILIKE ${pattern}
-    ))
-  )`;
-}
-
 const EMPTY_JUDGE_COUNTS: JudgeSubmissionCounts = { all: 0, todo: 0, in_progress: 0, reviewed: 0 };
 
 /** The event and the judge's conflict keys, once eligibility is confirmed; null otherwise. */
@@ -1948,8 +1933,13 @@ function planUnsubmittedEntrantsExport(ctx: JudgingOrganiserContext, query: stri
  * winners only, never scores or comments. Null (render a 404) unless results
  * are published. The caller must already have applied the event page's
  * publication, visibility, and invite rules for this viewer.
+ *
+ * `query` (trimmed and bounded like the gallery's `?q=`) narrows the winners
+ * to those whose project title or shown entrant name contains it; awards
+ * left without a match are dropped. The list is bounded by the award limits,
+ * so the match runs over the loaded DTOs, on exactly the text shown.
  */
-export async function loadPublicResults(eventId: string): Promise<PublicResultsDto | null> {
+export async function loadPublicResults(eventId: string, options: { query?: string } = {}): Promise<PublicResultsDto | null> {
   if (!isId(eventId)) return null;
   const event = await prisma.event.findUnique({
     where: { id: eventId },
@@ -1976,55 +1966,92 @@ export async function loadPublicResults(eventId: string): Promise<PublicResultsD
     },
   });
   if (!event?.submissionsEnabled || !event.resultsPublishedAt) return null;
+  const query = parseSearchParam(options.query);
+  const awards = event.awards.map((award, index) => ({ name: award.name, description: award.description, isTop: index === 0, winners: award.winners.map(publicWinnerDto) }));
+  const totalWinners = awards.reduce((sum, award) => sum + award.winners.length, 0);
+  if (!query) return { publishedAt: event.resultsPublishedAt, awards, query, totalWinners, matchedWinners: totalWinners };
+  const matching = awards
+    .map((award) => ({ ...award, winners: award.winners.filter((winner) => matchesProjectQuery(winner, query)) }))
+    .filter((award) => award.winners.length > 0);
   return {
     publishedAt: event.resultsPublishedAt,
-    awards: event.awards.map((award) => ({ name: award.name, description: award.description, winners: award.winners.map(publicWinnerDto) })),
+    awards: matching,
+    query,
+    totalWinners,
+    matchedWinners: matching.reduce((sum, award) => sum + award.winners.length, 0),
   };
 }
 
-export type ProjectGalleryQuery = { page?: number; query?: string };
+/** Raw gallery URL values; anything invalid or not yet allowed falls back to the default. */
+export type ProjectGalleryQuery = { page?: number; query?: string; filter?: string; sort?: string };
 
 /**
  * One page of submitted projects for `/{org}/{event}/projects`, once the
  * window has closed and the organiser made the gallery public. Null (render a
- * 404) otherwise, before any project is read. Ordered `submittedAt, id`; the
- * page is clamped to the pages that exist. The caller must already have
- * applied the event page's visibility rules.
+ * 404) otherwise, before any project is read. The page is clamped to the
+ * pages that exist. The caller must already have applied the event page's
+ * visibility rules.
+ *
+ * Search, the *Award winners* filter, and the order (`newest`, `az`,
+ * `awards`; lib/galleryQuery.ts) all run in SQL. The filter, the awards
+ * order, and award badges exist only once results are published; before
+ * that they fall back to all projects, newest first, and no badges, so the
+ * gallery never reveals a winner early.
  */
 export async function loadProjectGallery(eventId: string, now: Date = new Date(), options: ProjectGalleryQuery = {}): Promise<PublicGalleryDto | null> {
   if (!isId(eventId)) return null;
-  const event = await prisma.event.findUnique({ where: { id: eventId }, select: { submissionsEnabled: true, projectGalleryPublic: true, submissionsCloseAt: true } });
+  const event = await prisma.event.findUnique({
+    where: { id: eventId },
+    select: { submissionsEnabled: true, projectGalleryPublic: true, submissionsCloseAt: true, resultsPublishedAt: true },
+  });
   if (!event || !isProjectGalleryVisible(event, now)) return null;
+  const resultsPublished = event.resultsPublishedAt != null;
   const query = parseSearchParam(options.query);
-  const base: Prisma.Sql[] = [
-    Prisma.sql`s."eventId" = ${eventId}`,
-    Prisma.sql`s."status" = ${SubmissionStatus.SUBMITTED}::"SubmissionStatus"`,
-  ];
-  const search = projectSearchSql(query);
-  const matching = search ? [...base, search] : base;
-  const [total, matched] = await Promise.all([
+  const filter = parseGalleryFilterParam(options.filter, resultsPublished);
+  const sort = parseGallerySortParam(options.sort, resultsPublished);
+  const narrowed = query !== "" || filter !== "all";
+  const where = galleryWhereSql(eventId, { query, filter });
+  const countWhere = (sql: Prisma.Sql) => prisma.$queryRaw<Array<{ count: bigint }>>`SELECT count(*) AS "count" FROM "Submission" s WHERE ${sql}`.then((rows) => Number(rows[0]?.count ?? 0));
+  const [total, matched, winners] = await Promise.all([
     prisma.submission.count({ where: { eventId, status: SubmissionStatus.SUBMITTED } }),
-    search
-      ? prisma.$queryRaw<Array<{ count: bigint }>>`SELECT count(*) AS "count" FROM "Submission" s WHERE ${Prisma.join(matching, " AND ")}`.then((rows) => Number(rows[0]?.count ?? 0))
-      : null,
+    narrowed ? countWhere(where) : null,
+    resultsPublished ? countWhere(galleryWhereSql(eventId, { query: "", filter: "winners" })) : 0,
   ]);
   const matchedCount = matched ?? total;
   const pageSize = PROJECT_GALLERY_PAGE_SIZE;
   const totalPages = totalPagesFor(matchedCount, pageSize);
   const page = clampPage(options.page ?? 1, totalPages);
-  const result = { total, matched: matchedCount, query, page, totalPages, pageSize };
+  const result = { total, matched: matchedCount, winners, query, filter, sort, resultsPublished, page, totalPages, pageSize };
   if (matchedCount === 0) return { projects: [], ...result };
-  const ids = await prisma.$queryRaw<Array<{ id: string }>>`
-    SELECT s."id" FROM "Submission" s
-    WHERE ${Prisma.join(matching, " AND ")}
-    ORDER BY s."submittedAt" ASC, s."id" ASC
-    LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`;
-  const rows = ids.length
-    ? await prisma.submission.findMany({
-        where: { id: { in: ids.map((row) => row.id) }, eventId, status: SubmissionStatus.SUBMITTED },
-        select: projectSelect,
-        orderBy: [{ submittedAt: "asc" }, { id: "asc" }],
-      })
-    : [];
-  return { projects: rows.map(publicGalleryItemDto), ...result };
+  const ids = (
+    await prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT s."id" FROM ${galleryFromSql(sort)}
+      WHERE ${where}
+      ORDER BY ${galleryOrderSql(sort)}
+      LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`
+  ).map((row) => row.id);
+  if (ids.length === 0) return { projects: [], ...result };
+  const [rows, badges] = await Promise.all([
+    prisma.submission.findMany({ where: { id: { in: ids }, eventId, status: SubmissionStatus.SUBMITTED }, select: projectSelect }),
+    resultsPublished
+      ? prisma.eventAwardWinner.findMany({
+          where: { submissionId: { in: ids }, award: { eventId } },
+          orderBy: [{ award: { position: "asc" } }, { award: { createdAt: "asc" } }, { award: { id: "asc" } }, { place: "asc" }],
+          select: { submissionId: true, place: true, award: { select: { name: true } } },
+        })
+      : [],
+  ]);
+  const badgesBySubmission = new Map<string, PublicAwardBadgeDto[]>();
+  for (const badge of badges) {
+    const list = badgesBySubmission.get(badge.submissionId) ?? [];
+    list.push({ name: badge.award.name, place: badge.place });
+    badgesBySubmission.set(badge.submissionId, list);
+  }
+  // Keep the SQL order; the row fetch above is unordered.
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  const projects = ids.flatMap((id) => {
+    const row = byId.get(id);
+    return row ? [publicGalleryItemDto(row, badgesBySubmission.get(id) ?? [])] : [];
+  });
+  return { projects, ...result };
 }

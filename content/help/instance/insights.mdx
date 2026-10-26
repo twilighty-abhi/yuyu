@@ -1,0 +1,68 @@
+The super-admin area has a set of read-only pages for keeping an eye on the whole instance: how it is growing, what needs attention, and where to look when someone asks for help. Nothing on these pages changes data, and none of them show passwords, tokens, ticket links, registration answers or message bodies.
+
+<Callout kind="permission">
+
+The instance super-admin only, with a current super-admin check. See [The super-admin area](/help/instance/super-admin-access).
+
+</Callout>
+
+## Overview
+
+**Overview** is the first page you see. It has:
+
+- **Instance totals:** organisations, users, events, RSVPs, series, instances (dates in a series), memberships, org invite links, check-ins, feedback responses, broadcasts and active API clients.
+- **Needs attention:** four counts that each link to the page with details:
+
+| Signal | Where it leads |
+| --- | --- |
+| **Failed emails** | **Email** |
+| **Emails queued over 15 minutes** | **Email** |
+| **Owners and admins without MFA** | **Security** |
+| **Users with unverified email** | **Users**, filtered to unverified accounts |
+
+- **Seven-day charts** of organisations, events and RSVPs created per UTC day.
+- **Recent activity** for the last 24 hours and 7 days, the **Top orgs** by events, and the most recent organisations and events.
+
+<Screenshot name="super-admin-overview" alt="The super-admin Overview page with instance totals, the Needs attention panel and seven-day charts" />
+
+## Activity
+
+**Activity** shows growth over the last 30 days, counted in UTC days:
+
+- A small chart and total for each of **New users**, **New organisations**, **Events created**, **Registrations**, **Check-ins**, **Feedback responses** and **Broadcasts sent**.
+- A table comparing the last 30 days with the 30 before, with the percentage change. "New" means there was nothing in the earlier period to compare with.
+- **Registrations by status** across the instance.
+- **Busiest organisations** by registrations in the period.
+- **Starting in the next 7 days:** published one-off events, soonest first, with how many people are confirmed against capacity. Team events count teams and solo registrants, with people shown underneath.
+- **Organisations without events:** organisations with no events or series yet, newest first. Useful for spotting abandoned sign-ups or groups that need a hand getting started.
+
+## Monitoring
+
+**Monitoring** checks that the database is reachable and that `DATABASE_URL`, `AUTH_SECRET` and `SUPER_ADMIN_EMAIL` are set. It also lists API request counts and errors by route.
+
+<Callout kind="note">
+
+The request counts are kept in memory by the one server process that drew the page. They reset on restart, and with several replicas each refresh may show a different process. Use an external monitor on `/api/health` (and the secret-protected `/api/health/db`) for real uptime tracking.
+
+</Callout>
+
+## Support views
+
+When someone asks for help, these pages let you look things up without signing in as them. **Organisations**, **Events** and **Users** have a search box and pages of results.
+
+| Page | What it shows |
+| --- | --- |
+| **Organisations** | Every organisation with members, events and series. Open one for its members and roles, events, series, invite links, machine API clients and totals, with links to its public page and dashboard. |
+| **Events** | Events across every organisation with status, privacy, RSVPs and check-ins. Search by title, slug or organisation. |
+| **Users** | Every account with verification, MFA, organisations, sign-in accounts, sessions and RSVPs. Filter by **Unverified email**, **Without MFA** or **With MFA**. Open a user for their memberships, recent registrations and their latest actions from the audit log. |
+| **Invites** | Organisation invite links, event invites and series invites across the instance. |
+| **Auth** | Sign-in accounts, sessions and verification tokens (type and expiry only), plus the **New account creation** switch described in [Instance settings](/help/instance/settings). |
+| **Storage** | Database size, the largest tables, stored files by provider and type, the 15 most recent uploads, and each organisation's footprint. File keys and URLs aren't shown. |
+
+The **Email**, **Operations**, **Security** and **Audit log** pages are covered in [Email delivery](/help/instance/email-delivery) and [Security and the audit log](/help/instance/security-and-audit).
+
+## Good to know
+
+- Daily charts and the 30-day windows use UTC days, so a day's numbers may not line up with your local midnight. Dates in tables are shown in the server's time zone.
+- The super-admin can see organisations and events but can't edit them from here. To change an event, an owner or admin of that organisation has to do it from their dashboard.
+- Broadcasts appear by subject and audience only; the message body and recipient list are never shown.

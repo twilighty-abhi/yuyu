@@ -460,3 +460,35 @@
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='7' viewBox='0 0 10 7'%3E%3Cpath d='M0 7L5 0L10 7Z'/%3E%3C/svg%3E") top / 10px 7px repeat-x;
 }
 /* ---- End live ticket tear-away ---- */
+
+/* ---- Guide procedures (components/help/mdx.tsx <Steps>) ----
+   Numbered peach step circles beside each item of the wrapped ordered list. */
+.help-steps > ol {
+  list-style: none;
+  counter-reset: help-step;
+  padding-left: 0;
+  gap: 14px;
+}
+.help-steps > ol > li {
+  counter-increment: help-step;
+  position: relative;
+  padding-left: 44px;
+  min-height: 28px;
+}
+.help-steps > ol > li::before {
+  content: counter(help-step);
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--yy-highlight-peach);
+  color: var(--yy-text);
+  font-size: 14px;
+  font-weight: 700;
+}
+/* ---- End guide procedures ---- */

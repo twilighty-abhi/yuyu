@@ -9,6 +9,7 @@ import {
   ArrowUpRight,
   CalendarDays,
   ChevronsUpDown,
+  CircleHelp,
   Home,
   LogOut,
   Menu as MenuIcon,
@@ -139,6 +140,9 @@ function AccountMenu({ user, collapsed, onNavigate }: { user: ShellUser; collaps
         <MenuLabel>{name}</MenuLabel>
         <MenuItem asChild icon={<UserRound />}>
           <Link href="/account" onClick={onNavigate}>Account settings</Link>
+        </MenuItem>
+        <MenuItem asChild icon={<CircleHelp />}>
+          <Link href="/help" onClick={onNavigate}>Help and guide</Link>
         </MenuItem>
         <MenuItem
           icon={mode === "dark" ? <Sun /> : <Moon />}

@@ -27,6 +27,7 @@ import {
   teamSizeLabel,
   type TeamStatusFilter,
 } from "@/components/event-dashboard/guests/teamList";
+import { HelpLink } from "@/components/help/HelpLink";
 
 const CHIP_TONES: Record<DashboardTeam["status"], ChipTone> = {
   CONFIRMED: "success",
@@ -251,7 +252,10 @@ export function GuestsTeams({
     <div className="flex min-w-0 flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-h4 text-ink">Teams</h2>
+          <div className="flex items-center gap-1">
+            <h2 className="text-h4 text-ink">Teams</h2>
+            <HelpLink article="guests/managing-teams" />
+          </div>
           <p className="text-caption text-ink-muted">Each team counts as one place.{approvalRequired ? " Approve or decline a whole team at once." : null}</p>
         </div>
         <div className="flex flex-wrap gap-2">

@@ -19,6 +19,7 @@ import { cn } from "@/lib/cn";
 
 import { CertificateBuilder } from "./CertificateBuilder";
 import { certificateMergeTags, fillCertificateText, parseCertificateTemplate, type CertificateMergeValues, type CertificateTemplate } from "@/lib/certificateTemplate";
+import { HelpLink } from "@/components/help/HelpLink";
 
 type Field = { id: string; key: string; label: string; type: RegistrationFieldType; required: boolean; options: string[] };
 
@@ -218,7 +219,10 @@ export function FeedbackFormEditor(props: {
 
           <section aria-labelledby="feedback-questions-title" className={card}>
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 id="feedback-questions-title" className="text-h4 text-ink">Questions</h2>
+              <div className="flex items-center gap-1">
+                <h2 id="feedback-questions-title" className="text-h4 text-ink">Questions</h2>
+                <HelpLink article="after/feedback" />
+              </div>
               <div className="flex flex-wrap gap-2">
                 <Button variant="secondary" size="sm" startIcon={<LayoutTemplate />} onClick={() => setTemplateDialog(true)} disabled={pending}>Use a template</Button>
                 <Button variant="primary" size="sm" startIcon={<Plus />} onClick={() => openFieldDialog()} disabled={pending}>Add question</Button>
@@ -248,7 +252,10 @@ export function FeedbackFormEditor(props: {
         <aside aria-label="Certificate and thank-you settings" className="flex min-w-0 flex-[1_1_300px] flex-col gap-5">
           <section aria-labelledby="feedback-certificate-title" className={card}>
             <div className="flex items-center justify-between gap-3">
-              <h2 id="feedback-certificate-title" className="text-h4 text-ink">Certificate</h2>
+              <div className="flex items-center gap-1">
+                <h2 id="feedback-certificate-title" className="text-h4 text-ink">Certificate</h2>
+                <HelpLink article="after/certificates" />
+              </div>
               <Switch aria-label="Offer certificates" checked={certificateEnabled} onCheckedChange={toggleCertificate} disabled={pending || certificateBusy} />
             </div>
             <CertificatePreview template={certificateTemplate} eventTitle={props.eventTitle} eventDateLabel={props.eventDateLabel} organisationName={props.organisationName} muted={!certificateEnabled} />

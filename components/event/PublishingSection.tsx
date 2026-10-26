@@ -22,6 +22,7 @@ import {
   type SoloPolicyChoice,
 } from "./publishing";
 import { TeamSettingsFields, type TeamSettingsDraft } from "./TeamSettingsFields";
+import { HelpLink } from "@/components/help/HelpLink";
 
 /** The stored team registration settings (docs/TEAMS.md). */
 export type PublishingTeamSettings = {
@@ -118,7 +119,7 @@ export function PublishingSection({
         </p>
       </div>
 
-      <Question title="Who can see this event?">
+      <Question title="Who can see this event?" help={<HelpLink article="events/publishing" />}>
         <RadioGroupPrimitive.Root
           value={status}
           onValueChange={(value) => touch(onStatusChange)(value as EventStatus)}
@@ -279,12 +280,15 @@ export function PublishingSection({
   );
 }
 
-function Question({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
+function Question({ title, note, help, children }: { title: string; note?: string; help?: ReactNode; children: ReactNode }) {
   const id = useId();
   return (
     <div role="group" aria-labelledby={id} className="flex flex-col gap-2.5">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-        <h3 id={id} className="text-label text-ink">{title}</h3>
+        <div className="flex items-center gap-1">
+          <h3 id={id} className="text-label text-ink">{title}</h3>
+          {help}
+        </div>
         {note ? <p className="text-caption text-ink-muted">{note}</p> : null}
       </div>
       {children}

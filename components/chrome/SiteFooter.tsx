@@ -13,6 +13,7 @@ const publicLinks = [
   { label: "Features", href: "/features" },
   { label: "Self-host", href: "/#self-host" },
   { label: "About", href: "/about" },
+  { label: "Help", href: "/help" },
   { label: "Privacy", href: "/privacy" },
   { label: "Terms", href: "/terms" },
 ];

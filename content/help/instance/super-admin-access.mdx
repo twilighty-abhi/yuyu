@@ -1,0 +1,71 @@
+The super-admin area at `/super-admin` is where the person who runs this Yuyu server looks after the whole instance: email delivery, sign-in settings, security, storage and support views across every organisation. It is separate from the organisation dashboard and has two locks: being the configured account, and a fresh authenticator code.
+
+<Callout kind="permission">
+
+Only one account per instance: the one whose verified email matches the `SUPER_ADMIN_EMAIL` environment variable. Organisation owners and admins have no access.
+
+</Callout>
+
+## Who can open it
+
+Yuyu lets you in only when all of these are true:
+
+- `SUPER_ADMIN_EMAIL` is set on the server, and you're signed in with an account whose email matches it (capital letters don't matter).
+- That account's email address is **verified**.
+- The account has **two-step verification** turned on with an authenticator app.
+
+Anyone else who visits `/super-admin` sees an ordinary "not found" page, so the area's existence isn't revealed. To change who the super-admin is, change `SUPER_ADMIN_EMAIL` in the deployment and restart.
+
+<Callout kind="note">
+
+There's no link to the super-admin area in the app's menus. Bookmark `/super-admin` on your Yuyu address. Once you're signed in as the super-admin, the **Instance administration** section of this guide also appears.
+
+</Callout>
+
+## Get in for the first time
+
+<Steps>
+
+1. Sign up or sign in with the super-admin email address, and verify it from the email Yuyu sends.
+2. Open **Account** → **Security** and, under **Two-step verification**, choose **Set up authenticator**. Scan the code with your authenticator app, enter the six-digit code, and save the recovery codes somewhere safe.
+3. Go to `/super-admin`. Yuyu shows **Verify super-admin access**.
+4. Enter the current code from your authenticator app in **Six-digit authenticator code** and choose **Verify and continue**.
+
+</Steps>
+
+<Screenshot name="super-admin-mfa" alt="The Verify super-admin access page asking for a six-digit authenticator code" />
+
+## The 10-minute check
+
+The super-admin check is separate from signing in. It lasts **10 minutes** from when you verify, then Yuyu asks for a new code. Every super-admin page checks it again, including when you move between sections, and so does every change you make there (saving settings, sending test emails, retrying failed email).
+
+A few things to know:
+
+- Each authenticator code works only once. If Yuyu says **Invalid authenticator code**, wait for the next code to appear.
+- Recovery codes **don't** work for this check. They only help you sign in.
+- Signing out everywhere, or turning two-step verification off and on, ends the check straight away.
+- After several wrong codes, Yuyu shows **Too many attempts. Please try again later.**
+
+Every successful check is recorded in the audit log, so you can see when the area was opened.
+
+## Finding your way around
+
+The area has its own top bar instead of the dashboard sidebar. Choose the Yuyu logo for **Overview**, or **Back to dashboard** to return to your organisations. The sections are:
+
+| Section | What it's for |
+| --- | --- |
+| **Overview**, **Activity** | Instance totals, things that need attention, and growth. See [Overview and insights](/help/instance/insights). |
+| **Monitoring** | Database and configuration checks, plus request counts for one server process. |
+| **Operations**, **Email** | Email queue health, failed messages, backups and maintenance. See [Email delivery](/help/instance/email-delivery). |
+| **Audit log**, **Security** | The record of important actions, MFA adoption and API clients. See [Security and the audit log](/help/instance/security-and-audit). |
+| **Organisations**, **Events**, **Users**, **Invites**, **Storage** | Support views across every organisation. |
+| **Auth** | New account creation, sign-in accounts and sessions. |
+| **Settings** | Email, Google sign-in, backup posture and alerts. See [Instance settings](/help/instance/settings). |
+
+Most pages only show information. They never show passwords, tokens, ticket links, registration answers or message bodies.
+
+## If you lose your authenticator
+
+Sign in with your password and one of your recovery codes, open **Account** → **Security**, choose **Disable MFA** and confirm with another recovery code, then sign in again and choose **Set up authenticator** with your new device. You can then pass the super-admin check with the new app.
+
+If you have no recovery codes left, nobody inside Yuyu can switch two-step verification off for you, including the super-admin. Whoever manages the server and database would have to step in.

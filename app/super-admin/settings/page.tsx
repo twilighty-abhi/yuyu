@@ -5,6 +5,7 @@ import { decryptInstanceConfigSecret } from "@/lib/instanceConfigSecrets";
 import { InstanceServiceSettingsForm, type InstanceServiceSettingsFallback } from "@/components/super-admin/InstanceServiceSettingsForm";
 import { OpsWebhookSettingsForm } from "@/components/super-admin/OpsWebhookSettingsForm";
 import { PageHeader } from "@/components/ui/display";
+import { HelpLink } from "@/components/help/HelpLink";
 
 /** Only the host of the write-only webhook URL is shown; its path is the credential. */
 function webhookHost(encrypted: string | null | undefined) {
@@ -69,7 +70,7 @@ export default async function SuperAdminSettingsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="Instance settings" description="Configure email delivery, Google sign-in, backup status, and operational alerts for this instance. Secrets are encrypted and never displayed." />
+      <PageHeader title="Instance settings" description="Configure email delivery, Google sign-in, backup status, and operational alerts for this instance. Secrets are encrypted and never displayed." actions={<HelpLink article="instance/settings" />} />
       <InstanceServiceSettingsForm
         fallback={fallback}
         initial={{

@@ -1,0 +1,74 @@
+Instance settings control the services every organisation on this server depends on: who may create an account, how email is sent, whether Google sign-in is offered, where operational alerts go, and what the **Operations** page reports about backups. Changes apply on every server straight away, without a restart.
+
+<Callout kind="permission">
+
+The instance super-admin only, with a current super-admin check. See [The super-admin area](/help/instance/super-admin-access).
+
+</Callout>
+
+## Saved settings and environment values
+
+Most of these settings can also come from environment variables, which older installations used. The rule is simple: **a value saved here wins**, and the environment is only a fallback. Each section on **Settings** says which source is in use right now, and environment values appear as greyed placeholders. Saving the form never copies them into the database.
+
+Passwords, the Google client secret and the alerts webhook URL are **write-only**. They are encrypted before they are stored, using a key derived from `MFA_ENCRYPTION_KEY`, and are never shown again. To keep one, leave its field blank when you save; to change it, type the new value. Keep your own copy in the deployment's secrets manager in case you ever need to rebuild the server.
+
+<Callout kind="warning">
+
+If a field says **Saved but unreadable with this instance's MFA_ENCRYPTION_KEY**, the server's key has changed since the value was saved. Type the secret again and save. Every server and job must use the same, unchanging key.
+
+</Callout>
+
+## New account creation
+
+This switch is on the **Auth** page rather than **Settings**. Turn off **New users can create accounts** to stop anyone new signing up, with a password or with Google. Existing users can still sign in, but people without an account, including anyone you or an organiser invites, can't create one while it's off. Guests can still register for events without an account.
+
+## Email (SMTP)
+
+<Steps>
+
+1. Open **Settings**.
+2. Under **SMTP**, enter the **Sender address**, either `events@example.org` or `Example Events <events@example.org>`. Use an address your mail provider allows you to send from.
+3. Enter either a **Service (optional)**, such as `gmail`, or a **Host (optional)** with its **Port**. Not both.
+4. Enter the **Username** and **Password**. Tick **Use implicit TLS** if your provider uses port 465.
+5. Choose **Save instance settings**.
+6. Choose **Send test email**. Yuyu sends a short message to your own super-admin address using the saved settings and waits up to 15 seconds for the mail server.
+
+</Steps>
+
+<Screenshot name="super-admin-settings" alt="The Instance settings page with the SMTP, Google SSO and Backup configuration sections" />
+
+SMTP is all or nothing. Once a service or host is saved here, every `SMTP_*` environment value is ignored, including the username and password. To go back to the environment, clear both **Service** and **Host** and save. The sender address falls back on its own: the saved value, then `EMAIL_FROM`, then a built-in default.
+
+Tick **Private unauthenticated relay** only for a mail relay on a private network that accepts mail without a login. Without it, a username and password are required.
+
+If the test fails, the message says why, for example that the server rejected the username or password, couldn't be reached, or refused the sender. For what happens to email after it is queued, see [Email delivery](/help/instance/email-delivery).
+
+## Google sign-in
+
+Under **Google SSO**, enter the **OAuth client ID** and **OAuth client secret** from your Google Cloud project, then save. In Google, register `https://YOUR-YUYU-ADDRESS/api/auth/callback/google` as an authorised redirect URI.
+
+- A saved client ID is only used with a saved secret. If the secret is missing or unreadable, Google sign-in is off and password sign-in keeps working.
+- To turn Google sign-in off, clear the client ID and save. If `AUTH_GOOGLE_ID` and `AUTH_GOOGLE_SECRET` are set in the environment, Google sign-in falls back to those; remove them from the deployment to switch it off completely.
+
+## Backup configuration
+
+These fields **only record** what your database provider does. They don't create, keep or restore backups. Enter the **Provider**, the **Last successful backup (UTC)** and the **Retention days** (1 to 3,650), then save. The **Operations** page shows them, and flags the backup as stale when the last success is more than 26 hours old. Saving any backup field replaces all the `BACKUP_*` environment values.
+
+## Alerts webhook
+
+Yuyu can post problems to a Mattermost or Slack-compatible incoming webhook: server errors, browser crashes, sign-in failures, email delivery failures, failed scheduler runs, and a note each time a server starts.
+
+<Steps>
+
+1. Under **Alerts webhook**, paste the incoming-webhook address into **Webhook URL**. In production it must start with `https://`.
+2. Tick **Send alerts**. Tick **Include warnings** as well if you want retried email failures and similar warnings, not just errors.
+3. Choose **Save alert settings**, then **Send test message**.
+
+</Steps>
+
+Once saved, only the host name is shown (**Currently sending to**), because the address itself works like a password. Choose **Remove webhook** to delete it. Alert text has email addresses, links and tokens removed before it is sent, repeats are grouped, and each server sends at most 30 alerts a minute. Other servers pick up a change within a minute.
+
+## Good to know
+
+- Every change on this page is recorded in the audit log, without the secret values.
+- To check the saved secrets from the command line without printing them, the server operator can run `node scripts/check-instance-secrets.mjs`.

@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import createMDX from "@next/mdx";
 
 const allowedActionOrigins = process.env.ALLOWED_ACTION_ORIGINS
   ?.split(",")
@@ -21,6 +22,12 @@ const nextConfig: NextConfig = {
   /** Prisma must not be bundled by Turbopack or model delegates (e.g. `eventSeries`) can be missing at runtime. */
   serverExternalPackages: ["@prisma/client", "sharp"],
   output: "standalone",
+  // The guide reads its MDX sources at runtime for the table of contents and
+  // search (lib/help/content.ts), so they ship with the standalone server.
+  outputFileTracingIncludes: {
+    "/help/**": ["./content/help/**/*.mdx"],
+    "/api/help/**": ["./content/help/**/*.mdx"],
+  },
   poweredByHeader: false,
   allowedDevOrigins,
   experimental: {
@@ -99,4 +106,10 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+// The in-app guide (content/help) is the only MDX. Plugin names are strings so
+// Turbopack can load them.
+const withMDX = createMDX({
+  options: { remarkPlugins: ["remark-gfm"] },
+});
+
+export default withMDX(nextConfig);

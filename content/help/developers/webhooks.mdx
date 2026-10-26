@@ -1,0 +1,92 @@
+Webhooks send your organisation's activity to another tool as it happens. When someone registers, is checked in, or gives feedback, Yuyu sends a signed `POST` request to a web address you choose, so a chat bot, spreadsheet automation or membership system can react straight away.
+
+<Callout kind="permission">
+
+Organisation owners and admins. Members and co-organisers can't see or change webhooks, whatever event permissions they have.
+
+</Callout>
+
+## Add an endpoint
+
+An endpoint is one web address that receives events. Each organisation can have up to 10.
+
+<Steps>
+
+1. Open your organisation's dashboard, choose **Settings**, then choose **Manage webhooks** in the **Webhooks** section.
+2. Choose **Add endpoint**.
+3. Enter the **Endpoint URL**. It must be a public `https://` address on port 443 or 8443.
+4. Optionally add a **Description** (up to 200 characters) so your team knows what it is for.
+5. Tick the events this endpoint should receive, then choose **Add endpoint**.
+6. Copy the secret from **Copy your signing secret** into the receiving system. Yuyu shows it only this once.
+7. Open the endpoint and choose **Send test** to check the connection.
+
+</Steps>
+
+<Screenshot name="settings-webhooks" alt="The Webhooks settings page listing endpoints with their state and last delivery" />
+
+Yuyu refuses addresses that lead into a private network: `localhost`, internal host names, IP addresses typed into the URL, and names that resolve to private addresses. It checks again before every delivery, and it never follows redirects.
+
+## Events you can receive
+
+| In the app | Event type | Sent when |
+| --- | --- | --- |
+| Registration created | `registration.created` | Someone registers (confirmed, waitlisted or pending approval), or an organiser adds a guest. |
+| Registration status changed | `registration.status_changed` | A registration is approved, declined, re-accepted, promoted from the waitlist, cancelled by the guest, removed, or restored with **Undo**. |
+| Checked in | `checkin.created` | A guest is checked in at the entrance from any check-in screen, including offline sync. |
+| Check-in undone | `checkin.undone` | An entrance check-in is reversed. |
+| Event published | `event.published` | An event goes live. |
+| Event cancelled | `event.cancelled` | An event is marked as cancelled. |
+| Feedback submitted | `feedback.submitted` | Someone submits the feedback form. No answers are sent. |
+
+**Send test** sends a `ping` event, which you can't subscribe to. Registration and check-in events also cover dates in a recurring series; the two event types cover standalone events only.
+
+## What a request looks like
+
+Every request carries `content-type: application/json`, `user-agent: Yuyu-Webhooks/1`, `x-yuyu-event-id`, `x-yuyu-event-type` and `x-yuyu-signature` headers. The body is always the same envelope:
+
+```json
+{
+  "id": "evt_0000example",
+  "type": "registration.created",
+  "createdAt": "2030-01-01T10:00:00.000Z",
+  "organisation": { "id": "example-org-id", "slug": "your-org" },
+  "data": {
+    "event": { "kind": "event", "id": "example-event-id", "occurrenceId": null, "title": "Community Meetup", "slug": "community-meetup", "startDateTime": "2030-01-05T17:00:00.000Z", "endDateTime": "2030-01-05T19:00:00.000Z", "timezone": "Europe/London" },
+    "registration": { "id": "example-registration-id", "status": "CONFIRMED", "displayName": "Ada Lovelace", "registeredAt": "2030-01-01T10:00:00.000Z", "checkedInAt": null }
+  }
+}
+```
+
+For a date in a recurring series, `kind` is `series_occurrence` and `occurrenceId` is filled in. Status changes also include `previousStatus`. Payloads hold names, ids, statuses and times only: never email addresses, registration or feedback answers, or ticket and certificate links. When you need contact details, look them up in Yuyu, for example in a guest export.
+
+## Check the signature
+
+The `x-yuyu-signature` header looks like `t=1700000000,v1=...`. To confirm a request came from Yuyu:
+
+1. Take the raw request body, before parsing the JSON.
+2. Compute an HMAC-SHA256 of `<t>.<raw body>`, keyed with the whole signing secret (including `whsec_`).
+3. Compare the hex result with `v1` using a constant-time comparison, and reject requests whose `t` is more than about five minutes old.
+
+```bash
+printf '%s.%s' "$T" "$RAW_BODY" | openssl dgst -sha256 -hmac "YOUR_SIGNING_SECRET"
+```
+
+## Delivery, retries and failures
+
+- Reply with any `2xx` status within 10 seconds. Do slow work after replying.
+- A failed delivery is tried up to 8 times over about a day: again after 1 minute, 5 minutes, 30 minutes, 1 hour, 3 hours, 6 hours and 12 hours.
+- Retries and **Redeliver** reuse the same event id. Deliveries can arrive out of order or, rarely, twice, so skip ids you have already handled.
+- After **20 failed deliveries in a row**, Yuyu turns the endpoint off and shows **Auto-disabled**. Nobody is emailed; the state shows on the Settings and Webhooks pages. Fix the receiver, choose **Enable**, then **Send test**, and **Redeliver** anything you need.
+
+Each endpoint page lists **Recent deliveries**: the last 50, with time, event, result, response code, duration and attempts. History is kept for 30 days.
+
+## Manage an endpoint
+
+- **Edit** changes the address, description or events.
+- **Rotate secret** replaces the signing secret immediately. Update your receiver straight away, because the next request is signed with the new secret.
+- **Disable** stops new events, and anything still queued is marked failed. **Enable** turns it back on.
+- **Delete** removes the endpoint and its delivery history. This can't be undone.
+
+Test sends and redeliveries are limited to 20 an hour. Endpoint changes are recorded in the audit log with the host name only.
+
+To read data on demand instead, see [the machine API](/help/developers/api).

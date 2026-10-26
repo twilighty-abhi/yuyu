@@ -20,6 +20,7 @@ import {
   useJudgingAction,
   type JudgingScope,
 } from "./JudgingPanelShared";
+import { HelpLink } from "@/components/help/HelpLink";
 
 /**
  * Judging → Setup: submission settings (window shown and entered in the
@@ -116,6 +117,7 @@ function SettingsCard({ scope, settings, now, inSettingsTab = false }: { scope: 
       <CardHeader
         title="Project submissions"
         description="Confirmed teams and solo registrants submit a project during the window. Times are in the event's timezone."
+        action={<HelpLink article="hackathons/overview" />}
       />
       <form
         className="flex max-w-[640px] flex-col gap-5"

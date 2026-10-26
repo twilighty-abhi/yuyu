@@ -1,0 +1,101 @@
+The registration form is what people fill in when they sign up. Every guest gives their name and email; you can add your own questions on top, such as dietary needs, T-shirt sizes or a code of conduct to accept.
+
+## Opening the form builder
+
+Open the event, choose the **Event page** tab, then **Registration form**. On a wide screen the **Live preview** sits beside the builder and updates as you type, so you can try the form exactly as guests will see it. On a phone, choose **Show preview**.
+
+<Callout kind="permission">
+
+Organisation owners and admins. Co-organisers can't change the registration form, whatever their permissions.
+
+</Callout>
+
+The **Always collected** card shows the two questions every guest answers: **Name** and **Email**. You don't need to add them.
+
+<Screenshot name="registration-form-builder" alt="The Registration form sub-tab with two custom questions and the live preview" />
+
+## Adding a question
+
+<Steps>
+
+1. Under **Your questions**, choose **Add question**.
+2. Pick how to start:
+   - **Answer types**: choose the kind of answer you need and write the question yourself.
+   - **Ready-made**: choose a common question. It's added straight to the form and you can edit it afterwards.
+3. Write the **Question** and fill in any settings you need (see below).
+4. Choose **Add question**. You can also press <Kbd>Ctrl</Kbd> + <Kbd>Enter</Kbd>.
+
+</Steps>
+
+Each question is saved on its own as soon as you add it.
+
+### Answer types
+
+| Answer type | Use it for |
+| --- | --- |
+| **Short answer** | A name, a company, one line of text. |
+| **Paragraph** | Longer answers like questions or notes. |
+| **Multiple choice** | Picking one from a short list. |
+| **Dropdown** | Picking one from a longer list. |
+| **Checkboxes** | Picking as many as apply. |
+| **Yes / no** | A single tick, such as consent. |
+| **Email** | An email address, checked to look like one. |
+| **Phone** | An international phone number. |
+| **Number** | A whole or decimal number. |
+| **Date** | A calendar date. |
+
+The **Ready-made** tab includes Organisation or company, Job title or role, Phone number, Dietary needs, Accessibility needs, T-shirt size, How did you hear about this event?, Experience level, a photo consent and a code of conduct agreement. A ready-made question that's already on your form is greyed out.
+
+### Question settings
+
+- **Help text** is shown under the question (up to 300 characters).
+- **Example answer** is shown faintly inside the empty box (up to 120 characters).
+- **Required** means guests must answer before they can register. For a **Yes / no** question, it means the box must be ticked.
+- **Choices** for Multiple choice, Dropdown and Checkboxes. Use **Add choice**, or **Paste a list** with one choice per line. Duplicate choices are merged when you save.
+- **Allow an "Other" answer** adds an "Other" choice with a short text box.
+- **Limits**, all optional: **Fewest characters** and **Most characters** for text, **Lowest number** and **Highest number** for numbers, **Earliest date** and **Latest date** for dates, and **Up to how many choices?** for Checkboxes.
+
+Yuyu checks every setting again when someone registers, so a guest can't get around a limit.
+
+## Questions that only show when needed
+
+A question can appear only when an earlier answer makes it relevant. For example, ask "Which workshop?" only to people who ticked "I'm coming to the workshops".
+
+<Steps>
+
+1. Make sure the question you depend on is a **Multiple choice**, **Dropdown**, **Checkboxes** or **Yes / no** question, and that it sits **above** this one.
+2. Edit the question that should appear conditionally.
+3. Turn on **Show this question only if…**.
+4. Pick the **Earlier question**, then under **Show when the answer is**, choose one or more answers. The question shows if the answer is any of these.
+5. Choose **Save question**.
+
+</Steps>
+
+Answers to a question that ends up hidden are thrown away when the guest registers, so you never collect answers to questions they didn't see.
+
+<Callout kind="warning">
+
+If you move a conditional question above the question it depends on, or remove the choices it checks, the rule stops working and the question always shows. The builder flags this on the question's card, with **Move it below** (when the order is the problem) and **Remove rule**.
+
+</Callout>
+
+## Changing and reordering questions
+
+Each question's card has a **Required** switch, arrows to move it up or down, a button to duplicate it, and a button to delete it. Choose **Edit** to open its settings. Changing a question's answer type can remove settings that don't apply to the new type; the editor tells you which before you save.
+
+<Callout kind="warning">
+
+Deleting a question also deletes the answers guests already gave to it. Later questions that use it in a "show only if" rule will always show instead.
+
+</Callout>
+
+## Where answers go
+
+- On the **Guests** tab, choose **Answers** on a guest's row to read what they wrote. See [The guest list](/help/guests/guest-list).
+- **Export CSV** gives one column per question. See [Exporting guest data](/help/guests/exports).
+- When you add a guest yourself, or edit a guest's registration, you answer the same questions.
+
+## Good to know
+
+- You can change the form at any time, even after people have registered. People who already registered aren't asked the new questions, so their answers to them stay blank.
+- Name and email are always required and always come first.

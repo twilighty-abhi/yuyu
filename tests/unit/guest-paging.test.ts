@@ -109,14 +109,19 @@ describe("Guests · People query", () => {
     expect(attendeeListViewSchema.safeParse({ status: "everyone" }).success).toBe(false);
     expect(attendeeListViewSchema.safeParse({ eventId: "other" }).success).toBe(false);
     expect(attendeeListViewSchema.safeParse({ query: "x".repeat(101) }).success).toBe(false);
-    expect(attendeeListViewSchema.parse({})).toEqual({ query: "", status: "all", kind: "all", team: "all" });
+    expect(attendeeListViewSchema.safeParse({ attendance: "maybe" }).success).toBe(false);
+    expect(attendeeListViewSchema.parse({})).toEqual({ query: "", status: "all", kind: "all", team: "all", attendance: "all" });
   });
 
   it("carries the view into the email export link and back", () => {
     const full = { query: " ada ", status: "going" as const, kind: "guests" as const, team: "solo" as const };
     const qs = attendeeViewSearchParams(full);
     expect(qs).toBe("status=going&kind=guests&team=solo&q=ada");
-    expect(parseAttendeeViewSearchParams(new URLSearchParams(qs))).toEqual({ query: "ada", status: "going", kind: "guests", team: "solo", cursor: null });
+    expect(parseAttendeeViewSearchParams(new URLSearchParams(qs))).toEqual({ query: "ada", status: "going", kind: "guests", team: "solo", attendance: "all", cursor: null });
+    const replied = attendeeViewSearchParams({ ...full, attendance: "noReply" });
+    expect(replied).toBe("status=going&kind=guests&team=solo&attendance=noReply&q=ada");
+    expect(parseAttendeeViewSearchParams(new URLSearchParams(replied))?.attendance).toBe("noReply");
+    expect(parseAttendeeViewSearchParams(new URLSearchParams("attendance=maybe"))).toBeNull();
     expect(attendeeViewSearchParams({ query: "", status: "all", kind: "all", team: "all" })).toBe("");
     expect(parseAttendeeViewSearchParams(new URLSearchParams("status=bogus"))).toBeNull();
   });

@@ -200,6 +200,7 @@ const RESERVED_SLUGS = new Set([
   "api",
   "ticket",
   "submit",
+  "attend",
   "team",
   "join",
   "new",

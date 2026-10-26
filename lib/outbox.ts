@@ -1,10 +1,12 @@
 import "server-only";
 
-import { OutboxStatus, Prisma, RsvpStatus } from "@prisma/client";
+import { EventStatus, OutboxStatus, Prisma, RsvpStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { sendApprovalNotification, sendCollaboratorInvitation, sendEventBroadcast, sendEventInvitation, sendResultsPublishedEmail, sendRSVPConfirmation, sendSubmissionLinkEmail, sendSubmissionReceivedEmail, sendTeamCreatedEmail, sendTeamMemberAddedEmail } from "@/lib/email";
+import { sendApprovalNotification, sendAttendanceCheckEmail, sendCollaboratorInvitation, sendEventBroadcast, sendEventInvitation, sendResultsPublishedEmail, sendRSVPConfirmation, sendSubmissionLinkEmail, sendSubmissionReceivedEmail, sendTeamCreatedEmail, sendTeamMemberAddedEmail } from "@/lib/email";
 import { hashSubmissionLinkToken, isSubmissionTokenShape, resultsPath, submissionLinkPath } from "@/lib/submissionToken";
 import { hashTeamManageToken, isTeamTokenShape, teamJoinPath, teamManagePath } from "@/lib/teamToken";
+import { attendancePath, hashAttendanceToken, isAttendanceTokenShape } from "@/lib/attendanceToken";
+import { attendanceCheckOpen } from "@/lib/attendanceCheck";
 import { broadcastHtmlToText, formatBroadcastEventDate, renderBroadcastHtml, renderBroadcastTemplate, sampleBroadcastVariables } from "@/lib/broadcastTemplate";
 import { broadcastBrandFor, broadcastBrandSelect, broadcastEventUrl, broadcastFeedbackUrl, broadcastScheduleUrl, broadcastTicketUrl, rsvpMatchesBroadcastAudience } from "@/lib/eventBroadcast";
 import { isBroadcastDesign } from "@/lib/email/broadcastDesigns";
@@ -71,6 +73,15 @@ export type SubmissionLinkPayload = { to: string; rsvpId: string; token: string 
 
 /** Results announcement per confirmed entrant member; dropped if results were unpublished before delivery. */
 export type ResultsPublishedPayload = { to: string; eventId: string; recipientName?: string };
+
+/**
+ * "Are you still coming?" for one CONFIRMED registration (docs/FEATURES.md).
+ * Queued only by an organiser's explicit send or reminder, never by the
+ * worker. Carries the raw `/attend/{token}` token (a capability), which
+ * exists nowhere else; dropped when the token was rotated, the guest already
+ * replied or is no longer confirmed, and expired once the event starts.
+ */
+export type AttendanceCheckPayload = { to: string; rsvpId: string; token: string; reminder?: boolean };
 
 type PasswordResetPayload = {
   to: string;
@@ -159,6 +170,13 @@ export async function enqueueResultsPublished(client: OutboxClient, payloads: Re
   });
 }
 
+export async function enqueueAttendanceChecks(client: OutboxClient, payloads: AttendanceCheckPayload[]) {
+  if (payloads.length === 0) return { count: 0 };
+  return client.outboxMessage.createMany({
+    data: payloads.map((payload) => ({ kind: "attendance-check", payload: payload as Prisma.InputJsonValue })),
+  });
+}
+
 export async function enqueuePasswordReset(
   client: OutboxClient,
   payload: PasswordResetPayload,
@@ -219,7 +237,7 @@ function isExpired(expiresAt: string | undefined, now = new Date()) {
 }
 
 function containsCapability(kind: string, payload: Prisma.JsonValue) {
-  if (["rsvp-confirmation", "password-reset", "email-verification", "collaborator-invite", "team-created", "team-member-added", "submission-link"].includes(kind)) return true;
+  if (["rsvp-confirmation", "password-reset", "email-verification", "collaborator-invite", "team-created", "team-member-added", "submission-link", "attendance-check"].includes(kind)) return true;
   return kind === "rsvp-status" && Boolean(payload && typeof payload === "object" && !Array.isArray(payload) && typeof (payload as Record<string, unknown>).checkInToken === "string");
 }
 
@@ -296,6 +314,18 @@ export function asSubmissionLinkPayload(value: Prisma.JsonValue): SubmissionLink
   const payload = value as Record<string, unknown>;
   if (!isEmail(payload.to) || !isBoundedString(payload.rsvpId, 64) || !isSubmissionTokenShape(payload.token)) return null;
   return payload as SubmissionLinkPayload;
+}
+
+export function asAttendanceCheckPayload(value: Prisma.JsonValue): AttendanceCheckPayload | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const payload = value as Record<string, unknown>;
+  if (
+    !isEmail(payload.to) ||
+    !isBoundedString(payload.rsvpId, 64) ||
+    !isAttendanceTokenShape(payload.token) ||
+    (payload.reminder !== undefined && typeof payload.reminder !== "boolean")
+  ) return null;
+  return payload as AttendanceCheckPayload;
 }
 
 export function asResultsPublishedPayload(value: Prisma.JsonValue): ResultsPublishedPayload | null {
@@ -627,6 +657,50 @@ export async function deliverOutboxBatch(limit = 20) {
           eventTitle: event.title,
           resultsPath: resultsPath(event.organisation.slug, event.slug),
           recipientName: payload.recipientName,
+          messageId: stableMessageId,
+        });
+      } else if (message.kind === "attendance-check") {
+        const payload = asAttendanceCheckPayload(message.payload);
+        if (!payload) throw new PermanentOutboxError();
+        const check = await prisma.attendanceCheck.findUnique({
+          where: { rsvpId: payload.rsvpId },
+          select: {
+            tokenHash: true,
+            response: true,
+            rsvp: { select: { status: true, eventId: true, guestName: true, user: { select: { name: true } } } },
+            event: { select: { title: true, status: true, startDateTime: true, timezone: true, location: true, isOnline: true, attendanceCheckReleaseOnDecline: true, organisation: { select: { name: true } } } },
+          },
+        });
+        // Rotated by a reminder, removed with the registration, already
+        // answered, or no longer confirmed: never send a stale question.
+        if (
+          !check ||
+          check.tokenHash !== hashAttendanceToken(payload.token) ||
+          check.response !== null ||
+          check.rsvp.status !== RsvpStatus.CONFIRMED ||
+          check.rsvp.eventId == null ||
+          check.event.status === EventStatus.CANCELLED
+        ) {
+          await prisma.outboxMessage.deleteMany({ where: { id: message.id, status: OutboxStatus.PROCESSING, lockedAt: claimTime } });
+          continue;
+        }
+        // The question expires when the event starts.
+        if (!attendanceCheckOpen(check.event.startDateTime)) {
+          await prisma.outboxMessage.deleteMany({ where: { id: message.id, status: OutboxStatus.PROCESSING, lockedAt: claimTime } });
+          failed += 1;
+          continue;
+        }
+        await sendAttendanceCheckEmail({
+          to: payload.to,
+          eventTitle: check.event.title,
+          organisationName: check.event.organisation.name,
+          startDateTime: check.event.startDateTime,
+          timezone: check.event.timezone,
+          location: check.event.isOnline ? "Online" : check.event.location,
+          attendPath: attendancePath(payload.token),
+          recipientName: check.rsvp.user?.name?.trim() || check.rsvp.guestName?.trim() || undefined,
+          reminder: payload.reminder === true,
+          releaseOnDecline: check.event.attendanceCheckReleaseOnDecline,
           messageId: stableMessageId,
         });
       } else if (message.kind === "password-reset") {

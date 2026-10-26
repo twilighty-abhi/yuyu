@@ -55,8 +55,10 @@ would be allowed. `tests/unit/event-capabilities.test.ts` pins this table.
 | Overview: existing short link (copy only) | none (public link) | Yes | Yes | Yes | Yes | Yes | Yes | Yes | — | Yes |
 | Overview: "Embed" shortcut | none (Settings section is admin-only) | Yes | — | — | — | — | — | — | — | — |
 | Overview: team card | collaborator actions: admin | Yes | — | — | — | — | — | — | — | — |
+| Overview: readiness line "Attendance: N coming · N not coming · N no reply" (counts only, once guests were asked)⁴ | `loadAttendanceReplyCounts` only for `canSendEmails`: admin | Yes | — | — | — | — | — | — | — | — |
 | Overview: "See how it went" (ended) | Analytics visibility | Yes | — | — | Yes | — | — | — | — | Yes |
 | Guests · People: list, filters, ticket links | `loadAttendeesFirstPage` / `loadAttendeesPage` only for `canManageRegistrations` | Yes | — | — | Yes | — | — | — | — | Yes |
+| Guests · People: attendance confirmation badge, note, filter and counts; CSV attendance columns | same list query and attendee CSV route: admin or `MANAGE_REGISTRATIONS` | Yes | — | — | Yes | — | — | — | — | Yes |
 | Guests · People: approve, decline, give spot, add, edit, remove, undo remove | `lib/core/rsvpLifecycle.ts`, `lib/core/rsvpAdmin.ts`: `canManageRegistrationsFor` | Yes | — | — | Yes | — | — | — | — | Yes |
 | Guests · People: undo check-in | `lib/core/checkin.ts`: `CHECK_IN` | Yes | — | — | — | — | — | — | — | Yes |
 | Guests · Teams (TEAM events): list, approve, decline, give spot, rename, move member, delete and undo | `app/actions/team-admin.ts` via `resolveOrganiserEvent` (`lib/core/teams.ts`): `canManageRegistrationsFor` | Yes | — | — | Yes | — | — | — | — | Yes |
@@ -68,7 +70,9 @@ would be allowed. `tests/unit/event-capabilities.test.ts` pins this table.
 | Event page · Page & programme: "Open schedule" | schedule page and actions: `PUBLISH_AND_SCHEDULE` | Yes | — | — | — | — | — | Yes | — | Yes |
 | Event page · Registration form | `app/actions/registration-form.ts`: `requireOrgRole(ADMIN)` | Yes | — | — | — | — | — | — | — | — |
 | Emails: compose, test, send, history | `lib/core/broadcasts.ts`: admin | Yes | — | — | — | — | — | — | — | — |
+| Emails: Attendance confirmation card (preview, ask guests, ask newly confirmed guests, remind people who haven't replied, release-on-decline switch)⁴ | `lib/core/attendanceCheck.ts`: admin (`canManageEvents`, exactly as broadcasts) | Yes | — | — | — | — | — | — | — | — |
 | Check-in: desk, counts, ID cards | `lib/core/checkin.ts`: `CHECK_IN` | Yes | — | — | — | — | Yes | — | — | Yes |
+| Check-in desk: attendance confirmation badge on a looked-up guest (no note) | `lib/core/checkin.ts`: `CHECK_IN` | Yes | — | — | — | — | Yes | — | — | Yes |
 | Check-in: check-in lists card, list switcher, scan/search into a list, undo, list guest view | `lib/core/checkinLists.ts` (`checkInToListForUser`, `undoListCheckInForUser`, `lookupListAttendeesForUser`): `CHECK_IN` (`canCheckInToLists`) | Yes | — | — | — | — | Yes | — | — | Yes |
 | Check-in: Manage lists (create, rename, reorder, archive, restore, requires entry check-in) | `lib/core/checkinLists.ts` (`createCheckInListForUser`, `updateCheckInListForUser`, `reorderCheckInListsForUser`): `EDIT_DETAILS` (`canManageCheckInLists`) | Yes | — | Yes² | — | — | — | — | — | Yes |
 | Check-in: door station PIN on/reveal/rotate/off | `app/actions/checkin-station.ts`: admin + fresh sign-in | Yes | — | — | — | — | — | — | — | — |
@@ -112,6 +116,14 @@ caller's organisation, or one they cannot open at all, answers
 judging workspace and nothing else: no tabs, header numbers, page link, or
 check-in. A member or a co-organiser with other grants who also holds `JUDGE`
 gets the Judging tab next to what their other grants allow.
+
+⁴ Asking guests to confirm attendance emails them, so it follows the
+broadcast rule exactly: organisation owners and admins only. No grant covers
+emailing guests (`sendEmails` is admin-only on mobile too), so every
+collaborator grant, `JUDGE` and "All grants" are refused with "You do not have
+permission to email attendees.", and the card is not shown to them. The
+guest's own answer page (`/attend/:token`) needs no account: the emailed link
+is the only credential (see [Security](SECURITY.md#tokens-and-sensitive-links)).
 
 A saved view only selects filters inside a list. It is never an access
 grant: the list's own check runs first, a shared view is listed only to

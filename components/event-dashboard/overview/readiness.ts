@@ -6,6 +6,7 @@
 import { dailyCounts, relativeDayPhrase, toDotLevels, weekOverWeek } from "@/lib/dashboardHomeMetrics";
 import { formatRelativeDay } from "@/lib/format/datetime";
 import type { EventCapabilities } from "@/lib/eventDashboard/capabilities";
+import { describeAttendanceReplies, type AttendanceSummary } from "@/lib/attendanceCheck";
 
 export type ReadinessAction =
   | { kind: "tab"; label: string; tab: string; sub?: string }
@@ -31,6 +32,11 @@ export type ReadinessInput = {
    */
   pendingTeams?: number;
   emailsSent: number;
+  /**
+   * Attendance confirmation replies, or null/undefined when nobody has been
+   * asked yet. Loaded only for viewers who may email guests.
+   */
+  attendanceReplies?: Pick<AttendanceSummary, "coming" | "notComing" | "noReply"> | null;
   permissions: Pick<
     EventCapabilities,
     "canPublish" | "canEditEventDetails" | "canManageSchedule" | "canEditRegistrationForm" | "canManageCheckInStation" | "canManageRegistrations" | "canSendEmails"
@@ -117,6 +123,11 @@ export function readinessItems(input: ReadinessInput): ReadinessItem[] {
         ? { key: "email", label: `${plural(input.emailsSent, "email")} sent to guests`, done: true }
         : { key: "email", label: "No email sent yet", done: false, action: { kind: "tab", label: "Write one", tab: "emails" } },
     );
+    // Informational once guests have been asked "Are you still coming?": never a to-do.
+    const replies = input.attendanceReplies;
+    if (replies && replies.coming + replies.notComing + replies.noReply > 0) {
+      items.push({ key: "attendance", label: describeAttendanceReplies(replies), done: true, action: { kind: "tab", label: "Details", tab: "emails" } });
+    }
   }
 
   return items;

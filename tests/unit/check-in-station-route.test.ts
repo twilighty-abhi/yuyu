@@ -99,6 +99,18 @@ describe("venue check-in station route", () => {
     expect(mocks.checkInEventCreate).not.toHaveBeenCalled();
   });
 
+  it("shows the attendance confirmation reply in previews and lookups, never the note", async () => {
+    mocks.rsvpFindFirst.mockResolvedValue({ ...rsvp, attendanceCheck: { response: "NOT_ATTENDING" } });
+    const preview = await POST(request("previewRsvp", { rsvpId: rsvp.id }));
+    expect(await preview.json()).toMatchObject({ ok: true, data: { attendance: "notComing" } });
+    expect(mocks.rsvpFindFirst.mock.calls[0]![0].include.attendanceCheck).toEqual({ select: { response: true } });
+
+    mocks.rsvpFindMany.mockResolvedValue([{ ...rsvp, team: null, attendanceCheck: null }, { ...rsvp, id: "rsvp_2", team: null, attendanceCheck: { response: null } }]);
+    const lookup = await POST(request("lookup", { query: "guest" }));
+    const body = await lookup.json();
+    expect(body.data.rows.map((row: { attendance: unknown }) => row.attendance)).toEqual([null, "noReply"]);
+  });
+
   it("makes eligibility part of the atomic check-in write", async () => {
     mocks.updateMany.mockResolvedValue({ count: 1 });
     mocks.checkInEventCreate.mockResolvedValue({ id: "history_1" });

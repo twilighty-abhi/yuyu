@@ -7,11 +7,13 @@ import { EventBroadcastPanel } from "@/components/broadcasts/EventBroadcastPanel
 import { loadEventBroadcastDraftForUser } from "@/lib/core/broadcasts";
 import { NoPermission } from "./shared";
 import { DEFAULT_BROADCAST_DESIGN, isBroadcastDesign } from "@/lib/email/broadcastDesigns";
+import { AttendanceCheckCard } from "@/components/event-dashboard/emails/AttendanceCheckCard";
+import { loadAttendanceCheckCard } from "@/lib/eventDashboard/attendanceCheckCard";
 
 export async function EmailsPanel({ ctx }: { ctx: EventDashboardContext }) {
   const { event, permissions, organisation, now, userId } = ctx;
   if (!permissions.canSendEmails) return <NoPermission>You do not have permission to email attendees.</NoPermission>;
-  const [records, counts, branding, savedDraft] = await Promise.all([
+  const [records, counts, branding, savedDraft, attendanceCheck] = await Promise.all([
     prisma.eventBroadcast.findMany({
       where: { eventId: event.id },
       orderBy: { createdAt: "desc" },
@@ -22,6 +24,8 @@ export async function EmailsPanel({ ctx }: { ctx: EventDashboardContext }) {
     prisma.event.findUnique({ where: { id: event.id }, select: { coverImageUrl: true, page: { select: { accentColor: true } } } }),
     // Only the signed-in organiser's own draft, through the composer's own access check.
     loadEventBroadcastDraftForUser(userId, { organisationSlug: organisation.slug, eventId: event.id }),
+    // Same audience rule as broadcasts (`canSendEmails`, checked above).
+    loadAttendanceCheckCard(event, now),
   ]);
   const brand = { accentColor: branding?.page?.accentColor ?? null, coverImageUrl: branding?.coverImageUrl ?? null };
   const statusCounts: Record<RsvpStatus, number> = {
@@ -31,24 +35,27 @@ export async function EmailsPanel({ ctx }: { ctx: EventDashboardContext }) {
     REJECTED: counts.rejected,
   };
   return (
-    <EventBroadcastPanel
-      organisationSlug={organisation.slug}
-      eventId={event.id}
-      statusCounts={statusCounts}
-      brand={brand}
-      draft={savedDraft.ok ? (savedDraft.data?.draft ?? null) : null}
-      history={records.map((row) => ({
-        id: row.id,
-        subject: row.subject,
-        body: row.body,
-        statuses: row.statuses,
-        attendance: row.attendance,
-        design: isBroadcastDesign(row.design) ? row.design : DEFAULT_BROADCAST_DESIGN,
-        recipientCount: row.recipientCount,
-        createdAt: row.createdAt.toISOString(),
-        sentLabel: formatRelativeTime(row.createdAt, event.timezone, now),
-        createdByName: row.createdBy?.name ?? null,
-      }))}
-    />
+    <div className="flex flex-col gap-8">
+      <AttendanceCheckCard organisationSlug={organisation.slug} eventId={event.id} data={attendanceCheck} />
+      <EventBroadcastPanel
+        organisationSlug={organisation.slug}
+        eventId={event.id}
+        statusCounts={statusCounts}
+        brand={brand}
+        draft={savedDraft.ok ? (savedDraft.data?.draft ?? null) : null}
+        history={records.map((row) => ({
+          id: row.id,
+          subject: row.subject,
+          body: row.body,
+          statuses: row.statuses,
+          attendance: row.attendance,
+          design: isBroadcastDesign(row.design) ? row.design : DEFAULT_BROADCAST_DESIGN,
+          recipientCount: row.recipientCount,
+          createdAt: row.createdAt.toISOString(),
+          sentLabel: formatRelativeTime(row.createdAt, event.timezone, now),
+          createdByName: row.createdBy?.name ?? null,
+        }))}
+      />
+    </div>
   );
 }

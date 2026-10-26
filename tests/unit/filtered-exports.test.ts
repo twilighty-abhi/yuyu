@@ -18,7 +18,7 @@ vi.mock("@/lib/core/teams", () => ({
   resolveOrganiserEvent: mocks.resolve,
 }));
 
-import { csvStreamResponse, exportFilename, exportFilterNames } from "@/lib/csvExport";
+import { csvByteStream, csvStreamResponse, exportFilename, exportFilterNames } from "@/lib/csvExport";
 import { parseTeamExportSearchParams, teamExportRow, teamExportSearchParams } from "@/lib/teamExport";
 import { judgingResultsExportHref, judgingSubmissionsExportHref, parseJudgingExportSearchParams } from "@/lib/judgingExport";
 import { ORGANISER_TEAM_FILTERS } from "@/lib/organiserTeamFilters";
@@ -64,6 +64,49 @@ describe("CSV export helpers", () => {
     // UTF-8 BOM first, so spreadsheets read the file as UTF-8.
     expect([...bytes.slice(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
     expect(new TextDecoder().decode(bytes.slice(3))).toBe("Name\n'=1+1\n'+cmd\n\"plain, text\"\n");
+  });
+
+  it("reads the next batch only when the download asks for it (bounded memory)", async () => {
+    let produced = 0;
+    let closed = false;
+    const stream = csvByteStream({
+      header: ["n"],
+      errorMessage: "nope",
+      batches: async function* () {
+        try {
+          for (let i = 0; i < 1000; i++) {
+            produced += 1;
+            yield [[String(i)]];
+          }
+        } finally {
+          closed = true;
+        }
+      },
+    });
+    const reader = stream.getReader();
+    await reader.read(); // BOM and header
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    // Nothing runs ahead of the reader by more than one batch.
+    expect(produced).toBeLessThanOrEqual(2);
+    await reader.read();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(produced).toBeLessThanOrEqual(3);
+    // A cancelled download stops the reads.
+    await reader.cancel();
+    expect(closed).toBe(true);
+    expect(produced).toBeLessThan(5);
+  });
+
+  it("fails the download when a batch read fails", async () => {
+    const stream = csvByteStream({
+      header: ["n"],
+      errorMessage: "Unable to export.",
+      batches: async function* () {
+        yield [["1"]];
+        throw new Error("database down");
+      },
+    });
+    await expect(new Response(stream).text()).rejects.toThrow("Unable to export.");
   });
 
   it("fails the download instead of sending a short file", async () => {

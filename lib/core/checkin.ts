@@ -3,7 +3,7 @@ import "server-only";
 import { revalidatePath } from "next/cache";
 import { gateCheckInForStatus, parseCheckInPayload } from "@/lib/checkIn";
 import { prisma } from "@/lib/db";
-import { EventPermission } from "@prisma/client";
+import { EventPermission, Prisma, type RsvpStatus } from "@prisma/client";
 import { canAccessEvent } from "@/lib/eventAccess";
 import {
   attendeeLookupSchema,
@@ -384,33 +384,55 @@ export async function downloadOfflineCheckInRosterForUser(
   const ctx = await requireOrgMemberForEvent(actorUserId, organisationSlug, eventId);
   if (!ctx.ok) return { ok: false, error: ctx.error };
 
-  const rsvps = await prisma.rSVP.findMany({
-    where: { eventId: ctx.event.id, status: { in: ["CONFIRMED", "WAITLISTED", "PENDING_APPROVAL"] } },
-    include: {
-      user: { select: { name: true, email: true } },
-      team: { select: { name: true } },
-      answers: { include: { field: { select: { key: true, label: true } } } },
-    },
-    orderBy: { createdAt: "desc" },
-  });
+  // The whole roster in two set-based reads (registrations with their user
+  // and team joined in SQL, then every answer of those registrations), not a
+  // relation lookup per registration id.
+  const rosterStatuses: RsvpStatus[] = ["CONFIRMED", "WAITLISTED", "PENDING_APPROVAL"];
+  const [rsvps, answers] = await Promise.all([
+    prisma.$queryRaw<
+      Array<{ id: string; checkInToken: string; guestName: string | null; guestEmail: string | null; status: RsvpStatus; checkedInAt: Date | null; createdAt: Date; userId: string | null; userName: string | null; userEmail: string | null; teamName: string | null }>
+    >`
+      SELECT r."id", r."checkInToken", r."guestName", r."guestEmail", r."status", r."checkedInAt", r."createdAt", r."userId",
+        u."name" AS "userName", u."email" AS "userEmail", t."name" AS "teamName"
+      FROM "RSVP" r
+      LEFT JOIN "User" u ON u."id" = r."userId"
+      LEFT JOIN "Team" t ON t."id" = r."teamId"
+      WHERE r."eventId" = ${ctx.event.id} AND r."status"::text IN (${Prisma.join(rosterStatuses)})
+      ORDER BY r."createdAt" DESC`,
+    prisma.rsvpAnswer.findMany({
+      where: { rsvp: { eventId: ctx.event.id, status: { in: rosterStatuses } } },
+      select: { rsvpId: true, valueText: true, valueBool: true, valueNumber: true, valueDate: true, field: { select: { key: true, label: true } } },
+      orderBy: { id: "asc" },
+    }),
+  ]);
+  const answersByRsvp = new Map<string, typeof answers>();
+  for (const answer of answers) {
+    const list = answersByRsvp.get(answer.rsvpId);
+    if (list) list.push(answer);
+    else answersByRsvp.set(answer.rsvpId, [answer]);
+  }
 
   return {
     ok: true,
     data: {
       generatedAt: new Date().toISOString(),
-      rows: rsvps.map((r) => ({
-        rsvpId: r.id,
-        ticketToken: r.checkInToken,
-        displayName: attendeeLabel(r),
-        email: r.user?.email ?? r.guestEmail,
-        status: r.status,
-        checkedInAt: r.checkedInAt?.toISOString() ?? null,
-        registeredAt: r.createdAt.toISOString(),
-        isGuest: r.userId == null,
-        checkInDetails: getCheckInDetails(r.answers),
-        registrationDetails: getRegistrationDetails(r.answers),
-        teamName: r.team?.name ?? null,
-      })),
+      rows: rsvps.map((r) => {
+        const user = r.userId ? { name: r.userName, email: r.userEmail } : null;
+        const rsvpAnswers = answersByRsvp.get(r.id) ?? [];
+        return {
+          rsvpId: r.id,
+          ticketToken: r.checkInToken,
+          displayName: attendeeLabel({ user, guestName: r.guestName, guestEmail: r.guestEmail }),
+          email: user?.email ?? r.guestEmail,
+          status: r.status,
+          checkedInAt: r.checkedInAt?.toISOString() ?? null,
+          registeredAt: r.createdAt.toISOString(),
+          isGuest: r.userId == null,
+          checkInDetails: getCheckInDetails(rsvpAnswers),
+          registrationDetails: getRegistrationDetails(rsvpAnswers),
+          teamName: r.teamName,
+        };
+      }),
     },
   };
 }

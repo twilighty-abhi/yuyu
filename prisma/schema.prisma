@@ -547,6 +547,8 @@ model EventInvite {
 
   @@unique([eventId, email])
   @@index([eventId])
+  /// Guests · Invites newest first.
+  @@index([eventId, createdAt, id])
 }
 
 model EventSeries {
@@ -898,6 +900,9 @@ model RSVP {
   /// "Your registrations" and the personal data export look RSVPs up by user.
   @@index([userId, createdAt])
   @@index([eventId, status, checkedInAt, createdAt, id], map: "RSVP_eventId_status_checkedInAt_createdAt_id_idx")
+  /// Guests · People newest first, and "Recent check-ins" (docs/PERFORMANCE.md).
+  @@index([eventId, createdAt, id])
+  @@index([eventId, checkedInAt, id])
   @@index([eventInstanceId])
   @@index([eventId, attendeeKey])
   @@index([eventInstanceId, attendeeKey])
@@ -935,6 +940,8 @@ model Team {
 
   @@unique([eventId, nameKey])
   @@index([eventId, status, createdAt])
+  /// Guests · Teams oldest first (keyset on createdAt, id).
+  @@index([eventId, createdAt, id])
 }
 
 /// Opt-in "Looking for a team" listing for a solo registrant of a
@@ -1006,6 +1013,10 @@ model Submission {
   awardWins   EventAwardWinner[]
 
   @@index([eventId, status])
+  /// Judging → Submissions (keyset on createdAt, id).
+  @@index([eventId, createdAt, id])
+  /// SUBMITTED projects by submission time: judge workspace, gallery, ranking.
+  @@index([eventId, status, submittedAt, id])
 }
 
 /// Bearer link `/submit/{token}` for a solo registrant's submission, emailed

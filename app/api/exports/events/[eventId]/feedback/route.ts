@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth";
 import { recordAuditEvent } from "@/lib/audit";
-import { buildCsv } from "@/lib/csv";
+import { csvByteStream } from "@/lib/csvExport";
 import { prisma } from "@/lib/db";
 import { getMembership, isOrgAdmin } from "@/lib/permissions";
 
@@ -79,45 +79,38 @@ export async function GET(_request: Request, context: RouteContext) {
     targetId: feedbackForm.id,
   });
 
-  const encoder = new TextEncoder();
-  const stream = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      try {
-        controller.enqueue(encoder.encode(`\uFEFF${buildCsv([["Submitted At", ...fields.map((field) => field.label)]])}\n`));
-        let cursor: string | undefined;
+  const stream = csvByteStream({
+    header: ["Submitted At", ...fields.map((field) => field.label)],
+    errorMessage: "Unable to export feedback responses.",
+    batches: async function* () {
+      let cursor: string | undefined;
+      while (true) {
+        const responses = await prisma.eventFeedbackResponse.findMany({
+          where: { formId: feedbackForm.id },
+          orderBy: { id: "asc" },
+          take: EXPORT_BATCH_SIZE,
+          ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+          select: {
+            id: true,
+            submittedAt: true,
+            answers: { select: { fieldKey: true, valueText: true, valueBool: true, valueNumber: true, valueDate: true }, orderBy: { createdAt: "asc" } },
+          },
+        });
+        if (!responses.length) break;
 
-        while (true) {
-          const responses = await prisma.eventFeedbackResponse.findMany({
-            where: { formId: feedbackForm.id },
-            orderBy: { id: "asc" },
-            take: EXPORT_BATCH_SIZE,
-            ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-            select: {
-              id: true,
-              submittedAt: true,
-              answers: { select: { fieldKey: true, valueText: true, valueBool: true, valueNumber: true, valueDate: true }, orderBy: { createdAt: "asc" } },
-            },
-          });
-          if (!responses.length) break;
-
-          const rows = responses.map((response) => {
-            const answers = new Map<string, string[]>();
-            for (const answer of response.answers) {
-              const values = answers.get(answer.fieldKey) ?? [];
-              values.push(answerValue(answer));
-              answers.set(answer.fieldKey, values);
-            }
-            return [
-              response.submittedAt.toISOString(),
-              ...fields.map((field) => answers.get(field.key)?.join(", ") ?? ""),
-            ];
-          });
-          controller.enqueue(encoder.encode(`${buildCsv(rows)}\n`));
-          cursor = responses.at(-1)?.id;
-        }
-        controller.close();
-      } catch {
-        controller.error(new Error("Unable to export feedback responses."));
+        yield responses.map((response) => {
+          const answers = new Map<string, string[]>();
+          for (const answer of response.answers) {
+            const values = answers.get(answer.fieldKey) ?? [];
+            values.push(answerValue(answer));
+            answers.set(answer.fieldKey, values);
+          }
+          return [
+            response.submittedAt.toISOString(),
+            ...fields.map((field) => answers.get(field.key)?.join(", ") ?? ""),
+          ];
+        });
+        cursor = responses.at(-1)?.id;
       }
     },
   });

@@ -21,6 +21,7 @@ This directory is the source of truth for the current product, its operation, an
 | [Organisation webhooks](WEBHOOKS.md) | Outgoing signed webhooks: event types, payloads, signature verification, retries, auto-disable, and SSRF rules |
 | [Mobile API v1](MOBILE_API.md) | User-authenticated API for the Yuyu mobile apps (Android and iOS), with an [OpenAPI 3.1 spec](mobile-api.openapi.yaml) and [fixtures](mobile-api-fixtures/) |
 | [Testing](TESTING.md) | Test suites, CI checks, coverage, and release verification |
+| [Performance](PERFORMANCE.md) | Large-event load test: data set, query measurements, indexes, and the before/after results |
 
 ## Deployment and operations
 

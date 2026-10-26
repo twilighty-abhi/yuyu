@@ -32,7 +32,7 @@ import {
 } from "@/lib/judgingPaging";
 import { asResultsPublishedPayload, enqueueResultsPublished, enqueueSubmissionLink, enqueueSubmissionReceived } from "@/lib/outbox";
 import { generateSubmissionLinkToken, hashSubmissionLinkToken, isSubmissionTokenShape } from "@/lib/submissionToken";
-import { computeJudgingResults, type CriterionAverage } from "@/lib/judgingScore";
+import { computeJudgingResultsFromReviews, type CountedReview, type CriterionAverage } from "@/lib/judgingScore";
 import { decodeTimeCursor, encodeTimeCursor } from "@/lib/keysetCursor";
 import {
   AWARD_CANDIDATES_PAGE_SIZE,
@@ -1547,18 +1547,96 @@ export type JudgingResultsDto = {
  * page at a time (`loadJudgingResultsPage`); the CSV export uses all of it.
  * Per-judge progress comes from `loadJudgeProgress`, with aggregates.
  */
+/** One judge's work on one SUBMITTED project: a review row, saved scores, or both. */
+export type JudgePairWork = {
+  submissionId: string;
+  judgeUserId: string;
+  /** A review row exists (draft or submitted). */
+  reviewed: boolean;
+  /** The review's submission time; null for a draft review or scores without a review. */
+  submittedAt: Date | null;
+  /** Saved score rows. */
+  scored: number;
+  /** The newest saved score; null without scores. */
+  lastSavedAt: Date | null;
+  /** The saved scores by criterion id (empty unless read `withScores`). */
+  scores: Map<string, number>;
+};
+
+/**
+ * Every (judge, SUBMITTED project) pair of the event with a review row or
+ * saved scores, aggregated in SQL: one row per pair rather than one per
+ * score. Scores are grouped per project through the
+ * `JudgeScore (submissionId, judgeUserId, criterionId)` unique index, so the
+ * read is proportional to this event's projects and never sorts or scans
+ * every score of the instance. Sorted by project then judge. Eligibility
+ * and conflicts of interest are the caller's to apply.
+ */
+export async function judgeWorkOnSubmitted(client: Prisma.TransactionClient, eventId: string, options: { withScores: boolean }): Promise<JudgePairWork[]> {
+  const arrays = options.withScores
+    ? Prisma.sql`array_agg(js."criterionId") AS "criterionIds", array_agg(js."score") AS "scores"`
+    : Prisma.sql`'{}'::text[] AS "criterionIds", '{}'::int[] AS "scores"`;
+  const submitted = Prisma.sql`s."eventId" = ${eventId} AND s."status" = ${SubmissionStatus.SUBMITTED}::"SubmissionStatus"`;
+  const [scoreRows, reviewRows] = await Promise.all([
+    client.$queryRaw<Array<{ submissionId: string; judgeUserId: string; scored: number; lastSavedAt: Date; criterionIds: string[]; scores: number[] }>>`
+      SELECT s."id" AS "submissionId", x."judgeUserId", x."scored", x."lastSavedAt", x."criterionIds", x."scores"
+      FROM "Submission" s
+      CROSS JOIN LATERAL (
+        -- Both arrays come from one aggregate pass, so their elements pair up.
+        SELECT js."judgeUserId", count(*)::int AS "scored", max(js."updatedAt") AS "lastSavedAt", ${arrays}
+        FROM "JudgeScore" js
+        WHERE js."submissionId" = s."id"
+        GROUP BY js."judgeUserId"
+      ) x
+      WHERE ${submitted}`,
+    client.$queryRaw<Array<{ submissionId: string; judgeUserId: string; submittedAt: Date | null }>>`
+      SELECT jr."submissionId", jr."judgeUserId", jr."submittedAt"
+      FROM "JudgeReview" jr JOIN "Submission" s ON s."id" = jr."submissionId"
+      WHERE ${submitted}`,
+  ]);
+  const pairs = new Map<string, JudgePairWork>();
+  for (const row of scoreRows) {
+    pairs.set(`${row.submissionId}\u0000${row.judgeUserId}`, {
+      submissionId: row.submissionId,
+      judgeUserId: row.judgeUserId,
+      reviewed: false,
+      submittedAt: null,
+      scored: Number(row.scored),
+      lastSavedAt: row.lastSavedAt,
+      scores: new Map(row.criterionIds.map((criterionId, index) => [criterionId, Number(row.scores[index])])),
+    });
+  }
+  for (const row of reviewRows) {
+    const key = `${row.submissionId}\u0000${row.judgeUserId}`;
+    const pair = pairs.get(key);
+    if (pair) {
+      pair.reviewed = true;
+      pair.submittedAt = row.submittedAt;
+    } else {
+      pairs.set(key, { submissionId: row.submissionId, judgeUserId: row.judgeUserId, reviewed: true, submittedAt: row.submittedAt, scored: 0, lastSavedAt: null, scores: new Map() });
+    }
+  }
+  const byId = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+  return [...pairs.values()].sort((a, b) => byId(a.submissionId, b.submissionId) || byId(a.judgeUserId, b.judgeUserId));
+}
+
+/** Submitted reviews of SUBMITTED projects with their scores (eligibility and conflicts still to apply). */
+async function submittedReviewScores(client: Prisma.TransactionClient, eventId: string): Promise<CountedReview[]> {
+  const pairs = await judgeWorkOnSubmitted(client, eventId, { withScores: true });
+  return pairs.filter((pair) => pair.submittedAt != null).map((pair) => ({ submissionId: pair.submissionId, judgeUserId: pair.judgeUserId, scores: pair.scores }));
+}
+
 export async function loadJudgingResults(ctx: JudgingOrganiserContext, options: { method?: ScoreNormalization } = {}): Promise<JudgingResultsDto | null> {
   const event = await prisma.event.findFirst({ where: { id: ctx.eventId, organisationId: ctx.organisationId }, select: { ...judgingEventSelect, scoreNormalization: true } });
   if (!event) return null;
-  const [criteria, submissions, scores, reviews, eligible] = await Promise.all([
+  const [criteria, submissions, reviews, eligible] = await Promise.all([
     criteriaFor(prisma, event.id),
     prisma.submission.findMany({
       where: { eventId: event.id, status: { in: [SubmissionStatus.SUBMITTED, SubmissionStatus.DISQUALIFIED] } },
       select: { id: true, title: true, status: true, teamId: true, rsvpId: true, ...nameSourceSelect },
       orderBy: [{ submittedAt: "asc" }, { id: "asc" }],
     }),
-    prisma.judgeScore.findMany({ where: { submission: { eventId: event.id } }, select: { submissionId: true, judgeUserId: true, criterionId: true, score: true } }),
-    prisma.judgeReview.findMany({ where: { submission: { eventId: event.id } }, select: { submissionId: true, judgeUserId: true, submittedAt: true } }),
+    submittedReviewScores(prisma, event.id),
     listEligibleJudges(ctx),
   ]);
   const submitted = submissions.filter((row) => row.status === SubmissionStatus.SUBMITTED);
@@ -1566,23 +1644,19 @@ export async function loadJudgingResults(ctx: JudgingOrganiserContext, options: 
   const eligibleIds = new Set(eligible.map((judge) => judge.userId));
   const reviewAuthorIds = [...new Set(reviews.map((review) => review.judgeUserId))];
   const authorConflicts = await conflictKeysFor(prisma, event.id, reviewAuthorIds);
-  // Only reviews that may count: submitted, of a SUBMITTED project, by someone
-  // who can still judge this event, with no conflict of interest now. A
-  // revoked JUDGE grant or a judge who later registered on that entrant drops
-  // out of the score (their rows stay, for the organiser's record).
+  // Only reviews that may count: submitted, of a SUBMITTED project (both
+  // checked in SQL above), by someone who can still judge this event, with no
+  // conflict of interest now. A revoked JUDGE grant or a judge who later
+  // registered on that entrant drops out of the score (their rows stay, for
+  // the organiser's record).
   const submittedReviews = reviews.filter((review) => {
     const row = byId.get(review.submissionId);
-    return Boolean(
-      review.submittedAt &&
-        row?.status === SubmissionStatus.SUBMITTED &&
-        eligibleIds.has(review.judgeUserId) &&
-        !hasConflictOfInterest(row, authorConflicts.get(review.judgeUserId)),
-    );
+    return Boolean(row?.status === SubmissionStatus.SUBMITTED && eligibleIds.has(review.judgeUserId) && !hasConflictOfInterest(row, authorConflicts.get(review.judgeUserId)));
   });
   // The saved method ranks, unless the caller names one (the Results CSV
   // passes the method the organiser's table is showing).
   const method = options.method ?? event.scoreNormalization;
-  const results = computeJudgingResults({ submissionIds: submitted.map((row) => row.id), criteria, scores, submittedReviews, method });
+  const results = computeJudgingResultsFromReviews({ submissionIds: submitted.map((row) => row.id), criteria, reviews: submittedReviews, method });
   const rows: ResultRowDto[] = [
     ...results.map((result) => {
       const row = byId.get(result.submissionId)!;
@@ -1796,19 +1870,27 @@ export async function planJudgingResultsExport(
     for (let start = 0; start < matching.length; start += JUDGING_EXPORT_BATCH_SIZE) {
       const chunk = matching.slice(start, start + JUDGING_EXPORT_BATCH_SIZE);
       const ids = chunk.map((row) => row.submissionId);
-      const scoped = { id: { in: ids }, eventId: event!.id, event: { organisationId: ctx.organisationId } };
+      // Filter on the score and review rows' own `submissionId` (index lookups
+      // for this batch only), with the event and organisation re-checked.
+      const scoped = { submissionId: { in: ids }, submission: { eventId: event!.id, event: { organisationId: ctx.organisationId } } };
       const [scores, reviews] = await Promise.all([
-        prisma.judgeScore.findMany({ where: { submission: scoped }, select: { submissionId: true, judgeUserId: true, criterionId: true, score: true } }),
+        prisma.judgeScore.findMany({ where: scoped, select: { submissionId: true, judgeUserId: true, criterionId: true, score: true } }),
         prisma.judgeReview.findMany({
-          where: { submission: scoped },
+          where: scoped,
           select: { submissionId: true, judgeUserId: true, submittedAt: true, judge: { select: { name: true } } },
           orderBy: [{ createdAt: "asc" }, { id: "asc" }],
         }),
       ]);
       const scoreIndex = new Map(scores.map((score) => [`${score.submissionId}\u0000${score.judgeUserId}\u0000${score.criterionId}`, score.score]));
+      const reviewsBySubmission = new Map<string, typeof reviews>();
+      for (const review of reviews) {
+        const list = reviewsBySubmission.get(review.submissionId) ?? [];
+        list.push(review);
+        reviewsBySubmission.set(review.submissionId, list);
+      }
       const rows: string[][] = [];
       for (const row of chunk) {
-        const rowReviews = reviews.filter((review) => review.submissionId === row.submissionId);
+        const rowReviews = reviewsBySubmission.get(row.submissionId) ?? [];
         const base = [
           row.rank?.toString() ?? "",
           row.title,

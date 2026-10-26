@@ -32,6 +32,7 @@ import {
   type JudgeSubmissionFilter,
 } from "@/lib/judgingPaging";
 import { asResultsPublishedPayload, enqueueResultsPublished, enqueueSubmissionLink, enqueueSubmissionReceived } from "@/lib/outbox";
+import { announcementCoversPublication, sendResultsAnnouncementRefusal, shouldEmailOnPublish, shouldQueueSubmissionReceipt } from "@/lib/hackathonEmails";
 import { generateSubmissionLinkToken, hashSubmissionLinkToken, isSubmissionTokenShape } from "@/lib/submissionToken";
 import { computeJudgingResultsFromReviews, type CountedReview, type CriterionAverage } from "@/lib/judgingScore";
 import { decodeTimeCursor, encodeTimeCursor } from "@/lib/keysetCursor";
@@ -221,6 +222,9 @@ const judgingEventSelect = {
   judgesSeeAll: true,
   projectGalleryPublic: true,
   resultsPublishedAt: true,
+  resultsAnnouncedAt: true,
+  emailEntrantsOnResults: true,
+  emailSubmissionReceipts: true,
 } satisfies Prisma.EventSelect;
 
 type JudgingEvent = Prisma.EventGetPayload<{ select: typeof judgingEventSelect }>;
@@ -414,7 +418,9 @@ async function writeSubmission(
             data: { ...content, eventId: entrant.eventId, teamId: entrant.teamId, rsvpId: entrant.rsvpId },
             select: { id: true, status: true },
           });
-      if (mode === "submit" && !wasSubmitted && entrant.submitter.email) {
+      // The receipt is opt-in per event (lib/hackathonEmails.ts); read under
+      // the Event lock, so it can't race a settings change.
+      if (mode === "submit" && !wasSubmitted && entrant.submitter.email && shouldQueueSubmissionReceipt(event)) {
         await enqueueSubmissionReceived(tx, {
           to: entrant.submitter.email,
           submissionId: saved.id,
@@ -436,7 +442,10 @@ export function saveSubmissionDraft(auth: EntrantAuth, input: unknown) {
   return writeSubmission(auth, input, "draft");
 }
 
-/** Save and submit. Queues `submission-received` to the person acting when the project becomes SUBMITTED. */
+/**
+ * Save and submit. Queues `submission-received` to the person acting when the
+ * project becomes SUBMITTED, only if the event's `emailSubmissionReceipts` is on.
+ */
 export function submitSubmission(auth: EntrantAuth, input: unknown) {
   return writeSubmission(auth, input, "submit");
 }
@@ -555,6 +564,9 @@ export type JudgingSettingsDto = {
   judgesSeeAll: boolean;
   projectGalleryPublic: boolean;
   resultsPublishedAt: Date | null;
+  resultsAnnouncedAt: Date | null;
+  emailEntrantsOnResults: boolean;
+  emailSubmissionReceipts: boolean;
   timezone: string;
 };
 
@@ -567,6 +579,9 @@ function settingsDto(event: JudgingEvent): JudgingSettingsDto {
     judgesSeeAll: event.judgesSeeAll,
     projectGalleryPublic: event.projectGalleryPublic,
     resultsPublishedAt: event.resultsPublishedAt,
+    resultsAnnouncedAt: event.resultsAnnouncedAt,
+    emailEntrantsOnResults: event.emailEntrantsOnResults,
+    emailSubmissionReceipts: event.emailSubmissionReceipts,
     timezone: event.timezone,
   };
 }
@@ -580,7 +595,9 @@ export function submissionsLockedOnReason(event: { submissionsEnabled: boolean; 
 }
 
 /**
- * Save submission and judging settings. Audited (JUDGING_SETTINGS_UPDATED).
+ * Save submission and judging settings, including the hackathon email
+ * switches (left out, they keep their saved value). Audited
+ * (JUDGING_SETTINGS_UPDATED, with both email switches and which changed).
  * `submissionsEnabled` switches the whole feature (judge workspace, results,
  * gallery), so it can't be turned off once judging has started or results are
  * published; closing the window is how an organiser stops new projects.
@@ -601,9 +618,12 @@ export async function updateJudgingSettings(ctx: JudgingOrganiserContext, input:
         submissionsCloseAt: parsed.data.submissionsCloseAt,
         judgesSeeAll: parsed.data.judgesSeeAll,
         projectGalleryPublic: parsed.data.projectGalleryPublic,
+        ...(parsed.data.emailEntrantsOnResults === undefined ? {} : { emailEntrantsOnResults: parsed.data.emailEntrantsOnResults }),
+        ...(parsed.data.emailSubmissionReceipts === undefined ? {} : { emailSubmissionReceipts: parsed.data.emailSubmissionReceipts }),
       },
       select: judgingEventSelect,
     });
+    const emailTogglesChanged = (["emailEntrantsOnResults", "emailSubmissionReceipts"] as const).filter((name) => event[name] !== updated[name]);
     await recordAuditEvent({
       client: tx,
       action: "JUDGING_SETTINGS_UPDATED",
@@ -615,6 +635,9 @@ export async function updateJudgingSettings(ctx: JudgingOrganiserContext, input:
         submissionsEnabled: updated.submissionsEnabled,
         judgesSeeAll: updated.judgesSeeAll,
         projectGalleryPublic: updated.projectGalleryPublic,
+        emailEntrantsOnResults: updated.emailEntrantsOnResults,
+        emailSubmissionReceipts: updated.emailSubmissionReceipts,
+        emailTogglesChanged: emailTogglesChanged.join(",") || null,
       },
     });
     return ok(settingsDto(updated));
@@ -974,56 +997,39 @@ export async function setScoreNormalization(ctx: JudgingOrganiserContext, input:
 
 /**
  * Publish results (judging must be CLOSED). Idempotent: publishing again while
- * published changes nothing and queues nothing. The first publication queues
- * one `results-published` email per confirmed entrant member (every CONFIRMED
- * registration of the event; team members share their team's status),
- * deduplicated by address, and records `resultsAnnouncedAt`. A re-publication
- * after an unpublish never emails an address a second time (see
- * `unpublishResults`). Audited (JUDGING_RESULTS_PUBLISHED).
+ * published changes nothing and queues nothing.
+ *
+ * Email is opt-in (`Event.emailEntrantsOnResults`, off by default; see
+ * lib/hackathonEmails.ts), read under the Event lock at publish time:
+ * - On: the first publication queues one `results-published` email per
+ *   confirmed entrant member (every CONFIRMED registration of the event; team
+ *   members share their team's status), deduplicated by address, and sets
+ *   `resultsAnnouncedAt` to the publication time. A re-publication after an
+ *   unpublish never emails an address a second time (see `unpublishResults`).
+ * - Off: the results page goes live, nothing is queued, and
+ *   `resultsAnnouncedAt` is left as it was: null on a first publication, or
+ *   older than this publication after an earlier announcement. Either way
+ *   the publication isn't covered (announcementCoversPublication), so
+ *   `sendResultsAnnouncement` can email the entrants not yet told later.
+ * Audited (JUDGING_RESULTS_PUBLISHED).
  */
-export type PublishResultsOutcome = { publishedAt: Date; queued: number; alreadyPublished: boolean };
+export type PublishResultsOutcome = { publishedAt: Date; queued: number; alreadyPublished: boolean; emailed: boolean };
 
 export async function publishResults(ctx: JudgingOrganiserContext): Promise<JudgingResult<PublishResultsOutcome>> {
   return withOrganiserLock<PublishResultsOutcome>(ctx, async (tx, event) => {
-    if (event.resultsPublishedAt) return ok({ publishedAt: event.resultsPublishedAt, queued: 0, alreadyPublished: true });
+    if (event.resultsPublishedAt) return ok({ publishedAt: event.resultsPublishedAt, queued: 0, alreadyPublished: true, emailed: false });
     if (!event.submissionsEnabled) return fail("This event is not taking project submissions.");
     if (event.judgingStatus !== JudgingStatus.CLOSED) return fail("Close judging before publishing results.");
     const publishedAt = new Date();
-    const announced = await tx.event.findUnique({ where: { id: event.id }, select: { resultsAnnouncedAt: true } });
-    const firstAnnouncement = !announced?.resultsAnnouncedAt;
+    const emailed = shouldEmailOnPublish(event);
+    const firstAnnouncement = !event.resultsAnnouncedAt;
     const updated = await tx.event.updateMany({
       where: { id: event.id, resultsPublishedAt: null },
-      data: { resultsPublishedAt: publishedAt, ...(firstAnnouncement ? { resultsAnnouncedAt: publishedAt } : {}) },
+      data: { resultsPublishedAt: publishedAt, ...(emailed ? { resultsAnnouncedAt: publishedAt } : {}) },
     });
     if (updated.count !== 1) return fail(CHANGED);
 
-    // After an earlier announcement, only addresses whose copy was withdrawn
-    // undelivered by the unpublish are emailed: anyone with a delivered (or
-    // in-flight) announcement left in the outbox is skipped, and once those
-    // rows have aged out nobody is emailed again.
-    let alreadyTold: Set<string> | null = null;
-    if (!firstAnnouncement) {
-      const previous = await tx.outboxMessage.findMany({
-        where: { kind: "results-published", payload: { path: ["eventId"], equals: event.id } },
-        select: { payload: true },
-      });
-      alreadyTold = new Set(previous.map((row) => asResultsPublishedPayload(row.payload)?.to.toLowerCase()).filter((to): to is string => Boolean(to)));
-    }
-    const recipients = alreadyTold?.size === 0 ? [] : await tx.rSVP.findMany({
-      where: { eventId: event.id, status: RsvpStatus.CONFIRMED },
-      select: personSelect,
-      orderBy: { createdAt: "asc" },
-    });
-    const seen = new Set<string>(alreadyTold ?? []);
-    const payloads: Array<{ to: string; eventId: string; recipientName?: string }> = [];
-    for (const person of recipients) {
-      const email = personEmail(person)?.toLowerCase();
-      if (!email || seen.has(email)) continue;
-      seen.add(email);
-      const name = personName(person)?.slice(0, 200);
-      payloads.push({ to: email, eventId: event.id, ...(name ? { recipientName: name } : {}) });
-    }
-    await enqueueResultsPublished(tx, payloads);
+    const queued = emailed ? await queueResultsAnnouncement(tx, event.id, firstAnnouncement) : 0;
     await recordAuditEvent({
       client: tx,
       action: "JUDGING_RESULTS_PUBLISHED",
@@ -1031,10 +1037,129 @@ export async function publishResults(ctx: JudgingOrganiserContext): Promise<Judg
       organisationId: ctx.organisationId,
       targetType: "Event",
       targetId: event.id,
-      metadata: { recipients: payloads.length, republished: !firstAnnouncement },
+      metadata: { recipients: queued, republished: !firstAnnouncement, emailEntrantsOnResults: emailed },
     });
-    return ok({ publishedAt, queued: payloads.length, alreadyPublished: false });
+    return ok({ publishedAt, queued, alreadyPublished: false, emailed });
   });
+}
+
+/**
+ * Plan the `results-published` emails: one per confirmed entrant member,
+ * deduplicated by lower-cased address. After an earlier announcement
+ * (`firstAnnouncement` false), only addresses whose copy was withdrawn
+ * undelivered by an unpublish are emailed: anyone with a delivered (or
+ * in-flight) announcement left in the outbox is skipped, and once those rows
+ * have aged out nobody is emailed again. Addresses that already have an
+ * announcement row for this event are never planned twice.
+ */
+async function planResultsAnnouncement(
+  tx: Prisma.TransactionClient,
+  eventId: string,
+  firstAnnouncement: boolean,
+): Promise<Array<{ to: string; eventId: string; recipientName?: string }>> {
+  const previous = await tx.outboxMessage.findMany({
+    where: { kind: "results-published", payload: { path: ["eventId"], equals: eventId } },
+    select: { payload: true },
+  });
+  const alreadyTold = new Set(previous.map((row) => asResultsPublishedPayload(row.payload)?.to.toLowerCase()).filter((to): to is string => Boolean(to)));
+  if (!firstAnnouncement && alreadyTold.size === 0) return [];
+  const recipients = await tx.rSVP.findMany({
+    where: { eventId, status: RsvpStatus.CONFIRMED },
+    select: personSelect,
+    orderBy: { createdAt: "asc" },
+  });
+  const seen = new Set<string>(alreadyTold);
+  const payloads: Array<{ to: string; eventId: string; recipientName?: string }> = [];
+  for (const person of recipients) {
+    const email = personEmail(person)?.toLowerCase();
+    if (!email || seen.has(email)) continue;
+    seen.add(email);
+    const name = personName(person)?.slice(0, 200);
+    payloads.push({ to: email, eventId, ...(name ? { recipientName: name } : {}) });
+  }
+  return payloads;
+}
+
+async function queueResultsAnnouncement(tx: Prisma.TransactionClient, eventId: string, firstAnnouncement: boolean): Promise<number> {
+  const payloads = await planResultsAnnouncement(tx, eventId, firstAnnouncement);
+  await enqueueResultsPublished(tx, payloads);
+  return payloads.length;
+}
+
+export type SendResultsAnnouncementOutcome = { queued: number; alreadyAnnounced: boolean; announcedAt: Date };
+
+/**
+ * "Send results email now": results were published with the email switch
+ * off, the organiser has since turned it on, and this publication hasn't
+ * been announced (`resultsAnnouncedAt` is null, or older than
+ * `resultsPublishedAt` after an unpublish that withdrew some copies). Queues
+ * the `results-published` emails to every confirmed entrant not already
+ * holding one for this event, once, and sets `resultsAnnouncedAt`. Same
+ * permission as publishing (`canManageJudging`). Idempotent under
+ * concurrency: the Event row lock (`FOR UPDATE`) serialises callers, and a
+ * later call sees the publication covered and queues nothing. Audited
+ * (JUDGING_RESULTS_ANNOUNCED).
+ */
+export async function sendResultsAnnouncement(ctx: JudgingOrganiserContext): Promise<JudgingResult<SendResultsAnnouncementOutcome>> {
+  return withOrganiserLock<SendResultsAnnouncementOutcome>(ctx, async (tx, event) => {
+    const refusal = sendResultsAnnouncementRefusal(event);
+    if (refusal) return fail(refusal);
+    if (event.resultsAnnouncedAt && announcementCoversPublication(event)) return ok({ queued: 0, alreadyAnnounced: true, announcedAt: event.resultsAnnouncedAt });
+    const publishedAt = event.resultsPublishedAt!;
+    const now = new Date();
+    // Never earlier than the publication, so it counts as covering it.
+    const announcedAt = now < publishedAt ? publishedAt : now;
+    const updated = await tx.event.updateMany({
+      where: { id: event.id, resultsPublishedAt: publishedAt, resultsAnnouncedAt: event.resultsAnnouncedAt },
+      data: { resultsAnnouncedAt: announcedAt },
+    });
+    if (updated.count !== 1) return fail(CHANGED);
+    const queued = await queueResultsAnnouncement(tx, event.id, !event.resultsAnnouncedAt);
+    await recordAuditEvent({
+      client: tx,
+      action: "JUDGING_RESULTS_ANNOUNCED",
+      actorUserId: ctx.userId,
+      organisationId: ctx.organisationId,
+      targetType: "Event",
+      targetId: event.id,
+      metadata: { recipients: queued, announcedBefore: Boolean(event.resultsAnnouncedAt) },
+    });
+    return ok({ queued, alreadyAnnounced: false, announcedAt });
+  });
+}
+
+/**
+ * How many entrants a results announcement would email right now: what the
+ * publish confirmation (switch on) and "Send results email now" show. Counted
+ * in SQL with the same rules as `planResultsAnnouncement` (confirmed
+ * registrations, the account email else the guest email, trimmed and
+ * lower-cased, distinct, minus addresses already holding an announcement for
+ * this event; none after an announcement whose rows are all gone). Null
+ * without the organiser's event.
+ */
+export async function countResultsAnnouncementRecipients(ctx: JudgingOrganiserContext): Promise<number | null> {
+  const event = await prisma.event.findFirst({ where: { id: ctx.eventId, organisationId: ctx.organisationId }, select: { id: true, resultsAnnouncedAt: true } });
+  if (!event) return null;
+  if (event.resultsAnnouncedAt) {
+    const previous = await prisma.outboxMessage.count({ where: { kind: "results-published", payload: { path: ["eventId"], equals: event.id } } });
+    if (previous === 0) return 0;
+  }
+  const rows = await prisma.$queryRaw<Array<{ count: bigint }>>`
+    SELECT COUNT(DISTINCT s."email") AS "count"
+    FROM (
+      SELECT lower(COALESCE(NULLIF(btrim(u."email"), ''), NULLIF(btrim(r."guestEmail"), ''))) AS "email"
+      FROM "RSVP" r
+      LEFT JOIN "User" u ON u."id" = r."userId"
+      WHERE r."eventId" = ${event.id} AND r."status" = 'CONFIRMED'
+    ) s
+    WHERE s."email" IS NOT NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM "OutboxMessage" m
+        WHERE m."kind" = 'results-published'
+          AND m."payload"->>'eventId' = ${event.id}
+          AND lower(m."payload"->>'to') = s."email"
+      )`;
+  return Number(rows[0]?.count ?? 0);
 }
 
 /**

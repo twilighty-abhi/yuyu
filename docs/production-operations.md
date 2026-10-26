@@ -54,11 +54,12 @@ Apply these with `npm run db:deploy` before rolling out the matching application
 | `20261025010000_saved_views` | New `SavedView` table and `SavedViewSurface` enum, cascading on `Event`, `User` and `Organisation`. Purely additive |
 | `20261026000000_large_event_indexes` | Six composite indexes on `RSVP`, `Team`, `Submission` and `EventInvite` (docs/PERFORMANCE.md). Plain `CREATE INDEX IF NOT EXISTS` inside the migration transaction: each build blocks writes to its table (RSVPs, check-ins, submissions, invites) until it finishes. Pre-build them concurrently on a large instance (below) |
 | `20261027000000_drop_orphan_event_session_type` | Drops the unused `EventSessionType` enum (no column has used it since `20260915010000_simplify_event_session_fields`). No table changes; brings the database in line with `schema.prisma` so `prisma migrate diff` is empty |
+| `20261028010000_hackathon_email_toggles` | `Event.emailEntrantsOnResults` and `Event.emailSubmissionReceipts`, both `NOT NULL DEFAULT false` (a constant default, so no table rewrite). Additive; `ALTER TABLE "Event"` as above. **Behaviour change for existing events:** both switches start off, so publishing results and submitting a project send no email until an organiser turns the switch on in Judging → Setup (docs/HACKATHON.md → Hackathon emails). Tell organisers who rely on those emails before upgrading |
 
 #### Lock checklist for the team, judging and large-event migrations
 
 Prisma applies each migration in one transaction, without a lock timeout. The
-four migrations that alter `Event` wait for an ACCESS EXCLUSIVE lock, and while
+five migrations that alter `Event` wait for an ACCESS EXCLUSIVE lock, and while
 they wait every new read and write of `Event` from the running pods queues
 behind them; `20261026000000_large_event_indexes` blocks writes to `RSVP`,
 `Team`, `Submission` and `EventInvite` while its indexes build. On a quiet

@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   disqualify: vi.fn(),
   setWinner: vi.fn(),
   publish: vi.fn(),
+  announce: vi.fn(),
   reviews: vi.fn(),
   exportRows: vi.fn(),
   planResults: vi.fn(),
@@ -37,6 +38,7 @@ vi.mock("@/lib/core/judging", () => ({
   disqualifySubmission: mocks.disqualify,
   setAwardWinner: mocks.setWinner,
   publishResults: mocks.publish,
+  sendResultsAnnouncement: mocks.announce,
   loadSubmissionReviewsForOrganiser: mocks.reviews,
   buildJudgingExportRows: mocks.exportRows,
   planJudgingResultsExport: mocks.planResults,
@@ -58,6 +60,7 @@ import {
   publishJudgingResults,
   saveJudgingSettings,
   searchAwardCandidates,
+  sendResultsAnnouncement,
   setEventAwardWinner,
 } from "@/app/actions/judging-admin";
 import { GET } from "@/app/api/exports/events/[eventId]/judging/route";
@@ -74,7 +77,9 @@ beforeEach(() => {
   mocks.setStatus.mockResolvedValue({ ok: true, data: { judgingStatus: "OPEN" } });
   mocks.disqualify.mockResolvedValue({ ok: true, data: undefined });
   mocks.setWinner.mockResolvedValue({ ok: true, data: undefined });
-  mocks.publish.mockResolvedValue({ ok: true, data: { publishedAt: new Date(), queued: 3, alreadyPublished: false } });
+  mocks.publish.mockResolvedValue({ ok: true, data: { publishedAt: new Date(), queued: 3, alreadyPublished: false, emailed: true } });
+  mocks.announce.mockResolvedValue({ ok: true, data: { queued: 3, alreadyAnnounced: false, announcedAt: new Date() } });
+  mocks.updateSettings.mockResolvedValue({ ok: true, data: { judgingStatus: "NOT_STARTED" } });
 });
 
 describe("organiser judging actions", () => {
@@ -130,8 +135,31 @@ describe("organiser judging actions", () => {
 
   it("publishes results under the broadcast rate-limit bucket", async () => {
     const res = await publishJudgingResults(scope);
-    expect(res).toEqual({ ok: true, data: { queued: 3, alreadyPublished: false } });
+    expect(res).toEqual({ ok: true, data: { queued: 3, alreadyPublished: false, emailed: true } });
     expect(mocks.rateLimit).toHaveBeenCalledWith("broadcast", "user_1");
+  });
+
+  it("passes the hackathon email switches through settings, and leaves them out when absent", async () => {
+    const base = { submissionsEnabled: true, submissionsOpenAt: "2030-01-01T00:00:00.000Z", submissionsCloseAt: "2030-01-02T00:00:00.000Z", judgesSeeAll: true, projectGalleryPublic: false };
+    await saveJudgingSettings({ ...scope, settings: { ...base, emailEntrantsOnResults: true, emailSubmissionReceipts: false, judgingStatus: "OPEN" } });
+    expect(mocks.updateSettings).toHaveBeenLastCalledWith(organiser, { ...base, emailEntrantsOnResults: true, emailSubmissionReceipts: false });
+    await saveJudgingSettings({ ...scope, settings: base });
+    expect(mocks.updateSettings).toHaveBeenLastCalledWith(organiser, { ...base, emailEntrantsOnResults: undefined, emailSubmissionReceipts: undefined });
+  });
+
+  it("sends the results email now under the broadcast bucket, only for organisers", async () => {
+    const res = await sendResultsAnnouncement(scope);
+    expect(res).toEqual({ ok: true, data: { queued: 3, alreadyAnnounced: false } });
+    expect(mocks.announce).toHaveBeenCalledWith(organiser);
+    expect(mocks.rateLimit).toHaveBeenCalledWith("broadcast", "user_1");
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/dashboard/club/event/event_1");
+
+    vi.clearAllMocks();
+    mocks.auth.mockResolvedValue({ user: { id: "judge_1" } });
+    mocks.rateLimit.mockResolvedValue(false);
+    mocks.resolveOrganiser.mockResolvedValue(null);
+    expect(await sendResultsAnnouncement(scope)).toEqual({ ok: false, error: expect.stringContaining("permission") });
+    expect(mocks.announce).not.toHaveBeenCalled();
   });
 
   it("serialises reviews for the browser", async () => {

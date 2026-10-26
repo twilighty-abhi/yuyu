@@ -10,6 +10,7 @@ import { Callout, Card, CardHeader, Chip } from "@/components/ui/display";
 import { Field, Input } from "@/components/ui/field";
 import { formatDayTime, formatTimeZoneName } from "@/lib/format/datetime";
 import { zonedInputToIso } from "@/lib/timeZone";
+import { announcementCoversPublication } from "@/lib/hackathonEmails";
 import type { JudgingDashboardSettings } from "@/lib/eventDashboard/judging";
 import { OpenTabButton } from "../EventDashboardTabs";
 import { eventNotLiveWarning } from "./judgingCopy";
@@ -74,6 +75,8 @@ function SettingsCard({ scope, settings, now, inSettingsTab = false }: { scope: 
   const [closesAt, setClosesAt] = useState(settings.closesAtLocal);
   const [seeAll, setSeeAll] = useState(settings.judgesSeeAll ? "all" : "assigned");
   const [galleryPublic, setGalleryPublic] = useState(settings.projectGalleryPublic);
+  const [emailOnResults, setEmailOnResults] = useState(settings.emailEntrantsOnResults);
+  const [emailReceipts, setEmailReceipts] = useState(settings.emailSubmissionReceipts);
   const [errors, setErrors] = useState<Record<string, string[]> | undefined>();
   const zone = formatTimeZoneName(settings.opensAt ?? now, settings.timezone);
   // Shown as soon as the switch is on, before saving, so nobody opens submissions on a draft unawares.
@@ -104,6 +107,9 @@ function SettingsCard({ scope, settings, now, inSettingsTab = false }: { scope: 
             submissionsCloseAt: closesIso ?? "",
             judgesSeeAll: seeAll === "all",
             projectGalleryPublic: galleryPublic,
+            // The Settings tab card doesn't show the email switches; leaving
+            // them out keeps their saved values.
+            ...(inSettingsTab ? {} : { emailEntrantsOnResults: emailOnResults, emailSubmissionReceipts: emailReceipts }),
           },
         }),
       judgingSettingsSavedMessage(enabled, inSettingsTab, settings.eventStatus === "PUBLISHED"),
@@ -176,6 +182,15 @@ function SettingsCard({ scope, settings, now, inSettingsTab = false }: { scope: 
           checked={galleryPublic}
           onCheckedChange={setGalleryPublic}
         />
+        {inSettingsTab ? null : (
+          <HackathonEmailsSection
+            emailOnResults={emailOnResults}
+            onEmailOnResults={setEmailOnResults}
+            emailReceipts={emailReceipts}
+            onEmailReceipts={setEmailReceipts}
+            pendingAnnouncement={Boolean(settings.resultsPublishedAt) && !announcementCoversPublication(settings)}
+          />
+        )}
         <div>
           <Button type="submit" variant="primary" loading={busy === "settings"} loadingLabel="Saving…">
             Save settings
@@ -183,6 +198,50 @@ function SettingsCard({ scope, settings, now, inSettingsTab = false }: { scope: 
         </div>
       </form>
     </Card>
+  );
+}
+
+/**
+ * "Hackathon emails": the two opt-in emails (lib/hackathonEmails.ts), both off
+ * by default. Registration, team and submission-link emails always go out and
+ * have no switch here. The server enforces these when it queues the email.
+ */
+function HackathonEmailsSection({
+  emailOnResults,
+  onEmailOnResults,
+  emailReceipts,
+  onEmailReceipts,
+  pendingAnnouncement,
+}: {
+  emailOnResults: boolean;
+  onEmailOnResults: (on: boolean) => void;
+  emailReceipts: boolean;
+  onEmailReceipts: (on: boolean) => void;
+  /** Results are published and nobody has been emailed about them yet. */
+  pendingAnnouncement: boolean;
+}) {
+  return (
+    <fieldset className="flex flex-col gap-3.5 rounded-lg border border-line p-3.5">
+      <legend className="px-1 text-label text-ink">Hackathon emails</legend>
+      <p className="text-caption text-ink-muted">
+        Both are off unless you turn them on. Registration, team and submission-link emails always go out.
+      </p>
+      <SwitchRow
+        label="Email entrants when results are published"
+        description="Every confirmed entrant gets one email saying the results are out. Off: the results page goes live without emailing anyone."
+        checked={emailOnResults}
+        onCheckedChange={onEmailOnResults}
+      />
+      {emailOnResults && pendingAnnouncement ? (
+        <Callout tone="info">Results are already published. After saving, send the email from the Results tab with “Send results email now”.</Callout>
+      ) : null}
+      <SwitchRow
+        label="Email a receipt when a project is submitted"
+        description="The person who submits gets a confirmation that the project was received."
+        checked={emailReceipts}
+        onCheckedChange={onEmailReceipts}
+      />
+    </fieldset>
   );
 }
 

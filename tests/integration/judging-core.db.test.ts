@@ -126,6 +126,8 @@ describe.sequential("judging core integration", () => {
 
   it("runs submissions, judging, and results end to end", async () => {
     const event = await createEvent();
+    // Hackathon emails are opt-in (off by default); this journey covers sending them.
+    await prisma.event.update({ where: { id: event.id }, data: { emailEntrantsOnResults: true, emailSubmissionReceipts: true } });
     const ctx = await organiser(event);
     const leader = await register(event, "leader", { mode: "create", name: `Team ${suffix}` });
     const auth = await resolveEntrantByTeamManageToken(await manageTokenFor(leader.teamId!));

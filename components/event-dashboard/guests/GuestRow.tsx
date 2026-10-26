@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
-import { ArrowRightLeft, Check, ChevronDown, Copy, MoreHorizontal, Pencil, RotateCcw, Trash2, Users, UserX } from "lucide-react";
+import { ArrowRightLeft, BadgeCheck, Check, ChevronDown, Copy, MoreHorizontal, Pencil, RotateCcw, Trash2, Users, UserX } from "lucide-react";
 import { Button, IconButton } from "@/components/ui/button";
 import { Avatar, Chip, type ChipTone } from "@/components/ui/display";
 import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
@@ -41,7 +41,10 @@ export type GuestRowActions = {
   moveToTeam?: (guest: AttendeeRow) => void;
 };
 
-export function GuestRow({ guest, timeZone, now, busy, disabled, actions }: { guest: AttendeeRow; timeZone: string; now: string; busy: boolean; disabled: boolean; actions: GuestRowActions }) {
+/** `isCrew` comes with dashboard rows (lib/eventDashboard/attendees.ts); other lists omit it. */
+type GuestRowGuest = AttendeeRow & { isCrew?: boolean };
+
+export function GuestRow({ guest, timeZone, now, busy, disabled, actions }: { guest: GuestRowGuest; timeZone: string; now: string; busy: boolean; disabled: boolean; actions: GuestRowActions }) {
   const [answersOpen, setAnswersOpen] = useState(false);
   const answersId = useId();
   const name = guestDisplayName(guest);
@@ -51,6 +54,8 @@ export function GuestRow({ guest, timeZone, now, busy, disabled, actions }: { gu
   const answers = guest.answers ?? [];
   // Team members are approved, declined and promoted only with their whole team.
   const teamManaged = isManagedByTeam(guest);
+  // Crew tickets are edited and removed only in Guests → Crew (the server refuses it here too).
+  const crew = guest.isCrew === true;
 
   return (
     <li className="flex min-w-0 flex-wrap items-center gap-x-3.5 gap-y-2.5 rounded-xl border border-line bg-canvas px-4 py-3">
@@ -64,6 +69,11 @@ export function GuestRow({ guest, timeZone, now, busy, disabled, actions }: { gu
       </div>
       <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
         <Chip size="sm" tone={CHIP_TONES[guest.status]}>{GUEST_STATUS_LABELS[guest.status]}</Chip>
+        {crew ? (
+          <Chip size="sm" tone="accent" icon={<BadgeCheck />}>
+            Crew
+          </Chip>
+        ) : null}
         {guest.team ? (
           <Chip size="sm" tone="neutral" icon={<Users />} className="max-w-[200px]">
             <span className="sr-only">Team: </span>
@@ -127,10 +137,12 @@ export function GuestRow({ guest, timeZone, now, busy, disabled, actions }: { gu
             <MenuItem icon={<Copy />} onSelect={() => actions.copyTicket(guest)}>
               Copy ticket link
             </MenuItem>
-            <MenuItem icon={<Pencil />} onSelect={() => actions.edit(guest)}>
-              {guest.user ? "View registration" : "Edit registration or transfer ticket"}
-            </MenuItem>
-            {actions.moveToTeam ? (
+            {!crew ? (
+              <MenuItem icon={<Pencil />} onSelect={() => actions.edit(guest)}>
+                {guest.user ? "View registration" : "Edit registration or transfer ticket"}
+              </MenuItem>
+            ) : null}
+            {actions.moveToTeam && !crew ? (
               <MenuItem icon={<ArrowRightLeft />} onSelect={() => actions.moveToTeam?.(guest)}>
                 {guest.team ? "Move to another team" : "Add to a team"}
               </MenuItem>
@@ -145,10 +157,14 @@ export function GuestRow({ guest, timeZone, now, busy, disabled, actions }: { gu
                 Decline
               </MenuItem>
             ) : null}
-            <MenuSeparator />
-            <MenuItem danger icon={<Trash2 />} onSelect={() => actions.remove(guest)}>
-              Remove RSVP
-            </MenuItem>
+            {!crew ? (
+              <>
+                <MenuSeparator />
+                <MenuItem danger icon={<Trash2 />} onSelect={() => actions.remove(guest)}>
+                  Remove RSVP
+                </MenuItem>
+              </>
+            ) : null}
           </MenuContent>
         </Menu>
       </div>

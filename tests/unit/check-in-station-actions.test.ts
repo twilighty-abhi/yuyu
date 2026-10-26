@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { reauthLoginHref } from "@/components/auth/useActionErrorToast";
+import { safeAuthRedirect } from "@/lib/authRedirect";
 
 const mocks = vi.hoisted(() => ({
   requireRole: vi.fn(),
@@ -43,7 +45,10 @@ describe("check-in station secret actions", () => {
   it("requires a fresh sign-in before reading or rotating the station secret", async () => {
     mocks.recent.mockResolvedValue(false);
     await expect(createOrRotateCheckInStation({ organisationSlug: "org", eventId: "event_1" }))
-      .resolves.toEqual({ ok: false, error: "For security, sign in again before managing the venue station PIN." });
+      .resolves.toEqual({ ok: false, error: "For security, sign in again before managing the venue station PIN.", reauthRequired: true });
+    // The UI turns reauthRequired into a "Sign in again" toast action that returns here.
+    expect(safeAuthRedirect(new URL(reauthLoginHref("/dashboard/org/event/event_1/check-in?tab=door"), "https://x.test").searchParams.get("callbackUrl")))
+      .toBe("/dashboard/org/event/event_1/check-in?tab=door");
     expect(mocks.eventFind).not.toHaveBeenCalled();
     expect(mocks.transaction).not.toHaveBeenCalled();
   });

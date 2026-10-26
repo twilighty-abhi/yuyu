@@ -23,8 +23,8 @@ Invalid, expired, revoked, and disabled credentials all receive the same generic
 | Scope | Capability |
 | --- | --- |
 | `events:read` | Read standalone event metadata belonging to the client's organisation |
-| `participants:read` | Read the minimal confirmed-participant roster for an event belonging to the client's organisation; can filter it by attendance without returning attendance data |
-| `participants:attendance:read` | With `participants:read`, opt in to the `checkedInAt` timestamp with `include=attendance` |
+| `participants:read` | Read the minimal confirmed-participant roster for an event belonging to the client's organisation |
+| `participants:attendance:read` | With `participants:read`, filter the roster by attendance (`attendance=checked_in` or `not_checked_in`) and opt in to the `checkedInAt` timestamp with `include=attendance` |
 
 `participants:attendance:read` does not grant roster access by itself. Participant access does not include email, user IDs, registration answers, invitation data, feedback linkage, or ticket/check-in/certificate tokens.
 
@@ -52,7 +52,7 @@ Requires `events:read`. Missing and cross-organisation IDs both return the same 
 GET /api/v1/events/:eventId/participants?limit=50&cursor=<cursor>&attendance=checked_in&include=attendance
 ```
 
-Requires `participants:read`. Only confirmed standalone-event RSVPs are returned. `attendance` accepts `all` (the default), `checked_in`, or `not_checked_in`; it does not require an extra scope because it only filters the existing minimal roster. `include=attendance` returns the nullable `checkedInAt` timestamp and additionally requires `participants:attendance:read`.
+Requires `participants:read`. Only confirmed standalone-event RSVPs are returned. `attendance` accepts `all` (the default), `checked_in`, or `not_checked_in`. Filtering by attendance reveals who has checked in, so `checked_in` and `not_checked_in` also require `participants:attendance:read`; without it the request is refused with `403 INSUFFICIENT_SCOPE`. `include=attendance` returns the nullable `checkedInAt` timestamp and requires the same scope.
 
 ```json
 {

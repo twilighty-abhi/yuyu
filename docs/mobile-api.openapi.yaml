@@ -59,6 +59,7 @@ paths:
         "401": { description: "`MFA_REQUIRED` (only after a correct password).", content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } } }
         "403": { description: "`EMAIL_VERIFICATION_REQUIRED`.", content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } } }
         "429": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/auth/google:
     post:
@@ -83,6 +84,7 @@ paths:
         "401": { description: Token failed verification., content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } } }
         "403": { description: Google sign-in not configured, account creation disabled, or linking refused., content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } } }
         "429": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/auth/refresh:
     post:
@@ -107,23 +109,26 @@ paths:
         "200": { $ref: "#/components/responses/Session" }
         "401": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/auth/logout:
     post:
       tags: [Auth]
       summary: Revoke the current mobile session
       responses:
-        "200": { $ref: "#/components/responses/Null" }
+        "200": { $ref: "#/components/responses/NullData" }
         "401": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/auth/logout-all:
     post:
       tags: [Auth]
       summary: Sign out everywhere (web and mobile)
       responses:
-        "200": { $ref: "#/components/responses/Null" }
+        "200": { $ref: "#/components/responses/NullData" }
         "401": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/auth/config:
     get:
@@ -132,6 +137,7 @@ paths:
       security: []
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/AuthConfigResponse" } } } }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/me:
     get:
@@ -140,6 +146,7 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/MeResponse" } } } }
         "401": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
     patch:
       tags: [Me]
       summary: Update the display name
@@ -157,6 +164,7 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/UserResponse" } } } }
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/me/registrations:
     get:
@@ -165,6 +173,7 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/RegistrationsResponse" } } } }
         "401": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/me/registrations/{rsvpId}/cancel:
     post:
@@ -172,9 +181,10 @@ paths:
       summary: Cancel one of the caller's own RSVPs
       parameters: [{ $ref: "#/components/parameters/rsvpId" }]
       responses:
-        "200": { $ref: "#/components/responses/Null" }
+        "200": { $ref: "#/components/responses/NullData" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/me/registrations/{rsvpId}/team:
     get:
@@ -189,6 +199,7 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/MyTeamResponse" } } } }
         "401": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/public/discover:
     get:
@@ -202,6 +213,7 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EventListResponse" } } } }
         "400": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/public/search:
     get:
@@ -214,6 +226,7 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EventListResponse" } } } }
         "400": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/public/short/{code}:
     get:
@@ -225,6 +238,7 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ShortLinkResponse" } } } }
         "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/public/events/{orgSlug}/{eventSlug}:
     get:
@@ -237,6 +251,7 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PublicEventResponse" } } } }
         "401": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/public/events/{orgSlug}/{eventSlug}/feedback:
     get:
@@ -247,6 +262,7 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/FeedbackFormResponse" } } } }
         "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/rsvp:
     post:
@@ -274,6 +290,7 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "409": { description: "`TEAM_REQUIRED` (a team event that registers teams only; register on the website) or `CONFLICT`.", content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } } }
         "429": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/orgs/{orgSlug}/events:
     get:
@@ -285,6 +302,7 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/OrgEventsResponse" } } } }
         "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/orgs/{orgSlug}/events/{eventId}:
     get:
@@ -294,6 +312,7 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/OrgEventDetailResponse" } } } }
         "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/guests:
     get:
@@ -311,6 +330,7 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GuestListResponse" } } } }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
     post:
       tags: [Organiser]
       summary: Add a guest (organisation admins)
@@ -333,6 +353,7 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/guests/restore:
     post:
@@ -345,10 +366,11 @@ paths:
           application/json:
             schema: { type: object, additionalProperties: false, required: [undoId], properties: { undoId: { type: string } } }
       responses:
-        "200": { $ref: "#/components/responses/Null" }
+        "200": { $ref: "#/components/responses/NullData" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/guests/{rsvpId}:
     get:
@@ -359,6 +381,7 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GuestDetailResponse" } } } }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
     delete:
       tags: [Organiser]
       summary: Delete a guest (organisation admins); returns an undo id
@@ -367,6 +390,7 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/UndoResponse" } } } }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/guests/{rsvpId}/approve:
     post:
@@ -379,6 +403,7 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { description: "`CONFLICT`, or `TEAM_MEMBER` for a guest in a team.", content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } } }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/guests/{rsvpId}/reject:
     post:
@@ -391,6 +416,7 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { description: "`CONFLICT`, or `TEAM_MEMBER` for a guest in a team.", content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } } }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/guests/{rsvpId}/promote:
     post:
@@ -403,6 +429,7 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { description: "`CONFLICT`, or `TEAM_MEMBER` for a guest in a team.", content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } } }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/guests/{rsvpId}/reaccept:
     post:
@@ -416,6 +443,7 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/teams:
     get:
@@ -440,6 +468,7 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/teams/{teamId}/approve:
     post:
@@ -453,6 +482,7 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "409": { description: "`TEAM_INCOMPLETE` below the minimum team size, `CAPACITY_FULL` with no free unit, `CONFLICT` when not pending, the event is closed, or another organiser changed it.", content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } } }
         "429": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/teams/{teamId}/reject:
     post:
@@ -466,6 +496,7 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "409": { description: "`CONFLICT` for any other status or a concurrent change.", content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } } }
         "429": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/teams/{teamId}/promote:
     post:
@@ -479,6 +510,7 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "409": { description: "`CAPACITY_FULL` while the event is still full, `CONFLICT` when not waitlisted or changed concurrently.", content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } } }
         "429": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/judging/submissions:
     get:
@@ -504,6 +536,7 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/judging/next:
     get:
@@ -520,6 +553,7 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/judging/criteria:
     get:
@@ -531,6 +565,7 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/judging/submissions/{submissionId}:
     get:
@@ -543,6 +578,7 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/judging/submissions/{submissionId}/scores:
     put:
@@ -572,6 +608,7 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/judging/submissions/{submissionId}/review:
     post:
@@ -601,6 +638,7 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/check-in/preview:
     post:
@@ -623,6 +661,7 @@ paths:
         "400": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/check-in:
     post:
@@ -647,6 +686,7 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { description: "`NEEDS_FORCE` (retry with `force: true`) or `CONFLICT`.", content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } } }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/check-in/undo:
     post:
@@ -659,10 +699,11 @@ paths:
           application/json:
             schema: { type: object, additionalProperties: false, required: [rsvpId], properties: { rsvpId: { type: string } } }
       responses:
-        "200": { $ref: "#/components/responses/Null" }
+        "200": { $ref: "#/components/responses/NullData" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/check-in/lookup:
     get:
@@ -676,6 +717,7 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/LookupResponse" } } } }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/check-in/stats:
     get:
@@ -686,6 +728,7 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CheckInStatsResponse" } } } }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/check-in/roster:
     get:
@@ -696,6 +739,7 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/RosterResponse" } } } }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/check-in/sync:
     post:
@@ -729,6 +773,7 @@ paths:
         "400": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/broadcasts/meta:
     get:
@@ -739,6 +784,7 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/BroadcastsMetaResponse" } } } }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/broadcasts/count:
     post:
@@ -753,6 +799,7 @@ paths:
         "400": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/broadcasts/preview:
     post:
@@ -767,6 +814,7 @@ paths:
         "400": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/broadcasts/test:
     post:
@@ -782,6 +830,7 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/broadcasts:
     post:
@@ -809,6 +858,7 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/schedule:
     get:
@@ -819,6 +869,7 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ScheduleResponse" } } } }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/schedule/sessions/{sessionId}/delay:
     post:
@@ -834,10 +885,11 @@ paths:
           application/json:
             schema: { type: object, additionalProperties: false, required: [delayMinutes], properties: { delayMinutes: { type: integer, minimum: 0, maximum: 1440 } } }
       responses:
-        "200": { $ref: "#/components/responses/Null" }
+        "200": { $ref: "#/components/responses/NullData" }
         "400": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/feedback/state:
     post:
@@ -854,6 +906,7 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/mobile/v1/orgs/{orgSlug}/events/{eventId}/registration/state:
     post:
@@ -876,6 +929,7 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/ticket/{token}/status:
     get:
@@ -897,6 +951,7 @@ paths:
                   checkedInAt: { type: [string, "null"], format: date-time }
         "404": { description: Unknown or malformed token (empty body). }
         "429": { description: Rate limited. }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/ticket/{token}/events:
     get:
@@ -908,6 +963,7 @@ paths:
         "200": { description: "`text/event-stream` of `{ checkedIn, checkedInAt }` messages.", content: { text/event-stream: { schema: { type: string } } } }
         "404": { description: Unknown or malformed token. }
         "429": { description: Rate limited. }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/feedback:
     post:
@@ -940,6 +996,7 @@ paths:
         "400": { description: "`{ ok: false, error: string }`." }
         "413": { description: Body over 128 KiB. }
         "429": { description: Rate limited. }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/feedback/certificate/{token}:
     get:
@@ -950,6 +1007,7 @@ paths:
       responses:
         "200": { description: JPEG image., content: { image/jpeg: { schema: { type: string, format: binary } } } }
         "404": { description: Unknown token. }
+        default: { $ref: "#/components/responses/Error" }
 
   /api/check-in/station:
     post:
@@ -961,6 +1019,7 @@ paths:
         "200": { description: Station operation result. }
         "401": { description: Missing or invalid station proof. }
         "429": { description: Rate limited. }
+        default: { $ref: "#/components/responses/Error" }
 
   /.well-known/assetlinks.json:
     get:
@@ -969,6 +1028,7 @@ paths:
       security: []
       responses:
         "200": { description: "Statement list; `[]` when `ANDROID_APP_SHA256_CERT_FINGERPRINTS` is unset.", content: { application/json: { schema: { type: array } } } }
+        default: { $ref: "#/components/responses/Error" }
 
   /.well-known/apple-app-site-association:
     get:
@@ -977,6 +1037,7 @@ paths:
       security: []
       responses:
         "200": { description: "Claims `/ticket/*`, `/*/*/feedback` and `/*/*` after excluding application paths (see MOBILE_API.md); `{ applinks: { details: [] } }` when `APPLE_APP_IDS` is unset.", content: { application/json: { schema: { type: object } } } }
+        default: { $ref: "#/components/responses/Error" }
 
 components:
   securitySchemes:
@@ -995,9 +1056,13 @@ components:
 
   responses:
     Error:
-      description: Error envelope.
+      description: >-
+        Error envelope (docs/MOBILE_API.md). Any status an operation does not
+        list, such as 400 `INVALID_REQUEST`, 401 `UNAUTHENTICATED`, 404
+        `NOT_FOUND` or 429 `RATE_LIMITED`, uses this envelope; so does an
+        unknown path under /api/mobile/v1.
       content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
-    Null:
+    NullData:
       description: OK
       content:
         application/json:
@@ -1122,8 +1187,13 @@ components:
         judging: { type: array, items: { $ref: "#/components/schemas/JudgingEvent" } }
 
     EventSummary:
+      description: Closed form of EventSummaryFields (no other properties).
+      allOf: [{ $ref: "#/components/schemas/EventSummaryFields" }]
+      unevaluatedProperties: false
+
+    EventSummaryFields:
+      description: The EventSummary properties, open so that allOf compositions can extend them; each composition closes itself with unevaluatedProperties false.
       type: object
-      additionalProperties: false
       required: [id, slug, title, coverImageUrl, startDateTime, endDateTime, timezone, location, mapLinkUrl, isOnline, accentColor, status, registrationMode, organisation]
       properties:
         id: { type: string }
@@ -1269,8 +1339,9 @@ components:
       required: [event, registration, schedule, speakers, feedbackOpen]
       properties:
         event:
+          unevaluatedProperties: false
           allOf:
-            - { $ref: "#/components/schemas/EventSummary" }
+            - { $ref: "#/components/schemas/EventSummaryFields" }
             - type: object
               required: [description, tags, capacity, showRegistrationCount, confirmedCount, privacyType, registrationOpen, registrationFull, registrationClosedReason, onlineUrl]
               properties:
@@ -1392,8 +1463,9 @@ components:
         events:
           type: array
           items:
+            unevaluatedProperties: false
             allOf:
-              - { $ref: "#/components/schemas/EventSummary" }
+              - { $ref: "#/components/schemas/EventSummaryFields" }
               - type: object
                 required: [counts, myPermissions]
                 properties:
@@ -1409,8 +1481,9 @@ components:
       required: [event, counts, myPermissions]
       properties:
         event:
+          unevaluatedProperties: false
           allOf:
-            - { $ref: "#/components/schemas/EventSummary" }
+            - { $ref: "#/components/schemas/EventSummaryFields" }
             - type: object
               required: [privacyType, registrationOpen, registrationClosesAt, registrationClosedReason, registrationManuallyClosed, feedbackOpen, eventUrl, shortUrl]
               properties:
@@ -1429,8 +1502,13 @@ components:
         myPermissions: { $ref: "#/components/schemas/EventPermissions" }
 
     Guest:
+      description: Closed form of GuestFields (no other properties).
+      allOf: [{ $ref: "#/components/schemas/GuestFields" }]
+      unevaluatedProperties: false
+
+    GuestFields:
+      description: The Guest properties, open so that allOf compositions can extend them; each composition closes itself with unevaluatedProperties false.
       type: object
-      additionalProperties: false
       required: [rsvpId, displayName, email, status, checkedInAt, registeredAt, isGuest]
       properties:
         rsvpId: { type: string }
@@ -1459,8 +1537,9 @@ components:
         nextCursor: { type: [string, "null"] }
 
     GuestDetail:
+      unevaluatedProperties: false
       allOf:
-        - { $ref: "#/components/schemas/Guest" }
+        - { $ref: "#/components/schemas/GuestFields" }
         - type: object
           required: [answers]
           properties:
@@ -1474,8 +1553,13 @@ components:
         undoId: { type: string }
 
     CheckInResult:
+      description: Closed form of CheckInResultFields (no other properties).
+      allOf: [{ $ref: "#/components/schemas/CheckInResultFields" }]
+      unevaluatedProperties: false
+
+    CheckInResultFields:
+      description: The CheckInResult properties, open so that allOf compositions can extend them; each composition closes itself with unevaluatedProperties false.
       type: object
-      additionalProperties: false
       required: [rsvpId, displayName, email, status, alreadyCheckedIn, checkedInAt, checkInDetails, registrationDetails]
       properties:
         rsvpId: { type: string }
@@ -1489,8 +1573,9 @@ components:
         teamName: { type: string, description: TEAM events only; absent for solo registrants. }
 
     CheckInPreview:
+      unevaluatedProperties: false
       allOf:
-        - { $ref: "#/components/schemas/CheckInResult" }
+        - { $ref: "#/components/schemas/CheckInResultFields" }
         - type: object
           required: [gate]
           properties:
@@ -1532,8 +1617,9 @@ components:
               checkedInAt: { $ref: "#/components/schemas/DateTime" }
 
     RosterRow:
+      unevaluatedProperties: false
       allOf:
-        - { $ref: "#/components/schemas/Guest" }
+        - { $ref: "#/components/schemas/GuestFields" }
         - type: object
           required: [ticketToken, checkInDetails, registrationDetails]
           properties:

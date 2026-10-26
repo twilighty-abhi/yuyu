@@ -15,9 +15,10 @@ export default defineConfig({
       reporter: ["text", "html"],
       include: ["lib/**/*.ts", "app/actions/**/*.ts"],
       exclude: ["**/*.client.ts"],
-      // Comprehensive baseline across every server action and library. Raise
-      // these ratchets as additional authorization scenarios are added.
-      thresholds: { statements: 10, branches: 6, functions: 12, lines: 10 },
+      // A ratchet a few points below the measured coverage (45.9 / 40.5 /
+      // 51.8 / 48.7 on 2026-10-26), so a real drop fails the gate. Raise it
+      // as coverage grows; never lower it to make a change pass.
+      thresholds: { statements: 43, branches: 38, functions: 49, lines: 46 },
     },
   },
 });

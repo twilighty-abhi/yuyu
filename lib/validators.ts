@@ -1,6 +1,6 @@
 import { BroadcastAttendanceFilter, EventPrivacyType, EventStatus, RegistrationMode, RsvpStatus, SoloPolicy } from "@prisma/client";
 import { z } from "zod";
-import { isValidTimeZone } from "@/lib/timeZone";
+import { isValidTimeZone, zonedInputToIso } from "@/lib/timeZone";
 import { isUploadedImageUrl } from "@/lib/uploadUrl";
 import { BROADCAST_DESIGN_IDS, DEFAULT_BROADCAST_DESIGN } from "@/lib/email/broadcastDesigns";
 import { BROADCAST_BODY_MAX, BROADCAST_STARTER_TEMPLATES, BROADCAST_SUBJECT_MAX } from "@/lib/broadcastTemplate";
@@ -24,6 +24,34 @@ const timeZoneSchema = z
   .min(1, "Timezone is required")
   .max(64)
   .refine(isValidTimeZone, "Select a valid IANA timezone");
+/** `YYYY-MM-DDTHH:mm[:ss[.sss]]` with no `Z` or UTC offset: a wall-clock time. */
+const ZONELESS_DATETIME = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})(?::00(?:\.0+)?)?$/;
+
+/**
+ * Reads wall-clock date-time strings (a `datetime-local` value with no `Z` or
+ * offset) in the payload's own `timezone`, never in the server's clock, so a
+ * UTC container stores an Asia/Kolkata 19:00 start as 13:30Z. Instants that
+ * carry a `Z` or offset, and Date objects, pass through unchanged; a local
+ * time that does not exist in the timezone (a DST gap) fails validation.
+ */
+function withZonedDateTimes<T extends z.ZodType>(keys: readonly string[], schema: T) {
+  return z.preprocess((input) => {
+    if (!input || typeof input !== "object" || Array.isArray(input)) return input;
+    const record = input as Record<string, unknown>;
+    const timeZone = typeof record.timezone === "string" ? record.timezone.trim() : "";
+    if (!timeZone || !isValidTimeZone(timeZone)) return input;
+    let output = record;
+    for (const key of keys) {
+      const value = record[key];
+      if (typeof value !== "string") continue;
+      const match = value.trim().match(ZONELESS_DATETIME);
+      if (!match) continue;
+      output = { ...output, [key]: zonedInputToIso(match[1], timeZone) ?? "invalid-local-time" };
+    }
+    return output;
+  }, schema);
+}
+
 const coverImageUrlSchema = z
   .union([
     z.string().refine(isUploadedImageUrl, "Invalid uploaded image URL"),
@@ -299,83 +327,86 @@ export const updateOrganisationSchema = z.object({
     .or(z.literal("")),
 });
 
-export const createEventSchema = z
-  .object({
-    organisationSlug: z.string().trim().min(1),
-    title: z.string().trim().min(1, "Title is required").max(200),
-    description: z.string().trim().max(10000).optional(),
-    aboutHtml: z.string().max(50_000),
-    tags: z
-      .preprocess(
-        (v) => {
-          const raw = String(v ?? "");
-          const parts = raw
-            .split(/[,\n]/g)
-            .map((s) => s.trim().toLowerCase())
-            .map((s) => s.replace(/\s+/g, " "))
-            .filter(Boolean)
-            .slice(0, 12);
-          return Array.from(new Set(parts));
-        },
-        z.array(z.string().min(1).max(32)).optional(),
+export const createEventSchema = withZonedDateTimes(
+  ["startDateTime", "endDateTime", "registrationClosesAt"],
+  z
+    .object({
+      organisationSlug: z.string().trim().min(1),
+      title: z.string().trim().min(1, "Title is required").max(200),
+      description: z.string().trim().max(10000).optional(),
+      aboutHtml: z.string().max(50_000),
+      tags: z
+        .preprocess(
+          (v) => {
+            const raw = String(v ?? "");
+            const parts = raw
+              .split(/[,\n]/g)
+              .map((s) => s.trim().toLowerCase())
+              .map((s) => s.replace(/\s+/g, " "))
+              .filter(Boolean)
+              .slice(0, 12);
+            return Array.from(new Set(parts));
+          },
+          z.array(z.string().min(1).max(32)).optional(),
+        )
+        .optional(),
+      coverImageUrl: coverImageUrlSchema,
+      showRegistrationCount: z
+        .preprocess((v) => v === true || v === "true" || v === "on", z.boolean())
+        .optional()
+        .default(true),
+      startDateTime: z.coerce.date(),
+      endDateTime: z.coerce.date(),
+      timezone: timeZoneSchema,
+      location: z.string().trim().max(500).optional().default(""),
+      mapLinkUrl: optionalHttpUrlSchema,
+      isOnline: z.preprocess(
+        (v) => v === true || v === "true" || v === "on",
+        z.boolean(),
+      ),
+      capacity: z.preprocess((v) => {
+        if (v === "" || v === null || v === undefined) return undefined;
+        const n = Number(v);
+        return Number.isFinite(n) ? n : undefined;
+      }, z.number().int().positive().optional()),
+      status: z.nativeEnum(EventStatus).optional().default(EventStatus.DRAFT),
+      privacyType: z
+        .nativeEnum(EventPrivacyType)
+        .optional()
+        .default(EventPrivacyType.PUBLIC),
+      ...registrationCutoffSchema,
+      ...teamSettingsFields,
+    })
+    .superRefine((data, ctx) => {
+      validateEventScheduleAndLocation(data, ctx);
+      validateTeamSettings(data, ctx);
+      if (data.registrationClosesAt && data.registrationLeadMinutes != null)
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["registrationClosesAt"],
+          message: "Choose one registration cutoff mode.",
+        });
+      if (
+        data.registrationClosesAt &&
+        data.registrationClosesAt > data.startDateTime
       )
-      .optional(),
-    coverImageUrl: coverImageUrlSchema,
-    showRegistrationCount: z
-      .preprocess((v) => v === true || v === "true" || v === "on", z.boolean())
-      .optional()
-      .default(true),
-    startDateTime: z.coerce.date(),
-    endDateTime: z.coerce.date(),
-    timezone: timeZoneSchema,
-    location: z.string().trim().max(500).optional().default(""),
-    mapLinkUrl: optionalHttpUrlSchema,
-    isOnline: z.preprocess(
-      (v) => v === true || v === "true" || v === "on",
-      z.boolean(),
-    ),
-    capacity: z.preprocess((v) => {
-      if (v === "" || v === null || v === undefined) return undefined;
-      const n = Number(v);
-      return Number.isFinite(n) ? n : undefined;
-    }, z.number().int().positive().optional()),
-    status: z.nativeEnum(EventStatus).optional().default(EventStatus.DRAFT),
-    privacyType: z
-      .nativeEnum(EventPrivacyType)
-      .optional()
-      .default(EventPrivacyType.PUBLIC),
-    ...registrationCutoffSchema,
-    ...teamSettingsFields,
-  })
-  .superRefine((data, ctx) => {
-    validateEventScheduleAndLocation(data, ctx);
-    validateTeamSettings(data, ctx);
-    if (data.registrationClosesAt && data.registrationLeadMinutes != null)
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["registrationClosesAt"],
-        message: "Choose one registration cutoff mode.",
-      });
-    if (
-      data.registrationClosesAt &&
-      data.registrationClosesAt > data.startDateTime
-    )
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["registrationClosesAt"],
-        message: "Registration must close on or before the event starts.",
-      });
-    if (
-      data.registrationLeadMinutes != null &&
-      data.registrationLeadMinutes * 60_000 >
-        data.startDateTime.getTime() - Date.now()
-    )
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["registrationLeadMinutes"],
-        message: "Registration cutoff cannot be before now.",
-      });
-  });
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["registrationClosesAt"],
+          message: "Registration must close on or before the event starts.",
+        });
+      if (
+        data.registrationLeadMinutes != null &&
+        data.registrationLeadMinutes * 60_000 >
+          data.startDateTime.getTime() - Date.now()
+      )
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["registrationLeadMinutes"],
+          message: "Registration cutoff cannot be before now.",
+        });
+    }),
+);
 
 const rsvpTargetBase = z
   .object({
@@ -429,78 +460,81 @@ export const updateRsvpRegistrationSchema = z
     { message: "Event or instance is required.", path: ["eventId"] },
   );
 
-export const updateEventSchema = z
-  .object({
-    organisationSlug: z.string().trim().min(1),
-    eventId: z.string().trim().min(1),
-    title: z.string().trim().min(1, "Title is required").max(200),
-    description: z.string().trim().max(10000).optional(),
-    tags: z
-      .preprocess(
-        (v) => {
-          const raw = String(v ?? "");
-          const parts = raw
-            .split(/[,\n]/g)
-            .map((s) => s.trim().toLowerCase())
-            .map((s) => s.replace(/\s+/g, " "))
-            .filter(Boolean)
-            .slice(0, 12);
-          return Array.from(new Set(parts));
-        },
-        z.array(z.string().min(1).max(32)).optional(),
+export const updateEventSchema = withZonedDateTimes(
+  ["startDateTime", "endDateTime", "registrationClosesAt"],
+  z
+    .object({
+      organisationSlug: z.string().trim().min(1),
+      eventId: z.string().trim().min(1),
+      title: z.string().trim().min(1, "Title is required").max(200),
+      description: z.string().trim().max(10000).optional(),
+      tags: z
+        .preprocess(
+          (v) => {
+            const raw = String(v ?? "");
+            const parts = raw
+              .split(/[,\n]/g)
+              .map((s) => s.trim().toLowerCase())
+              .map((s) => s.replace(/\s+/g, " "))
+              .filter(Boolean)
+              .slice(0, 12);
+            return Array.from(new Set(parts));
+          },
+          z.array(z.string().min(1).max(32)).optional(),
+        )
+        .optional(),
+      coverImageUrl: coverImageUrlSchema,
+      showRegistrationCount: z
+        .preprocess((v) => v === true || v === "true" || v === "on", z.boolean())
+        .optional()
+        .default(true),
+      startDateTime: z.coerce.date(),
+      endDateTime: z.coerce.date(),
+      timezone: timeZoneSchema,
+      location: z.string().trim().max(500).optional().default(""),
+      mapLinkUrl: optionalHttpUrlSchema,
+      isOnline: z.preprocess(
+        (v) => v === true || v === "true" || v === "on",
+        z.boolean(),
+      ),
+      capacity: z.preprocess((v) => {
+        if (v === "" || v === null || v === undefined) return undefined;
+        const n = Number(v);
+        return Number.isFinite(n) ? n : undefined;
+      }, z.number().int().positive().optional()),
+      status: z.nativeEnum(EventStatus),
+      privacyType: z.nativeEnum(EventPrivacyType),
+      /** Only meaningful with APPROVAL_REQUIRED: list the event publicly while approving each sign-up. */
+      listedPublicly: z
+        .preprocess((v) => v === true || v === "true" || v === "on", z.boolean())
+        .optional()
+        .default(false),
+      pageTagline: z.string().trim().max(240).optional(),
+      pageLogoUrl: eventPageLogoUrlSchema,
+      pageAboutHtml: z.string().max(50_000).optional(),
+      ...registrationCutoffSchema,
+      ...teamSettingsFields,
+    })
+    .superRefine((data, ctx) => {
+      validateEventScheduleAndLocation(data, ctx);
+      validateTeamSettings(data, ctx);
+      if (data.registrationClosesAt && data.registrationLeadMinutes != null)
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["registrationClosesAt"],
+          message: "Choose one registration cutoff mode.",
+        });
+      if (
+        data.registrationClosesAt &&
+        data.registrationClosesAt > data.startDateTime
       )
-      .optional(),
-    coverImageUrl: coverImageUrlSchema,
-    showRegistrationCount: z
-      .preprocess((v) => v === true || v === "true" || v === "on", z.boolean())
-      .optional()
-      .default(true),
-    startDateTime: z.coerce.date(),
-    endDateTime: z.coerce.date(),
-    timezone: timeZoneSchema,
-    location: z.string().trim().max(500).optional().default(""),
-    mapLinkUrl: optionalHttpUrlSchema,
-    isOnline: z.preprocess(
-      (v) => v === true || v === "true" || v === "on",
-      z.boolean(),
-    ),
-    capacity: z.preprocess((v) => {
-      if (v === "" || v === null || v === undefined) return undefined;
-      const n = Number(v);
-      return Number.isFinite(n) ? n : undefined;
-    }, z.number().int().positive().optional()),
-    status: z.nativeEnum(EventStatus),
-    privacyType: z.nativeEnum(EventPrivacyType),
-    /** Only meaningful with APPROVAL_REQUIRED: list the event publicly while approving each sign-up. */
-    listedPublicly: z
-      .preprocess((v) => v === true || v === "true" || v === "on", z.boolean())
-      .optional()
-      .default(false),
-    pageTagline: z.string().trim().max(240).optional(),
-    pageLogoUrl: eventPageLogoUrlSchema,
-    pageAboutHtml: z.string().max(50_000).optional(),
-    ...registrationCutoffSchema,
-    ...teamSettingsFields,
-  })
-  .superRefine((data, ctx) => {
-    validateEventScheduleAndLocation(data, ctx);
-    validateTeamSettings(data, ctx);
-    if (data.registrationClosesAt && data.registrationLeadMinutes != null)
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["registrationClosesAt"],
-        message: "Choose one registration cutoff mode.",
-      });
-    if (
-      data.registrationClosesAt &&
-      data.registrationClosesAt > data.startDateTime
-    )
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["registrationClosesAt"],
-        message: "Registration must close on or before the event starts.",
-      });
-  });
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["registrationClosesAt"],
+          message: "Registration must close on or before the event starts.",
+        });
+    }),
+);
 
 export const deleteEventSchema = z.object({
   organisationSlug: z.string().trim().min(1),
@@ -599,45 +633,48 @@ export const removeSeriesInviteSchema = orgScoped.extend({
   eventSeriesId: z.string().trim().min(1),
 });
 
-export const createSeriesSchema = z
-  .object({
-    organisationSlug: z.string().trim().min(1),
-    title: z.string().trim().min(1, "Title is required").max(200),
-    description: z.string().trim().max(10000).optional().default(""),
-    anchorStartDateTime: z.coerce.date(),
-    anchorEndDateTime: z.coerce.date(),
-    rruleLine: z
-      .string()
-      .trim()
-      .min(1, "Recurrence rule is required")
-      .max(2048)
-      .refine((value) => !/[\r\n]/.test(value), "Use a single RRULE line"),
-    timezone: timeZoneSchema,
-    capacity: z.preprocess((v) => {
-      if (v === "" || v === null || v === undefined) return undefined;
-      const n = Number(v);
-      return Number.isFinite(n) ? n : undefined;
-    }, z.number().int().positive().optional()),
-    status: z.nativeEnum(EventStatus).optional().default(EventStatus.DRAFT),
-    privacyType: z
-      .nativeEnum(EventPrivacyType)
-      .optional()
-      .default(EventPrivacyType.PUBLIC),
-    ...seriesTeamSettingsRefusal,
-  })
-  .refine((d) => d.anchorEndDateTime > d.anchorStartDateTime, {
-    message: "End must be after start",
-    path: ["anchorEndDateTime"],
-  })
-  .refine(
-    (d) =>
-      d.anchorEndDateTime.getTime() - d.anchorStartDateTime.getTime() <=
-      2_147_483_647,
-    {
-      message: "A recurring occurrence must be shorter than 24 days",
+export const createSeriesSchema = withZonedDateTimes(
+  ["anchorStartDateTime", "anchorEndDateTime"],
+  z
+    .object({
+      organisationSlug: z.string().trim().min(1),
+      title: z.string().trim().min(1, "Title is required").max(200),
+      description: z.string().trim().max(10000).optional().default(""),
+      anchorStartDateTime: z.coerce.date(),
+      anchorEndDateTime: z.coerce.date(),
+      rruleLine: z
+        .string()
+        .trim()
+        .min(1, "Recurrence rule is required")
+        .max(2048)
+        .refine((value) => !/[\r\n]/.test(value), "Use a single RRULE line"),
+      timezone: timeZoneSchema,
+      capacity: z.preprocess((v) => {
+        if (v === "" || v === null || v === undefined) return undefined;
+        const n = Number(v);
+        return Number.isFinite(n) ? n : undefined;
+      }, z.number().int().positive().optional()),
+      status: z.nativeEnum(EventStatus).optional().default(EventStatus.DRAFT),
+      privacyType: z
+        .nativeEnum(EventPrivacyType)
+        .optional()
+        .default(EventPrivacyType.PUBLIC),
+      ...seriesTeamSettingsRefusal,
+    })
+    .refine((d) => d.anchorEndDateTime > d.anchorStartDateTime, {
+      message: "End must be after start",
       path: ["anchorEndDateTime"],
-    },
-  );
+    })
+    .refine(
+      (d) =>
+        d.anchorEndDateTime.getTime() - d.anchorStartDateTime.getTime() <=
+        2_147_483_647,
+      {
+        message: "A recurring occurrence must be shorter than 24 days",
+        path: ["anchorEndDateTime"],
+      },
+    ),
+);
 
 export const updateSeriesMetaSchema = orgScoped.extend({
   eventSeriesId: z.string().trim().min(1),

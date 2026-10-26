@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import Redis from "ioredis";
+import { REDIS_FAIL_FAST_OPTIONS } from "@/lib/redisOptions";
 
 export type Bucket =
   | "global"
@@ -78,6 +79,9 @@ const limits: Record<Bucket, { max: number; windowMs: number }> = {
 type Entry = { count: number; resetAt: number };
 const memoryStore = new Map<string, Entry>();
 
+/** Connection states in which Redis is known to be unavailable right now. */
+const UNAVAILABLE_STATES = new Set(["reconnecting", "close", "end"]);
+
 let redisClient: Redis | null = null;
 let isRedisDisabled = false;
 
@@ -100,11 +104,7 @@ function getRedisClient(): Redis | null {
   }
 
   try {
-    redisClient = new Redis(redisUrl, {
-      maxRetriesPerRequest: 1,
-      connectTimeout: 1000,
-      lazyConnect: true,
-    });
+    redisClient = new Redis(redisUrl, REDIS_FAIL_FAST_OPTIONS);
     
     redisClient.on("error", () => {
       console.warn("[rateLimit] Redis client error");
@@ -175,6 +175,13 @@ export async function checkRateLimitById(bucket: Bucket, id: string): Promise<bo
 
   const k = keyFor(bucket, id);
   const { max, windowMs } = limits[bucket];
+
+  // While ioredis is between reconnect attempts, answer at once instead of
+  // queueing behind the backoff (production fails closed, as below).
+  if (UNAVAILABLE_STATES.has(redis.status)) {
+    if (process.env.NODE_ENV === "production" && !allowTestMemoryFallback()) return false;
+    return checkRateLimitMemory(bucket, id);
+  }
 
   try {
     // Increment and expiry must be one Redis operation. A pipeline can leave

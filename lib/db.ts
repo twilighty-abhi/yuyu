@@ -5,13 +5,28 @@ const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };
 
+/**
+ * Unique-constraint violations are expected and handled by their callers (a
+ * duplicate registration answers 400 "already registered"), so they are not
+ * logged. Every other Prisma error is still written to the server log as one
+ * line; the thrown error reaches its caller either way.
+ */
+export function logPrismaError(event: { message: string }) {
+  if (/Unique constraint failed/i.test(event.message)) return;
+  // Straight to stderr, as Prisma's own logger did: Prisma messages can echo
+  // query arguments, so they stay out of the console-forwarded ops alerts.
+  process.stderr.write(`prisma:error ${event.message.replace(/\s+/g, " ").trim()}\n`);
+}
+
 function createPrismaClient() {
-  return new PrismaClient({
+  const client = new PrismaClient({
     log:
       process.env.NODE_ENV === "development"
-        ? ["query", "error", "warn"]
-        : ["error"],
+        ? ["query", { emit: "event", level: "error" }, "warn"]
+        : [{ emit: "event", level: "error" }],
   });
+  client.$on("error", logPrismaError);
+  return client as unknown as PrismaClient;
 }
 
 /**

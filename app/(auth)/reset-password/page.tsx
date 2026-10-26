@@ -4,6 +4,9 @@ import { ResetPasswordForm } from "./ui";
 export const metadata: Metadata = {
   title: "Reset Password",
   description: "Set a new password for your Yuyu account.",
+  // The reset link carries its token in the URL.
+  robots: { index: false, follow: false },
+  referrer: "no-referrer",
 };
 
 type Props = {

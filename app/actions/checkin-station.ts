@@ -19,7 +19,7 @@ async function resolve(input: unknown) {
   const parsed = schema.safeParse(input);
   if (!parsed.success) return { ok: false as const, error: "Invalid station settings." };
   const { organisation, userId } = await requireOrgRole(parsed.data.organisationSlug, "ADMIN");
-  if (!(await hasRecentAuthentication())) return { ok: false as const, error: "For security, sign in again before managing the venue station PIN." };
+  if (!(await hasRecentAuthentication())) return { ok: false as const, error: "For security, sign in again before managing the venue station PIN.", reauthRequired: true };
   if (await isActionRateLimited("action", userId)) return { ok: false as const, error: "Too many requests. Please try again shortly." };
   const event = await prisma.event.findFirst({ where: { id: parsed.data.eventId, organisationId: organisation.id }, select: { id: true, slug: true, checkInStationPinEncrypted: true } });
   if (!event) return { ok: false as const, error: "Event not found." };

@@ -899,7 +899,7 @@ model RSVP {
   @@index([teamId])
   /// "Your registrations" and the personal data export look RSVPs up by user.
   @@index([userId, createdAt])
-  @@index([eventId, status, checkedInAt, createdAt, id], map: "RSVP_eventId_status_checkedInAt_createdAt_id_idx")
+  @@index([eventId, status, checkedInAt, createdAt(sort: Desc), id(sort: Desc)], map: "RSVP_eventId_status_checkedInAt_createdAt_id_idx")
   /// Guests · People newest first, and "Recent check-ins" (docs/PERFORMANCE.md).
   @@index([eventId, createdAt, id])
   @@index([eventId, checkedInAt, id])
@@ -1234,8 +1234,6 @@ model EventFeedbackForm {
   event     Event                   @relation(fields: [eventId], references: [id], onDelete: Cascade)
   fields    EventFeedbackField[]
   responses EventFeedbackResponse[]
-
-  @@index([eventId])
 }
 
 model EventFeedbackField {

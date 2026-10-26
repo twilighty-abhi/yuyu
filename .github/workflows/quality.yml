@@ -53,6 +53,8 @@ jobs:
       - run: npm audit --omit=dev
       - run: npm run db:deploy
       - run: npm run db:verify
+      # The migrated database must match schema.prisma exactly (no drift).
+      - run: npx prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --exit-code
       - run: npm run lint
       - run: npx next typegen && npx tsc --noEmit
       - run: npm run test:unit

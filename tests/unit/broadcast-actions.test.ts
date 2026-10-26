@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
@@ -54,6 +54,15 @@ import {
   sendEventBroadcastTest,
 } from "@/app/actions/broadcasts";
 import { sendEventBroadcastForUser } from "@/lib/core/broadcasts";
+
+// Expected links below use this base URL; pin it so a release environment's
+// NEXT_PUBLIC_BASE_URL cannot change them.
+beforeAll(() => {
+  vi.stubEnv("NEXT_PUBLIC_BASE_URL", "http://localhost:3000");
+});
+afterAll(() => {
+  vi.unstubAllEnvs();
+});
 
 const baseInput = {
   organisationSlug: "org-a",

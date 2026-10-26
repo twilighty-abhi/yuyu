@@ -25,6 +25,9 @@ import { retryFailedOutboxMessages } from "@/app/actions/instance";
 import { POST as reportClientError } from "@/app/api/client-errors/route";
 
 const suffix = randomUUID().replace(/-/g, "").slice(0, 12);
+// Per-run client addresses (IPv6 documentation prefix), so the per-IP
+// limiter's Redis counters from an earlier run within the minute don't apply.
+const runIp = (n: number) => `2001:db8:${n.toString(16)}::${suffix.slice(0, 4)}:${suffix.slice(4, 8)}:${suffix.slice(8, 12)}`;
 const SMTP_USER = "relay-user@example.test";
 const SMTP_PASSWORD = `app-password-${suffix}`;
 
@@ -170,7 +173,7 @@ describe("POST /api/client-errors (public)", () => {
     const token = `tkt${suffix}${"a".repeat(24)}`;
     const response = await reportClientError(clientErrorRequest({
       boundary: "route", name: "TypeError", message: `Cannot read x for attendee@example.org ${suffix}`, path: `/ticket/${token}?ref=mail`,
-    }, { "x-forwarded-for": "198.51.100.11" }));
+    }, { "x-forwarded-for": runIp(11) }));
     expect(response.status).toBe(204);
     expect(await waitFor(() => posts.length > 0)).toBe(true);
     const text = posts.join("\n");
@@ -184,7 +187,7 @@ describe("POST /api/client-errors (public)", () => {
 
   it("rate limits reports per client IP (10 per minute)", async () => {
     for (let i = 0; i < 14; i++) {
-      expect((await reportClientError(clientErrorRequest({ boundary: "global", message: `burst ${i} ${suffix}` }, { "x-forwarded-for": "198.51.100.12" }))).status).toBe(204);
+      expect((await reportClientError(clientErrorRequest({ boundary: "global", message: `burst ${i} ${suffix}` }, { "x-forwarded-for": runIp(12) }))).status).toBe(204);
     }
     await waitFor(() => posts.length >= 10);
     await new Promise((r) => setTimeout(r, 300));

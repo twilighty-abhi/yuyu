@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useAuthSession } from "@/components/auth/useAuthSession";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { RsvpStatus } from "@prisma/client";
 import { CheckCircle2, Download } from "lucide-react";
 import type { RegistrationFieldDefinition } from "@/components/rsvp/registrationTypes";
@@ -84,8 +85,15 @@ export function RsvpForm(props: {
   team?: TeamRegistrationConfig | null;
   /** Lets a containing event page update immediately after this tab saves an RSVP. */
   onRsvpSaved?: (rsvp: { ticketToken: string; status: RsvpStatus | null; teamMode: "create" | "join" | "solo" | null }) => void;
+  /**
+   * Re-render the surrounding server page after a save, so counts such as
+   * "N going" update at once (`/api/rsvp` revalidates the page). This form's
+   * confirmation is client state and survives the refresh.
+   */
+  refreshPageOnSave?: boolean;
 }) {
-  const { orgSlug, eventSlug, eventInstanceId, registrationFields, team, onRsvpSaved } = props;
+  const { orgSlug, eventSlug, eventInstanceId, registrationFields, team, onRsvpSaved, refreshPageOnSave = false } = props;
+  const router = useRouter();
   const { data: session, status } = useAuthSession();
   const lsKey = storageKey({ orgSlug, eventSlug, eventInstanceId });
   const [guestEmail, setGuestEmail] = useState("");
@@ -170,6 +178,7 @@ export function RsvpForm(props: {
     }
     onRsvpSaved?.({ ...rsvp, teamMode });
     setDone(true);
+    if (refreshPageOnSave) router.refresh();
   }
 
   if (status === "loading") {

@@ -60,6 +60,7 @@ export function CreateSeriesDialog(props: {
                   organisationSlug,
                   title: String(fd.get("title") ?? ""),
                   description: String(fd.get("description") ?? ""),
+                  // Wall-clock values: the server reads them in `timezone`.
                   anchorStartDateTime: String(fd.get("anchorStartDateTime") ?? ""),
                   anchorEndDateTime: String(fd.get("anchorEndDateTime") ?? ""),
                   rruleLine: String(fd.get("rruleLine") ?? ""),

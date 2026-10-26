@@ -7,6 +7,7 @@ import { Copy, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { createOrRotateCheckInStation, disableCheckInStation, revealCheckInStationPin } from "@/app/actions/checkin-station";
 import { useToast } from "@/components/feedback/ToastProvider";
+import { useActionErrorToast } from "@/components/auth/useActionErrorToast";
 
 /*
  * Door station controls for the Check-in tab (organisation admins only). Uses
@@ -17,6 +18,7 @@ import { useToast } from "@/components/feedback/ToastProvider";
 export function DoorStationControls({ organisationSlug, eventId, stationUrl, enabled }: { organisationSlug: string; eventId: string; stationUrl: string; enabled: boolean }) {
   const router = useRouter();
   const { showToast } = useToast();
+  const showActionError = useActionErrorToast();
   const [pending, startTransition] = useTransition();
   const [pin, setPin] = useState<string | null>(null);
 
@@ -32,7 +34,7 @@ export function DoorStationControls({ organisationSlug, eventId, stationUrl, ena
   const generate = () =>
     startTransition(async () => {
       const result = await createOrRotateCheckInStation({ organisationSlug, eventId });
-      if (!result.ok) return showToast(result.error, "error");
+      if (!result.ok) return showActionError(result);
       setPin(result.data!.pin);
       showToast(enabled ? "Venue PIN rotated." : "Venue check-in station enabled.", "success");
       router.refresh();
@@ -41,7 +43,7 @@ export function DoorStationControls({ organisationSlug, eventId, stationUrl, ena
   const disable = () =>
     startTransition(async () => {
       const result = await disableCheckInStation({ organisationSlug, eventId });
-      if (!result.ok) return showToast(result.error, "error");
+      if (!result.ok) return showActionError(result);
       setPin(null);
       showToast("Venue check-in station disabled.", "success");
       router.refresh();
@@ -50,7 +52,7 @@ export function DoorStationControls({ organisationSlug, eventId, stationUrl, ena
   const reveal = () =>
     startTransition(async () => {
       const result = await revealCheckInStationPin({ organisationSlug, eventId });
-      if (!result.ok) return showToast(result.error, "error");
+      if (!result.ok) return showActionError(result);
       setPin(result.data!.pin);
     });
 

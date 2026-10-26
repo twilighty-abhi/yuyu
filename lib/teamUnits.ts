@@ -11,16 +11,22 @@ import { emitWebhookEvent, type RsvpWebhookSnapshot, type WebhookEmission } from
  * Event row lock (`SELECT ... FOR UPDATE`), so unit counts cannot race.
  */
 
-/** Confirmed units: confirmed teams plus confirmed solo RSVPs (no team). */
+/**
+ * Spread into every RSVP count compared with a capacity: crew tickets
+ * (docs/CREW.md) count in headcounts but never take an attendee place.
+ */
+export const takesCapacity = { isCrew: false } as const satisfies Prisma.RSVPWhereInput;
+
+/** Confirmed units: confirmed teams plus confirmed solo RSVPs (no team, not crew). */
 export async function countConfirmedUnits(tx: Prisma.TransactionClient, eventId: string): Promise<number> {
   const teams = await tx.team.count({ where: { eventId, status: RsvpStatus.CONFIRMED } });
-  const solo = await tx.rSVP.count({ where: { eventId, teamId: null, status: RsvpStatus.CONFIRMED } });
+  const solo = await tx.rSVP.count({ where: { eventId, teamId: null, status: RsvpStatus.CONFIRMED, ...takesCapacity } });
   return teams + solo;
 }
 
 /**
- * The number compared with `Event.capacity`. INDIVIDUAL events keep the plain
- * confirmed-RSVP count (unchanged query); TEAM events count units.
+ * The number compared with `Event.capacity`. INDIVIDUAL events count confirmed
+ * attendee RSVPs; TEAM events count units. Crew are never included.
  */
 export async function countConfirmedForCapacity(
   tx: Prisma.TransactionClient,
@@ -28,7 +34,7 @@ export async function countConfirmedForCapacity(
   registrationMode: RegistrationMode | null | undefined,
 ): Promise<number> {
   if (registrationMode === RegistrationMode.TEAM) return countConfirmedUnits(tx, eventId);
-  return tx.rSVP.count({ where: { eventId, status: RsvpStatus.CONFIRMED } });
+  return tx.rSVP.count({ where: { eventId, status: RsvpStatus.CONFIRMED, ...takesCapacity } });
 }
 
 /**

@@ -33,7 +33,8 @@ export async function AnalyticsPanel({ ctx }: { ctx: EventDashboardContext }) {
     { key: "declined", label: "Declined", hint: "Declined by an organiser", value: counts.rejected, tone: "bg-danger-solid" },
   ];
 
-  const capacity = capacityStatus(units ?? counts.confirmed, event.capacity);
+  // Crew (docs/CREW.md) are going but never take a place.
+  const capacity = capacityStatus(units ?? counts.confirmed - counts.crew, event.capacity);
   const capacityDetail = !capacity
     ? "No capacity limit set"
     : units != null

@@ -3,7 +3,8 @@ import "server-only";
 import { revalidatePath } from "next/cache";
 import { gateCheckInForStatus, parseCheckInPayload } from "@/lib/checkIn";
 import { prisma } from "@/lib/db";
-import { EventPermission, Prisma, type RsvpStatus } from "@prisma/client";
+import { EventPermission, Prisma, type AttendanceResponse, type RsvpStatus } from "@prisma/client";
+import { attendanceStateOf, type AttendanceState } from "@/lib/attendanceCheck";
 import { canAccessEvent } from "@/lib/eventAccess";
 import {
   attendeeLookupSchema,
@@ -39,7 +40,16 @@ export type CheckInResultData = {
   registrationDetails: RegistrationDetail[];
   /** TEAM events: the attendee's team name, shown at the desk, on badges and in the mobile `CheckInResult.teamName`. */
   teamName?: string | null;
+  /** An event crew ticket (docs/CREW.md): shown as a Crew badge at the desk. */
+  isCrew?: boolean;
+  /** Attendance confirmation reply, shown as a badge at the desk; null when the guest was never asked. Web desk only. */
+  attendance?: AttendanceState | null;
 };
+
+/** The desk's attendance badge: only for guests who were asked (the note stays in Guests · People). */
+function deskAttendanceState(check: { response: AttendanceResponse | null } | null | undefined): AttendanceState | null {
+  return check ? attendanceStateOf(check) : null;
+}
 
 /** Where a check-in came from; recorded in the immutable check-in history. */
 export type CheckInCoreOptions = { source?: "online" | "mobile-scan" | "mobile-manual" };
@@ -133,6 +143,8 @@ async function resolveRsvpForToken(
     include: {
       user: { select: { name: true, email: true } },
       team: { select: { name: true } },
+      crewMember: { select: { foodPreference: true } },
+      attendanceCheck: { select: { response: true } },
       answers: { include: { field: { select: { key: true, label: true } } } },
       event: { select: { id: true, organisationId: true, slug: true } },
       eventInstance: {
@@ -191,9 +203,11 @@ export async function previewCheckInByTokenForUser(
       alreadyCheckedIn: Boolean(rsvp.checkedInAt),
       checkedInAt: rsvp.checkedInAt?.toISOString() ?? null,
       checkInQrToken: rsvp.checkInToken,
-      checkInDetails: getCheckInDetails(rsvp.answers),
+      checkInDetails: getCheckInDetails(rsvp.answers, rsvp.crewMember),
       registrationDetails: getRegistrationDetails(rsvp.answers),
       teamName: rsvp.team?.name ?? null,
+      isCrew: rsvp.isCrew,
+      attendance: deskAttendanceState(rsvp.attendanceCheck),
       gate,
     },
   };
@@ -244,9 +258,11 @@ export async function checkInByTokenForUser(
         alreadyCheckedIn: true,
         checkedInAt: rsvp.checkedInAt.toISOString(),
         checkInQrToken: rsvp.checkInToken,
-        checkInDetails: getCheckInDetails(rsvp.answers),
+        checkInDetails: getCheckInDetails(rsvp.answers, rsvp.crewMember),
         registrationDetails: getRegistrationDetails(rsvp.answers),
         teamName: rsvp.team?.name ?? null,
+        isCrew: rsvp.isCrew,
+        attendance: deskAttendanceState(rsvp.attendanceCheck),
       },
     };
   }
@@ -275,9 +291,11 @@ export async function checkInByTokenForUser(
         alreadyCheckedIn: true,
         checkedInAt: committed.checkedInAt.toISOString(),
         checkInQrToken: rsvp.checkInToken,
-        checkInDetails: getCheckInDetails(rsvp.answers),
+        checkInDetails: getCheckInDetails(rsvp.answers, rsvp.crewMember),
         registrationDetails: getRegistrationDetails(rsvp.answers),
         teamName: rsvp.team?.name ?? null,
+        isCrew: rsvp.isCrew,
+        attendance: deskAttendanceState(rsvp.attendanceCheck),
       },
     };
   }
@@ -298,9 +316,11 @@ export async function checkInByTokenForUser(
       alreadyCheckedIn: false,
       checkedInAt: now.toISOString(),
       checkInQrToken: rsvp.checkInToken,
-      checkInDetails: getCheckInDetails(rsvp.answers),
+      checkInDetails: getCheckInDetails(rsvp.answers, rsvp.crewMember),
       registrationDetails: getRegistrationDetails(rsvp.answers),
       teamName: rsvp.team?.name ?? null,
+      isCrew: rsvp.isCrew,
+      attendance: deskAttendanceState(rsvp.attendanceCheck),
     },
   };
 }
@@ -363,6 +383,8 @@ export type LookupRow = {
   isGuest?: boolean;
   /** TEAM events: the attendee's team name (web desk and the mobile `Guest.teamName`). */
   teamName?: string | null;
+  /** Attendance confirmation reply badge (web desk only); null when never asked. */
+  attendance?: AttendanceState | null;
 };
 
 export type OfflineCheckInRosterRow = LookupRow & {
@@ -390,13 +412,15 @@ export async function downloadOfflineCheckInRosterForUser(
   const rosterStatuses: RsvpStatus[] = ["CONFIRMED", "WAITLISTED", "PENDING_APPROVAL"];
   const [rsvps, answers] = await Promise.all([
     prisma.$queryRaw<
-      Array<{ id: string; checkInToken: string; guestName: string | null; guestEmail: string | null; status: RsvpStatus; checkedInAt: Date | null; createdAt: Date; userId: string | null; userName: string | null; userEmail: string | null; teamName: string | null }>
+      Array<{ id: string; checkInToken: string; guestName: string | null; guestEmail: string | null; status: RsvpStatus; checkedInAt: Date | null; createdAt: Date; userId: string | null; userName: string | null; userEmail: string | null; teamName: string | null; attendanceResponse: AttendanceResponse | null; attendanceAsked: boolean }>
     >`
       SELECT r."id", r."checkInToken", r."guestName", r."guestEmail", r."status", r."checkedInAt", r."createdAt", r."userId",
-        u."name" AS "userName", u."email" AS "userEmail", t."name" AS "teamName"
+        u."name" AS "userName", u."email" AS "userEmail", t."name" AS "teamName",
+        ac."response" AS "attendanceResponse", (ac."id" IS NOT NULL) AS "attendanceAsked"
       FROM "RSVP" r
       LEFT JOIN "User" u ON u."id" = r."userId"
       LEFT JOIN "Team" t ON t."id" = r."teamId"
+      LEFT JOIN "AttendanceCheck" ac ON ac."rsvpId" = r."id"
       WHERE r."eventId" = ${ctx.event.id} AND r."status"::text IN (${Prisma.join(rosterStatuses)})
       ORDER BY r."createdAt" DESC`,
     prisma.rsvpAnswer.findMany({
@@ -431,6 +455,7 @@ export async function downloadOfflineCheckInRosterForUser(
           checkInDetails: getCheckInDetails(rsvpAnswers),
           registrationDetails: getRegistrationDetails(rsvpAnswers),
           teamName: r.teamName,
+          attendance: deskAttendanceState(r.attendanceAsked ? { response: r.attendanceResponse } : null),
         };
       }),
     },
@@ -551,7 +576,7 @@ export async function lookupAttendeesForCheckInForUser(
       ],
     },
     take: 12,
-    include: { user: { select: { name: true, email: true } }, team: { select: { name: true } } },
+    include: { user: { select: { name: true, email: true } }, team: { select: { name: true } }, attendanceCheck: { select: { response: true } } },
     orderBy: { createdAt: "desc" },
   });
 
@@ -564,6 +589,7 @@ export async function lookupAttendeesForCheckInForUser(
     registeredAt: r.createdAt.toISOString(),
     isGuest: r.userId == null,
     teamName: r.team?.name ?? null,
+    attendance: deskAttendanceState(r.attendanceCheck),
   }));
 
   return { ok: true, data: { rows } };
@@ -595,6 +621,8 @@ export async function previewCheckInByRsvpIdForUser(
     include: {
       user: { select: { name: true, email: true } },
       team: { select: { name: true } },
+      crewMember: { select: { foodPreference: true } },
+      attendanceCheck: { select: { response: true } },
       answers: { include: { field: { select: { key: true, label: true } } } },
     },
   });
@@ -610,9 +638,11 @@ export async function previewCheckInByRsvpIdForUser(
       alreadyCheckedIn: Boolean(rsvp.checkedInAt),
       checkedInAt: rsvp.checkedInAt?.toISOString() ?? null,
       checkInQrToken: rsvp.checkInToken,
-      checkInDetails: getCheckInDetails(rsvp.answers),
+      checkInDetails: getCheckInDetails(rsvp.answers, rsvp.crewMember),
       registrationDetails: getRegistrationDetails(rsvp.answers),
       teamName: rsvp.team?.name ?? null,
+      isCrew: rsvp.isCrew,
+      attendance: deskAttendanceState(rsvp.attendanceCheck),
       gate: gateCheckInForStatus(rsvp.status, Boolean(force)),
     },
   };
@@ -642,6 +672,8 @@ export async function checkInByRsvpIdForUser(
     include: {
       user: { select: { name: true, email: true } },
       team: { select: { name: true } },
+      crewMember: { select: { foodPreference: true } },
+      attendanceCheck: { select: { response: true } },
       answers: { include: { field: { select: { key: true, label: true } } } },
       event: { select: { slug: true } },
       eventInstance: { select: { id: true } },
@@ -672,9 +704,11 @@ export async function checkInByRsvpIdForUser(
         alreadyCheckedIn: true,
         checkedInAt: rsvp.checkedInAt.toISOString(),
         checkInQrToken: rsvp.checkInToken,
-        checkInDetails: getCheckInDetails(rsvp.answers),
+        checkInDetails: getCheckInDetails(rsvp.answers, rsvp.crewMember),
         registrationDetails: getRegistrationDetails(rsvp.answers),
         teamName: rsvp.team?.name ?? null,
+        isCrew: rsvp.isCrew,
+        attendance: deskAttendanceState(rsvp.attendanceCheck),
       },
     };
   }
@@ -703,9 +737,11 @@ export async function checkInByRsvpIdForUser(
         alreadyCheckedIn: true,
         checkedInAt: committed.checkedInAt.toISOString(),
         checkInQrToken: rsvp.checkInToken,
-        checkInDetails: getCheckInDetails(rsvp.answers),
+        checkInDetails: getCheckInDetails(rsvp.answers, rsvp.crewMember),
         registrationDetails: getRegistrationDetails(rsvp.answers),
         teamName: rsvp.team?.name ?? null,
+        isCrew: rsvp.isCrew,
+        attendance: deskAttendanceState(rsvp.attendanceCheck),
       },
     };
   }
@@ -726,9 +762,11 @@ export async function checkInByRsvpIdForUser(
       alreadyCheckedIn: false,
       checkedInAt: now.toISOString(),
       checkInQrToken: rsvp.checkInToken,
-      checkInDetails: getCheckInDetails(rsvp.answers),
+      checkInDetails: getCheckInDetails(rsvp.answers, rsvp.crewMember),
       registrationDetails: getRegistrationDetails(rsvp.answers),
       teamName: rsvp.team?.name ?? null,
+      isCrew: rsvp.isCrew,
+      attendance: deskAttendanceState(rsvp.attendanceCheck),
     },
   };
 }

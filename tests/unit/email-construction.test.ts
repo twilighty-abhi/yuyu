@@ -71,6 +71,31 @@ describe("email construction", () => {
     expect(message.text).toContain("Starts: Tue, Jan 1, 2030, 3:30 PM GMT+5:30");
     expect(message.text).toContain("Add to Google Calendar: https://calendar.google.com/calendar/render?action=TEMPLATE");
   });
+
+  it("words a crew ticket for the organising team and keeps escaping", async () => {
+    await sendRSVPConfirmation({
+      to: "crew@example.test",
+      eventTitle: "Launch <b>night</b>\r\nBcc: victim@example.test",
+      status: RsvpStatus.CONFIRMED,
+      checkInToken: "crew-ticket",
+      crew: true,
+    });
+    const message = mocks.sendMail.mock.calls[0]?.[0];
+    expect(message.subject).toBe("You're on the crew for Launch <b>night</b> Bcc: victim@example.test");
+    expect(message.html).toContain("You're on the crew for <strong>Launch &lt;b&gt;night&lt;/b&gt;");
+    expect(message.html).toContain("This is your crew ticket — show it at check-in.");
+    expect(message.html).not.toContain("<b>night</b>");
+    expect(message.html).not.toContain("Thank you for registering");
+    expect(message.text).toContain("This is your crew ticket — show it at check-in.");
+    expect(message.html).toContain("/ticket/crew-ticket");
+  });
+
+  it("ignores the crew flag on a ticket that is not confirmed", async () => {
+    await sendRSVPConfirmation({ to: "person@example.test", eventTitle: "Event", status: RsvpStatus.WAITLISTED, crew: true });
+    const message = mocks.sendMail.mock.calls[0]?.[0];
+    expect(message.subject).toBe("RSVP Waitlisted: Event");
+    expect(message.html).not.toContain("crew ticket");
+  });
 });
 
 describe("event broadcast email", () => {

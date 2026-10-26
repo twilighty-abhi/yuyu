@@ -5,7 +5,7 @@ import { csvStreamResponse, exportFilename, exportFilterNames, exportNotFound } 
 import { prisma } from "@/lib/db";
 import { getMembership, isOrgAdmin } from "@/lib/permissions";
 import { getRequestOrigin } from "@/lib/publicUrl";
-import { attendeeBaseWhere, attendeeStatusWhere, parseAttendeeViewSearchParams, type AttendeeListView } from "@/lib/attendeeListQuery";
+import { attendanceCsvCells, attendeeBaseWhere, attendeeStatusWhere, parseAttendeeViewSearchParams, type AttendeeListView } from "@/lib/attendeeListQuery";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -16,15 +16,16 @@ const EXPORT_BATCH_SIZE = 500;
  * The attendee CSV. Without query parameters it holds every registration of
  * the event (the check-in desk's "Export attendance" and the unfiltered
  * Guests · People list). Guests · People's "Export CSV" adds the list's
- * current filters (`status`, `kind`, `team`, `q`, parsed exactly as the
- * list's own query by lib/attendeeListQuery.ts), so the file holds every
- * matching registration, not only the rows loaded in the browser. Same
- * columns either way; any malformed parameter is the same empty 404 as a
- * denial.
+ * current filters (`status`, `kind`, `team`, `attendance`, `q`, parsed
+ * exactly as the list's own query by lib/attendeeListQuery.ts), so the file
+ * holds every matching registration, not only the rows loaded in the
+ * browser. Same columns either way; any malformed parameter is the same
+ * empty 404 as a denial. The attendance confirmation columns come last so
+ * existing columns keep their positions.
  */
 
 function isFiltered(view: AttendeeListView) {
-  return view.status !== "all" || view.kind !== "all" || view.team !== "all" || Boolean(view.query);
+  return view.status !== "all" || view.kind !== "all" || view.team !== "all" || view.attendance !== "all" || Boolean(view.query);
 }
 
 function answerValue(answer: { valueText: string | null; valueBool: boolean | null; valueNumber: number | null; valueDate: Date | null }) {
@@ -86,6 +87,8 @@ export async function GET(request: Request, context: RouteContext) {
   const teamColumns = event.registrationMode === "TEAM";
   const lists = event.checkInLists;
   const origin = await getRequestOrigin();
+  // "Not asked" only once someone at this event has been asked, as in Guests · People.
+  const attendanceAsked = (await prisma.attendanceCheck.findFirst({ where: { eventId: event.id }, select: { id: true } })) != null;
   // Unfiltered: every registration, as before. Filtered: the People list's
   // own conditions, with the organisation re-checked in the same query.
   const where: Prisma.RSVPWhereInput = isFiltered(view)
@@ -100,12 +103,12 @@ export async function GET(request: Request, context: RouteContext) {
     // Filter names only; the search text can contain personal data.
     metadata: {
       surface: "people",
-      filters: exportFilterNames({ status: view.status !== "all", kind: view.kind !== "all", team: teamColumns && view.team !== "all", search: Boolean(view.query) }),
+      filters: exportFilterNames({ status: view.status !== "all", kind: view.kind !== "all", team: teamColumns && view.team !== "all", attendance: view.attendance !== "all", search: Boolean(view.query) }),
     },
   });
 
   return csvStreamResponse({
-    header: ["Name", "Email", "Status", ...(teamColumns ? ["Team", "Team role"] : []), "Registration Date", "Checked In At", "Ticket URL", ...fields.map((field) => field.label), ...lists.map((list) => `Check-in: ${list.name}${list.archived ? " (archived)" : ""}`)],
+    header: ["Name", "Email", "Status", ...(teamColumns ? ["Team", "Team role"] : []), "Registration Date", "Checked In At", "Ticket URL", ...fields.map((field) => field.label), ...lists.map((list) => `Check-in: ${list.name}${list.archived ? " (archived)" : ""}`), "Attendance confirmation", "Attendance note"],
     filename: exportFilename("attendees", event.title),
     errorMessage: "Unable to export attendee list.",
     batches: async function* () {
@@ -122,6 +125,8 @@ export async function GET(request: Request, context: RouteContext) {
             answers: { select: { fieldId: true, valueText: true, valueBool: true, valueNumber: true, valueDate: true } },
             team: { select: { name: true, leaderRsvpId: true } },
             checkInListRecords: { select: { listId: true, checkedInAt: true } },
+            // The reply and note only; the check's token hash is never read.
+            attendanceCheck: { select: { response: true, note: true } },
           },
         });
         if (!rsvps.length) break;
@@ -139,6 +144,7 @@ export async function GET(request: Request, context: RouteContext) {
             `${origin}/ticket/${rsvp.checkInToken}`,
             ...fields.map((field) => answers.get(field.id) ?? ""),
             ...lists.map((list) => listCheckIns.get(list.id) ?? ""),
+            ...attendanceCsvCells(rsvp, { showNotAsked: attendanceAsked }),
           ];
         });
         yield rows;

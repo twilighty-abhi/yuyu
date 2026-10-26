@@ -37,13 +37,13 @@ describe("countConfirmedUnits", () => {
     tx.rSVP.count.mockResolvedValue(3);
     await expect(countConfirmedUnits(tx as never, "event_1")).resolves.toBe(5);
     expect(tx.team.count).toHaveBeenCalledWith({ where: { eventId: "event_1", status: RsvpStatus.CONFIRMED } });
-    expect(tx.rSVP.count).toHaveBeenCalledWith({ where: { eventId: "event_1", teamId: null, status: RsvpStatus.CONFIRMED } });
+    expect(tx.rSVP.count).toHaveBeenCalledWith({ where: { eventId: "event_1", teamId: null, status: RsvpStatus.CONFIRMED, isCrew: false } });
   });
 
-  it("keeps the plain confirmed-RSVP query for INDIVIDUAL events", async () => {
+  it("counts confirmed attendee RSVPs, never crew, for INDIVIDUAL events", async () => {
     tx.rSVP.count.mockResolvedValue(7);
     await expect(countConfirmedForCapacity(tx as never, "event_1", "INDIVIDUAL")).resolves.toBe(7);
-    expect(tx.rSVP.count).toHaveBeenCalledWith({ where: { eventId: "event_1", status: RsvpStatus.CONFIRMED } });
+    expect(tx.rSVP.count).toHaveBeenCalledWith({ where: { eventId: "event_1", status: RsvpStatus.CONFIRMED, isCrew: false } });
     expect(tx.team.count).not.toHaveBeenCalled();
   });
 

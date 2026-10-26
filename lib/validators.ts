@@ -1,4 +1,5 @@
 import { BroadcastAttendanceFilter, EventPrivacyType, EventStatus, RegistrationMode, RsvpStatus, SoloPolicy } from "@prisma/client";
+import { ATTENDANCE_NOTE_MAX } from "@/lib/attendanceCheck";
 import { z } from "zod";
 import { isValidTimeZone, zonedInputToIso } from "@/lib/timeZone";
 import { isUploadedImageUrl } from "@/lib/uploadUrl";
@@ -911,6 +912,17 @@ export const submissionTokenSchema = z
   .regex(/^[A-Za-z0-9_-]{32,128}$/, "Invalid link");
 
 /** Organiser judging settings. Saving with submissions enabled needs a full window. */
+/**
+ * A switch that may be left out: absent keeps the saved value (so a caller
+ * that doesn't show it never turns it off), otherwise like `formBoolean`.
+ */
+const optionalFormBoolean = z.preprocess((value) => {
+  if (value === undefined) return undefined;
+  if (value === "on" || value === "true") return true;
+  if (value === "false" || value === "" || value === null) return false;
+  return value;
+}, z.boolean().optional());
+
 export const judgingSettingsSchema = z
   .object({
     submissionsEnabled: formBoolean,
@@ -918,6 +930,9 @@ export const judgingSettingsSchema = z
     submissionsCloseAt: optionalDate,
     judgesSeeAll: formBoolean,
     projectGalleryPublic: formBoolean,
+    /** Hackathon emails (lib/hackathonEmails.ts); off by default, omitted keeps the saved value. */
+    emailEntrantsOnResults: optionalFormBoolean,
+    emailSubmissionReceipts: optionalFormBoolean,
   })
   .strict()
   .superRefine((data, ctx) => {
@@ -1036,4 +1051,27 @@ export const saveEventBroadcastDraftSchema = eventBroadcastDraftRefSchema.extend
     .nullable()
     .default(null)
     .transform((id) => (id && broadcastTemplateIds.has(id) ? id : null)),
+}).strict();
+
+/* Attendance confirmation (docs/FEATURES.md). Sending is always a manual organiser action. */
+
+export const attendanceCheckRefSchema = orgScoped.extend({
+  eventId: z.string().trim().min(1).max(128),
+}).strict();
+
+export const attendanceCheckSettingsSchema = attendanceCheckRefSchema.extend({
+  releaseOnDecline: z.boolean(),
+}).strict();
+
+/** The guest's reply on /attend/{token}. The token is shape-checked again before any lookup. */
+export const attendanceReplySchema = z.object({
+  token: z.string().trim().regex(/^[A-Za-z0-9_-]{43}$/, "This link is not valid."),
+  response: z.enum(["ATTENDING", "NOT_ATTENDING"]),
+  note: z
+    .string()
+    .max(ATTENDANCE_NOTE_MAX, `Keep the note to ${ATTENDANCE_NOTE_MAX} characters or fewer.`)
+    .optional()
+    .default("")
+    // Control characters never reach a stored note or the CSV.
+    .transform((note) => note.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]+/g, " ").trim()),
 }).strict();

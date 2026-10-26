@@ -3,11 +3,13 @@ import { loadRegistrationFields } from "@/lib/eventDashboard/data";
 import { loadAttendeesFirstPage } from "@/lib/eventDashboard/attendees";
 import { loadEventInvitesFirstPage } from "@/lib/eventDashboard/invites";
 import { loadEventTeams } from "@/lib/eventDashboard/teams";
+import { loadEventCrew } from "@/lib/eventDashboard/crew";
 import { loadSavedViewsForDashboard } from "@/lib/eventDashboard/savedViews";
 import { EventInvitePanel } from "@/components/invites/EventInvitePanel";
 import { SubTabs, type SubTab } from "../SubTabs";
 import { GuestsPeople } from "./GuestsPeople";
 import { GuestsTeams } from "./GuestsTeams";
+import { GuestsCrew } from "./GuestsCrew";
 import { NoPermission } from "./shared";
 
 export async function GuestsPanel({ ctx }: { ctx: EventDashboardContext }) {
@@ -15,12 +17,13 @@ export async function GuestsPanel({ ctx }: { ctx: EventDashboardContext }) {
   const teamMode = event.registrationMode === "TEAM";
   const teamsAllowed = teamMode && permissions.canManageRegistrations;
   // Every list here is paged on the server; only first pages load with the panel.
-  const [attendees, fields, invites, teamsPage, savedViews] = await Promise.all([
+  const [attendees, fields, invites, teamsPage, savedViews, crew] = await Promise.all([
     permissions.canManageRegistrations ? loadAttendeesFirstPage(ctx) : Promise.resolve(null),
     loadRegistrationFields(event.id),
     permissions.canManageInvitations ? loadEventInvitesFirstPage(event.id, organisation.id) : Promise.resolve(null),
     teamsAllowed ? loadEventTeams(ctx) : Promise.resolve(null),
     loadSavedViewsForDashboard(ctx),
+    permissions.canManageRegistrations ? loadEventCrew(ctx) : Promise.resolve(null),
   ]);
   const teamsTab: SubTab[] = teamMode
     ? [
@@ -66,6 +69,16 @@ export async function GuestsPanel({ ctx }: { ctx: EventDashboardContext }) {
           ),
         },
         ...teamsTab,
+        {
+          value: "crew",
+          label: "Crew",
+          count: crew ? crew.members.length : undefined,
+          content: crew ? (
+            <GuestsCrew organisationSlug={organisation.slug} eventId={event.id} origin={ctx.origin} crew={crew} />
+          ) : (
+            <NoPermission>You do not have permission to manage the crew for this event.</NoPermission>
+          ),
+        },
         {
           value: "invites",
           label: "Invites",

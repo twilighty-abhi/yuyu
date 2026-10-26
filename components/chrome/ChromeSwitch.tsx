@@ -6,7 +6,7 @@ import { SiteHeader, YuyuWordmark } from "./SiteHeader";
 import { SiteFooter } from "./SiteFooter";
 
 /** Yuyu's own pages: site header + footer, centred content. */
-const SITE_PREFIXES = ["/about", "/features", "/discover", "/search", "/help", "/privacy", "/terms", "/join/", "/ticket/", "/team/", "/submit/"];
+const SITE_PREFIXES = ["/about", "/features", "/discover", "/search", "/help", "/privacy", "/terms", "/join/", "/ticket/", "/team/", "/submit/", "/attend/", "/crew/"];
 /** Pages that render their own complete chrome (app shell, kiosk, embed, split sign-in). */
 const OWN_CHROME_PREFIXES = ["/dashboard", "/account", "/super-admin", "/embed/", "/login"];
 /** Auth flows: minimal header with the logo only. */

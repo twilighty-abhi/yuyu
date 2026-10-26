@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ATTENDEE_KIND_FILTERS, ATTENDEE_STATUS_FILTERS, ATTENDEE_TEAM_FILTERS } from "@/lib/attendeeListQuery";
+import { ATTENDEE_ATTENDANCE_FILTERS, ATTENDEE_KIND_FILTERS, ATTENDEE_STATUS_FILTERS, ATTENDEE_TEAM_FILTERS } from "@/lib/attendeeListQuery";
 import { ORGANISER_TEAM_FILTERS } from "@/lib/organiserTeamFilters";
 import { RESULTS_SCORE_FILTERS, SUBMISSION_VIEW_FILTERS } from "@/lib/judgingOrganiserPaging";
 import { JUDGING_PROGRESS_SECTIONS } from "@/lib/judgingProgress";
@@ -38,7 +38,7 @@ const choice = (values: readonly string[]): ParamSpec => ({ kind: "enum", values
 
 /** Every surface's URL params and what each may hold ("all" is the default and is never written). */
 export const SURFACE_PARAMS: Record<SavedViewSurfaceKey, Record<string, ParamSpec>> = {
-  GUESTS_PEOPLE: { status: choice(ATTENDEE_STATUS_FILTERS), kind: choice(ATTENDEE_KIND_FILTERS), team: choice(ATTENDEE_TEAM_FILTERS), q: text },
+  GUESTS_PEOPLE: { status: choice(ATTENDEE_STATUS_FILTERS), kind: choice(ATTENDEE_KIND_FILTERS), team: choice(ATTENDEE_TEAM_FILTERS), attendance: choice(ATTENDEE_ATTENDANCE_FILTERS), q: text },
   GUESTS_TEAMS: { status: choice(ORGANISER_TEAM_FILTERS), q: text },
   JUDGING_SUBMISSIONS: { status: choice(SUBMISSION_VIEW_FILTERS), q: text },
   JUDGING_RESULTS: { scored: choice(RESULTS_SCORE_FILTERS), q: text },

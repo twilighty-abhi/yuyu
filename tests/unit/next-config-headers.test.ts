@@ -6,7 +6,7 @@ describe("capability link referrer policy", () => {
     const rules = await nextConfig.headers!();
     const noReferrer = (source: string) =>
       rules.some((rule) => rule.source === source && rule.headers.some((h) => h.key === "Referrer-Policy" && h.value === "no-referrer"));
-    for (const source of ["/join/:kind/:token", "/reset-password", "/verify-email", "/ticket/:token", "/team/:token", "/submit/:token"]) {
+    for (const source of ["/join/:kind/:token", "/reset-password", "/verify-email", "/ticket/:token", "/team/:token", "/submit/:token", "/attend/:token"]) {
       expect(noReferrer(source), source).toBe(true);
     }
   });

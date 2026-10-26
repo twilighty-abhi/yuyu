@@ -132,6 +132,7 @@ const instanceSelect = {
 const rsvpSelect = {
   id: true,
   status: true,
+  isCrew: true,
   checkedInAt: true,
   checkInToken: true,
   createdAt: true,
@@ -239,7 +240,8 @@ function normalise(rsvp: AccountRsvpRow, invitedEventIds: Set<string>, invitedSe
 
 function toRow(item: NormalisedAccountRegistration, now: Date): AccountRegistrationRow {
   const { rsvp } = item;
-  const cancellable = canCancelRegistration({ status: rsvp.status, checkedInAt: rsvp.checkedInAt, end: item.end }, now);
+  // Crew tickets are removed only by the organisers (docs/CREW.md).
+  const cancellable = !rsvp.isCrew && canCancelRegistration({ status: rsvp.status, checkedInAt: rsvp.checkedInAt, end: item.end }, now);
   const showTicket = rsvp.status !== RsvpStatus.REJECTED;
   return {
     id: rsvp.id,

@@ -13,12 +13,14 @@ import { toFieldDefinition, type FieldSettings } from "@/lib/registrationFields"
  * (see EventDashboardContext.permissions) before calling the guest-level ones.
  */
 
-export type RsvpStatusCounts = { total: number; confirmed: number; waitlisted: number; pendingApproval: number; rejected: number; checkedIn: number };
+/** `confirmed` includes crew tickets (docs/CREW.md); `crew` says how many of them there are. */
+export type RsvpStatusCounts = { total: number; confirmed: number; waitlisted: number; pendingApproval: number; rejected: number; checkedIn: number; crew: number };
 
 export const loadRsvpStatusCounts = cache(async (eventId: string): Promise<RsvpStatusCounts> => {
-  const [groups, checkedIn] = await Promise.all([
+  const [groups, checkedIn, crew] = await Promise.all([
     prisma.rSVP.groupBy({ by: ["status"], where: { eventId }, _count: { _all: true } }),
     prisma.rSVP.count({ where: { eventId, checkedInAt: { not: null } } }),
+    prisma.rSVP.count({ where: { eventId, isCrew: true } }),
   ]);
   const of = (status: string) => groups.find((group) => group.status === status)?._count._all ?? 0;
   return {
@@ -28,12 +30,14 @@ export const loadRsvpStatusCounts = cache(async (eventId: string): Promise<RsvpS
     pendingApproval: of("PENDING_APPROVAL"),
     rejected: of("REJECTED"),
     checkedIn,
+    crew,
   };
 });
 
 /**
- * The number compared with `Event.capacity`: confirmed RSVPs on INDIVIDUAL
- * events, confirmed units (teams plus solo registrants) on TEAM events.
+ * The number compared with `Event.capacity`: confirmed attendee RSVPs on
+ * INDIVIDUAL events, confirmed units (teams plus solo registrants) on TEAM
+ * events. Crew never count.
  */
 export const loadCapacityUsed = cache(async (eventId: string, registrationMode: RegistrationMode): Promise<number> => countConfirmedForEvent(eventId, registrationMode));
 

@@ -2,6 +2,7 @@ import "server-only";
 
 import type { EventStatus, JudgingStatus, ScoreNormalization, SubmissionStatus } from "@prisma/client";
 import {
+  countResultsAnnouncementRecipients,
   listSubmissionsForOrganiser,
   loadJudgeProgress,
   loadJudgingResultsPage,
@@ -19,6 +20,7 @@ import { prisma } from "@/lib/db";
 import type { EventDashboardContext } from "@/lib/eventDashboard/context";
 import { safeTimeZone, zonedDatetimeLocalValue } from "@/lib/timeZone";
 import { resultsPath } from "@/lib/submissionToken";
+import { needsAnnouncementCount } from "@/lib/hackathonEmails";
 
 /*
  * Organiser data for the event dashboard's Judging tab (docs/HACKATHON.md).
@@ -41,6 +43,11 @@ export type JudgingDashboardSettings = {
   judgesSeeAll: boolean;
   projectGalleryPublic: boolean;
   resultsPublishedAt: string | null;
+  /** Set once entrants were emailed the results (lib/hackathonEmails.ts). */
+  resultsAnnouncedAt: string | null;
+  /** Hackathon email switches, both off by default. */
+  emailEntrantsOnResults: boolean;
+  emailSubmissionReceipts: boolean;
   timezone: string;
   /** Entrants only reach the submission form on a PUBLISHED event; the panels warn otherwise. */
   eventStatus: EventStatus;
@@ -166,6 +173,8 @@ export type JudgingDashboardData = {
   results: JudgingDashboardResultsPage;
   exportHref: string;
   resultsUrl: string;
+  /** How many entrants a results announcement would email now (publish and "Send results email now" dialogs). */
+  announcementRecipients: number;
 };
 
 /** The organiser context for judging cores, built from the already-resolved dashboard context. */
@@ -196,6 +205,9 @@ function settingsView(settings: JudgingSetup["settings"], eventStatus: EventStat
     judgesSeeAll: settings.judgesSeeAll,
     projectGalleryPublic: settings.projectGalleryPublic,
     resultsPublishedAt: iso(settings.resultsPublishedAt),
+    resultsAnnouncedAt: iso(settings.resultsAnnouncedAt),
+    emailEntrantsOnResults: settings.emailEntrantsOnResults,
+    emailSubmissionReceipts: settings.emailSubmissionReceipts,
     timezone,
     eventStatus,
   };
@@ -293,6 +305,9 @@ export async function loadJudgingDashboard(ctx: EventDashboardContext): Promise<
     countUnsubmittedEntrants(organiser),
   ]);
   if (!setup || !judges || !results) return null;
+  // The recipient count scans the outbox, so it only runs when a dialog will
+  // show it: the switch is on and the current publication isn't announced.
+  const announcementRecipients = needsAnnouncementCount(setup.settings) ? await countResultsAnnouncementRecipients(organiser) : 0;
 
   return {
     scope: { organisationSlug: ctx.organisation.slug, eventId: ctx.event.id },
@@ -307,5 +322,6 @@ export async function loadJudgingDashboard(ctx: EventDashboardContext): Promise<
     results: toDashboardResultsPage(results),
     exportHref: `/api/exports/events/${ctx.event.id}/judging`,
     resultsUrl: `${ctx.origin}${resultsPath(ctx.organisation.slug, ctx.event.slug)}`,
+    announcementRecipients: announcementRecipients ?? 0,
   };
 }

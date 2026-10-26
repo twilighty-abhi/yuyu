@@ -28,9 +28,10 @@ import {
 } from "@/components/event-dashboard/guests/guestList";
 import { useDebouncedValue, useServerPages, type ServerPageResult } from "@/components/event-dashboard/guests/useServerPages";
 import { loadAttendeesPage } from "@/app/actions/guest-list";
-import { attendeeViewSearchParams } from "@/lib/attendeeListQuery";
+import { ATTENDEE_ATTENDANCE_FILTERS, attendeeViewSearchParams, type AttendeeAttendanceFilter } from "@/lib/attendeeListQuery";
+import { ATTENDANCE_STATE_LABELS } from "@/lib/attendanceCheck";
 import { showingLabel } from "@/lib/keysetCursor";
-import type { AttendeeFilterCounts, AttendeesPage } from "@/lib/eventDashboard/attendees";
+import type { AttendeeAttendanceCounts, AttendeeFilterCounts, AttendeesPage } from "@/lib/eventDashboard/attendees";
 import { viewParam, type SavedViewDto, type ViewParams } from "@/lib/savedViews";
 import { SavedViewsMenu } from "@/components/event-dashboard/views/SavedViewsMenu";
 import { useInitialViewParams, useSyncViewToUrl } from "@/components/event-dashboard/views/useViewUrl";
@@ -40,8 +41,8 @@ const SEARCH_DELAY_MS = 300;
 
 const NO_COUNTS: AttendeeFilterCounts = { all: 0, going: 0, waitlist: 0, approve: 0, declined: 0, checkedIn: 0, notCheckedIn: 0 };
 
-type View = { status: GuestStatusFilter; kind: GuestKindFilter; team: GuestTeamFilter; query: string };
-type Meta = { counts: AttendeeFilterCounts; total: number };
+type View = { status: GuestStatusFilter; kind: GuestKindFilter; team: GuestTeamFilter; attendance: AttendeeAttendanceFilter; query: string };
+type Meta = { counts: AttendeeFilterCounts; total: number; attendanceCounts: AttendeeAttendanceCounts | null };
 
 const FILTER_DOTS: Record<GuestStatusFilter, string> = {
   all: "bg-ink",
@@ -105,6 +106,7 @@ export function GuestsPeople({
   const [status, setStatus] = useState<GuestStatusFilter>(viewParam(fromUrl, "status") as GuestStatusFilter);
   const [kind, setKind] = useState<GuestKindFilter>(viewParam(fromUrl, "kind") as GuestKindFilter);
   const [team, setTeam] = useState<GuestTeamFilter>(viewParam(fromUrl, "team") as GuestTeamFilter);
+  const [attendance, setAttendance] = useState<AttendeeAttendanceFilter>(viewParam(fromUrl, "attendance") as AttendeeAttendanceFilter);
   const { openTab } = useEventTabs();
   const [query, setQuery] = useState(viewParam(fromUrl, "q"));
   const [pending, startTransition] = useTransition();
@@ -123,21 +125,32 @@ export function GuestsPeople({
     if (status !== "all") params.status = status;
     if (kind !== "all") params.kind = kind;
     if (teamMode && team !== "all") params.team = team;
+    if (target.kind === "event" && attendance !== "all") params.attendance = attendance;
     if (searchedQuery) params.q = searchedQuery;
     return params;
-  }, [status, kind, team, teamMode, searchedQuery]);
+  }, [status, kind, team, teamMode, attendance, target.kind, searchedQuery]);
   useSyncViewToUrl("GUESTS_PEOPLE", viewParams);
   const applyView = useCallback((params: ViewParams) => {
     setStatus(viewParam(params, "status") as GuestStatusFilter);
     setKind(viewParam(params, "kind") as GuestKindFilter);
     setTeam(viewParam(params, "team") as GuestTeamFilter);
+    setAttendance(viewParam(params, "attendance") as AttendeeAttendanceFilter);
     setQuery(viewParam(params, "q"));
   }, []);
-  const view: View = useMemo(() => ({ status, kind, team: teamMode ? team : "all", query: searchedQuery }), [status, kind, team, teamMode, searchedQuery]);
+  // Series dates are never asked to confirm attendance, so the filter applies to one-off events only.
+  const attendanceFilter: AttendeeAttendanceFilter = target.kind === "event" ? attendance : "all";
+  const view: View = useMemo(
+    () => ({ status, kind, team: teamMode ? team : "all", attendance: attendanceFilter, query: searchedQuery }),
+    [status, kind, team, teamMode, attendanceFilter, searchedQuery],
+  );
   const viewKey = JSON.stringify(view);
-  const isDefaultView = view.status === "all" && view.kind === "all" && view.team === "all" && !view.query;
+  const isDefaultView = view.status === "all" && view.kind === "all" && view.team === "all" && view.attendance === "all" && !view.query;
   const initial = useMemo(
-    () => ({ rows: initialPage.rows as AttendeeRow[], nextCursor: initialPage.nextCursor, meta: { counts: initialPage.counts ?? NO_COUNTS, total: initialPage.total ?? 0 } as Meta }),
+    () => ({
+      rows: initialPage.rows as AttendeeRow[],
+      nextCursor: initialPage.nextCursor,
+      meta: { counts: initialPage.counts ?? NO_COUNTS, total: initialPage.total ?? 0, attendanceCounts: initialPage.attendanceCounts ?? null } as Meta,
+    }),
     [initialPage],
   );
   const scopeIds = useMemo(() => (target.kind === "event" ? { eventId: target.eventId } : { eventInstanceId: target.instanceId }), [target]);
@@ -145,13 +158,15 @@ export function GuestsPeople({
     async (current: View, cursor: string | null): Promise<ServerPageResult<AttendeeRow, Meta>> => {
       const res = await loadAttendeesPage({ organisationSlug, ...scopeIds, ...current, cursor });
       if (!res.ok || !res.data) return { ok: false, error: res.ok ? "Could not load guests." : res.error };
-      const { rows, nextCursor, counts, total } = res.data;
-      return { ok: true, page: { rows, nextCursor, meta: counts && total != null ? { counts, total } : null } };
+      const { rows, nextCursor, counts, total, attendanceCounts } = res.data;
+      return { ok: true, page: { rows, nextCursor, meta: counts && total != null ? { counts, total, attendanceCounts } : null } };
     },
     [organisationSlug, scopeIds],
   );
   const list = useServerPages<AttendeeRow, View, Meta>({ initial, view, viewKey, isDefaultView, delayMs: 0, fetchPage, keyOf: (row) => row.id });
-  const { counts, total } = list.meta;
+  const { counts, total, attendanceCounts } = list.meta;
+  // Shown once someone has been asked (the server sends counts only then), or while a linked view selects it.
+  const showAttendanceFilter = target.kind === "event" && (attendanceCounts != null || attendance !== "all");
   const shownTotal = counts[view.status];
   // Both exports carry the list's current filters and search, so they hold
   // every matching registration, not only the rows loaded here.
@@ -269,7 +284,7 @@ export function GuestsPeople({
                 );
               })}
             </div>
-            <div className="flex w-full min-w-0 flex-wrap gap-2 sm:ml-auto sm:w-auto sm:flex-nowrap">
+            <div className="flex w-full min-w-0 flex-wrap gap-2 sm:ml-auto sm:w-auto xl:flex-nowrap">
               <div className="min-w-0 flex-1 sm:w-[160px] sm:flex-none">
                 <label htmlFor="guest-kind" className="sr-only">Registration type</label>
                 <Dropdown id="guest-kind" value={kind} onChange={(event) => setKind(event.target.value as GuestKindFilter)} className="py-2 sm:text-sm">
@@ -278,6 +293,19 @@ export function GuestsPeople({
                   <option value="users">Signed-in users</option>
                 </Dropdown>
               </div>
+              {showAttendanceFilter ? (
+                <div className="min-w-0 flex-1 sm:w-[180px] sm:flex-none">
+                  <label htmlFor="guest-attendance" className="sr-only">Attendance confirmation</label>
+                  <Dropdown id="guest-attendance" value={attendance} onChange={(event) => setAttendance(event.target.value as AttendeeAttendanceFilter)} className="py-2 sm:text-sm">
+                    {ATTENDEE_ATTENDANCE_FILTERS.map((value) => (
+                      <option key={value} value={value}>
+                        {value === "all" ? "Any attendance reply" : ATTENDANCE_STATE_LABELS[value]}
+                        {attendanceCounts && value !== "all" ? ` (${attendanceCounts[value]})` : ""}
+                      </option>
+                    ))}
+                  </Dropdown>
+                </div>
+              ) : null}
               {teamMode ? (
                 <div className="min-w-0 flex-1 sm:w-[140px] sm:flex-none">
                   <label htmlFor="guest-team" className="sr-only">Team</label>

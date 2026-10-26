@@ -20,7 +20,7 @@ import {
 import type { ActionResult } from "@/app/actions/org";
 import { flattenZodErrors } from "@/app/actions/utils";
 import { enqueueRsvpConfirmation, enqueueTeamCreated } from "@/lib/outbox";
-import { countConfirmedUnits } from "@/lib/teamUnits";
+import { countConfirmedUnits, takesCapacity } from "@/lib/teamUnits";
 import { generateTeamManageToken, generateTeamToken } from "@/lib/teamToken";
 import { emitWebhookEvent } from "@/lib/webhooks/emit";
 import { isRegistrationClosed } from "@/lib/registrationCutoff";
@@ -130,6 +130,7 @@ async function reserveRsvp(params: {
         where: {
           ...params.target,
           status: RsvpStatus.CONFIRMED,
+          ...takesCapacity,
         },
       });
       const status = decideRsvpStatus({

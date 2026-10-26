@@ -1,7 +1,7 @@
 import "server-only";
 
 import { cache } from "react";
-import { MembershipRole, RsvpStatus } from "@prisma/client";
+import { AttendanceResponse, MembershipRole, RsvpStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
 
 /*
@@ -47,6 +47,20 @@ export const loadPendingRequests = cache(async (eventId: string, take = 5): Prom
 
 /** How many emails organisers have sent to this event's guests. */
 export const loadBroadcastCount = cache(async (eventId: string) => prisma.eventBroadcast.count({ where: { eventId } }));
+
+/**
+ * Attendance confirmation replies for the Overview line (viewers who may
+ * email guests only). Counts only, and the same rules as the Emails card:
+ * "No reply" covers still-CONFIRMED guests. Null until someone was asked.
+ */
+export const loadAttendanceReplyCounts = cache(async (eventId: string): Promise<{ coming: number; notComing: number; noReply: number } | null> => {
+  const [coming, notComing, noReply] = await Promise.all([
+    prisma.attendanceCheck.count({ where: { eventId, response: AttendanceResponse.ATTENDING } }),
+    prisma.attendanceCheck.count({ where: { eventId, response: AttendanceResponse.NOT_ATTENDING } }),
+    prisma.attendanceCheck.count({ where: { eventId, response: null, rsvp: { status: RsvpStatus.CONFIRMED } } }),
+  ]);
+  return coming + notComing + noReply > 0 ? { coming, notComing, noReply } : null;
+});
 
 /** Feedback responses submitted for the event (a count only; responses may be anonymous). */
 export const loadFeedbackCount = cache(async (eventId: string) => prisma.eventFeedbackResponse.count({ where: { form: { eventId } } }));

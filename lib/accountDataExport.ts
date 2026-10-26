@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { EventPermission, MembershipRole, RsvpStatus, SubmissionStatus } from "@prisma/client";
+import type { AttendanceResponse, EventPermission, MembershipRole, RsvpStatus, SubmissionStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
 
 /**
@@ -51,6 +51,8 @@ export type AccountExportSource = {
     team?: { name: string; leaderRsvpId: string | null; submission?: ExportSubmission | null } | null;
     /** A solo registration's own project. */
     submission?: ExportSubmission | null;
+    /** The user's own attendance confirmation reply; its token hash is never read. */
+    attendanceCheck?: { sentAt: Date; response: AttendanceResponse | null; respondedAt: Date | null; note: string | null } | null;
   }>;
   feedback: Array<{
     submittedAt: Date;
@@ -123,6 +125,14 @@ export function buildAccountDataExport(source: AccountExportSource, generatedAt:
         team: rsvp.team?.name ?? null,
         teamRole: rsvp.team ? (rsvp.id != null && rsvp.team.leaderRsvpId === rsvp.id ? "leader" : "member") : null,
         answers: rsvp.answers.map((answer) => ({ question: answer.field.label, answer: answerValue(answer) })),
+        attendanceConfirmation: rsvp.attendanceCheck
+          ? {
+              askedAt: rsvp.attendanceCheck.sentAt.toISOString(),
+              response: rsvp.attendanceCheck.response,
+              respondedAt: iso(rsvp.attendanceCheck.respondedAt),
+              note: rsvp.attendanceCheck.note || null,
+            }
+          : null,
       }];
     }),
     submissions: cap(source.registrations).flatMap((rsvp) => {
@@ -219,6 +229,8 @@ export async function loadAccountExportSource(userId: string): Promise<AccountEx
         // Team name, leader, and the team's project only; join and management tokens are never read.
         team: { select: { name: true, leaderRsvpId: true, submission: { select: submissionSelect } } },
         submission: { select: submissionSelect },
+        // The reply, its time and note; the check's token hash is never read.
+        attendanceCheck: { select: { sentAt: true, response: true, respondedAt: true, note: true } },
         event: { select: { title: true, startDateTime: true, endDateTime: true, timezone: true, organisation: { select: { name: true } } } },
         eventInstance: { select: { startDateTime: true, endDateTime: true, series: { select: { title: true, timezone: true, organisation: { select: { name: true } } } } } },
         answers: { select: { ...answerSelect, field: { select: { label: true } } }, orderBy: { field: { sortOrder: "asc" } }, take: 200 },

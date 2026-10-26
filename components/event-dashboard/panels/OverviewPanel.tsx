@@ -2,7 +2,7 @@ import { ArrowRight } from "lucide-react";
 import { Callout } from "@/components/ui/display";
 import type { EventDashboardContext } from "@/lib/eventDashboard/context";
 import { loadRegistrationFields, loadRsvpStatusCounts } from "@/lib/eventDashboard/data";
-import { loadBroadcastCount, loadEventTeam, loadPendingRequests, loadRecentSignupDates } from "@/lib/eventDashboard/overview";
+import { loadAttendanceReplyCounts, loadBroadcastCount, loadEventTeam, loadPendingRequests, loadRecentSignupDates } from "@/lib/eventDashboard/overview";
 import { loadPendingUnits } from "@/lib/eventDashboard/teams";
 import { cn } from "@/lib/cn";
 import { OpenTabButton } from "../EventDashboardTabs";
@@ -22,7 +22,7 @@ export async function OverviewPanel({ ctx }: { ctx: EventDashboardContext }) {
   // TEAM events count pending requests in units: each team once, plus each solo registrant.
   const teamMode = event.registrationMode === "TEAM";
 
-  const [counts, fields, emailsSent, signupDates, requests, team, pendingUnits] = await Promise.all([
+  const [counts, fields, emailsSent, signupDates, requests, team, pendingUnits, attendanceReplies] = await Promise.all([
     guests ? loadRsvpStatusCounts(event.id) : null,
     guests ? loadRegistrationFields(event.id) : null,
     guests ? loadBroadcastCount(event.id) : 0,
@@ -30,6 +30,8 @@ export async function OverviewPanel({ ctx }: { ctx: EventDashboardContext }) {
     guests ? (teamMode ? loadPendingUnits(event.id).then((pending) => pending.units) : loadPendingRequests(event.id)) : null,
     permissions.canManageCollaborators ? loadEventTeam(organisation.id, event.id) : null,
     guests && teamMode ? loadPendingUnits(event.id) : null,
+    // Same access as the Emails tab card (organisation owners and admins).
+    permissions.canSendEmails ? loadAttendanceReplyCounts(event.id) : null,
   ]);
   const pendingTotal = pendingUnits?.total ?? counts?.pendingApproval ?? 0;
 
@@ -49,6 +51,7 @@ export async function OverviewPanel({ ctx }: { ctx: EventDashboardContext }) {
     teamMode,
     pendingTeams: pendingUnits?.teams ?? 0,
     emailsSent,
+    attendanceReplies,
     permissions,
   });
   const heading = readinessHeading({ items, start: event.startDateTime, end: event.endDateTime, now, timeZone: event.timezone });

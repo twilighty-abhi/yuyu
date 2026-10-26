@@ -50,9 +50,12 @@ export async function sendRSVPConfirmation(params: {
   recipientName?: string;
   /** Names the team for a registration on a TEAM event. */
   teamName?: string;
+  /** A confirmed crew ticket (docs/CREW.md) is worded for the organising team. */
+  crew?: boolean;
 }): Promise<void> {
   const { transporter, from } = await getEmailTransport();
   const baseUrl = getBaseUrl();
+  const crew = params.crew === true && params.status === "CONFIRMED";
 
   const ticketUrl = params.checkInToken ? `${baseUrl}/ticket/${params.checkInToken}` : null;
   const safeTitle = escapeHtml(params.eventTitle);
@@ -80,22 +83,30 @@ export async function sendRSVPConfirmation(params: {
     statusText = "Pending Approval";
     statusMessage = "Your RSVP is pending organizer approval. We will let you know once it's reviewed.";
   }
+  const heading = crew ? "You're on the crew" : `RSVP Status: ${statusText}`;
+  const subject = crew ? `You're on the crew for ${subjectTitle}` : `RSVP ${statusText}: ${subjectTitle}`;
+  const introHtml = crew
+    ? `You're on the crew for <strong>${safeTitle}</strong>. This is your crew ticket — show it at check-in.`
+    : `Thank you for registering for <strong>${safeTitle}</strong>${params.teamName ? ` with team <strong>${escapeHtml(params.teamName)}</strong>` : ""}. ${statusMessage}`;
+  const introText = crew
+    ? `You're on the crew for "${params.eventTitle}". This is your crew ticket — show it at check-in.`
+    : `Thank you for registering for "${params.eventTitle}"${params.teamName ? ` with team "${params.teamName}"` : ""}. ${statusMessage}`;
 
   const html = `
     <!DOCTYPE html>
     <html>
       <head>
         <meta charset="utf-8">
-        <title>RSVP ${statusText}: ${safeTitle}</title>
+        <title>${crew ? `Crew ticket: ${safeTitle}` : `RSVP ${statusText}: ${safeTitle}`}</title>
       </head>
       <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8f9fa; margin: 0; padding: 20px; color: #1c1b1f;">
         <div style="max-width: 600px; margin: 40px auto; background-color: #ffffff; border-radius: 16px; border: 1px solid #e0e0e0; box-shadow: 0 4px 12px rgba(0,0,0,0.05); overflow: hidden;">
           ${emailBrandHeader()}
           <div style="padding: 32px;">
-            <h2 style="margin-top: 0; color: #18181B; font-size: 20px; font-weight: 600;">RSVP Status: ${statusText}</h2>
+            <h2 style="margin-top: 0; color: #18181B; font-size: 20px; font-weight: 600;">${heading}</h2>
             <p style="font-size: 16px; line-height: 1.5; color: #49454f; margin-bottom: 24px;">
               ${salutation.html}<br><br>
-              Thank you for registering for <strong>${safeTitle}</strong>${params.teamName ? ` with team <strong>${escapeHtml(params.teamName)}</strong>` : ""}. ${statusMessage}
+              ${introHtml}
             </p>
             ${eventDetails ? `
               <div style="margin: 24px 0; padding: 20px; border: 1px solid #e0e0e0; border-radius: 12px; background-color: #f8f9fa;">
@@ -138,7 +149,7 @@ export async function sendRSVPConfirmation(params: {
     </html>
   `;
 
-  const text = `RSVP ${statusText}: ${params.eventTitle}\n\n${salutation.text}\n\nThank you for registering for "${params.eventTitle}"${params.teamName ? ` with team "${params.teamName}"` : ""}. ${statusMessage}${eventDetails ? `\n\nEvent details\nStarts: ${eventDetails.startsAt}\nEnds: ${eventDetails.endsAt}${eventDetails.location ? `\nLocation: ${eventDetails.location}` : ""}` : ""}${calendarUrl ? `\n\nAdd to Google Calendar: ${calendarUrl}\nAn .ics calendar invite is also attached for other calendar apps.` : ""}${ticketUrl && params.status === "CONFIRMED" ? `\n\nView your ticket here: ${ticketUrl}` : ""}\n\nBest regards,\nYuyu Events`;
+  const text = `${crew ? `Crew ticket: ${params.eventTitle}` : `RSVP ${statusText}: ${params.eventTitle}`}\n\n${salutation.text}\n\n${introText}${eventDetails ? `\n\nEvent details\nStarts: ${eventDetails.startsAt}\nEnds: ${eventDetails.endsAt}${eventDetails.location ? `\nLocation: ${eventDetails.location}` : ""}` : ""}${calendarUrl ? `\n\nAdd to Google Calendar: ${calendarUrl}\nAn .ics calendar invite is also attached for other calendar apps.` : ""}${ticketUrl && params.status === "CONFIRMED" ? `\n\nView your ticket here: ${ticketUrl}` : ""}\n\nBest regards,\nYuyu Events`;
 
   if (!transporter) {
     // Email bodies can contain attendee PII and bearer ticket links. Mock
@@ -151,7 +162,7 @@ export async function sendRSVPConfirmation(params: {
     messageId: params.messageId,
     from,
     to: params.to,
-    subject: `RSVP ${statusText}: ${subjectTitle}`,
+    subject,
     text,
     html,
     // `icalEvent` emits both a text/calendar MIME alternative (which mail
@@ -467,6 +478,87 @@ export async function sendResultsPublishedEmail(params: {
     return;
   }
   await transporter.sendMail({ messageId: params.messageId, from, to: params.to, subject, text, html });
+}
+
+/** Content of the "Are you still coming?" email; exported for the dashboard preview and unit tests. */
+export type AttendanceCheckEmailParams = {
+  eventTitle: string;
+  organisationName: string;
+  startDateTime: Date;
+  timezone: string;
+  /** "Online", the venue, or empty. */
+  location: string;
+  /** Site-relative `/attend/{token}` path; made absolute with NEXT_PUBLIC_BASE_URL. */
+  attendPath: string;
+  recipientName?: string;
+  /** A reminder to someone who has not replied yet. */
+  reminder?: boolean;
+  /**
+   * The event's "free the place on No" setting at delivery. Only then does the
+   * email say a No gives the place up; otherwise a No is just recorded.
+   */
+  releaseOnDecline?: boolean;
+  /** Absolute base for links; defaults to NEXT_PUBLIC_BASE_URL. */
+  baseUrl?: string;
+};
+
+export function buildAttendanceCheckEmail(params: AttendanceCheckEmailParams): { subject: string; html: string; text: string } {
+  const baseUrl = (params.baseUrl ?? getBaseUrl()).replace(/\/$/, "");
+  const formUrl = `${baseUrl}${params.attendPath}`;
+  const join = formUrl.includes("?") ? "&" : "?";
+  const yesUrl = `${formUrl}${join}answer=yes`;
+  const noUrl = `${formUrl}${join}answer=no`;
+  const salutation = greeting(params.recipientName);
+  const when = formatEventDateTime(params.startDateTime, params.timezone);
+  const where = params.location.replace(/[\u0000-\u001F\u007F]+/g, " ").trim().slice(0, 300);
+  const subject = `${params.reminder ? "Reminder: are" : "Are"} you still coming to ${headerText(params.eventTitle)}?`;
+  const safeTitle = escapeHtml(params.eventTitle);
+  const safeOrg = escapeHtml(params.organisationName);
+  const purpose = params.releaseOnDecline
+    ? "Your answer helps them plan. If you can't come, answering No gives up your place so someone else can have it."
+    : "Your answer helps them plan.";
+  const button = (url: string, label: string, primary: boolean) =>
+    `<a href="${escapeHtml(url)}" style="display:inline-block; margin:6px 8px 6px 0; padding:14px 24px; border-radius:999px; text-decoration:none; font-weight:600; font-size:16px; ${primary ? "background:#18181B; color:#fff;" : "background:#fff; color:#18181B; border:2px solid #18181B;"}">${escapeHtml(label)}</a>`;
+  const html = teamEmailShell(subject, `
+          <h2 style="margin-top:0; color:#18181B; font-size:20px;">Are you still coming?</h2>
+          <p>${salutation.html}<br><br>${safeOrg} would like to know whether you can still make it to <strong>${safeTitle}</strong>. ${escapeHtml(purpose)}</p>
+          <table role="presentation" style="margin:16px 0; border-collapse:collapse; font-size:15px; color:#1c1b1f;">
+            <tr><td style="padding:4px 12px 4px 0; color:#79747e;">When</td><td style="padding:4px 0;">${escapeHtml(when)}</td></tr>
+            ${where ? `<tr><td style="padding:4px 12px 4px 0; color:#79747e;">Where</td><td style="padding:4px 0;">${escapeHtml(where)}</td></tr>` : ""}
+          </table>
+          <p style="margin:24px 0 8px;">${button(yesUrl, "Yes, I'll be there", true)}${button(noUrl, "No, I can't make it", false)}</p>
+          <p style="font-size:13px; color:#666;">Each button opens a short page where you confirm your answer. You can change it there until the event starts. This link is personal; please don't forward it.</p>
+          <p style="font-size:13px; color:#666; overflow-wrap:anywhere;">${escapeHtml(formUrl)}</p>`);
+  const text = [
+    subject,
+    "",
+    salutation.text,
+    "",
+    `${params.organisationName} would like to know whether you can still make it to "${params.eventTitle}". ${purpose}`,
+    "",
+    `When: ${when}`,
+    ...(where ? [`Where: ${where}`] : []),
+    "",
+    `Yes, I'll be there: ${yesUrl}`,
+    `No, I can't make it: ${noUrl}`,
+    "",
+    "Each link opens a short page where you confirm your answer. You can change it there until the event starts. This link is personal; please don't forward it.",
+    "",
+    "Best regards,",
+    "Yuyu Events",
+  ].join("\n");
+  return { subject, html, text };
+}
+
+/** Sends one attendance confirmation question. The link is a bearer capability; never log it. */
+export async function sendAttendanceCheckEmail(params: AttendanceCheckEmailParams & { to: string; messageId?: string }): Promise<void> {
+  const { transporter, from } = await getEmailTransport();
+  const email = buildAttendanceCheckEmail(params);
+  if (!transporter) {
+    console.log("[EMAIL MOCK] attendance confirmation queued");
+    return;
+  }
+  await transporter.sendMail({ messageId: params.messageId, from, to: params.to, subject: email.subject, text: email.text, html: email.html });
 }
 
 export async function sendCollaboratorInvitation(params: { to: string; eventTitle: string; inviteUrl: string; messageId?: string }) {

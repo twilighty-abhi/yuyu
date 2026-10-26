@@ -482,6 +482,24 @@ test("10. switching on the Crew section publishes the shown members only", async
   await context.close();
 });
 
+test("10b. Guests → Crew warns when shown crew are hidden by the section switch, and turns it on", async ({ browser }) => {
+  const { context, page, errors } = await ownerContext(browser);
+  await prisma.eventPageSection.updateMany({ where: { type: "CREW", page: { eventId } }, data: { isVisible: false } });
+  await openCrewTab(page);
+  const warning = page.getByRole("status").filter({ hasText: "The Crew section is off on your event page" });
+  await expect(warning).toBeVisible();
+  const turnOn = warning.getByRole("button", { name: "Turn on Crew section" });
+  await hydrated(turnOn);
+  await turnOn.click();
+  await expect(page.getByRole("status").filter({ hasText: "The Crew section is on." })).toBeVisible();
+  await expect(warning).toHaveCount(0);
+  await expect.poll(async () => (await prisma.eventPageSection.findFirst({ where: { type: "CREW", page: { eventId } } }))?.isVisible).toBe(true);
+  await page.goto(`/${orgSlug}/${eventSlug}`);
+  await expect(page.locator("section#crew")).toBeVisible();
+  expect(errors).toEqual([]);
+  await context.close();
+});
+
 test("11. a crew ticket shows the Crew chip and no cancel control", async ({ browser }) => {
   const member = await crewMemberByEmail(ashaEdited.email);
   const { checkInToken } = await prisma.rSVP.findUniqueOrThrow({ where: { id: member!.rsvpId }, select: { checkInToken: true } });

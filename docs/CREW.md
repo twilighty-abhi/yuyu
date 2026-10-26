@@ -85,7 +85,9 @@ Organisers can share a sign-up link (`/crew/:token`) so crew add themselves.
   has a registration for the event, gets the same success answer as a new
   sign-up and nothing changes. The link proves nothing about who owns an
   email, so it never converts someone's registration; organisers do that
-  from Guests → Crew.
+  from Guests → Crew. The confirmation is the same for everyone and says
+  so: new crew get their ticket by email, and anyone already registered is
+  asked to contact the organisers.
 - Sign-ups use the `rsvp` rate-limit bucket per IP and per email; photo
   uploads through the link use the `upload` bucket per IP and per token, and
   go through the same validation and WebP re-encoding as every other upload.
@@ -95,7 +97,10 @@ Organisers can share a sign-up link (`/crew/:token`) so crew add themselves.
 
 The event page gains a **Crew** section, listed in **Event page → Sections**.
 It starts switched off and last in the order for every event, so nothing is
-published until an organiser turns it on. It shows only members with
+published until an organiser turns it on. When crew are set to show but
+the section is off, Guests → Crew says so; anyone with `EDIT_DETAILS` gets a
+**Turn on Crew section** button there (`showCrewSection` in
+`app/actions/event-website.ts`, audited as `EVENT_PAGE_UPDATED`). It shows only members with
 `showOnPage`, as cards with name, role, bio, photo and LinkedIn link
 (`listPublicCrew`); never the email, food preference, or ticket.
 

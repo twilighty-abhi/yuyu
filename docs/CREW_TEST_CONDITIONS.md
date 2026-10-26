@@ -72,7 +72,7 @@ public side, and the mock mailer (blank `SMTP_*`).
 | L-06 | Page content | Only event title, organisation name and date | E |
 | L-07 | Sign up with a new email | Success message; member exists **hidden** with "Joined via link"; ticket email queued | I, E |
 | L-08 | Sign up again with the same email | Same success; no second member | I |
-| L-09 | Sign up with an email already registered for the event | Same success; **nothing changes** (only organisers convert) | I |
+| L-09 | Sign up with an email already registered for the event | Same confirmation as everyone, which tells already-registered people to ask the organisers; **nothing changes** (only organisers convert) | I, E |
 | L-10 | Event cancelled or ended | "No longer taking crew sign-ups"; nothing created | I |
 | L-11 | Photo through the link | Uploaded into the event organisation's `event-crew` folder | M |
 | L-12 | Repeated sign-ups/uploads from one IP | Rate-limited message | M |
@@ -83,6 +83,7 @@ public side, and the mock mailer (blank `SMTP_*`).
 | ID | Condition | Expected | Covered |
 | --- | --- | --- | --- |
 | P-01 | Event page → Sections | A **Crew** row exists, last, switched **off** by default | S |
+| P-08 | Crew set to show while the section is off | Guests → Crew warns; with `EDIT_DETAILS`, **Turn on Crew section** switches it on and the public section appears; without it, the warning says who can | S, M |
 | P-02 | Section off | No Crew section or nav item, whatever the members' visibility | E |
 | P-03 | Section on, no visible members | No Crew section | E |
 | P-04 | Section on, visible members | Crew section after Resources: photo, name, role, bio (3 lines), LinkedIn link | E, S |

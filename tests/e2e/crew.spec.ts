@@ -197,7 +197,7 @@ test("a crew member signs up through the link and starts hidden with a crew tick
   await page.getByLabel(/^Food preference/).fill(crewMember.food);
   await page.getByLabel(/^Role/).fill(crewMember.role);
   await page.getByRole("button", { name: "Join the crew" }).click();
-  await expect(page.getByRole("status").filter({ hasText: "You’re on the crew" })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "your crew sign-up is in" })).toBeVisible();
 
   const member = await prisma.eventCrewMember.findFirstOrThrow({
     where: { eventId },

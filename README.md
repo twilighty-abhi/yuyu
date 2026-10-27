@@ -43,7 +43,7 @@ advertising trackers.
 - An account area with your registrations and certificates, your organisations (including leaving one), security settings, and a personal data export
 - Team registration for hackathons and competitions (teams count as one place, join links, a team page, and *looking for a team* matching), with project submissions, rubric judging by invited judges, automatic judge assignment, awards, a public results page and a searchable project gallery
 - An event crew list with crew tickets that never take a guest's place, a crew sign-up link, food preferences for catering, and an optional Crew section on the event page
-- A manual "Are you still coming?" attendance confirmation before the event, with reminders and an optional switch that frees the place when a guest says No
+- A manual "Are you still coming?" attendance confirmation before the event, with reminders, a per-guest link organisers can share by hand, and an optional switch that frees the place when a guest says No
 - Custom check-in lists beyond venue entry (swag, meals, workshops), saved views and filtered CSV exports on long organiser lists, and server-side paging that keeps events with thousands of registrations fast
 - Recurring event series, organisation roles, event collaborators (including judges), tenant-bound API clients, and signed organisation webhooks
 - An in-app help centre at `/help` with search, screenshots and Help links from dashboard screens

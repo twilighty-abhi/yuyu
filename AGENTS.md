@@ -169,8 +169,9 @@ field, constraint, or cascade from a component alone.
   `OUTBOX_KINDS_ADDED_AFTER_1_0` (or its successor); the new release then
   requeues those rows once.
 - Hackathon emails (results published, submission receipts) are off by
-  default per event, and attendance confirmation is sent only by an
-  owner/admin; never add an automatic send for either. Crew registrations
+  default per event, and attendance confirmation is sent (or one guest's
+  link shared by hand) only by an owner/admin; never add an automatic send
+  for either. Crew registrations
   (`RSVP.isCrew`) never count against capacity or receive attendance checks.
 - Raw SQL that writes or compares timestamps uses `lib/sqlTimestamp.ts` so
   the database TimeZone cannot shift it. Build `Intl.DateTimeFormat`/number

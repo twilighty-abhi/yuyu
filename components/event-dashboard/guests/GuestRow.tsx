@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
-import { ArrowRightLeft, BadgeCheck, Check, ChevronDown, Copy, MoreHorizontal, Pencil, RotateCcw, Trash2, Users, UserX } from "lucide-react";
+import { ArrowRightLeft, BadgeCheck, CalendarCheck, Check, ChevronDown, Copy, MoreHorizontal, Pencil, RotateCcw, Trash2, Users, UserX } from "lucide-react";
 import { Button, IconButton } from "@/components/ui/button";
 import { Avatar, Chip, type ChipTone } from "@/components/ui/display";
 import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
@@ -39,6 +39,8 @@ export type GuestRowActions = {
   /** Reverses a decline: confirmed when there is room, otherwise waitlisted. */
   reaccept: (guest: AttendeeRow) => void;
   copyTicket: (guest: AttendeeRow) => void;
+  /** One-off events, for people who may email guests, before the start: share this guest's attendance link by hand. */
+  shareAttendanceLink?: (guest: AttendeeRow) => void;
   edit: (guest: AttendeeRow) => void;
   /** Omitted where no undo-check-in action exists for the target (series dates). */
   undoCheckIn?: (guest: AttendeeRow) => void;
@@ -153,6 +155,11 @@ export function GuestRow({ guest, timeZone, now, busy, disabled, actions }: { gu
             <MenuItem icon={<Copy />} onSelect={() => actions.copyTicket(guest)}>
               Copy ticket link
             </MenuItem>
+            {actions.shareAttendanceLink && guest.status === "CONFIRMED" && !crew ? (
+              <MenuItem icon={<CalendarCheck />} onSelect={() => actions.shareAttendanceLink?.(guest)}>
+                Share attendance link
+              </MenuItem>
+            ) : null}
             {!crew ? (
               <MenuItem icon={<Pencil />} onSelect={() => actions.edit(guest)}>
                 {guest.user ? "View registration" : "Edit registration or transfer ticket"}

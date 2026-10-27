@@ -322,3 +322,71 @@ test("with release on, a No shows the released screen and promotes the waitlist"
   expect(errors).toEqual([]);
   await context.close();
 });
+
+test("the organiser shares one guest's link by hand, without an email", async ({ browser }) => {
+  test.setTimeout(120_000);
+  // A separate event, so this test never changes the counts above.
+  const shareEventId = (await prisma.event.create({
+    data: {
+      organisationId,
+      title: `Share journey ${suffix}`,
+      slug: `share-journey-${suffix}`,
+      startDateTime: new Date("2035-03-01T10:00:00.000Z"),
+      endDateTime: new Date("2035-03-01T12:00:00.000Z"),
+      timezone: "UTC",
+      status: EventStatus.PUBLISHED,
+      privacyType: EventPrivacyType.PUBLIC,
+      page: { create: { isPublished: true } },
+    },
+  })).id;
+  const sharedName = `Sam Shared ${suffix.slice(0, 6)}`;
+  const sharedEmail = `share-${suffix}@example.test`;
+  testEmails.push(sharedEmail);
+  const shared = await prisma.rSVP.create({ data: { eventId: shareEventId, attendeeKey: `guest:${sharedEmail}`, guestName: sharedName, guestEmail: sharedEmail, status: RsvpStatus.CONFIRMED } });
+
+  const { context, page } = await ownerPage(browser);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto(`/dashboard/${orgSlug}/event/${shareEventId}?tab=guests&sub=people`);
+  await waitForHydration(page, "#guest-search");
+
+  async function createLink(button: string) {
+    const row = page.getByRole("listitem").filter({ hasText: sharedName }).first();
+    await row.getByRole("button", { name: `More actions for ${sharedName}` }).click();
+    await page.getByRole("menuitem", { name: "Share attendance link" }).click();
+    const dialog = page.getByRole("dialog", { name: `Share ${sharedName}'s attendance link` });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: button }).click();
+    const field = dialog.getByRole("textbox", { name: "Attendance link" });
+    await expect(field).toHaveValue(/\/attend\/[A-Za-z0-9_-]{43}$/, { timeout: 20_000 });
+    const url = await field.inputValue();
+    await expect(dialog.getByRole("button", { name: "Copy link" })).toBeVisible();
+    await dialog.getByRole("button", { name: "Done" }).click();
+    await expect(dialog).toBeHidden();
+    return new URL(url).pathname;
+  }
+
+  const first = await createLink("Create link");
+  // No email was queued, and the guest now counts as asked.
+  expect(await prisma.outboxMessage.count({ where: { kind: "attendance-check", payload: { path: ["rsvpId"], equals: shared.id } } })).toBe(0);
+  await expect(page.getByRole("listitem").filter({ hasText: sharedName }).first()).toContainText("No reply", { timeout: 20_000 });
+
+  // Sharing again issues a new link and retires the first one.
+  const second = await createLink("Create new link");
+  expect(second).not.toBe(first);
+
+  const guestContext = await newContext(browser);
+  const guestPage = await guestContext.newPage();
+  expect((await guestPage.goto(first))?.status()).toBe(404);
+  expect((await guestPage.goto(second))?.status()).toBe(200);
+  await expect(guestPage.getByRole("region", { name: "Your registration" })).toContainText(sharedName);
+  await waitForHydration(guestPage, "form button");
+  await guestPage.getByRole("radio", { name: "Yes, I'll be there" }).check();
+  await guestPage.getByRole("button", { name: "Send my answer" }).click();
+  await expect(guestPage.getByText("Thanks, see you there!")).toBeVisible({ timeout: 20_000 });
+  await guestContext.close();
+
+  expect((await prisma.attendanceCheck.findUniqueOrThrow({ where: { rsvpId: shared.id } })).response).toBe("ATTENDING");
+  expect(errors).toEqual([]);
+  await context.close();
+});

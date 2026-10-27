@@ -62,6 +62,7 @@ export async function GuestsPanel({ ctx }: { ctx: EventDashboardContext }) {
               registrationFields={fields}
               teamMode={teamMode}
               canUndoCheckIn={permissions.canCheckIn}
+              canShareAttendanceLink={permissions.canSendEmails && event.status !== "CANCELLED" && event.startDateTime > ctx.now}
               savedViews={savedViews.GUESTS_PEOPLE ?? []}
             />
           ) : (

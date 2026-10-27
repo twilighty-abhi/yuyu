@@ -5,16 +5,17 @@ import { AttendanceResponse, EventStatus, Prisma, RsvpStatus } from "@prisma/cli
 import { prisma } from "@/lib/db";
 import { sqlUtcTimestamp } from "@/lib/sqlTimestamp";
 import { canManageEvents, getMembership } from "@/lib/permissions";
-import { attendanceCheckRefSchema, attendanceCheckSettingsSchema, attendanceReplySchema } from "@/lib/validators";
+import { attendanceCheckRefSchema, attendanceCheckSettingsSchema, attendanceLinkSchema, attendanceReplySchema } from "@/lib/validators";
 import type { ActionResult } from "@/app/actions/org";
 import { recordAuditEvent } from "@/lib/audit";
 import { isActionRateLimited } from "@/lib/actionRateLimit";
 import { enqueueAttendanceChecks, type AttendanceCheckPayload } from "@/lib/outbox";
 import { startOutboxWorker } from "@/lib/outboxWorker";
-import { generateAttendanceToken, hashAttendanceToken, isAttendanceTokenShape } from "@/lib/attendanceToken";
+import { attendancePath, generateAttendanceToken, hashAttendanceToken, isAttendanceTokenShape } from "@/lib/attendanceToken";
 import {
   ATTENDANCE_REMINDER_INTERVAL_MS,
   attendanceCheckOpen,
+  isAttendanceCheckRecipient,
   attendanceReplyClosedReason,
   type AttendanceReplyClosed,
   type AttendanceResponseValue,
@@ -44,6 +45,7 @@ export const ATTENDANCE_AUDIT = {
   reminded: "ATTENDANCE_CHECK_REMINDED",
   settings: "ATTENDANCE_CHECK_SETTINGS_UPDATED",
   released: "ATTENDANCE_CHECK_RELEASED",
+  linkShared: "ATTENDANCE_CHECK_LINK_SHARED",
 } as const;
 
 type Context =
@@ -316,6 +318,62 @@ export async function setAttendanceReleaseOnDeclineForUser(actorUserId: string |
     revalidatePath(`/dashboard/${context.org.slug}/event/${context.event.id}`);
   }
   return { ok: true, data: { releaseOnDecline } };
+}
+
+/**
+ * One guest's link, to share by hand (Guests · People). No email is queued.
+ * Only the digest is stored, so a link can't be shown twice: this always
+ * issues a new one. A guest not yet asked is asked now (a later send skips
+ * them); for a guest already asked the new link replaces the old one, which
+ * stops working, and a queued email with it is dropped at delivery. Same
+ * access as sending, and allowed until the event starts.
+ */
+export async function issueAttendanceLinkForUser(actorUserId: string | null, input: unknown): Promise<ActionResult<{ path: string; replaced: boolean }>> {
+  if (!actorUserId) return { ok: false, error: "You must be signed in." };
+  const parsed = attendanceLinkSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Invalid request." };
+  if (await isActionRateLimited("attendanceCheckLink", actorUserId)) return { ok: false, error: "Too many links created recently. Please wait a few minutes and try again." };
+  const context = await requireAttendanceContext(actorUserId, parsed.data.organisationSlug, parsed.data.eventId);
+  if (!context.ok) return context;
+  const eventId = context.event.id;
+  const rsvpId = parsed.data.rsvpId;
+
+  let result: { token: string; replaced: boolean } | { error: string };
+  try {
+    result = await prisma.$transaction(async (tx) => {
+      // The send's lock: a concurrent send can't also ask this guest.
+      await tx.$queryRaw`SELECT "id" FROM "Event" WHERE "id" = ${eventId} FOR UPDATE`;
+      const locked = await tx.event.findUnique({ where: { id: eventId }, select: { startDateTime: true, status: true } });
+      if (locked?.status === EventStatus.CANCELLED) return { error: CANCELLED_ERROR };
+      if (!locked || !attendanceCheckOpen(locked.startDateTime)) return { error: "This event has started, so guests can no longer be asked." };
+      const rsvp = await tx.rSVP.findFirst({ where: { id: rsvpId, eventId }, select: { status: true, eventId: true, isCrew: true, attendanceCheck: { select: { id: true } } } });
+      if (!rsvp) return { error: "Guest not found." };
+      if (!isAttendanceCheckRecipient(rsvp)) return { error: "Only confirmed guests can be asked to confirm attendance." };
+      const token = generateAttendanceToken();
+      const sentAt = new Date();
+      if (rsvp.attendanceCheck) {
+        await tx.attendanceCheck.update({ where: { id: rsvp.attendanceCheck.id }, data: { tokenHash: token.hash, sentAt } });
+      } else {
+        await tx.attendanceCheck.create({ data: { rsvpId, eventId, tokenHash: token.hash, sentAt } });
+      }
+      return { token: token.raw, replaced: rsvp.attendanceCheck != null };
+    });
+  } catch {
+    console.error("[attendance check] link creation failed");
+    return { ok: false, error: "Could not create the link. Please try again." };
+  }
+  if ("error" in result) return { ok: false, error: result.error };
+
+  await recordAuditEvent({
+    action: ATTENDANCE_AUDIT.linkShared,
+    actorUserId,
+    organisationId: context.org.id,
+    targetType: "Event",
+    targetId: eventId,
+    metadata: { rsvpId, replaced: result.replaced },
+  });
+  revalidatePath(`/dashboard/${context.org.slug}/event/${eventId}`);
+  return { ok: true, data: { path: attendancePath(result.token), replaced: result.replaced } };
 }
 
 /* ---------- The guest's side: /attend/{token} ---------- */

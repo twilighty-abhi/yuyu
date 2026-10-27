@@ -1065,6 +1065,11 @@ export const attendanceCheckSettingsSchema = attendanceCheckRefSchema.extend({
   releaseOnDecline: z.boolean(),
 }).strict();
 
+/** One guest's attendance link, created or replaced by an organiser to share by hand. */
+export const attendanceLinkSchema = attendanceCheckRefSchema.extend({
+  rsvpId: z.string().trim().min(1).max(128),
+}).strict();
+
 /** The guest's reply on /attend/{token}. The token is shape-checked again before any lookup. */
 export const attendanceReplySchema = z.object({
   token: z.string().trim().regex(/^[A-Za-z0-9_-]{43}$/, "This link is not valid."),

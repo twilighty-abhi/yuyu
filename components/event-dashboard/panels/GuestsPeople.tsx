@@ -19,6 +19,7 @@ import { undoCheckIn } from "@/app/actions/checkin";
 import { GuestRow, type GuestRowActions } from "@/components/event-dashboard/guests/GuestRow";
 import { useEventTabs } from "@/components/event-dashboard/EventDashboardTabs";
 import { MoveToTeamDialog } from "@/components/event-dashboard/guests/MoveToTeamDialog";
+import { AttendanceLinkDialog } from "@/components/event-dashboard/guests/AttendanceLinkDialog";
 import {
   GUEST_FILTERS,
   guestDisplayName,
@@ -81,6 +82,7 @@ export function GuestsPeople({
   registrationFields,
   teamMode = false,
   canUndoCheckIn = true,
+  canShareAttendanceLink = false,
   savedViews,
 }: {
   organisationSlug: string;
@@ -96,6 +98,8 @@ export function GuestsPeople({
   teamMode?: boolean;
   /** Undo check-in is a CHECK_IN operation, separate from managing registrations. */
   canUndoCheckIn?: boolean;
+  /** Owners and admins of a one-off event that has not started: "Share attendance link" (re-checked on the server). */
+  canShareAttendanceLink?: boolean;
   /** Saved views for this list (event dashboard only); omitted on a series date. */
   savedViews?: SavedViewDto[];
 }) {
@@ -116,6 +120,7 @@ export function GuestsPeople({
   const [removeGuest, setRemoveGuest] = useState<AttendeeRow | null>(null);
   const [undoGuest, setUndoGuest] = useState<AttendeeRow | null>(null);
   const [moveGuest, setMoveGuest] = useState<AttendeeRow | null>(null);
+  const [linkGuest, setLinkGuest] = useState<AttendeeRow | null>(null);
 
   const eventId = target.kind === "event" ? target.eventId : undefined;
   const scope = target.kind === "event" ? { eventId: target.eventId } : { eventInstanceId: target.instanceId };
@@ -209,6 +214,7 @@ export function GuestsPeople({
         showToast("Could not copy", "error");
       }
     },
+    shareAttendanceLink: eventId && canShareAttendanceLink ? (guest) => setLinkGuest(guest) : undefined,
     edit: (guest) => setEditGuest(guest),
     undoCheckIn: eventId && canUndoCheckIn ? (guest) => setUndoGuest(guest) : undefined,
     remove: (guest) => setRemoveGuest(guest),
@@ -372,6 +378,19 @@ export function GuestsPeople({
           person={{ rsvpId: moveGuest.id, name: guestDisplayName(moveGuest), teamId: moveGuest.team?.id ?? null }}
           onClose={() => setMoveGuest(null)}
           onMoved={() => router.refresh()}
+        />
+      ) : null}
+
+      {linkGuest && eventId ? (
+        <AttendanceLinkDialog
+          organisationSlug={organisationSlug}
+          eventId={eventId}
+          guest={{ rsvpId: linkGuest.id, name: guestDisplayName(linkGuest), state: linkGuest.attendance?.state ?? null }}
+          onClose={(created) => {
+            setLinkGuest(null);
+            // The guest's badge now reads "No reply" (or keeps their answer).
+            if (created) router.refresh();
+          }}
         />
       ) : null}
 

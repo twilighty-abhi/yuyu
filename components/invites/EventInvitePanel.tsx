@@ -15,6 +15,8 @@ import { useDebouncedValue } from "@/components/event-dashboard/guests/useServer
 import type { EventInvitesPage } from "@/lib/eventDashboard/invites";
 
 const SEARCH_DELAY_MS = 300;
+// A request that throws (such as a dropped connection) shows an error instead of loading forever.
+const LOAD_FAILED = { ok: false as const, error: "Couldn't load the list. Try again." };
 
 /**
  * Guests · Invites. Numbered pages of 50, newest first, searched by email on
@@ -66,7 +68,7 @@ export function EventInvitePanel(props: {
       }
       setLoading(true);
       setListError(null);
-      const res = await loadInvitesPage({ organisationSlug, eventId, query: searched, page });
+      const res = await loadInvitesPage({ organisationSlug, eventId, query: searched, page }).catch(() => LOAD_FAILED);
       if (mine !== seq.current) return;
       setLoading(false);
       if (!res.ok || !res.data) {

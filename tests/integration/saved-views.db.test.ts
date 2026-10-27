@@ -297,6 +297,7 @@ describe.sequential("filters behind the presets", () => {
     const page = await listAttendeesPage({ kind: "event", eventId: event.id, organisationId }, { status: "notCheckedIn" }, { origin: "https://yuyu.example", teamMode: false });
     expect(page.rows).toHaveLength(2);
     expect(page.counts).toMatchObject({ all: 4, going: 3, checkedIn: 1, notCheckedIn: 2, waitlist: 1 });
+    expect(page.matching).toBe(2);
   });
 
   it("Teams: Looking for members filters and counts", async () => {

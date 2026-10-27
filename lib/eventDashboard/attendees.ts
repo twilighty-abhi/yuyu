@@ -98,10 +98,12 @@ export type AttendeeAttendanceCounts = Record<AttendeeAttendanceFilter, number>;
 export type AttendeesPage = {
   rows: AttendeeRowDto[];
   nextCursor: string | null;
-  /** Per-chip counts for the current search and dropdown filters (first page only). */
+  /** Per-chip counts for the whole scope, ignoring search and filters (first page only). */
   counts: AttendeeFilterCounts | null;
   /** Every registration in the scope, ignoring filters (first page only). */
   total: number | null;
+  /** Registrations matching the current search, dropdowns and status chip (first page only). */
+  matching: number | null;
   /**
    * Attendance reply counts under the current search, dropdowns and status
    * chip (first page of a one-off event only; null otherwise). Null too until
@@ -110,9 +112,9 @@ export type AttendeesPage = {
   attendanceCounts: AttendeeAttendanceCounts | null;
 };
 
-const EMPTY_PAGE: AttendeesPage = { rows: [], nextCursor: null, counts: null, total: null, attendanceCounts: null };
+const EMPTY_PAGE: AttendeesPage = { rows: [], nextCursor: null, counts: null, total: null, matching: null, attendanceCounts: null };
 
-/** The chip counts: one grouped count by status plus the checked-in counts, under the same search. */
+/** The chip counts: one grouped count by status plus the checked-in counts, under the given condition. */
 export async function countAttendeeFilters(base: Prisma.RSVPWhereInput): Promise<AttendeeFilterCounts> {
   const [groups, checkedIn, notCheckedIn] = await Promise.all([
     prisma.rSVP.groupBy({ by: ["status"], where: base, _count: { _all: true } }),
@@ -148,8 +150,9 @@ async function attendanceAskedFor(scope: AttendeeScope): Promise<boolean> {
 
 /**
  * One page of the People list for a validated view. The first page (no
- * cursor) also carries the chip counts and the unfiltered total; "Load more"
- * pages skip those queries. A malformed view or cursor returns an empty page.
+ * cursor) also carries the chip counts (always the whole event or date, so
+ * they never shrink with the search or dropdowns), the unfiltered total and
+ * how many registrations match the view; "Load more" pages skip those queries. A malformed view or cursor returns an empty page.
  */
 export async function listAttendeesPage(scope: AttendeeScope, input: unknown, options: { origin: string; teamMode: boolean }): Promise<AttendeesPage> {
   const parsed = attendeeListViewSchema.safeParse(input ?? {});
@@ -162,15 +165,16 @@ export async function listAttendeesPage(scope: AttendeeScope, input: unknown, op
   const attendanceAsked = await attendanceAskedFor(scope);
   // The attendance counts describe every other filter (status chip included) but not their own dropdown.
   const attendanceBase = { AND: [attendeeBaseWhere(scope, { ...view, attendance: "all" }, { teamMode: options.teamMode }), attendeeStatusWhere(view.status)] };
-  const [records, counts, total, attendanceCounts] = await Promise.all([
+  const viewWhere = { AND: [base, attendeeStatusWhere(view.status)] };
+  const [records, counts, matching, attendanceCounts] = await Promise.all([
     prisma.rSVP.findMany({
-      where: { AND: [base, attendeeStatusWhere(view.status), after] },
+      where: { AND: [viewWhere, after] },
       include: attendeeInclude,
       orderBy: ATTENDEE_ORDER,
       take: ATTENDEES_PAGE_SIZE + 1,
     }),
-    firstPage ? countAttendeeFilters(base) : Promise.resolve(null),
-    firstPage ? prisma.rSVP.count({ where: attendeeScopeWhere(scope) }) : Promise.resolve(null),
+    firstPage ? countAttendeeFilters(attendeeScopeWhere(scope)) : Promise.resolve(null),
+    firstPage ? prisma.rSVP.count({ where: viewWhere }) : Promise.resolve(null),
     firstPage && attendanceAsked ? countAttendanceFilters(attendanceBase) : Promise.resolve(null),
   ]);
   const page = records.slice(0, ATTENDEES_PAGE_SIZE);
@@ -179,7 +183,8 @@ export async function listAttendeesPage(scope: AttendeeScope, input: unknown, op
     rows: page.map((record) => toAttendeeRow(record, options.origin, { attendanceAsked })),
     nextCursor: records.length > ATTENDEES_PAGE_SIZE && last ? encodeTimeCursor({ at: last.createdAt, id: last.id }) : null,
     counts,
-    total,
+    total: counts?.all ?? null,
+    matching,
     attendanceCounts,
   };
 }

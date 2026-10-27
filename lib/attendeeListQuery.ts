@@ -103,8 +103,8 @@ export function attendeeAttendanceWhere(attendance: AttendeeAttendanceFilter): P
  * Everything but the status chip: the scope, guests-or-users, team-or-solo
  * (TEAM events only), the attendance reply (one-off events only) and the
  * search over names, emails and, on TEAM events, the team name (matched
- * inside the scoped event only). The chip counts use this condition so they
- * describe the current search and dropdowns.
+ * inside the scoped event only). The list and exports use this condition;
+ * the chip counts deliberately don't, so they always show the whole scope.
  */
 export function attendeeBaseWhere(
   scope: AttendeeScope,

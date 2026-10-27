@@ -126,8 +126,9 @@ describe("Guests · People attendance filter", () => {
     for (const [filter, expected] of [["coming", "coming"], ["notComing", "declined"], ["noReply", "silent"], ["notAsked", "unasked"]] as const) {
       const filtered = await listAttendeesPage(scope(), { attendance: filter }, options);
       expect(filtered.rows.map((row) => row.id)).toEqual([rsvpIds[expected]]);
-      // The status chips describe the attendance filter too.
-      expect(filtered.counts?.all).toBe(1);
+      // The view count follows the attendance filter; the status chips stay event-wide.
+      expect(filtered.matching).toBe(1);
+      expect(filtered.counts).toEqual(page.counts);
     }
     // The attendance counts follow the status chip.
     const waitlisted = await listAttendeesPage(scope(), { status: "waitlist" }, options);

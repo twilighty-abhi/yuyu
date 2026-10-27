@@ -45,7 +45,9 @@ const limits: Record<Bucket, { max: number; windowMs: number }> = {
   passwordReset: { max: 5, windowMs: 60 * 60_000 },
   rsvp: { max: 10, windowMs: 60_000 },
   feedback: { max: 8, windowMs: 60_000 },
-  upload: { max: 12, windowMs: 60 * 60_000 },
+  // Shared by every image upload (covers, logos, speaker photos, sponsor logos,
+  // media, certificates, crew photos). Building one event page can take dozens.
+  upload: { max: 60, windowMs: 60 * 60_000 },
   invite: { max: 30, windowMs: 60 * 60_000 },
   broadcast: { max: 10, windowMs: 60 * 60_000 },
   // Tests only reach the organiser's own inbox; kept apart so testing never blocks the real send.

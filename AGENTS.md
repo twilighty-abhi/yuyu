@@ -1,6 +1,6 @@
 <!-- BEGIN:nextjs-agent-rules -->
 
-# This is NOT the Next.js you know
+## This is NOT the Next.js you know
 
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
 
@@ -21,11 +21,15 @@ Vitest, and Playwright. Deployment supports Docker standalone output and the Hel
 The product currently includes organisations and member roles, event
 collaborators with per-event grants, public/private events and RRULE-based
 series, event websites (programme, speakers, sponsors), custom RSVP forms and
-waitlists, event short links, QR tickets with live check-in updates and offline check-in, badge
-printing, feedback and layered certificates, designed broadcast and
+waitlists, team registration (team units for capacity, whole-team approval),
+hackathon submissions with judges, rubric scoring, awards and published
+results, event crew, organiser-sent attendance confirmation, event short
+links, QR tickets with live check-in updates, offline check-in and custom
+check-in lists, badge printing, feedback and layered certificates,
+organisation webhooks, saved views and filtered exports, designed broadcast and
 transactional email, a personal account area (registrations, organisations,
-data export), and a separate super-admin operations, insights, and
-instance-settings area with an operational alerts webhook, a tenant-bound
+data export), the in-app help centre (`/help`), and a separate super-admin
+operations, insights, and instance-settings area with an operational alerts webhook, a tenant-bound
 machine API, and a user-authenticated mobile API (`/api/mobile/v1`) for the
 Yuyu apps. Treat this as a production-oriented application:
 tenant isolation, privacy, and secure operations are core behaviour rather
@@ -39,6 +43,8 @@ Read the relevant page in `docs/` before changing an unfamiliar product area:
 - `docs/CONFIGURATION.md` and `docs/production-operations.md` for environment
   and deployment changes.
 - `docs/TESTING.md` for the appropriate verification level.
+- `docs/TEAMS.md` and `docs/HACKATHON.md` for team registration, judging and
+  results; `docs/PRODUCTION_RELEASE.md` for the release and upgrade runbook.
 
 `prisma/schema.prisma` is authoritative for data model details. Do not infer a
 field, constraint, or cascade from a component alone.
@@ -154,7 +160,22 @@ field, constraint, or cascade from a component alone.
   job where applicable.
 - Email is queued in `OutboxMessage`; request paths must not wait for SMTP.
   Preserve safe concurrent claims, retry behaviour, retention cleanup, and the
-  one-minute worker/`POST /api/internal/outbox` recovery path.
+  one-minute worker/`POST /api/internal/outbox` recovery path. Each pass drains
+  batches within a time budget (`lib/outboxWorker.ts`), sending transactional
+  kinds before the ones in `BULK_OUTBOX_KINDS` (`lib/outbox.ts`). Add a new
+  email kind to `BULK_OUTBOX_KINDS` when an organiser sends it to a whole
+  audience. The previous release's worker fails unknown kinds permanently
+  while both releases run, so also list a new kind in
+  `OUTBOX_KINDS_ADDED_AFTER_1_0` (or its successor); the new release then
+  requeues those rows once.
+- Hackathon emails (results published, submission receipts) are off by
+  default per event, and attendance confirmation is sent only by an
+  owner/admin; never add an automatic send for either. Crew registrations
+  (`RSVP.isCrew`) never count against capacity or receive attendance checks.
+- Raw SQL that writes or compares timestamps uses `lib/sqlTimestamp.ts` so
+  the database TimeZone cannot shift it. Build `Intl.DateTimeFormat`/number
+  formatters through `lib/format/intlCache.ts`, never per row: large-event
+  dashboards render tens of thousands of dates.
 - Sent emails need an absolute `NEXT_PUBLIC_BASE_URL` for links and images;
   dashboard previews render stored paths site-relative. When no public address
   is configured, leave images out rather than sending `localhost` links.
@@ -201,10 +222,17 @@ npm run test:e2e               # routing/auth/public-flow changes
 npm run test:e2e:production    # security, headers, auth, tickets, public flows
 ```
 
+For schema changes, also check the lock each statement takes (see the lock
+checklist in `docs/production-operations.md`), keep migrations additive, and
+record new enum values in the rollback notes of `docs/PRODUCTION_RELEASE.md`:
+the previous release cannot read rows that use them.
+
 For schema or production configuration work, also run `npm run db:status`,
 `npm run db:verify`, and/or `npm run production:check` as applicable. Do not
 run integration tests against any non-disposable database. Report checks that
-were not run and why.
+were not run and why. Write test, release and upgrade reports to
+`test-reports/` at the repository root. That folder is git-ignored and is
+never committed.
 
 Other sessions may edit this tree in parallel. Commit with explicit paths, and
 do not sweep in or revert other sessions' uncommitted files. The user guide is
@@ -216,8 +244,9 @@ articles accurate when a feature they describe changes.
 
 Every new feature or fix gets its own branch from `main` and reaches `main`
 only through a reviewed, tested pull request. Never commit a feature straight
-onto `main`. (`v1-design-overhaul` was the integration branch until the V1
-release landed on `main`; it is no longer used for new work.)
+onto `main`. `main` is the only integration branch and the one deployed to
+production; `staging` exists but is not touched unless asked.
+(`v1-design-overhaul` was retired after the V1 release.)
 
 - Branch from the latest `main`: `git fetch origin && git switch -c
   feat/<short-name> origin/main` (use `fix/<short-name>` for a bug fix). One

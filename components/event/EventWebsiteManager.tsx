@@ -47,6 +47,7 @@ type ContentRow = {
   values: Record<string, string | number | null>;
 };
 type SaveAction = (input: unknown) => Promise<{ ok: boolean; error?: string }>;
+const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
 
 /** Read-only facts for the section notes and the live phone preview (computed on the server). */
 export type EventPagePreviewData = {
@@ -228,17 +229,28 @@ function ContentCollection({
     event.preventDefault();
     let values = row?.values ?? { sortOrder: rows.length };
     if ((kind === "speaker" || kind === "sponsor") && photoFile) {
+      const assetLabel = kind === "speaker" ? "speaker photo" : "sponsor logo";
+      // Larger files exceed the Server Action body limit and throw instead of returning an error.
+      if (photoFile.size > MAX_PHOTO_BYTES) {
+        onError(`The ${assetLabel} must be 5 MB or smaller.`);
+        return;
+      }
       setUploadingPhoto(true);
       const photo = new FormData();
       photo.set("organisationSlug", target.organisationSlug);
       photo.set("eventId", target.eventId);
       photo.set("file", photoFile);
-      const upload =
-        kind === "speaker"
-          ? await uploadEventSpeakerPhoto(photo)
-          : await uploadEventSponsorLogo(photo);
-      setUploadingPhoto(false);
-      const assetLabel = kind === "speaker" ? "speaker photo" : "sponsor logo";
+      let upload: Awaited<ReturnType<typeof uploadEventSpeakerPhoto>>;
+      try {
+        upload =
+          kind === "speaker"
+            ? await uploadEventSpeakerPhoto(photo)
+            : await uploadEventSponsorLogo(photo);
+      } catch {
+        upload = { ok: false, error: `Could not upload the ${assetLabel}.` };
+      } finally {
+        setUploadingPhoto(false);
+      }
       if (!upload.ok) {
         onError(upload.error);
         return;
@@ -745,7 +757,11 @@ export function EventWebsiteManager(props: Props) {
               openAddRequest={addRequests[collection.kind]}
               onSave={(action, input) => save(action, input)}
               onDelete={remove(collection.kind)}
-              onError={setError}
+              onError={(message) => {
+                // The callout sits at the top of the page, out of view of the open form.
+                setError(message);
+                showToast(message, "error");
+              }}
               onDraftChange={onDraftChange}
             />
           ))}

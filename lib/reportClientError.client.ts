@@ -3,7 +3,7 @@
  * it. Errors with a digest came from the server and were already reported
  * there by `onRequestError`. Best effort: failures are ignored.
  */
-export function reportClientError(boundary: "route" | "global", error: Error & { digest?: string }) {
+export function reportClientError(boundary: "route" | "global" | "panel", error: Error & { digest?: string }) {
   if (error.digest || typeof window === "undefined") return;
   try {
     void fetch("/api/client-errors", {

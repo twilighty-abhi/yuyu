@@ -11,6 +11,7 @@ import {
 import { useSearchParams } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { clearViewParamsFromUrl } from "@/lib/savedViews";
+import { PanelErrorBoundary } from "./PanelErrorBoundary";
 
 export const EVENT_TABS = [
   { value: "overview", label: "Overview" },
@@ -146,7 +147,7 @@ export function EventDashboardTabs({
         </TabsList>
         {tabs.map((item) => (
           <TabsContent key={item.value} value={item.value} className="pt-6">
-            {panels[item.value]}
+            <PanelErrorBoundary label={item.label}>{panels[item.value]}</PanelErrorBoundary>
           </TabsContent>
         ))}
       </Tabs>

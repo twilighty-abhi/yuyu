@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 const MAX_BODY_BYTES = 4_096;
 
 const reportSchema = z.object({
-  boundary: z.enum(["route", "global"]),
+  boundary: z.enum(["route", "global", "panel"]),
   name: z.string().max(80).optional(),
   message: z.string().max(500).optional(),
   path: z.string().max(500).optional(),
@@ -45,7 +45,7 @@ export async function POST(request: Request) {
   reportOpsAlert({
     level: "error",
     source: "browser",
-    title: boundary === "global" ? "App crashed in the browser" : "Page crashed in the browser",
+    title: boundary === "global" ? "App crashed in the browser" : boundary === "panel" ? "Dashboard section crashed in the browser" : "Page crashed in the browser",
     error,
     context: { page: path ? sanitizeAlertPath(path) : undefined },
   });

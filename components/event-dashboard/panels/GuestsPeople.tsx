@@ -42,7 +42,7 @@ const SEARCH_DELAY_MS = 300;
 const NO_COUNTS: AttendeeFilterCounts = { all: 0, going: 0, waitlist: 0, approve: 0, declined: 0, checkedIn: 0, notCheckedIn: 0 };
 
 type View = { status: GuestStatusFilter; kind: GuestKindFilter; team: GuestTeamFilter; attendance: AttendeeAttendanceFilter; query: string };
-type Meta = { counts: AttendeeFilterCounts; total: number; attendanceCounts: AttendeeAttendanceCounts | null };
+type Meta = { counts: AttendeeFilterCounts; total: number; matching: number; attendanceCounts: AttendeeAttendanceCounts | null };
 
 const FILTER_DOTS: Record<GuestStatusFilter, string> = {
   all: "bg-ink",
@@ -58,8 +58,9 @@ type ActionResult = { ok: true } | { ok: false; error: string };
 
 /**
  * Guests · People. The list is paged, filtered and searched on the server
- * (`loadAttendeesPage`), so every registration can be found and the chip
- * counts cover the whole event; "Load more" appends the next page.
+ * (`loadAttendeesPage`), so every registration can be found. The chip counts
+ * always cover the whole event, whatever the search or dropdowns; "Load more"
+ * appends the next page.
  *
  * Whose registrations the list shows. A one-off event gets the full toolset;
  * a series date (RSVPs keyed by `eventInstanceId`) only gets the actions that
@@ -149,7 +150,12 @@ export function GuestsPeople({
     () => ({
       rows: initialPage.rows as AttendeeRow[],
       nextCursor: initialPage.nextCursor,
-      meta: { counts: initialPage.counts ?? NO_COUNTS, total: initialPage.total ?? 0, attendanceCounts: initialPage.attendanceCounts ?? null } as Meta,
+      meta: {
+        counts: initialPage.counts ?? NO_COUNTS,
+        total: initialPage.total ?? 0,
+        matching: initialPage.matching ?? 0,
+        attendanceCounts: initialPage.attendanceCounts ?? null,
+      } as Meta,
     }),
     [initialPage],
   );
@@ -158,16 +164,15 @@ export function GuestsPeople({
     async (current: View, cursor: string | null): Promise<ServerPageResult<AttendeeRow, Meta>> => {
       const res = await loadAttendeesPage({ organisationSlug, ...scopeIds, ...current, cursor });
       if (!res.ok || !res.data) return { ok: false, error: res.ok ? "Could not load guests." : res.error };
-      const { rows, nextCursor, counts, total, attendanceCounts } = res.data;
-      return { ok: true, page: { rows, nextCursor, meta: counts && total != null ? { counts, total, attendanceCounts } : null } };
+      const { rows, nextCursor, counts, total, matching, attendanceCounts } = res.data;
+      return { ok: true, page: { rows, nextCursor, meta: counts && total != null && matching != null ? { counts, total, matching, attendanceCounts } : null } };
     },
     [organisationSlug, scopeIds],
   );
   const list = useServerPages<AttendeeRow, View, Meta>({ initial, view, viewKey, isDefaultView, delayMs: 0, fetchPage, keyOf: (row) => row.id });
-  const { counts, total, attendanceCounts } = list.meta;
+  const { counts, total, matching, attendanceCounts } = list.meta;
   // Shown once someone has been asked (the server sends counts only then), or while a linked view selects it.
   const showAttendanceFilter = target.kind === "event" && (attendanceCounts != null || attendance !== "all");
-  const shownTotal = counts[view.status];
   // Both exports carry the list's current filters and search, so they hold
   // every matching registration, not only the rows loaded here.
   const viewQuery = attendeeViewSearchParams(view);
@@ -231,7 +236,7 @@ export function GuestsPeople({
                 teamMode={teamMode}
               />
             ) : null}
-            {emailExportHref && shownTotal > 0 ? (
+            {emailExportHref && matching > 0 ? (
               <Button asChild variant="secondary" startIcon={<AtSign />}>
                 <a href={emailExportHref} title="Export emails for every guest matching these filters">Export emails</a>
               </Button>
@@ -240,7 +245,7 @@ export function GuestsPeople({
                 Export emails
               </Button>
             )}
-            {csvExportHref && shownTotal > 0 ? (
+            {csvExportHref && matching > 0 ? (
               <Button asChild variant="secondary" startIcon={<Download />}>
                 <a href={csvExportHref} title="Export every guest matching these filters, with their answers">Export CSV</a>
               </Button>
@@ -347,7 +352,7 @@ export function GuestsPeople({
 
           {list.rows.length > 0 && list.loading !== "replace" ? (
             <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-ink-secondary">
-              <span aria-live="polite">{showingLabel(list.rows.length, Math.max(shownTotal, list.rows.length), shownTotal === 1 ? "guest" : "guests")}</span>
+              <span aria-live="polite">{showingLabel(list.rows.length, Math.max(matching, list.rows.length), matching === 1 ? "guest" : "guests")}</span>
               {list.nextCursor ? (
                 <Button size="sm" variant="secondary" loading={list.loading === "more"} loadingLabel="Loading…" onClick={() => void list.loadMore()}>
                   Load more guests

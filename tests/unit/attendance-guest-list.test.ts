@@ -167,7 +167,7 @@ describe("Guests · People loader with attendance", () => {
 
   it("rejects an unknown attendance filter with an empty page", async () => {
     const page = await listAttendeesPage(eventScope, { attendance: "maybe" }, { origin: "https://events.example.test", teamMode: false });
-    expect(page).toEqual({ rows: [], nextCursor: null, counts: null, total: null, attendanceCounts: null });
+    expect(page).toEqual({ rows: [], nextCursor: null, counts: null, total: null, matching: null, attendanceCounts: null });
     expect(mocks.findMany).not.toHaveBeenCalled();
   });
 });

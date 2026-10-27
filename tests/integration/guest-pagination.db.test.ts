@@ -193,7 +193,7 @@ describe("guest list paging", () => {
     expect(rows[0]!.ticketUrl).toMatch(/^https:\/\/events\.example\.test\/ticket\//);
   });
 
-  it("counts every chip in the database, under the current search and filters", async () => {
+  it("counts every chip in the database for the whole event, whatever the search and filters", async () => {
     const first = await listAttendeesPage(scope(), {}, options);
     const count = (where: object) => prisma.rSVP.count({ where: { eventId: event.id, ...where } });
     expect(first.total).toBe(await count({}));
@@ -209,19 +209,21 @@ describe("guest list paging", () => {
 
     const soloGuests = await listAttendeesPage(scope(), { status: "going", kind: "guests", team: "solo" }, options);
     const expected = await count({ status: RsvpStatus.CONFIRMED, userId: null, teamId: null });
-    expect(soloGuests.counts!.going).toBe(expected);
+    expect(soloGuests.matching).toBe(expected);
+    expect(soloGuests.counts).toEqual(first.counts);
     expect(soloGuests.rows.every((row) => row.status === "CONFIRMED" && !row.user && !row.team)).toBe(true);
     expect(soloGuests.total).toBe(first.total);
 
     const users = await listAttendeesPage(scope(), { kind: "users" }, options);
-    expect(users.counts!.all).toBe(2);
-    expect(users.counts!.checkedIn).toBe(1);
+    expect(users.matching).toBe(2);
+    expect(users.counts).toEqual(first.counts);
   });
 
   it("searches past the first page: names, emails and team names, inside this event only", async () => {
     const byName = await listAttendeesPage(scope(), { query: "ada needle" }, options);
     expect(byName.rows.map((row) => row.guestName)).toEqual(["Ada Needle"]);
-    expect(byName.counts!.all).toBe(1);
+    expect(byName.matching).toBe(1);
+    expect(byName.counts!.all).toBe(await prisma.rSVP.count({ where: { eventId: event.id } }));
 
     const team = await prisma.team.findFirstOrThrow({ where: { eventId: event.id, name: "Team 00 Beta" }, include: { _count: { select: { members: true } } } });
     const byTeam = await listAttendeesPage(scope(), { query: "team 00 beta" }, options);
@@ -240,6 +242,7 @@ describe("guest list paging", () => {
     expect(forged.rows).toEqual([]);
     expect(forged.total).toBe(0);
     expect(forged.counts!.all).toBe(0);
+    expect(forged.matching).toBe(0);
     expect((await listAttendeesPage(scope(), { cursor: "1.x' OR 1=1" }, options)).rows).toEqual([]);
   });
 

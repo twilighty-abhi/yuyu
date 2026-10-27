@@ -8,7 +8,7 @@ import { FACES, MARK_BRIGHT } from "@/components/brand/patterns";
 // Rendered without the app stylesheet, so brand colours are explicit here.
 const BRAND = { X: "#FFB547", O: "#18181B", ".": "#E7E6E2" };
 
-export default function GlobalError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
+export default function GlobalError({ error, retry }: { error: Error & { digest?: string }; retry: () => void }) {
   useEffect(() => {
     if (process.env.NODE_ENV === "development") console.error("[ui] global error", error);
     else console.error("[ui] global error");
@@ -24,7 +24,7 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
           <DotGrid pattern={FACES.sad} dot={96 / 8.5} colors={BRAND} style={{ display: "inline-grid" }} />
           <h1 style={{ marginBottom: ".75rem" }}>Something went wrong</h1>
           <p style={{ color: "inherit", opacity: 0.72, lineHeight: 1.55 }}>Please try again. If this keeps happening, contact the operator of this Yuyu instance.</p>
-          <button type="button" onClick={reset} style={{ border: 0, borderRadius: 999, padding: ".75rem 1.25rem", color: "white", background: "#18181b", fontWeight: 700, cursor: "pointer" }}>Try again</button>
+          <button type="button" onClick={() => retry()} style={{ border: 0, borderRadius: 999, padding: ".75rem 1.25rem", color: "white", background: "#18181b", fontWeight: 700, cursor: "pointer" }}>Try again</button>
         </main>
       </body>
     </html>

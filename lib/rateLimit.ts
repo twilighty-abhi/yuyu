@@ -33,6 +33,7 @@ export type Bucket =
   | "webhookTest"
   | "attendanceCheckSend"
   | "attendanceCheckSettings"
+  | "attendanceCheckLink"
   | "attendanceCheckReply";
 
 const limits: Record<Bucket, { max: number; windowMs: number }> = {
@@ -83,6 +84,8 @@ const limits: Record<Bucket, { max: number; windowMs: number }> = {
   attendanceCheckSend: { max: 10, windowMs: 60 * 60_000 },
   // The release-on-decline switch in the Emails tab.
   attendanceCheckSettings: { max: 30, windowMs: 60_000 },
+  // Guests · People "Share attendance link": one guest per click, no email.
+  attendanceCheckLink: { max: 60, windowMs: 10 * 60_000 },
   // Public replies on /attend/{token}, per link and per client address.
   attendanceCheckReply: { max: 10, windowMs: 60_000 },
 };

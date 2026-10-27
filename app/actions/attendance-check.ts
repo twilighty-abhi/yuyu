@@ -2,7 +2,9 @@
 
 import { auth } from "@/lib/auth";
 import type { ActionResult } from "./org";
+import { getRequestOrigin } from "@/lib/publicUrl";
 import {
+  issueAttendanceLinkForUser,
   previewAttendanceCheckSendForUser,
   remindAttendanceChecksForUser,
   respondToAttendanceCheck,
@@ -36,6 +38,13 @@ export async function remindAttendanceChecks(input: unknown): Promise<ActionResu
 
 export async function setAttendanceReleaseOnDecline(input: unknown): Promise<ActionResult<{ releaseOnDecline: boolean }>> {
   return setAttendanceReleaseOnDeclineForUser(await currentUserId(), input);
+}
+
+/** One guest's attendance link (absolute), to copy and send by hand. */
+export async function issueAttendanceLink(input: unknown): Promise<ActionResult<{ url: string; replaced: boolean }>> {
+  const result = await issueAttendanceLinkForUser(await currentUserId(), input);
+  if (!result.ok || !result.data) return result.ok ? { ok: false, error: "Could not create the link. Please try again." } : result;
+  return { ok: true, data: { url: `${await getRequestOrigin()}${result.data.path}`, replaced: result.data.replaced } };
 }
 
 /** The guest's answer on /attend/{token}; the link token is the only credential. */

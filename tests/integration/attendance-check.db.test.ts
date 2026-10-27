@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => ({ sendAttendanceCheckEmail: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ auth: async () => (identity.id ? { user: { id: identity.id } } : null) }));
 vi.mock("@/lib/actionRateLimit", () => ({ isActionRateLimited: async () => false }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+vi.mock("@/lib/publicUrl", () => ({ getRequestOrigin: async () => "https://yuyu.example.test" }));
 // Keep the real scheduler (the "never automatic" test runs it) but never start a timer.
 vi.mock("@/lib/outboxWorker", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/outboxWorker")>()), startOutboxWorker: vi.fn() }));
 // No email ever leaves the test: the attendance sender is a spy and every
@@ -45,6 +46,7 @@ vi.mock("@/lib/email", async (importOriginal) => ({
 import { prisma } from "@/lib/db";
 import {
   ATTENDANCE_AUDIT,
+  issueAttendanceLinkForUser,
   loadAttendanceCheckStatus,
   previewAttendanceCheckSendForUser,
   remindAttendanceChecksForUser,
@@ -53,7 +55,7 @@ import {
   sendAttendanceChecksForUser,
   setAttendanceReleaseOnDeclineForUser,
 } from "@/lib/core/attendanceCheck";
-import { sendAttendanceChecks, submitAttendanceReply } from "@/app/actions/attendance-check";
+import { issueAttendanceLink, sendAttendanceChecks, submitAttendanceReply } from "@/app/actions/attendance-check";
 import { runOutboxScheduler } from "@/lib/outboxWorker";
 import { deliverOutboxBatch } from "@/lib/outbox";
 import { generateAttendanceToken, hashAttendanceToken } from "@/lib/attendanceToken";
@@ -636,6 +638,110 @@ describe("outbox delivery", () => {
     expect(result.failed).toBeGreaterThanOrEqual(1);
     expect(mocks.sendAttendanceCheckEmail).not.toHaveBeenCalled();
     expect(await queuedFor(event.id)).toHaveLength(0);
+  });
+});
+
+describe("sharing one guest's link by hand", () => {
+  beforeEach(async () => {
+    await prisma.$executeRaw`DELETE FROM "OutboxMessage" WHERE "kind" = 'attendance-check' AND "payload"->>'to' LIKE ${`%${suffix}@example.test`}`;
+  });
+
+  const tokenOf = (path: string) => path.replace(/^\/attend\//, "");
+
+  it("asks a guest not yet asked without emailing them, so a later send skips them", async () => {
+    const event = await makeEvent();
+    const shared = await guest(event.id);
+    const other = await guest(event.id);
+    const result = await issueAttendanceLinkForUser(ownerId, { ...ref(event), rsvpId: shared.id });
+    expect(result).toMatchObject({ ok: true, data: { replaced: false } });
+    const path = result.ok ? result.data!.path : "";
+    expect(path).toMatch(/^\/attend\/[A-Za-z0-9_-]{43}$/);
+    expect(await queuedFor(event.id)).toHaveLength(0);
+    expect(await resolveAttendanceCheckByToken(tokenOf(path))).toMatchObject({ attendeeEmail: shared.guestEmail, response: null, closed: null });
+
+    // The bulk send now asks only the other guest.
+    expect(await sendAttendanceChecksForUser(ownerId, ref(event))).toEqual({ ok: true, data: { queued: 1 } });
+    expect((await queuedFor(event.id)).map((message) => (message.payload as { rsvpId: string }).rsvpId)).toEqual([other.id]);
+    const status = await loadAttendanceCheckStatus(await prisma.event.findUniqueOrThrow({ where: { id: event.id } }));
+    expect(status).toMatchObject({ asked: 2, noReply: 2, notAsked: 0, remindable: 0 });
+
+    // The link works like the emailed one.
+    expect(await respondToAttendanceCheck({ token: tokenOf(path), response: "ATTENDING" })).toMatchObject({ ok: true });
+  });
+
+  it("replaces an emailed link, which stops working and is not delivered", async () => {
+    const event = await makeEvent();
+    const rsvp = await guest(event.id);
+    await sendAttendanceChecksForUser(ownerId, ref(event));
+    const emailed = await tokenFor(rsvp.id);
+    const result = await issueAttendanceLinkForUser(adminId, { ...ref(event), rsvpId: rsvp.id });
+    expect(result).toMatchObject({ ok: true, data: { replaced: true } });
+    expect(await resolveAttendanceCheckByToken(emailed)).toBeNull();
+    expect(await resolveAttendanceCheckByToken(tokenOf(result.ok ? result.data!.path : ""))).not.toBeNull();
+    await deliverOutboxBatch(50);
+    expect(mocks.sendAttendanceCheckEmail).not.toHaveBeenCalled();
+
+    // A guest who already answered can get a fresh link to change it.
+    await respondToAttendanceCheck({ token: tokenOf(result.ok ? result.data!.path : ""), response: "NOT_ATTENDING" });
+    const again = await issueAttendanceLinkForUser(ownerId, { ...ref(event), rsvpId: rsvp.id });
+    expect(again).toMatchObject({ ok: true, data: { replaced: true } });
+    expect(await resolveAttendanceCheckByToken(tokenOf(again.ok ? again.data!.path : ""))).toMatchObject({ response: "NOT_ATTENDING" });
+  });
+
+  it("audits the link without the token, and the Server Action returns an absolute link", async () => {
+    const event = await makeEvent();
+    const rsvp = await guest(event.id);
+    identity.id = ownerId;
+    const result = await issueAttendanceLink({ ...ref(event), rsvpId: rsvp.id });
+    expect(result).toMatchObject({ ok: true, data: { replaced: false } });
+    const url = result.ok ? result.data!.url : "";
+    expect(url).toMatch(/^https:\/\/yuyu\.example\.test\/attend\/[A-Za-z0-9_-]{43}$/);
+    const audit = await prisma.auditEvent.findFirstOrThrow({ where: { action: ATTENDANCE_AUDIT.linkShared, targetId: event.id } });
+    expect(audit).toMatchObject({ actorUserId: ownerId, organisationId: orgId, metadata: { rsvpId: rsvp.id, replaced: false } });
+    expect(JSON.stringify(audit)).not.toContain(url.split("/attend/")[1]);
+    // The Emails card's "last sent" line counts emails only.
+    expect((await loadAttendanceCheckStatus(await prisma.event.findUniqueOrThrow({ where: { id: event.id } }))).lastSent).toBeNull();
+  });
+
+  it("refuses anyone who may not email guests, and every collaborator grant", async () => {
+    const event = await makeEvent();
+    const rsvp = await guest(event.id);
+    const error = { ok: false, error: "You do not have permission to email attendees." };
+    expect(await issueAttendanceLinkForUser(memberId, { ...ref(event), rsvpId: rsvp.id })).toEqual(error);
+    expect(await issueAttendanceLinkForUser(otherOwnerId, { ...ref(event), rsvpId: rsvp.id })).toEqual(error);
+    const collaborator = await makeUser(`link-collab-${randomUUID().slice(0, 8)}`);
+    await prisma.eventCollaborator.create({ data: { eventId: event.id, userId: collaborator, permissions: Object.values(EventPermission) } });
+    expect(await issueAttendanceLinkForUser(collaborator, { ...ref(event), rsvpId: rsvp.id })).toEqual(error);
+    expect(await issueAttendanceLinkForUser(null, { ...ref(event), rsvpId: rsvp.id })).toEqual({ ok: false, error: "You must be signed in." });
+    expect(await issueAttendanceLinkForUser(ownerId, { ...ref(event), rsvpId: rsvp.id, extra: 1 })).toEqual({ ok: false, error: "Invalid request." });
+    expect(await prisma.attendanceCheck.count({ where: { eventId: event.id } })).toBe(0);
+  });
+
+  it("refuses other events' guests, guests without a confirmed place, crew, and closed events", async () => {
+    const event = await makeEvent();
+    const elsewhere = await makeEvent();
+    const foreignGuest = await guest(elsewhere.id);
+    expect(await issueAttendanceLinkForUser(ownerId, { ...ref(event), rsvpId: foreignGuest.id })).toEqual({ ok: false, error: "Guest not found." });
+    const foreignOrg = await makeEvent({ organisationId: otherOrgId });
+    const foreignOrgGuest = await guest(foreignOrg.id);
+    expect(await issueAttendanceLinkForUser(ownerId, { organisationSlug: orgSlug, eventId: foreignOrg.id, rsvpId: foreignOrgGuest.id })).toEqual({ ok: false, error: "Event not found." });
+
+    const notConfirmed = { ok: false, error: "Only confirmed guests can be asked to confirm attendance." };
+    for (const status of [RsvpStatus.WAITLISTED, RsvpStatus.PENDING_APPROVAL, RsvpStatus.REJECTED]) {
+      const rsvp = await guest(event.id, status);
+      expect(await issueAttendanceLinkForUser(ownerId, { ...ref(event), rsvpId: rsvp.id }), status).toEqual(notConfirmed);
+    }
+    expect((await addCrewMemberAsOrganiser({ organisationId: orgId, eventId: event.id, actorUserId: ownerId }, { name: "Link Crew", email: `link-crew-${suffix}@example.test` })).ok).toBe(true);
+    const crewRsvp = await prisma.rSVP.findFirstOrThrow({ where: { eventId: event.id, isCrew: true } });
+    expect(await issueAttendanceLinkForUser(ownerId, { ...ref(event), rsvpId: crewRsvp.id })).toEqual(notConfirmed);
+
+    const started = await makeEvent({ start: new Date(Date.now() - 60_000) });
+    const startedGuest = await guest(started.id);
+    expect(await issueAttendanceLinkForUser(ownerId, { ...ref(started), rsvpId: startedGuest.id })).toEqual({ ok: false, error: "This event has started, so guests can no longer be asked." });
+    const cancelled = await makeEvent({ status: EventStatus.CANCELLED });
+    const cancelledGuest = await guest(cancelled.id);
+    expect(await issueAttendanceLinkForUser(ownerId, { ...ref(cancelled), rsvpId: cancelledGuest.id })).toEqual({ ok: false, error: "This event is cancelled, so guests cannot be asked." });
+    expect(await prisma.attendanceCheck.count({ where: { eventId: { in: [event.id, elsewhere.id, foreignOrg.id, started.id, cancelled.id] } } })).toBe(0);
   });
 });
 

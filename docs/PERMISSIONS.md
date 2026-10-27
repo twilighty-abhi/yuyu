@@ -72,6 +72,7 @@ would be allowed. `tests/unit/event-capabilities.test.ts` pins this table.
 | Event page · Registration form | `app/actions/registration-form.ts`: `requireOrgRole(ADMIN)` | Yes | — | — | — | — | — | — | — | — |
 | Emails: compose, test, send, history | `lib/core/broadcasts.ts`: admin | Yes | — | — | — | — | — | — | — | — |
 | Emails: Attendance confirmation card (preview, ask guests, ask newly confirmed guests, remind people who haven't replied, release-on-decline switch)⁴ | `lib/core/attendanceCheck.ts`: admin (`canManageEvents`, exactly as broadcasts) | Yes | — | — | — | — | — | — | — | — |
+| Guests · People: **Share attendance link** in a confirmed, non-crew guest's menu (one-off events, before the start)⁴ | `issueAttendanceLinkForUser` in `lib/core/attendanceCheck.ts`: admin (`canManageEvents`, the same rule as sending) | Yes | — | — | — | — | — | — | — | — |
 | Check-in: desk, counts, ID cards | `lib/core/checkin.ts`: `CHECK_IN` | Yes | — | — | — | — | Yes | — | — | Yes |
 | Check-in desk: attendance confirmation badge on a looked-up guest (no note) | `lib/core/checkin.ts`: `CHECK_IN` | Yes | — | — | — | — | Yes | — | — | Yes |
 | Check-in: check-in lists card, list switcher, scan/search into a list, undo, list guest view | `lib/core/checkinLists.ts` (`checkInToListForUser`, `undoListCheckInForUser`, `lookupListAttendeesForUser`): `CHECK_IN` (`canCheckInToLists`) | Yes | — | — | — | — | Yes | — | — | Yes |

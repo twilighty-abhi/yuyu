@@ -12,32 +12,41 @@ import { deliverWebhookBatch } from "@/lib/webhooks/delivery";
 
 const OUTBOX_WORKER_INTERVAL_MS = 60_000;
 /** Messages claimed per batch inside one scheduler pass. */
-export const OUTBOX_DRAIN_BATCH = 50;
+export const OUTBOX_DRAIN_BATCH = 20;
 /**
- * How long one pass keeps draining. Well under the one-minute cadence and a
- * typical proxy timeout for `POST /api/internal/outbox`; overlapping passes
- * (the worker and the external scheduler, or several replicas) are safe
- * because each message is claimed individually.
+ * Batches per scheduler pass. One batch of 20 a minute is deliberately gentle:
+ * every message opens its own SMTP connection and login, and draining 50 at a
+ * time for 40 s made Gmail/Workspace refuse logins mid-broadcast ("454 4.7.0
+ * Too many login attempts"). Large sends take longer, which is acceptable.
+ */
+export const OUTBOX_DRAIN_MAX_BATCHES = 1;
+/**
+ * Upper bound on how long one pass keeps draining when more than one batch is
+ * allowed. Well under the one-minute cadence and a typical proxy timeout for
+ * `POST /api/internal/outbox`; overlapping passes (the worker and the external
+ * scheduler, or several replicas) are safe because each message is claimed
+ * individually.
  */
 export const OUTBOX_DRAIN_BUDGET_MS = 40_000;
 
 /**
- * Deliver batches until nothing is due, the time budget is spent, or a whole
- * batch failed (the mail server is likely down: wait for the next pass rather
- * than burn through the retry schedule of the entire queue). A fixed 20 per
- * minute used to leave a 10k-recipient send queued for hours.
+ * Deliver batches until nothing is due, the batch or time budget is spent, or
+ * a whole batch failed (the mail server is likely down: wait for the next pass
+ * rather than burn through the retry schedule of the entire queue).
  */
-export async function drainOutbox(options: { batch?: number; budgetMs?: number; now?: () => number } = {}) {
+export async function drainOutbox(options: { batch?: number; maxBatches?: number; budgetMs?: number; now?: () => number } = {}) {
   const batch = options.batch ?? OUTBOX_DRAIN_BATCH;
+  const maxBatches = options.maxBatches ?? OUTBOX_DRAIN_MAX_BATCHES;
   const now = options.now ?? Date.now;
   const deadline = now() + (options.budgetMs ?? OUTBOX_DRAIN_BUDGET_MS);
   let sent = 0;
   let failed = 0;
-  for (;;) {
+  for (let batches = 1; ; batches += 1) {
     const result = await deliverOutboxBatchWithCount(batch);
     sent += result.sent;
     failed += result.failed;
     if (result.due < batch) break;
+    if (batches >= maxBatches) break;
     if (result.sent === 0 && result.failed > 0) break;
     if (now() >= deadline) break;
   }

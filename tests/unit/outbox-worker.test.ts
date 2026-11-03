@@ -17,7 +17,7 @@ vi.mock("@/lib/operationalHeartbeat", () => ({
   recordOutboxSchedulerFailure: mocks.failure,
 }));
 
-import { drainOutbox, OUTBOX_DRAIN_BATCH, runOutboxScheduler } from "@/lib/outboxWorker";
+import { drainOutbox, OUTBOX_DRAIN_BATCH, OUTBOX_DRAIN_MAX_BATCHES, runOutboxScheduler } from "@/lib/outboxWorker";
 
 describe("outbox scheduler", () => {
   beforeEach(() => {
@@ -65,7 +65,7 @@ describe("outbox drain", () => {
       .mockResolvedValueOnce({ sent: 50, failed: 0, due: 50 })
       .mockResolvedValueOnce({ sent: 49, failed: 1, due: 50 })
       .mockResolvedValueOnce({ sent: 12, failed: 0, due: 12 });
-    await expect(drainOutbox({ batch: 50, budgetMs: 60_000 })).resolves.toEqual({ sent: 111, failed: 1 });
+    await expect(drainOutbox({ batch: 50, maxBatches: 10, budgetMs: 60_000 })).resolves.toEqual({ sent: 111, failed: 1 });
     expect(mocks.deliver).toHaveBeenCalledTimes(3);
     expect(mocks.deliver).toHaveBeenCalledWith(50);
   });
@@ -76,7 +76,7 @@ describe("outbox drain", () => {
       clock += 15_000;
       return { sent: 50, failed: 0, due: 50 };
     });
-    await expect(drainOutbox({ batch: 50, budgetMs: 40_000, now: () => clock })).resolves.toEqual({ sent: 150, failed: 0 });
+    await expect(drainOutbox({ batch: 50, maxBatches: 10, budgetMs: 40_000, now: () => clock })).resolves.toEqual({ sent: 150, failed: 0 });
     expect(mocks.deliver).toHaveBeenCalledTimes(3);
   });
 
@@ -85,25 +85,32 @@ describe("outbox drain", () => {
       .mockResolvedValueOnce({ sent: 44, failed: 0, due: 50 })
       .mockResolvedValueOnce({ sent: 0, failed: 0, due: 50 })
       .mockResolvedValueOnce({ sent: 7, failed: 0, due: 7 });
-    await expect(drainOutbox({ batch: 50, budgetMs: 60_000 })).resolves.toEqual({ sent: 51, failed: 0 });
+    await expect(drainOutbox({ batch: 50, maxBatches: 10, budgetMs: 60_000 })).resolves.toEqual({ sent: 51, failed: 0 });
     expect(mocks.deliver).toHaveBeenCalledTimes(3);
   });
 
   it("backs off after a batch in which every send failed (mail server down)", async () => {
     mocks.deliver.mockResolvedValue({ sent: 0, failed: 50, due: 50 });
-    await expect(drainOutbox({ batch: 50, budgetMs: 60_000 })).resolves.toEqual({ sent: 0, failed: 50 });
+    await expect(drainOutbox({ batch: 50, maxBatches: 10, budgetMs: 60_000 })).resolves.toEqual({ sent: 0, failed: 50 });
     expect(mocks.deliver).toHaveBeenCalledTimes(1);
   });
 
-  it("drains in the scheduler pass instead of a single fixed batch", async () => {
+  it("stops after the batch limit even when more mail is due", async () => {
+    mocks.deliver.mockResolvedValue({ sent: 50, failed: 0, due: 50 });
+    await expect(drainOutbox({ batch: 50, maxBatches: 2, budgetMs: 60_000 })).resolves.toEqual({ sent: 100, failed: 0 });
+    expect(mocks.deliver).toHaveBeenCalledTimes(2);
+  });
+
+  it("sends one gentle batch of 20 per scheduler pass by default", async () => {
+    expect(OUTBOX_DRAIN_BATCH).toBe(20);
+    expect(OUTBOX_DRAIN_MAX_BATCHES).toBe(1);
     mocks.started.mockResolvedValue(undefined);
     mocks.success.mockResolvedValue(undefined);
     mocks.purge.mockResolvedValue({});
     mocks.webhooks.mockResolvedValue({ delivered: 0, failed: 0 });
-    mocks.deliver
-      .mockResolvedValueOnce({ sent: OUTBOX_DRAIN_BATCH, failed: 0, due: OUTBOX_DRAIN_BATCH })
-      .mockResolvedValueOnce({ sent: 3, failed: 0, due: 3 });
-    await expect(runOutboxScheduler()).resolves.toMatchObject({ sent: OUTBOX_DRAIN_BATCH + 3, failed: 0 });
-    expect(mocks.deliver).toHaveBeenCalledTimes(2);
+    mocks.deliver.mockResolvedValue({ sent: OUTBOX_DRAIN_BATCH, failed: 0, due: OUTBOX_DRAIN_BATCH });
+    await expect(runOutboxScheduler()).resolves.toMatchObject({ sent: OUTBOX_DRAIN_BATCH, failed: 0 });
+    expect(mocks.deliver).toHaveBeenCalledTimes(1);
+    expect(mocks.deliver).toHaveBeenCalledWith(OUTBOX_DRAIN_BATCH);
   });
 });

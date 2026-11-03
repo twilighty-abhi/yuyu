@@ -147,7 +147,7 @@ build, the old build on the new schema, and a restore drill).
    ([lock checklist](production-operations.md#lock-checklist-for-the-team-judging-and-large-event-migrations)).
 9. **Tell organisers** about the behaviour changes above, and that an
    attendance confirmation or broadcast to about 10,000 guests drains at the
-   outbox rate. Each pass sends batches of 50 for up to 40 seconds, and
+   outbox rate. Each pass sends one batch of 20 (about 20 a minute), and
    password-reset, ticket and verification email is always sent before bulk
    sends, so it does not wait behind them.
 

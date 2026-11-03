@@ -41,6 +41,7 @@ This directory is the source of truth for the current product, its operation, an
 | Document | Purpose |
 | --- | --- |
 | [Changelog](../CHANGELOG.md) | Notable changes per release, with upgrade notes |
+| [Decisions](DECISIONS.md) | Dated records of deliberate choices and reverts (for example the outbox send rate), with the reason and when to revisit |
 | Help centre (`/help`) | The user guide for guests, organisers, door staff, developers and the instance administrator, served by the app at `/help` from the MDX articles in [`content/help/`](../content/help/README.md) (writing guide, manifest, screenshots). It replaces the PDF user manual |
 | [Authentication review](AUTH_REVIEW.md) | Point-in-time record (2026-09-14); not maintained |
 | [Production readiness audit](PRODUCTION_READINESS_AUDIT.md) | Point-in-time audit against commit `8403b84` on `main`, before the V1 redesign, short links, the mobile API, and the live ticket stream; not maintained |
